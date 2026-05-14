@@ -1,3 +1,856 @@
 {
-    "findings": []
+    "findings": [
+        {
+            "path": "docs/BUILDING-BLOCKS.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/BUILDING-BLOCKS.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/BUILDING-BLOCKS.md",
+            "rule_id": "command_docs.long_section_structure",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/BUILDING-BLOCKS.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/CONCEPTS.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/CONCEPTS.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/MISSION.md",
+            "rule_id": "command_docs.long_section_structure",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/10_deploy/4_deploy-run/technical/1_deploy-run.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/10_deploy/6_deploy-log/technical/1_deploy-log.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/10_deploy/deploy-concepts.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/11_operation/2_update-all/technical/1_update-all.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/11_operation/3_doctor/technical/1_doctor.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 7
+        },
+        {
+            "path": "docs/commands/11_operation/3_doctor/technical/1_doctor.md",
+            "rule_id": "command_docs.command_contract_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/11_operation/3_doctor/technical/3_doctor_on-gateway-node.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/11_operation/5_profile/profile.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 5
+        },
+        {
+            "path": "docs/commands/11_operation/5_profile/technical/1_profile.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/11_operation/5_profile/technical/1_profile.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/11_operation/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/11_operation/operation-concepts.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 9
+        },
+        {
+            "path": "docs/commands/12_cf/7_cf-cache-rule-remove/cf-cache-rule-remove.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/12_cf/cf-concepts.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/13_vpn/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/15_agent-ide/1_agent-ide-message/agent-ide-message.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/16_dns/1_dns-resolve-tld/technical/6.1_dns-resolve-tld_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/16_dns/README.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/16_dns/dns-concepts.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/17_activity/2_activity-show/technical/6.1_activity-show_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/10_node-agent-ide/technical/1_node-agent-ide.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/1_node/10_node-agent-ide/technical/5.1_node-agent-ide_input-mode_interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/node-new.md",
+            "rule_id": "command_docs.reader_address",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/1_node-new.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/2_node-new_on-control-node.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/3_node-new_on-gateway-node.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/3_node-new_on-gateway-node.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/4_node-new_on-app-node.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/5.1_node-new_input-mode_interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/5.2_node-new_input-mode_non-interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/6.1_node-new_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/1_node-new/technical/6.2_node-new_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/8_node-remove/technical/1_node-remove.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/8_node-remove/technical/2_node-remove_on-control-node.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/9_node-default/technical/1_node-default.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/9_node-default/technical/5.1_node-default_input-mode_interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/9_node-default/technical/6.1_node-default_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/1_node/node-concepts.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/node-doctor.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/node-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/1_node/technical/node-doctor.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/1_node/technical/node-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/2_gateway/1_gateway-add/technical/1_gateway-add.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/2_gateway/1_gateway-add/technical/5.2_gateway-add_input-mode_non-interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/2_gateway/1_gateway-add/technical/6.1_gateway-add_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/2_gateway/1_gateway-add/technical/6.2_gateway-add_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/2_gateway/2_gateway-trust/technical/1_gateway-trust.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/2_gateway/2_gateway-trust/technical/6.1_gateway-trust_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/3_tool/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/3_tool/README.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 4
+        },
+        {
+            "path": "docs/commands/3_tool/tool-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/4_firewall/4_firewall-remove/firewall-remove.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/4_firewall/firewall-doctor.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/4_firewall/firewall-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/5_app/1_app-new/technical/4_app-new_on-app-node.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/1_app-new/technical/5.1_app-new_input-mode_interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/1_app-new/technical/6.1_app-new_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/2_app-register/app-register.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 4
+        },
+        {
+            "path": "docs/commands/5_app/2_app-register/app-register.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/2_app-register/app-register.md",
+            "rule_id": "command_docs.document_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/2_app-register/technical/5.1_app-register_input-mode_interactive.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/5_app/2_app-register/technical/6.2_app-register_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/4_app-show/technical/6.2_app-show_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/5_app-root/app-root.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/5_app-root/technical/6.1_app-root_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/6_app-remove/technical/1_app-remove.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/6_app-remove/technical/6.2_app-remove_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/7_app-prune/app-prune.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 4
+        },
+        {
+            "path": "docs/commands/5_app/7_app-prune/app-prune.md",
+            "rule_id": "command_docs.document_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/5_app/7_app-prune/technical/1_app-prune.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/9_app-agent-ide/technical/1_app-agent-ide.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/9_app-agent-ide/technical/6.2_app-agent-ide_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/app-doctor.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/5_app/app-doctor.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/5_app/app-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/10_workspace-setup-step-remove/technical/1_workspace-setup-step-remove.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/11_workspace-teardown-step-add/technical/1_workspace-teardown-step-add.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/11_workspace-teardown-step-add/workspace-teardown-step-add.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/12_workspace-teardown-step-list/workspace-teardown-step-list.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/1_workspace-new/technical/1_workspace-new.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/1_workspace-new/technical/5.2_workspace-new_input-mode_non-interactive.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/1_workspace-new/technical/6.2_workspace-new_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/2_workspace-setup/technical/1_workspace-setup.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/2_workspace-setup/technical/6.2_workspace-setup_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/2_workspace-setup/workspace-setup.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/6_workspace/4_workspace-show/technical/6.2_workspace-show_output-render_json.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/6_workspace/4_workspace-show/technical/6.2_workspace-show_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/4_workspace-show/workspace-show.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/4_workspace-show/workspace-show.md",
+            "rule_id": "command_docs.document_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/6_workspace/4_workspace-show/workspace-show.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/6_workspace/5_workspace-remove/technical/5.1_workspace-remove_input-mode_interactive.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/5_workspace-remove/workspace-remove.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 5
+        },
+        {
+            "path": "docs/commands/6_workspace/6_workspace-history/technical/1_workspace-history.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/7_workspace-log/technical/1_workspace-log.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/6_workspace/7_workspace-log/technical/1_workspace-log.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/7_workspace-log/technical/6.1_workspace-log_output-render_human.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/7_workspace-log/technical/6.2_workspace-log_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/6_workspace/workspace-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/1_process-add/technical/1_process-add.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/2_process-edit/technical/1_process-edit.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/2_process-edit/technical/6.2_process-edit_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/3_process-remove/process-remove.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/5_process-start/process-start.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/5_process-start/technical/1_process-start.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/5_process-start/technical/6.2_process-start_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/6_process-stop/process-stop.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/6_process-stop/technical/1_process-stop.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/6_process-stop/technical/6.2_process-stop_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/7_process-restart/process-restart.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/7_process-restart/technical/1_process-restart.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/7_process-restart/technical/6.2_process-restart_output-render_json.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/8_process-logs/technical/1_process-logs.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 5
+        },
+        {
+            "path": "docs/commands/7_process/internal/1_process-event-stream/process-event-stream.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/7_process/process-concepts.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/7_process/process-concepts.md",
+            "rule_id": "command_docs.document_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/7_process/process-doctor.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 4
+        },
+        {
+            "path": "docs/commands/7_process/process-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/8_proxy/2_proxy-add/technical/1_proxy-add.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/8_proxy/README.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/8_proxy/README.md",
+            "rule_id": "command_docs.document_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/9_schedule/1_schedule-add/technical/1_schedule-add.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/9_schedule/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 3
+        },
+        {
+            "path": "docs/commands/9_schedule/README.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/9_schedule/schedule-doctor.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/9_schedule/schedule-doctor.md",
+            "rule_id": "command_docs.table_prose_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/README.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 2
+        },
+        {
+            "path": "docs/commands/README.md",
+            "rule_id": "command_docs.compound_noun_stack",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/README.md",
+            "rule_id": "command_docs.section_opener_prose",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/ux/inputs/multi-search-prompt.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/ux/inputs/multi-select-prompt.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/ux/inputs/password-prompt.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        },
+        {
+            "path": "docs/commands/ux/inputs/suggest-prompt.md",
+            "rule_id": "command_docs.bullet_complexity",
+            "severity": "warning",
+            "count": 1
+        }
+    ]
 }

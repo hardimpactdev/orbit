@@ -2,7 +2,7 @@
 
 [Back to Schedule commands.](../README.md)
 
-List gateway-owned schedule configuration visible to the caller.
+List schedule configuration stored on the gateway and visible to the caller.
 
 Use `schedule:list` to audit recurring app, node, and Orbit-owned maintenance
 schedules without probing live scheduler state.
@@ -21,7 +21,7 @@ orbit schedule:list --app=docs
 orbit schedule:list --node=app-1
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--app`: show schedules for one app.
 - `--node`: show schedules for one node.
@@ -31,11 +31,11 @@ orbit schedule:list --node=app-1
 
 ## What Happens
 
-`schedule:list` reads schedule configuration and latest durable run history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair drift, or adopt scheduler-side state.
+Run `schedule:list` when you need to audit what recurring work is configured for an app or node. `schedule:list` reads schedule configuration and latest durable run history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair drift, or adopt scheduler-side state.
 
 ## Output
 
-Human output renders a schedule table grouped by target.
+Pass `--json` to receive machine-readable output; omit it to see a human-readable schedule table grouped by target.
 
 JSON output returns a list of schedule entities with filter metadata.
 

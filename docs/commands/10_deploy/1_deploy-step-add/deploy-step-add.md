@@ -23,7 +23,7 @@ orbit deploy:step-add docs "./release.sh" --retention=5
 orbit deploy:step-add docs $'cd {{ release_path }}\ncomposer install --no-dev --optimize-autoloader --no-interaction' --title="Install dependencies"
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: production app name or domain.
 - `command`: shell command or multiline shell script to run during deployment.
@@ -36,8 +36,8 @@ orbit deploy:step-add docs $'cd {{ release_path }}\ncomposer install --no-dev --
 
 ## What Happens
 
-`deploy:step-add` validates the production app, command, timeout, and optional
-metadata, then writes one gateway-owned deployment step definition for the app.
+Use `deploy:step-add` when you need to add a new shell command to the app's deployment pipeline. `deploy:step-add` validates the production app, command, timeout, and optional
+metadata, then writes one deployment step definition owned by the app on the gateway.
 It does not execute the step, inspect node state, create app process
 definitions, or apply global deployment retention.
 
@@ -47,7 +47,7 @@ The values are rendered when `deploy:run` starts, not when the step is added.
 
 ## Output
 
-Human output confirms the added step and its order.
+Run without `--json` to see confirmation of the added step and its order.
 
 JSON output returns the created deploy step entity.
 

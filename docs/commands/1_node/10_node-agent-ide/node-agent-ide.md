@@ -4,7 +4,7 @@
 
 Set the default agent IDE adapter for a node.
 
-Stores the node-level default agent IDE used by apps and workspaces on that node
+Stores the default agent IDE for the node, used by apps and workspaces on that node
 when they do not define an app-level override. Used to make agent IDE messaging
 and crash-notification workflows work by default on a development app node.
 
@@ -22,7 +22,7 @@ orbit node:agent-ide app-1 none
 orbit node:agent-ide app-1 polyscope --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: node name. Must exist in gateway node configuration.
 - `agent_ide`: agent IDE input value. Core adapter names are `opencode` and
@@ -36,7 +36,7 @@ orbit node:agent-ide app-1 polyscope --json
 
 ## What Happens
 
-`node:agent-ide` writes the node-default agent-IDE adapter into gateway node
+`node:agent-ide` writes the adapter you choose into gateway node
 configuration. Gateway callers execute locally; configured control callers
 forward the request to the gateway over HTTPS through WireGuard.
 
@@ -62,14 +62,14 @@ stale workspace cleanup is wanted after a node-default change.
 
 - Create an agent IDE session.
 - Grant node access or alter node transport.
-- Override app-level agent IDE settings.
+- Override the agent IDE settings configured at the app level.
 - SSH into the target node.
 - Trigger downstream session restart or app-level invalidation.
 - Notify running agent-IDE sessions or invalidate app-level or workspace-level
   overrides.
 - Remove or prune workspaces for apps that inherit the node default.
 
-### Recovery From Doctor Warnings
+### Recovery from doctor warnings
 
 When `doctor --family=node` reports `node.agent_ide_default_invalid`, the
 stored node-level adapter is missing or unsupported. Doctor reports this only;
@@ -98,6 +98,8 @@ payload shape.
   has registered them with the gateway.
 
 ## Related Commands
+
+Use these commands alongside `node:agent-ide` to manage node configuration and verify results.
 
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes

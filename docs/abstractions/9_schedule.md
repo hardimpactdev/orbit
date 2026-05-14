@@ -24,7 +24,7 @@ top-level product docs.
   schedule intent with `schedule:add` rather than importing scheduler-local
   artifacts.
 
-## Schema And Model Pattern
+## Schema and model pattern
 
 - `schedules`
   - schedule identity and unique key
@@ -70,7 +70,7 @@ durable observations reported through gateway-owned authenticated endpoints.
   pickup is a warning or error boundary that points operators to
   `doctor --family=schedule`.
 - `schedule:run` creates a durable manual run record and executes through the
-  gateway-owned target-node execution edge.
+  target-node execution edge that the gateway owns.
 - Control and app callers use typed gateway API requests. Gateway callers may
   use local gateway state plus the gateway-owned `RemoteShell` edge.
 

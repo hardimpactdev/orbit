@@ -2,11 +2,10 @@
 
 [Back to Process commands.](../README.md)
 
-**Purpose:** Show or follow logs for a process runtime context.
+Show or follow logs for a process runtime context.
 
-**Description:** Reads process logs from the owning node process manager through the gateway for a resolved app or workspace context.
-
-**Technical contract:** [`technical/1_process-logs.md`](technical/1_process-logs.md)
+`process:logs` reads process logs from the owning node process manager through
+the gateway for a resolved app or workspace context.
 
 ## Usage
 
@@ -16,15 +15,21 @@ orbit process:logs vite --app=docs --workspace=feature-docs --follow
 orbit process:logs queue --app=docs --lines=200 --json
 ```
 
-## Behavior
+## Behavior Summary
 
-- Resolves the process and app/workspace runtime context.
-- Streams or returns Supervisor logs through the gateway.
-- Does not mutate process configuration.
-- Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream with `error.code=validation_failed`.
+Use this command to read or stream Supervisor logs for a resolved process runtime context.
+
+- **Context Resolution**: Resolves the process and app/workspace runtime context.
+- **Log Streaming**: Streams or returns Supervisor logs through the gateway.
+- **No Mutations**: Does not mutate process configuration.
+- **JSON Restriction**: Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream with `error.code=validation_failed`.
 
 ## Related
 
 - [`process:list`](../4_process-list/process-list.md)
 - [`process:start`](../5_process-start/process-start.md)
 - [`process-doctor.md`](../process-doctor.md)
+
+***
+
+**Technical Contract:** [`technical/1_process-logs.md`](technical/1_process-logs.md)

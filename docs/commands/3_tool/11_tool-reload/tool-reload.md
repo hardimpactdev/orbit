@@ -22,7 +22,7 @@ orbit tool:reload caddy --app=docs
 orbit tool:reload caddy --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from reload-capable tools visible on the resolved node.
@@ -34,6 +34,8 @@ Target context is required when neither `--node`, `--app`, nor local
 `node:default` resolves a node.
 
 ## What Happens
+
+Run this command to apply current configuration to a reload-capable tool without cycling the service.
 
 `tool:reload`:
 
@@ -47,6 +49,8 @@ The command does not fall back to restart unless the tool definition explicitly
 declares restart-as-reload behavior.
 
 ## Output
+
+Use `--json` to get a machine-readable result; omit it for a progress tree.
 
 Human output is a progress tree for the reload action.
 
@@ -64,6 +68,8 @@ JSON output returns the tool entity and action result under
   primitive.
 
 ## Related Commands
+
+Use these commands for related tool lifecycle and configuration actions.
 
 - [`tool:restart`](../7_tool-restart/tool-restart.md) - cycle a managed tool service
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun setup/configuration

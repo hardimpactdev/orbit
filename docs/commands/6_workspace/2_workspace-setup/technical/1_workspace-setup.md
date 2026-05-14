@@ -31,19 +31,77 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Input Resolution
 
-1. **Resolve Workspace Identity**: Resolve `[name]` from the positional
-   argument, local workspace context, or interactive prompt.
-2. **Resolve Parent App**:
-   - Explicit `--app`.
-   - Existing parent app if the workspace is already registered.
-   - Local app context (e.g. from `.orbit/config` or current directory).
-   - Interactive prompt or non-interactive failure.
-3. **Resolve Path**:
+1. **Resolve Workspace Identity**: Resolve `[name]` and parent `app` in this
+   order:
+   - Explicit `[name]` positional + explicit `--app`.
+   - **CWD path-ownership lookup (gateway-authoritative):** when `[name]`
+     is missing, Orbit asks the gateway to resolve the caller's absolute
+     current directory against registered app and workspace paths for the
+     caller's node identity. The lookup returns one of four outcomes:
+     - `workspace` — CWD is inside a registered workspace path. The gateway
+       returns the workspace name, parent app slug, and stored workspace
+       path. The command proceeds with these values; `--app` and `--path`
+       must agree if also supplied, otherwise the command fails with
+       `error.code=validation_failed`/`error.meta.field=app|path` before
+       side effects.
+     - `app_root` — CWD is a registered app's own path, not a workspace
+       path under it. The command fails before side effects with
+       `error.code=workspace.path_is_app_root`,
+       `error.meta.app=<app>`, and
+       `error.meta.next_command=orbit workspace:new`. The app root is not
+       a workspace and `workspace:setup` does not promote it to one.
+     - `inside_app` — CWD is under a registered app's path but does not
+       match any registered workspace path under that app. The parent app
+       is resolved from the lookup; the workspace name is resolved through
+       the adapter probe below, or through interactive prompts.
+     - `unregistered` — CWD does not match any known app or workspace path.
+       The adapter probe below runs across all of the caller node's
+       configured adapters; otherwise fall through to local-context
+       defaults (`.orbit/config` marker for `--app`) and interactive
+       prompts. Non-interactive mode without an adapter resolution fails
+       fast with `validation_failed`.
+   - **Agent-IDE adapter probe** (after the CWD lookup, when `[name]` is
+     still missing and the lookup outcome was `inside_app` or
+     `unregistered`):
+     - The CLI gathers the **effective adapters** to probe:
+       - On `inside_app`, only the parent app's effective adapter.
+       - On `unregistered`, every adapter currently effective for any app
+         owned by the caller's node.
+     - Each effective adapter that exposes the `workspace_path_resolution`
+       capability is asked to resolve the absolute CWD to one of its
+       managed workspaces. The adapter returns either no match or a
+       descriptor with workspace name, parent app slug, absolute path, and
+       adapter workspace id.
+     - Outcomes:
+       - Exactly one adapter returns a match → use the returned workspace
+         name and parent app for identity. Explicit `--app` and `[name]`,
+         if supplied, must agree with the adapter; mismatches fail with
+         `error.code=validation_failed`,
+         `error.meta.field=app|name`, `error.meta.reason=adapter_mismatch`
+         before side effects.
+       - Multiple adapters return a match → fail with
+         `error.code=validation_failed`, `error.meta.field=app`,
+         `error.meta.reason=adapter_ambiguous`,
+         `error.meta.adapters=[…]`. The operator disambiguates with
+         `--app`.
+       - No adapter returns a match → continue to prompts / non-interactive
+         failure.
+       - An adapter errors during probe (transport, auth, unexpected
+         response) → fail with
+         `error.code=workspace.agent_ide_path_resolution_failed`,
+         `error.meta.adapter=<name>`, `error.meta.reason=<short>`. The
+         probe does not silently fall through on adapter errors so the
+         operator does not get a confusingly different identity from a
+         partial probe.
+   - Interactive prompt for missing `[name]` when no CWD outcome or adapter
+     probe resolved it; non-interactive failure if no prompt is available.
+2. **Resolve Path**:
    - Explicit `--path` (must be absolute).
-   - Existing path if the workspace is already registered.
+   - Workspace `path` returned by the CWD path-ownership lookup or stored on
+     the existing workspace row.
    - Caller's current directory, resolved to an absolute path on the owning
-     app node.
-4. **Validate Eligibility**:
+     app node, when adopting an unregistered path.
+3. **Validate Eligibility**:
    - Target app node must be reachable.
    - Path must satisfy the parent app's workspace source policy. Generic
      worktree paths must live under `<app path>/.worktrees/`; adapter-owned
@@ -95,17 +153,20 @@ phase boundaries.
 
 ### Idempotence (Re-apply Refresh)
 
-`workspace:setup` always re-applies management. Re-running on an already-set-up
-workspace re-renders artifacts and verifies command-owned application. The
-command-outcome layer reports which path was taken via
+`workspace:setup` always re-applies management. Re-running on a workspace that is already set up
+re-renders artifacts and verifies command-owned application. The outcome layer reports which path was taken via
 `success.data.result.action`:
 
 - `set_up` — first-time setup of a workspace path that is already in gateway
   configuration (typically just created by `workspace:new`).
 - `adopted` — first-time setup where the path existed on the app node but was
-  unmanaged. The durable `workspace.adopted` boolean is set to `true` for this
-  run; subsequent re-runs report `result.action=converged` with
-  `workspace.adopted=true` preserved.
+  unmanaged. Identity may come from explicit input or from an agent-IDE
+  adapter probe (for example, a Polyscope worktree the adapter manages but
+  Orbit did not yet know about). The durable `workspace.adopted` boolean is
+  set to `true` for this run; subsequent re-runs report
+  `result.action=converged` with `workspace.adopted=true` preserved. When
+  the adapter resolved identity, the workspace row records `agent_ide` and
+  `agent_ide_workspace_id` from the adapter descriptor.
 - `converged` — idempotent re-application of an already-managed workspace
   where no observable artifact change was needed.
 
@@ -121,6 +182,19 @@ letting `result.action` describe what this run did, mirroring the
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
+- **Path Is App Root**: The resolved CWD is a registered app's own path, not
+  a workspace path under it. Fails before side effects with
+  `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
+  `error.meta.path=<cwd>`, and
+  `error.meta.next_command=orbit workspace:new`. The app root is not a
+  workspace and `workspace:setup` never promotes it to one. The hint points
+  the operator at [`workspace:new`](../../1_workspace-new/workspace-new.md).
+- **Agent IDE Path Resolution Failed**: An effective agent-IDE adapter
+  errored while resolving the CWD to a managed workspace (transport, auth,
+  or unexpected adapter response). Fails before side effects with
+  `error.code=workspace.agent_ide_path_resolution_failed`,
+  `error.meta.adapter=<name>`, and `error.meta.reason=<short>`. The probe
+  does not silently fall through on adapter errors.
 - **Path Outside Policy**: The resolved generic workspace path is outside the
   parent app's `.worktrees/` policy
   (`error.code=workspace.path_outside_policy`).
@@ -157,13 +231,13 @@ history.
 
 Uses the shared exit status policy. Success and success-with-warnings exit `0`;
 all documented command failures exit with the standard command failure status
-(`1`). This command defines no command-specific numeric exit codes.
+(`1`). This command defines no numeric exit codes specific to it.
 
 ## Doctor Relationship
 
 - `workspace:setup` resolves drift detected by `doctor --family=workspace`.
 - Family doctor behavior is documented in [`workspace-doctor.md`](../../workspace-doctor.md).
-- Setup-time HTTP probe results are command metadata. The warning code
+- HTTP probe results from setup time are command metadata. The warning code
   `workspace.http_probe_unhealthy` is not owned by the workspaces doctor
   family.
 - Failed setup-step runs are visible through `workspace:history` and
@@ -175,7 +249,8 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution, `--path` absolute-validation, gateway-applied allowance for control/gateway/app-node peers, interactive prompts, JSON envelope alignment with the canonical contract, and warning payload shape for `success.meta.warnings[]`. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution across CWD outcomes and adapter probe branches, `workspace.path_is_app_root` pre-side-effect failure, `--path` absolute-validation, gateway-applied peer allowance, interactive prompts, JSON envelope alignment, and `success.meta.warnings[]` shape. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupPathResolutionTest.php` | CWD path-ownership outcomes (`workspace`, `app_root`, `inside_app`, `unregistered`); adapter-probe single/none/ambiguous/error branches; adapter-mismatch rejection against explicit `--app`/`[name]`; adapter-driven adoption recording `agent_ide` and `agent_ide_workspace_id`. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupCallerRoleTest.php` | App-node peer forwarding to the gateway as a documented local-workflow exception, control/gateway peer orchestration, and unauthorized-app rejection before side effects. |
 | `tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
 | `tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |

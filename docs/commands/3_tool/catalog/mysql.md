@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the MySQL tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `mysql` |
@@ -50,7 +52,7 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`mysql` exposes a WireGuard-only TCP service endpoint at
+`mysql` exposes a TCP service endpoint reachable only over WireGuard at
 `orbit.<node-tld>:3306` for development app nodes. This is DNS/service endpoint
 configuration owned by the tool definition, not an HTTP proxy route.
 

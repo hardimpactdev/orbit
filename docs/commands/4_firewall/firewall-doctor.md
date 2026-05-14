@@ -2,11 +2,11 @@
 
 [Back to Firewall commands.](README.md)
 
-`doctor --family=firewall_rule` verifies whether gateway firewall configuration still matches node firewall reality. It covers Orbit-owned firewall rules only.
+`doctor --family=firewall_rule` verifies whether gateway firewall configuration still matches node firewall reality. It covers firewall rules that Orbit owns.
 
 The firewall family owns these facts:
 
-- gateway-owned firewall rule rows: node, name, direction, action, source, destination, protocol, port, reason, and backend metadata needed to identify the applied rule;
+- firewall rule rows owned by the gateway: node, name, direction, action, source, destination, protocol, port, reason, and backend metadata needed to identify the applied rule;
 - managed backend rules rendered from those rows;
 - drift between gateway configuration and the node firewall backend;
 - adoption facts for explicitly selected observed rules that can safely become Orbit-owned firewall configuration.
@@ -30,6 +30,8 @@ Backend rows that cannot be represented in Orbit firewall-rule fields are report
 
 ## Firewall Issue Codes
 
+Each code below identifies a specific kind of drift the firewall probe can detect.
+
 | Code | Detected when |
 | --- | --- |
 | `firewall_rule.record_incomplete` | A selected gateway firewall rule lacks node, name, direction, action, source, protocol, port, or backend identity metadata required for comparison. |
@@ -40,6 +42,8 @@ Backend rows that cannot be represented in Orbit firewall-rule fields are report
 | `firewall_rule.rule_extra` | During an explicit adoption scope, a selected observed backend rule has no matching gateway firewall rule row. |
 
 ## Firewall Fix Map
+
+This table shows what `doctor --fix --restore` does for each fixable issue code.
 
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
@@ -52,9 +56,11 @@ Backend rows that cannot be represented in Orbit firewall-rule fields are report
 
 ## Firewall Adopt Map
 
+This table shows what `doctor --fix --adopt` does for each adoptable issue code.
+
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
-| `firewall_rule.rule_extra` | Create a gateway firewall rule row only when the operator selected a specific node and backend rule, the node is eligible, and the backend rule can be represented in Orbit firewall-rule fields. |
+| `firewall_rule.rule_extra` | Create a gateway firewall rule row when: the operator selected a specific node and backend rule; the node is eligible; and the backend rule can be represented in Orbit firewall-rule fields. |
 | `firewall_rule.rule_mismatch` | Update gateway configuration only when the operator selected the specific rule and the observed backend rule can be represented without changing node bootstrap policy. |
 
 `doctor --fix --adopt` does not scan arbitrary hosts, adopt unsupported firewall backends, infer app/proxy ownership from ports, or adopt node bootstrap policy into the firewall family.
@@ -65,7 +71,7 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/FirewallFamilyDoctorContractTest.php` | Firewall-family dispatch, probe-layer selection, firewall issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering as it affects firewall probes. |
+| `tests/Feature/Doctor/FirewallFamilyDoctorContractTest.php` | Firewall-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering for firewall probes. |
 | `tests/Unit/Services/Firewall/FirewallProbeTest.php` | In-memory firewall probe diff behavior for registry configuration, node eligibility, baseline policy boundaries, missing rules, mismatched rules, extra rules in adoption scope, and exclusion of node/proxy/app drift from firewall issue codes. |
 | `tests/E2E/Read/FirewallDoctorTest.php` | Real read-only `doctor --family=firewall_rule --json` against nodes with managed firewall rules. |
 | `tests/E2E/Ephemeral/FirewallDoctorFixTest.php` | Real `doctor --fix --family=firewall_rule --restore` repair of safe managed firewall drift. |

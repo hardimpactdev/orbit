@@ -1,10 +1,12 @@
 # Mission
 
-Orbit is an open-source tool for managing the full lifecycle of web apps and the servers they run on — from local development through staging to production. Its mission is to give both humans and AI a single, tightly integrated command surface for that entire pipeline, so configuration work can be handled by AI and you stay focused on building.
+Orbit is an open-source tool for managing the full lifecycle of web apps and the servers they run on — from local development through staging to production. Its mission is to give both humans and AI a single, tightly integrated command surface for that entire pipeline. Configuration work can be handed off to AI so you stay focused on building.
 
 ## Why Orbit?
 
-The web tooling landscape is rich. Herd and Valet handle local dev, and tools like Forge and Laravel Cloud handle hosting, and other tools cover the bits in between. Each one is genuinely good at what it does. But going from idea to running a production app still means stitching multiple tools together and switching context at every boundary — a different CLI, a different mental model, a different surface for every step.
+The web tooling landscape is rich. Herd and Valet handle local dev. Forge and Laravel Cloud handle hosting. Other tools cover the bits in between. Each one is genuinely good at what it does.
+
+But going from idea to running a production app still means stitching multiple tools together and switching context at every boundary — a different CLI, a different mental model, a different surface for every step.
 
 Orbit's belief is that one coherent tool spanning local development through to production unlocks something the split stack can't. You stay in one context. You learn one set of commands. Everything — scaffolding a new app, configuring services, shipping deploys, checking for security updates, running maintenance — it all lives behind the same surface.
 

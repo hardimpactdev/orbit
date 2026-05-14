@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied; `control` and `gateway` callers may proceed when authorized.
+- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
+- `control` and `gateway` callers may proceed when authorized.
 - Runtime artifact rendering requires gateway reachability to the owning app node.
 
 ## Signature
@@ -58,7 +59,8 @@ If process configuration is written but runtime-unit apply or optional start fai
 - Development-server commands that need browser or HMR access across the Orbit network must bind to a node-reachable interface instead of loopback.
 - For Vite-backed development servers, the expected command shape is `npm run dev -- --host=0.0.0.0`, or an equivalent package-manager/framework adapter command with the same bind behavior.
 - Runtime units generated from the process definition receive Orbit URL and TLS environment fields, including `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT`.
-- `VITE_VALET_HOST` is included for Laravel Vite and Vite Plus compatibility because those toolchains may use the host while deriving TLS and hot-file URLs for long-running development servers.
+- `VITE_VALET_HOST` is included for Laravel Vite and Vite Plus compatibility.
+- Those toolchains may use it while deriving TLS and hot-file URLs for long-running development servers.
 
 ## Renderer Contracts
 
@@ -94,7 +96,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Command contract for process creation, caller-role denial before prompts or side effects, app resolution, default process-order append behavior, defaults, duplicate-name failure, runtime-unit rendering, optional start behavior, repairable warnings after post-configuration apply failure, and no configuration write on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Process creation contract, caller-role denial, app resolution, default append behavior, defaults, duplicate-name failure, runtime-unit rendering, optional start behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

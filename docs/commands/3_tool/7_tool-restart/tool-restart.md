@@ -21,7 +21,7 @@ orbit tool:restart redis --app=docs
 orbit tool:restart redis --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -47,6 +47,8 @@ for configuration convergence.
 
 ## Output
 
+Use `--json` to get a machine-readable result; omit it for a summary of the restart action.
+
 Human output reports the restart action and resulting intended state.
 
 JSON output returns the tool entity under `success.data.tool`.
@@ -62,6 +64,8 @@ JSON output returns the tool entity under `success.data.tool`.
   primitive.
 
 ## Related Commands
+
+Use these commands for related tool lifecycle and configuration actions.
 
 - [`tool:reload`](../11_tool-reload/tool-reload.md) - reload configuration when supported
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun setup without changing version

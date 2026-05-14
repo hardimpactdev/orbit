@@ -1,6 +1,6 @@
 # `orbit vpn-client:new <name>`
 
-Create a non-node gateway VPN client for human/operator access.
+Create a VPN client on the gateway for human or operator access; the client is not an Orbit node.
 
 ## Usage
 
@@ -16,7 +16,7 @@ orbit vpn-client:new laptop --config
 orbit vpn-client:new laptop --totp=123456 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: VPN client name.
 - `--config`: Include the generated WireGuard client configuration in output.
@@ -24,6 +24,8 @@ orbit vpn-client:new laptop --totp=123456 --json
 - `--json`: Return the created client in the shared JSON command envelope.
 
 ## What Happens
+
+Run this command to provision a new admin VPN peer on the gateway backend.
 
 `vpn-client:new` runs on the gateway host and creates a gateway VPN backend
 peer for the requested client name. From a control node, Orbit connects to the
@@ -42,6 +44,8 @@ it must not include public fallback resolvers.
 
 ## Output
 
+Your output will include the new client's WireGuard address and, when requested, the generated config.
+
 Human output confirms the client, shows its WireGuard address, and prints the
 WireGuard config only when `--config` is supplied. JSON output returns
 `success.data.client`.
@@ -54,6 +58,8 @@ WireGuard config only when `--config` is supplied. JSON output returns
 - The operator can authenticate to the VPN backend when TOTP is required.
 
 ## Related Commands
+
+Use these commands to list, remove, or provision Orbit node identities.
 
 - [`orbit vpn-client:list`](../1_vpn-client-list/vpn-client-list.md)
 - [`orbit vpn-client:remove`](../5_vpn-client-remove/vpn-client-remove.md)

@@ -30,7 +30,7 @@ product docs.
   must not duplicate app source, workspace source, proxy, schedule, tool,
   firewall, or node reachability issue codes.
 
-## Schema And Model Pattern
+## Schema and model pattern
 
 - `processes`
   - `app_id`
@@ -93,13 +93,13 @@ even when actions target a workspace runtime context.
   presence/content checks for that node.
 - Expected runtime-unit config should be compared against
   `SupervisorProgramRenderer::render()` and the generic renderer's config path.
-- Runtime-unit extras are limited to Orbit-owned Supervisor programs whose
-  `orbit_<app>_<workspace|main>_<process>` identity no longer maps to active
-  app, workspace, and process intent.
+- Runtime-unit extras are limited to Supervisor programs that Orbit owns and
+  whose `orbit_<app>_<workspace|main>_<process>` identity no longer maps to
+  active app, workspace, and process intent.
 - Restart policy and environment drift are reported as process-family issue
   codes because they are rendered from process/app/workspace/node intent.
 - Event notifier checks belong to process doctor only for process definitions
-  whose crash-notification policy requires crash reporting.
+  whose crash-notification policy calls for crash reporting.
 - Process doctor has no adoption path for Supervisor programs. Operators update
   intent with process commands when observed command or policy should become
   desired state.

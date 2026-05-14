@@ -32,7 +32,7 @@ orbit node:default --json       # show current default as JSON
 orbit node:default app-1 --json # set app-1 as the default, output JSON
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: visible development app node name. Required for the `set` sub-action
   when no interactive prompt is available and a set is requested.
@@ -41,6 +41,8 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `node:default` when you want to choose, set, or clear the development app node your local commands target by default.
 
 `node:default` reads and writes local control-node configuration only. It does
 not mutate gateway node configuration, grant access to the default node, or
@@ -73,11 +75,11 @@ Removes the locally stored default development app node. This is a local
 configuration change only and does not require gateway reachability when the
 local preference exists.
 
-Commands that accept an app-node target resolve targets in this order: explicit
-`--node`, app or workspace ownership, local `node:default`, then interactive
+Commands that accept an app-node target use this resolution order: explicit
+`--node`, app or workspace ownership, the local `node:default`, then interactive
 prompt or non-interactive failure.
 
-### Recovery From Doctor Warnings
+### Recovery from doctor warnings
 
 When `doctor --self` reports `node.local_default_invalid`, the stored local
 default points at a missing, unauthorized, or non-development app node. Doctor
@@ -107,6 +109,8 @@ and payload shapes.
 - App-node and gateway callers are rejected before prompts or side effects.
 
 ## Related Commands
+
+Use these commands to set up the nodes you can choose as a default.
 
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes

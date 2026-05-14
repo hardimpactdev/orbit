@@ -1,6 +1,6 @@
 # `orbit cf-cache-rule:remove`
 
-Remove the Orbit-managed Cloudflare cache rule for an app domain.
+Remove the Cloudflare cache rule that Orbit manages for an app domain.
 
 ## Usage
 
@@ -15,13 +15,15 @@ orbit cf-cache-rule:remove docs
 orbit cf-cache-rule:remove docs --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: Orbit app name whose Cloudflare cache rule should be removed.
 - `--force`: Confirm removal without an interactive prompt.
 - `--json`: Return the removal result in the shared JSON command envelope.
 
 ## What Happens
+
+Run `orbit cf-cache-rule:remove <app>` to remove the Orbit-managed Cloudflare cache rule for the app.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
 cache rule for the app's Cloudflare zone. It does not remove app domains, DNS
@@ -32,6 +34,8 @@ is supplied. Non-interactive use, including `--json`, requires `--force`.
 
 ## Output
 
+You will see a confirmation of the removed cache rule.
+
 Human output confirms the removed cache rule. JSON output returns
 `success.data.rule`.
 
@@ -41,9 +45,11 @@ Human output confirms the removed cache rule. JSON output returns
 - The caller is authorized for Cloudflare provider administration.
 - The gateway has a Cloudflare API token configured.
 - The app exists and has a real domain in a Cloudflare zone.
-- The Orbit-managed Cloudflare cache rule exists.
+- A Cloudflare cache rule managed by Orbit exists for the app.
 
 ## Related Commands
+
+Use these commands to add a cache rule back or flush the zone cache after removal.
 
 - [`orbit cf-cache-rule:add`](../6_cf-cache-rule-add/cf-cache-rule-add.md)
 - [`orbit cf-cache:flush`](../5_cf-cache-flush/cf-cache-flush.md)

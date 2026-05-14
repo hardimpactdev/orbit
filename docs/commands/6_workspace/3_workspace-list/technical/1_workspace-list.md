@@ -37,8 +37,7 @@ result, or run separate scoped invocations.
 
 ## Visibility Behavior
 
-Visibility is filtered at the gateway as set membership against gateway-owned
-workspace access policy. Callers receive only the workspaces their authenticated
+Visibility is filtered at the gateway against the workspace access policy that the gateway owns. Callers receive only the workspaces their authenticated
 identity is authorized to see.
 
 - An authorized caller whose visible set is empty receives an empty list
@@ -86,8 +85,7 @@ identity is authorized to see.
 | `expected` | Gateway configuration treats the workspace as the desired steady-state row; no setup or teardown action is pending. This does not certify node artifacts. |
 | `setup-pending` | Workspace is registered on the gateway but `workspace:setup` has not run. |
 
-Workspace removal deletes gateway workspace configuration before best-effort
-node cleanup starts. Removed workspaces disappear from registry-backed list
+Workspace removal deletes gateway workspace configuration, and then node cleanup starts on a best-effort basis. Removed workspaces disappear from registry-backed list
 output instead of moving through a retained removal lifecycle state.
 
 Lifecycle status is registry configuration only. It is rendered as

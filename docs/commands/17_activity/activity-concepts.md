@@ -5,7 +5,9 @@ logging contract, and the per-command requirements for emitting activity. It
 supports the activity command contracts; it does not override the
 [Architecture](../../ARCHITECTURE.md).
 
-## Domain And Scope
+## Domain and scope
+
+These terms define the scope of the activity command domain.
 
 - **Activity command domain:** Cross-cutting command domain for surfacing
   gateway activity history (`activity:list`, `activity:show`) and for the
@@ -19,6 +21,8 @@ supports the activity command contracts; it does not override the
   correlation id, description, and structured properties.
 
 ## Activity Model
+
+Each activity entry carries the following fields.
 
 - **Type:** Stable, human-readable action identifier. Conventionally
   `domain.verb` (`node.granted`, `app.created`, `proxy.route_stored`,
@@ -58,6 +62,8 @@ supports the activity command contracts; it does not override the
   fields are required.
 
 ## Correlation
+
+These terms describe how related activity entries are grouped.
 
 - **Correlation id:** UUID metadata identifier that groups related activity
   entries from one operator-initiated operation. It does not collapse those
@@ -101,7 +107,9 @@ through one shared contract.
   fail on their documented contracts, and activity emission errors are
   diagnostic.
 
-## What Is Logged
+## What is logged
+
+Activity covers the following categories of operations.
 
 - All gateway API endpoints that mutate state. Effect `write` for reversible
   mutations (creates, updates, additions, configuration changes); effect
@@ -141,7 +149,9 @@ The gateway controller's matching technical contract carries the same
 Activity Logging declaration. Command and controller declarations for the
 same logical action must agree.
 
-## Visibility And Authorization
+## Visibility and authorization
+
+These rules govern which activity rows a caller may read.
 
 - **Activity visibility:** Gateway-owned authorization filter that controls
   which activity rows and correlated entries a caller may read. Visibility
@@ -152,6 +162,8 @@ same logical action must agree.
   through filter probing.
 
 ## Boundaries
+
+These are the hard limits for the activity command domain.
 
 - **Activity-domain boundaries:** Activity commands own the doctrine for
   emission, the durable read surface, and the correlation contract. They do

@@ -4,7 +4,9 @@ This document defines deploy-command-domain vocabulary and invariants. It
 supports the deploy command contracts and the [app doctor](../5_app/app-doctor.md);
 it does not override the [Architecture](../../ARCHITECTURE.md).
 
-## Domain And Ownership
+## Domain and ownership
+
+These terms define the deploy command domain and what it owns.
 
 - **Deploy command domain:** The `deploy:*` command prefix. It manages
   production app deployment policy, deployment runs, run history, and captured
@@ -19,10 +21,11 @@ it does not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Steps
 
-- **Deployment step definition:** Gateway-assigned app-owned record containing a
-  title, shell command, order, timeout, and optional retention metadata.
+These terms describe the units of work that make up a deployment pipeline.
+
+- **Deployment step definition:** Record assigned by the gateway and owned by the app, containing a title, shell command, order, timeout, and optional retention metadata.
 - **Deployment step command:** Arbitrary shell script executed during
-  `deploy:run` from the gateway-tracked app source path on the app's owning
+  `deploy:run` from the app source path tracked by the gateway, on the app's owning
   node. Step commands may be single-line commands or multiline scripts.
 - **Deployment step order:** Positive integer ordering within a production
   app's deployment pipeline. Insertions and removals reorder neighboring steps
@@ -33,12 +36,12 @@ it does not override the [Architecture](../../ARCHITECTURE.md).
   prune versioned releases. It belongs only to the declaring step; Orbit does
   not have global app deployment retention policy or release state.
 
-## Runs And Logs
+## Runs and logs
 
-- **Deployment run:** Durable app-owned gateway history record created by
-  `deploy:run` before the first configured step executes.
-- **Deployment run context:** Per-run variable map generated once before the
-  first step executes. It includes reusable values such as `release`,
+These terms describe the runtime side of deployments — how runs are tracked and how their output is stored.
+
+- **Deployment run:** Durable history record created by the gateway and owned by the app, written by `deploy:run` before the first configured step executes.
+- **Deployment run context:** Variable map generated once before the first step executes. It includes reusable values such as `release`,
   `app_path`, `release_path`, `app_user`, and related app/node metadata.
   Step commands may reference context values with `{{ key }}` placeholders or
   `ORBIT_DEPLOY_*` environment variables.
@@ -54,10 +57,11 @@ it does not override the [Architecture](../../ARCHITECTURE.md).
 - **Deployment log:** Stored per-step deployment output for a previous run. It
   is captured gateway history, not live streaming output, process manager
   log output, or a node filesystem read.
-- **Latest deployment status:** App-owned gateway state recording the newest
-  deployment outcome used by app doctor when evaluating production app health.
+- **Latest deployment status:** Gateway state owned by the app that records the newest deployment outcome, used by app doctor when evaluating production app health.
 
-## Health And Boundaries
+## Health and boundaries
+
+These terms define what the deploy family owns and what belongs to other families.
 
 - **Deployment health:** Production app health signal derived from deployment
   pipeline validity and latest deployment status. It belongs to

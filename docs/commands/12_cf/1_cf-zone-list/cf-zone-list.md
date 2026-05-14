@@ -15,11 +15,13 @@ orbit cf-zone:list
 orbit cf-zone:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--json`: Return the zone list in the shared JSON command envelope.
 
 ## What Happens
+
+Run `orbit cf-zone:list` to list Cloudflare zones visible to the configured API token.
 
 `cf-zone:list` asks the gateway to read the Cloudflare zones available to the
 configured API token. It is an account connectivity and discovery command for
@@ -29,6 +31,8 @@ The command does not create Orbit app domains, DNS records, proxy routes, or
 doctor state.
 
 ## Output
+
+You will see a zone table with the Cloudflare zone ID, domain name, and provider status.
 
 Human output renders a zone table with Cloudflare zone ID, domain name, and
 provider status. JSON output returns `success.data.zones[]`.
@@ -40,6 +44,8 @@ provider status. JSON output returns `success.data.zones[]`.
 - The gateway has a Cloudflare API token configured.
 
 ## Related Commands
+
+Use these commands for DNS, cache, and SSL work after listing zones.
 
 - [`orbit cf-dns:list`](../2_cf-dns-list/cf-dns-list.md)
 - [`orbit cf-cache:flush`](../5_cf-cache-flush/cf-cache-flush.md)

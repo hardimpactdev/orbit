@@ -20,7 +20,7 @@ orbit schedule:logs backups --node=app-1 --run=19
 orbit schedule:logs backups --node=app-1 --lines=200
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: schedule slug.
 - `--app`: disambiguate an app-scoped schedule.
@@ -33,11 +33,11 @@ orbit schedule:logs backups --node=app-1 --lines=200
 
 ## What Happens
 
-`schedule:logs` reads the selected schedule and stored run output from gateway history. It does not SSH to nodes, inspect process manager (Supervisor) logs directly, repair drift, or mutate schedule configuration.
+Run `schedule:logs` when you need to inspect the output of a past schedule run. `schedule:logs` reads the selected schedule and stored run output from gateway history. It does not SSH to nodes, inspect process manager (Supervisor) logs directly, repair drift, or mutate schedule configuration.
 
 ## Output
 
-Human output renders run metadata followed by captured stdout and stderr.
+Pass `--json` to receive machine-readable output; omit it to see run metadata followed by captured stdout and stderr.
 
 JSON output returns the selected run and captured output.
 

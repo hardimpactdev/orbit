@@ -8,6 +8,10 @@ The scheduler evaluates due schedules at least once per minute, aligned to wall-
 
 ## Domain Rules
 
+These rules define how schedule commands behave and what they own.
+
+### Ownership and scope
+
 - The schedule command family owns the `schedule:*` command prefix.
 - The gateway is the source of truth for schedule definitions, targets, intervals, execution sources, enabled state, and run history.
 - Schedules may target an app, a node, or Orbit-owned maintenance work.
@@ -17,13 +21,17 @@ The scheduler evaluates due schedules at least once per minute, aligned to wall-
 - A Laravel scheduler is a normal app-scoped schedule that runs `php artisan schedule:run` every minute.
 - Scheduled work has exactly one execution source: an inline command or a managed script path.
 - Intervals use Orbit's portable interval language, such as `every 5 minutes`, `daily at 09:00`, `weekdays at 09:00`, or `weekly on monday at 09:00`.
+
+### Execution and reads
+
 - Schedule write commands mutate gateway configuration first.
 - The Orbit Scheduler on the target node observes the change on its next sync,
   claims due runs with a local schedule lock, and executes them.
 - There is no per-schedule node-side artifact to apply. The only applied
   artifact is the `orbit_scheduler` Supervisor program, which is applied once
   per node by node provisioning.
-- Schedule reads use gateway configuration and durable run history by default. Live scheduler reality belongs to `doctor --family=schedule`.
+- Schedule reads use gateway configuration and durable run history by default.
+- Live scheduler reality belongs to `doctor --family=schedule`.
 - The schedule family does not adopt arbitrary observed processes as schedules. Adoption is reserved for explicitly selected runs reported by the Orbit Scheduler that match an existing or operator-supplied schedule shape.
 
 ## Schedule JSON Entity
@@ -83,6 +91,8 @@ items.
 | `last_run` | object \| null | Latest durable run history when available. |
 
 ## Commands
+
+Use these commands to manage schedules across the full lifecycle.
 
 1. [`orbit schedule:add`](1_schedule-add/schedule-add.md)
 2. [`orbit schedule:list`](2_schedule-list/schedule-list.md)

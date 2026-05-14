@@ -84,7 +84,7 @@ filesystem reality stays a doctor-owned convergence concern.
 ### App Root Resolution Rules
 
 `app:root` is convergent and idempotent. It always re-applies application so
-running it on an already-managed app refreshes node artifacts even when configuration
+running it on an app that is already managed refreshes node artifacts even when configuration
 is unchanged.
 
 1.  **Write Configuration:** Update the `document_root` field in the application's
@@ -148,7 +148,7 @@ reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.
 
 `next_command` for each warning is `doctor --fix --family=app --app=<app> --restore`.
 
-`app.enactment_failed` and other ad-hoc command-specific drift codes are
+`app.enactment_failed` and other drift codes specific to this command are
 not used; the app family already owns the precise vocabulary for FPM and
 runtime configuration drift.
 
@@ -162,7 +162,7 @@ runtime configuration drift.
   here.
 - Repairing drift caused by a partial success of `app:root` belongs to
   `doctor --fix --family=app --restore`.
-- Filesystem-level document root reality (`app.root_outside_path`,
+- The filesystem reality of the document root (`app.root_outside_path`,
   `app.root_missing`) is doctor-owned and never duplicated as `app:root`
   input validation.
 

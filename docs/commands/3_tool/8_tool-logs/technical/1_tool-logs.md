@@ -31,7 +31,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Verifies the tool declares a log source.
 - Reads finite logs or follows the log stream through the gateway.

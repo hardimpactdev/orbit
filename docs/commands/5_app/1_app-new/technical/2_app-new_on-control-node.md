@@ -2,7 +2,7 @@
 
 [Back to technical contract](1_app-new.md)
 
-This is the standard caller path for `app:new`. The CLI on a control-role peer
+This is the standard caller path for `app:new`. The CLI on a peer with the control role
 gathers input, calls the gateway API, and renders the progress tree or JSON
 response.
 
@@ -31,5 +31,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppNewOnControlNodeContractTest.php` | Control-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH apply routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct app-node SSH from the control caller. |
+| `tests/Feature/Commands/Apps/AppNewOnControlNodeContractTest.php` | Control-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH apply routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct app-node SSH. |
 | `tests/E2E/Ephemeral/AppNewControlForwardingTest.php` | Real-environment smoke coverage proving `app:new` invoked from a control node forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |

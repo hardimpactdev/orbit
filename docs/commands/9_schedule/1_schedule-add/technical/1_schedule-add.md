@@ -50,17 +50,20 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Accepts exactly one execution source: `--command` or `--script`.
 - Stores inline commands as execution type `command`.
 - Stores managed script paths as execution type `script`.
-- Does not create app process definitions, persistent services, or other runtime units. The Orbit Scheduler executes the schedule each minute it is due; no per-schedule node-side artifact is applied.
+- Does not create app process definitions, persistent services, or other runtime units.
+- The Orbit Scheduler executes the schedule each minute it is due.
+- No per-schedule node-side artifact is applied.
 
 ### Pickup Rules
 
 - Writes gateway configuration before notifying the target node.
 - Confirms the target node's Orbit Scheduler is registered and the process manager (Supervisor) is reachable.
-- Reports `schedule.scheduler_unreachable` when gateway configuration was written but the scheduler is not currently reachable. The schedule remains valid configuration and runs on the next successful scheduler tick that reaches the gateway.
+- Reports `schedule.scheduler_unreachable` when gateway configuration was written but the scheduler is not currently reachable.
+- The schedule remains valid configuration and runs on the next successful scheduler tick that reaches the gateway.
 
 ### Scope Boundaries
 
-`schedule-add` must not create apps, nodes, workspaces, tools, proxy routes, firewall rules, DNS records, or scheduler-side artifacts beyond gateway configuration. Drift detection belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-add` must not create apps, nodes, workspaces, tools, proxy routes, firewall rules, DNS records, or any artifacts on the scheduler side that go beyond what gateway configuration tracks. Drift detection belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 

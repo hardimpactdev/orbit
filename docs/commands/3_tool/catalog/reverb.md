@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the Reverb tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `reverb` |

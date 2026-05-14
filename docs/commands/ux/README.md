@@ -12,6 +12,8 @@ primitives are explicitly called out below.
 
 ## Cross-Cutting Rules
 
+These rules apply to all renderer and input-mode docs in this tree.
+
 - Lists default to read-only [`table`](lists/table.md). Switch to
   [`datatable`](lists/data-table-prompt.md) only when row selection triggers
   a follow-up command action, as in `orbit profile`.
@@ -26,6 +28,8 @@ primitives are explicitly called out below.
   `validation_failed`.
 
 ## Index
+
+Each family links to a selection guide and individual primitive pages.
 
 | Family | Pages |
 | --- | --- |

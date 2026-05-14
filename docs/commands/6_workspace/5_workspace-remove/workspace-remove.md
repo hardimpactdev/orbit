@@ -10,6 +10,8 @@ is no longer needed or is being reset.
 
 ## Usage
 
+Run this command to tear down a workspace and its owned artifacts.
+
 ```bash
 orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
 ```
@@ -46,7 +48,7 @@ orbit workspace:remove feature-api --keep-files
 orbit workspace:remove feature-api --force
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: workspace name. Optional when running from inside a registered
   workspace directory.
@@ -61,6 +63,8 @@ orbit workspace:remove feature-api --force
 - `--json`: Output JSON.
 
 ## Behavior Summary
+
+The following steps describe the removal sequence in order.
 
 `workspace:remove` performs gateway-orchestrated removal of a workspace. The
 gateway owns the workspace registry record and applies artifact cleanup on the
@@ -90,6 +94,8 @@ not removed by `workspace:remove`. Express any database cleanup as a
 workspace teardown step.
 
 ## Output Summary
+
+The output format depends on whether `--json` is passed.
 
 - **Human:** Framed destructive confirmation followed by a step tree. Drift
   after Phase A renders as a footer with one line per affected family doctor.

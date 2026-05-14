@@ -11,19 +11,18 @@ The node family owns these facts:
   platform-version identifier, environment for app-node records, host/endpoint
   metadata, WireGuard address, and `node_access` grant integrity;
 - local caller identity: presented WireGuard identity, local gateway
-  endpoint/trust config, and gateway-managed app-node gateway-client
-  endpoint/trust artifacts;
+  endpoint/trust config, and gateway-client endpoint and trust artifacts
+  that the gateway manages on the app node;
 - node connectivity: gateway API reachability for CLI callers and
   gateway-owned SSH reachability for app nodes;
 - node bootstrap artifacts: gateway runtime readiness, app-node minimum Orbit
-  runtime, app-node gateway-client endpoint/trust artifacts, node identity
-  artifacts, role bootstrap network policy, and gateway-managed WireGuard
-  peers;
+  runtime, gateway-client endpoint and trust artifacts on the app node, node identity
+  artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
 - node-related defaults: development app-node TLDs, gateway development DNS
   mappings for those TLDs, gateway development DNS resolver safety, local
-  `node:default` preferences when `--self` inspects the current CLI, gateway-
-  owned node-level PHP CLI defaults, and gateway-owned node-level agent IDE
-  defaults.
+  `node:default` preferences when `--self` inspects the current CLI, the node-level
+  PHP CLI defaults that the gateway owns, and the node-level agent IDE
+  defaults that the gateway owns.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -48,7 +47,7 @@ The node probe reads gateway node records and checks these layers:
    gateway certificate authority, and receive their node identity from
    `/api/me`.
 5. **WireGuard identity:** each active node record has matching
-   gateway-managed WireGuard peer material, and the peer address equals the
+   WireGuard peer material that the gateway manages, and the peer address equals the
    recorded WireGuard address.
 6. **Platform reality:** gateway and app nodes report supported Ubuntu platform
    identifiers through SSH. The local control node reports a supported macOS or
@@ -62,7 +61,7 @@ The node probe reads gateway node records and checks these layers:
    and node identity artifacts needed for the gateway to apply other state
    families over SSH.
 10. **Role bootstrap network policy:** gateway and app nodes have the
-    node-owned baseline network policy for their role and environment. This
+    baseline network policy that the node owns for its role and environment. This
     verifies bootstrap reachability policy only, including that SSH management
     traffic is not publicly exposed after bootstrap and instead uses the
     Orbit/WireGuard path. Editable operator firewall rules belong to
@@ -70,19 +69,18 @@ The node probe reads gateway node records and checks these layers:
 11. **Development TLD readiness:** development app nodes have a `nodes.tld`
    value, the app node's local TLD default matches the node record, and the
    gateway maps `*.{nodes.tld}` to the node's WireGuard address through the
-   node-family development DNS configuration model. The gateway development DNS
+   development DNS configuration model for the node family. The gateway development DNS
    resolver must be WireGuard-reachable and must not expose a public open
    resolver. Production app nodes, gateways, and control nodes have no
    development TLD mapping.
 12. **Node-related defaults:** local `node:default` preferences point at
    active, authorized development app nodes when `--self` inspects the CLI's
-   local configuration, node-level PHP CLI defaults point at installed
-   supported PHP runtimes, and node-level agent IDE defaults point at
+   local configuration, PHP CLI defaults at the node level point at installed
+   supported PHP runtimes, and agent IDE defaults at the node level point at
    supported adapters.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
-compare, repair, or adopt public address metadata until a provider-specific
-detection contract exists.
+compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
 
 The SSH/bootstrap endpoint and gateway endpoint are operator-supplied
 connectivity facts. Node doctor may verify that an endpoint works for the node
@@ -90,6 +88,8 @@ path that uses it, but it does not infer public IPv4/IPv6 metadata from that
 endpoint.
 
 ## Node Issue Codes
+
+Each code below identifies a specific kind of node-family drift that `doctor --family=node` may report.
 
 | Code | Detected when |
 | --- | --- |
@@ -117,6 +117,8 @@ endpoint.
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
 ## Node Fix Map
+
+This table describes what `doctor --fix --family=node --restore` does for each resolvable issue code.
 
 | Code | `doctor --fix --family=node --restore` behavior |
 | --- | --- |
@@ -154,10 +156,12 @@ such as `node:new`, `node:update`, `node:grant`, `node:revoke`, and
 
 ## Node Adopt Map
 
+This table describes what `doctor --family=node --adopt` does for each adoptable issue code.
+
 | Code | `doctor --family=node --adopt` behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer only when a selected active app node's non-secret identity artifact matches gateway configuration and live WireGuard reality proves exactly one allowed address. Private key material is not read or adopted. |
-| `node.wireguard_peer_extra` | Attach the peer only when the selected scope names a compatible already-provisioned node identity, the registry peer public key is present in live WireGuard reality, and that live peer has exactly one unambiguous allowed address. |
+| `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer only when the selected active app node has a non-secret identity artifact that matches gateway configuration and live WireGuard reality proves exactly one allowed address. Private key material is not read or adopted. |
+| `node.wireguard_peer_extra` | Attach the peer only when the selected scope names a node identity that is already provisioned and compatible, the registry peer public key is present in live WireGuard reality, and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
 | `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
@@ -167,8 +171,8 @@ unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
 tools, firewall rules, apps, workspaces, processes, proxy routes, schedules, or
 deployments.
 
-Active app-node missing-peer adoption requires non-secret node identity artifact
-proof from the target host. That proof must bind the selected node name, role,
+Adoption of a missing peer on an active app node requires proof of non-secret node identity
+from the target host. That proof must bind the selected node name, role,
 local role setting, supported platform, live interface public key, and
 WireGuard address to gateway configuration and live WireGuard reality. Unknown-host
 materialization belongs to explicit node-membership flows such as `node:new`,

@@ -15,8 +15,7 @@
 - The target node exists in gateway node configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
-  installed Orbit extensions through the gateway-side extension registration
-  surface. `none` is a reserved node-scope input token that clears the node
+  installed Orbit extensions through the extension registration surface on the gateway. `none` is a reserved node-scope input token that clears the node
   default; it is not an adapter in the registry.
 
 ## Signature
@@ -33,7 +32,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
-| `agent_ide` | `[agent_ide]` | Always. | Never. | None. | Must be `none` or appear in the gateway-owned adapter registry. Core adapter names: `opencode`, `polyscope`. Adapters supplied by installed Orbit extensions are accepted only after the extension has registered them with the gateway. `none` is a reserved node-scope input token that clears the node default; it is not an adapter. `inherit` is invalid at node scope because nodes are the root of the agent IDE inheritance chain. |
+| `agent_ide` | `[agent_ide]` | Always. | Never. | None. | Must be `none` or appear in the gateway-owned adapter registry. Core adapter names: `opencode`, `polyscope`. Extension-registered adapters are accepted only after the extension registers them with the gateway. `none` clears the node default and is not an adapter. `inherit` is invalid at node scope. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -108,7 +107,7 @@ path in `app:agent-ide`.
 `node:agent-ide` must not:
 - Create an agent IDE session.
 - Grant node access or alter node transport.
-- Override app-level agent IDE settings.
+- Override the agent IDE settings configured at the app level.
 - SSH into the target node.
 - Trigger downstream session restart or app-level invalidation.
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
@@ -148,7 +147,7 @@ Emitted through the cross-cutting Loggable contract. See
 
 ## Doctor Relationship
 
-- `doctor --family=node` verifies node-owned agent IDE default configuration
+- `doctor --family=node` verifies the agent IDE default configuration that the node owns
   when the adapter supports a non-destructive check.
 - `node:agent-ide` is the explicit command for setting or clearing the node
   default. `doctor --family=node --restore` does not change the adapter; it only
@@ -165,7 +164,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node caller denial before prompts or side effects, gateway forwarding for control callers, absence of downstream warning payloads, and read-only guarantees (no SSH, no session creation). |
+| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node denial, control-caller gateway forwarding, no downstream warning payloads, and read-only guarantees (no SSH, no session creation). |
 
 Input-mode-specific test mapping lives in:
 

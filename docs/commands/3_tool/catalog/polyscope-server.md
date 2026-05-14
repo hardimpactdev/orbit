@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the Polyscope Server tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `polyscope-server` |
@@ -35,7 +37,7 @@ completed remotely, `tool:install polyscope-server` may report a manual
 `tool:credentials`.
 
 `tool:update polyscope-server` runs Polyscope Server's standalone updater and
-then restarts the Orbit-managed user systemd service.
+then restarts the user systemd service that Orbit manages.
 
 ## Doctor Relationship
 

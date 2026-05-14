@@ -23,7 +23,7 @@ orbit app:agent-ide my-app none --force
 orbit app:agent-ide my-app polyscope --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: app name or hostname. Name match wins; the hostname match is consulted
   only when no name match exists.
@@ -39,6 +39,8 @@ orbit app:agent-ide my-app polyscope --json
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `app:agent-ide` to set, clear, or disable the agent IDE adapter for an app.
 
 `app:agent-ide` writes the app-default agent-IDE adapter into gateway app
 configuration.
@@ -103,10 +105,12 @@ payload shape.
 
 ## Related Commands
 
+Use these commands alongside `app:agent-ide` to inspect or prune app configurations.
+
 - [`app:show`](../4_app-show/app-show.md) — show app details
 - [`app:prune`](../7_app-prune/app-prune.md) — explicit app-level cleanup
 - [`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) — set node-level default
-- [`doctor --family=app`](../app-doctor.md) — verify app-owned agent IDE configuration
+- [`doctor --family=app`](../app-doctor.md) — verify the agent IDE configuration owned by the app
 
 ## Technical Contract
 

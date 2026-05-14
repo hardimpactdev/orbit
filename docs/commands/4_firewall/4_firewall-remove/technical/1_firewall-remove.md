@@ -34,14 +34,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Firewall Configuration And Cleanup Rules
+### Firewall configuration and cleanup rules
 
 - Resolves a firewall-eligible target node.
 - Reads gateway firewall-rule configuration for the selected node and name.
 - Requires destructive consent before side effects.
 - Removes the managed backend firewall rule through the gateway when configuration exists.
 - Removes gateway firewall-rule configuration after backend cleanup succeeds.
-- If backend cleanup fails, Orbit keeps gateway firewall-rule configuration and reports doctor/manual recovery instead of forgetting an expected rule while node reality may still contain it.
+- If backend cleanup fails, Orbit keeps gateway firewall-rule configuration and reports doctor/manual recovery.
+- Orbit does not forget an expected rule while node reality may still contain it.
 - Succeeds idempotently when the rule is already absent from gateway configuration.
 
 ### Scope Boundaries

@@ -43,8 +43,8 @@ The forwarded request includes:
 - the authenticated control-caller WireGuard identity.
 
 The gateway authenticates the caller through WireGuard identity and authorizes
-the request through gateway-owned node access policy. Because `node:remove`
-mutates gateway-owned fleet configuration, the control-role caller must have
+the request through the node access policy it owns. Because `node:remove`
+mutates fleet configuration that the gateway owns, the control-role caller must have
 access to the gateway node. Access to the target node alone does not authorize
 the removal write.
 
@@ -94,4 +94,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded request payload, gateway-node access authorization, self-removal detection through authenticated WireGuard identity, destructive consent coverage for self-removal and normal removal, no local-settings cleanup on self-removal, gateway-unavailable failure, authorization failure, and result rendering. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS, no SSH-to-gateway path, forwarded payload, gateway-node access authorization, self-removal detection via WireGuard identity, destructive consent for self-removal and normal removal, no local-settings cleanup on self-removal, gateway-unavailable failure, authorization failure, and result rendering. |

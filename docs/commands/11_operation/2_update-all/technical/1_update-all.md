@@ -34,7 +34,7 @@ options are optional.
 1. Select the output renderer.
 2. Update the caller's local Orbit checkout.
 3. Call the gateway to authorize the fleet update and resolve selected non-local managed Orbit installations from active gateway node configuration.
-4. Start the gateway-driven fleet update sequence.
+4. Start the fleet update sequence that the gateway drives.
 
 No input-mode-specific contracts are required. The command has no required
 fields and does not prompt.
@@ -45,7 +45,8 @@ fields and does not prompt.
 
 - Include the caller's local Orbit checkout.
 - Include active non-local managed Orbit installations from gateway node configuration, subject to the role exclusion below.
-- **Exclude every node whose role is `control`, regardless of caller.** Control nodes are operator workstations. They are updated locally through [`orbit update`](../../1_update/update.md) on each workstation and are never remote update targets of `update:all`. This applies even when gateway configuration records reachability metadata for a control node.
+- **Exclude every node whose role is `control`, regardless of caller.** Control nodes are operator workstations that update locally through [`orbit update`](../../1_update/update.md) on each workstation.
+- Never select a control node as a remote update target of `update:all`, even when gateway configuration records reachability metadata for it.
 - Exclude inactive, removed, or unknown node records.
 - Exclude the caller-local installation from the gateway-selected installation list. The local checkout is updated once through the local target.
 - Exclude nodes whose Orbit installation path is not known to gateway configuration.
@@ -106,8 +107,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 - `update:all` changes Orbit installations.
 - It does not verify state-family drift or runtime readiness.
-- Run `doctor --family=<family>` after updates when the operator needs
-  convergence verification for a specific family.
+- Run `doctor --family=<family>` after updates to verify convergence for a specific family.
 - A remote update failure may create node-family drift if a node is left on a
   different Orbit version; node doctor owns any later reachability or readiness
   diagnosis once its contract is converted in this repo.
@@ -132,7 +132,7 @@ Primary existing test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap implementation coverage for local plus registered-node update process execution. Must be expanded to cover gateway denial of app-node peers, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
+| `tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap coverage for local plus registered-node update execution. Expand to cover: gateway denial of app-node peers, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
 
 Required split contract tests:
 

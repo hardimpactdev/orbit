@@ -22,7 +22,7 @@ top-level product docs.
 - Deployment health belongs to `doctor --family=app`; there is no deploy
   doctor family.
 
-## Schema And Model Pattern
+## Schema and model pattern
 
 - `deploy_steps` store ordered app-owned step definitions: title, command,
   timeout, and optional retention metadata.

@@ -65,7 +65,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`deploy:history` reads app-owned deployment history only. It does not own a
+`deploy:history` reads deployment history that the app owns. It does not own a
 doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) owns production
 app health checks that may incorporate latest deployment status through
 `app.latest_deployment_failed` and `app.deployment_run_stuck`.

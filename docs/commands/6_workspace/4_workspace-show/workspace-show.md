@@ -2,22 +2,15 @@
 
 [Back to Workspaces commands.](../README.md)
 
-**Purpose:** Show workspace registry configuration and runtime expectations.
+Show workspace registry configuration and runtime expectations.
 
-**Description:** Provides a detailed view of a workspace's gateway-tracked
-configuration. This includes its parent app and owning node, branch, path and
+`workspace:show` provides a detailed view of a workspace's gateway-tracked
+configuration, including its parent app and owning node, branch, path and
 canonical URL, runtime expectations (effective PHP version and inheritance
-source, FPM pool, derived hostname), effective agent IDE resolution,
-inherited process definitions, the workspace-owned proxy route, and a summary
-of the most recent setup run.
-
-This command is a **registry-only read**. It does not perform live probes on
-app nodes. To verify current workspace reality and repair drift, use
-[`doctor --family=workspace`](../workspace-doctor.md).
-
-**Owner:** `workspace`.
-
-**Effects:** `read`.
+source, FPM pool, derived hostname), effective agent IDE resolution, inherited
+process definitions, the workspace-owned proxy route, and a summary of the most
+recent setup run. This command is a registry-only read; it does not perform live
+probes on app nodes.
 
 ## Usage
 
@@ -25,7 +18,7 @@ app nodes. To verify current workspace reality and repair drift, use
 orbit workspace:show [name] [--app=<app>] [--json]
 ```
 
-### Arguments & Options
+## Arguments and options
 
 - `name`: The workspace name. Optional when the current working directory
   resolves to a known workspace path.
@@ -36,17 +29,12 @@ orbit workspace:show [name] [--app=<app>] [--json]
 
 ## Behavior Summary
 
-- Reads workspace configuration and related gateway history from the gateway
-  database.
-- Displays the workspace identity (name, parent app, branch, path, URL),
-  owning node, runtime expectations with PHP version inheritance source,
-  effective agent IDE resolution, inherited processes, the workspace-owned
-  proxy route, and the latest setup run summary.
-- Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces
-  and `--app` is missing in non-interactive mode.
-- Fails when the workspace cannot be resolved from the registry.
-- **Registry-only**: Does not SSH to app nodes, probe filesystems, check live
-  process status, or verify live proxy routes.
+Run `workspace:show` to inspect a workspace's gateway configuration without connecting to the app node.
+
+- **Registry Read**: Reads workspace configuration and related gateway history from the gateway database.
+- **Display**: Shows the workspace identity (name, parent app, branch, path, URL), owning node, runtime expectations with PHP version inheritance source, effective agent IDE resolution, inherited processes, the workspace-owned proxy route, and the latest setup run summary.
+- **Ambiguous Name**: Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces and `--app` is missing in non-interactive mode.
+- **Registry-Only**: Does not SSH to app nodes, probe filesystems, check live process status, or verify live proxy routes.
 
 ## Examples
 
@@ -68,15 +56,13 @@ orbit workspace:show feature-docs --app=docs
 orbit workspace:show feature-docs --app=docs --json
 ```
 
-## Related Commands
+## Related
 
 - [`orbit workspace:list`](../3_workspace-list/workspace-list.md): List all workspaces.
 - [`orbit workspace:history [name]`](../6_workspace-history/workspace-history.md): View full setup/teardown history.
 - [`orbit workspace:log [run]`](../7_workspace-log/workspace-log.md): View logs for a specific lifecycle run.
 - [`doctor --family=workspace`](../workspace-doctor.md): Verify and repair live workspace reality.
 
-## Technical Contract
+***
 
-See the [Canonical Technical Contract](technical/1_workspace-show.md) for
-signature details, input resolution, behavior invariants, and JSON payload
-shapes.
+**Technical Contract:** [technical/1_workspace-show.md](technical/1_workspace-show.md)

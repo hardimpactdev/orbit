@@ -22,7 +22,7 @@ orbit tool:reconfigure opencode-server --app=docs --password=<new-password>
 orbit tool:reconfigure redis --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from reconfigurable tools visible on the resolved node.
@@ -44,7 +44,7 @@ Target context is required when neither `--node`, `--app`, nor local
 3. Runs the tool definition's setup/configuration action through the gateway.
 4. Updates generated secrets or backend config only when the tool definition
    says reconfiguration owns those values.
-5. Updates tool-owned service endpoint configuration only when the tool definition
+5. Updates service endpoint configuration owned by the tool only when the tool definition
    owns that endpoint.
 6. Preserves the expected tool version.
 7. Reports the reconfiguration result.
@@ -53,6 +53,8 @@ The command does not create a tool row for an unmanaged observed tool. Use
 explicit `doctor --fix --family=tool --adopt` semantics for supported adoption.
 
 ## Output
+
+Use `--json` to get a machine-readable result; omit it for a progress tree.
 
 Human output is a progress tree for setup/configuration steps.
 
@@ -70,6 +72,8 @@ JSON output returns the tool entity and action result under
   primitive.
 
 ## Related Commands
+
+Use these commands for related tool configuration and lifecycle actions.
 
 - [`tool:update`](../9_tool-update/tool-update.md) - change intended version
 - [`tool:reload`](../11_tool-reload/tool-reload.md) - reload configuration without full restart

@@ -25,10 +25,10 @@ orbit app:register my-app
 orbit app:register my-app --domain=example.com
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: The name of the app.
-- `--path=<path>`: The absolute path to the app on the target node. Required when adopting an app path not yet known to Orbit.
+- `--path=<path>`: The absolute path to the app on the target node. Required when adopting a path not yet known to Orbit.
 - `--node=<name>`: The target app node. Defaults to the existing app owner, the local default development node, or an interactive prompt.
 - `--root=<path>`: The document root relative to the app path. Default: `public`.
 - `--php-version=<version>`: The app PHP-FPM version to store in gateway app
@@ -39,7 +39,7 @@ orbit app:register my-app --domain=example.com
 - `--json`: Output JSON.
 
 `--repo` is not accepted. In the current converted app command surface,
-repository URL is creation-time metadata captured only by
+repository URL is metadata that is captured only at creation time by
 [`app:new`](../1_app-new/app-new.md). `app:register` re-applies management for
 an existing path; it never clones, re-clones, mutates app source, or changes
 repository metadata. Re-registering an existing app preserves its stored
@@ -48,6 +48,8 @@ repository value. Adopting an unmanaged path through `app:register` stores
 
 ## What Happens
 
+Run `app:register` when you need to install, re-apply, or retry Orbit management for an app.
+
 `app:register` ensures that an application is correctly recorded in the Orbit
 gateway and that its runtime artifacts are properly applied on the target app
 node.
@@ -55,16 +57,15 @@ node.
 1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development app node.
 2. **Registration/Adoption**: Writes the app's configuration to the gateway database. If the path already exists but isn't managed by Orbit, it is "adopted."
 3. **Apply**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration, then records app-owned proxy route configuration for the `proxy` family to converge.
-4. **Production Activation**: If a domain is supplied, it performs DNS and TLS checks to activate production routing. If DNS or TLS prerequisites are pending, the registration still succeeds and the inactive domain is reported as a non-fatal warning; retry the same command once propagation completes.
+4. **Production Activation**: If a domain is supplied, it performs DNS and TLS checks to activate production routing. When DNS or TLS prerequisites are pending, the registration still succeeds and the inactive domain is reported as a non-fatal warning. Retry the same command once propagation completes.
 
-This command is idempotent. Re-running on an already-managed app re-renders
-artifacts and verifies command-owned application; if nothing changes, the command
-still succeeds. The result reports which path the run took (`registered`,
-`adopted`, or `converged`) so operators and agents can see what changed.
+This command is idempotent. Re-running on an already-managed app re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, or `converged`) so operators and agents can see what changed.
 
 ## Output
 
-- **Human**: A multi-step progress tree showing each phase of the registration and apply process, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
+You will receive output in the format determined by the presence of `--json`.
+
+- **Human**: A progress tree showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
 - **JSON**: A `success` envelope with `success.data.result.action` and the app's registry data, including a durable `adopted` flag set when the path was first adopted via registration.
 
 ## Requirements
@@ -75,6 +76,8 @@ still succeeds. The result reports which path the run took (`registered`,
 - The supplied `--path` on the resolved node must not already be owned by a different registered app. A path collision fails before side effects with `app.path_collision`.
 
 ## Related Commands
+
+Use these commands alongside `app:register` for common app management workflows.
 
 - [`orbit app:new`](../1_app-new/app-new.md)
 - [`orbit app:list`](../3_app-list/app-list.md)

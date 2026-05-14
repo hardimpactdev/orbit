@@ -46,8 +46,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Verify backend identity before changing stored credentials.
 - Replace the gateway VPN backend web UI password with the new password.
 - Invalidate existing backend admin sessions when supported by the backend.
-- Update Orbit-managed gateway-local credential storage so later VPN commands
-  can authenticate with the new password.
+- Update the Orbit-managed credential storage on the gateway so later VPN
+  commands can authenticate with the new password.
 - Never print the new password in human output, JSON output, progress output,
   logs, or error metadata.
 

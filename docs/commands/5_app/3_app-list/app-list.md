@@ -26,13 +26,15 @@ orbit app:list --environment=production
 orbit app:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--node`: filter by owning node name.
 - `--environment`: filter by environment (`development` or `production`).
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `app:list` to read the app registry from the gateway and filter it by node or environment.
 
 `app:list` reads the app registry from the gateway and applies the requested
 filters:
@@ -69,6 +71,8 @@ exact payload shape.
 - The caller identity is authorized to read the app registry.
 
 ## Related Commands
+
+Use these commands alongside `app:list` to manage and inspect apps.
 
 - [`app:new`](../1_app-new/app-new.md) — create or clone an app
 - [`app:show`](../4_app-show/app-show.md) — inspect a single app's details

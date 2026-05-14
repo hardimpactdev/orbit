@@ -28,7 +28,7 @@ This command follows the shared
 ## Input Resolution
 
 1. Select the output renderer.
-2. Read Orbit-managed local resolver state.
+2. Read the local resolver state that Orbit manages.
 
 No input-mode-specific contracts are required. The command has no prompts or
 required arguments.
@@ -37,10 +37,9 @@ required arguments.
 
 ### Local Resolver Read Rules
 
-- Read only Orbit-managed caller-local resolver overrides.
+- Read only the resolver overrides that Orbit manages on the caller machine.
 - Linux and macOS callers are supported for read-only inspection.
-- Return an empty successful result when no Orbit-managed local resolver
-  overrides exist.
+- Return an empty successful result when no resolver overrides managed by Orbit exist.
 - Include the TLD, target IP address, source, resolver backend, and status for
   each entry when available.
 - Report resolver backend status only from local configuration or local backend
@@ -52,7 +51,7 @@ required arguments.
 - Mutate local resolver configuration.
 - Query or mutate gateway configuration, node records, app routes, proxy routes,
   Cloudflare records, or public DNS.
-- Inspect gateway-owned development DNS mappings.
+- Inspect the development DNS mappings that the gateway owns.
 - Repair local resolver drift.
 
 ## Renderer Contracts
@@ -73,8 +72,8 @@ No local DNS overrides is success with an empty result.
 ## Doctor Relationship
 
 - `dns:list` reads caller-local resolver overrides.
-- `doctor --family=node --self` verifies node-family development TLD readiness
-  and gateway-owned development DNS mappings. It is not a local DNS listing
+- `doctor --family=node --self` verifies development TLD readiness for the node family
+  and the DNS mappings that the gateway owns. It is not a local DNS listing
   command.
 
 ## Activity Logging

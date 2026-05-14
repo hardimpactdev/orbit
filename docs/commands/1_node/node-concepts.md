@@ -6,6 +6,8 @@ override the [Architecture](../../ARCHITECTURE.md).
 
 ## Role Vocabulary
 
+Each term below has a precise meaning in the node command family.
+
 - **Node:** A gateway-owned fleet member with a stable name, role, platform,
   identity, reachability metadata, and access policy.
 - **Gateway:** Node that owns durable Orbit state, the typed API, WireGuard
@@ -24,6 +26,8 @@ override the [Architecture](../../ARCHITECTURE.md).
 
 ## Role Platform Support
 
+Each role is supported on a specific set of host platforms.
+
 | Role | Supported platforms |
 | --- | --- |
 | `control` | macOS, Ubuntu |
@@ -35,22 +39,26 @@ observed host platform is supported for the node's role before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
-## Identity And Onboarding
+## Identity and onboarding
 
-- **Node identity:** The gateway-owned node record plus its WireGuard peer
+These terms describe how nodes join the fleet and prove their identity to the gateway.
+
+- **Node identity:** The node record that the gateway owns, plus its WireGuard peer
   identity, assigned WireGuard address, role, and node name.
 - **First-gateway bootstrap:** The one allowed no-gateway path. A control node
-  provisions the first gateway over SSH, creates the initiating control-node
+  provisions the first gateway over SSH, creates the initiating control node
   identity, installs local trust and gateway config, and verifies gateway API
   access.
 - **Control-node enrollment:** A two-machine path: the gateway mints the
-  control-node identity through `node:new --role=control`; the control machine
+  control node identity through `node:new --role=control`; the control machine
   installs that WireGuard identity and runs `gateway:add`.
-- **Compatible existing node:** An active gateway-known node whose role,
-  identity, host, app-node environment, and development TLD match the resolved
+- **Compatible existing node:** An active node whose role is known to the gateway
+  and whose role, identity, host, app-node environment, and development TLD match the resolved
   command input for the requested path.
 
-## Transport And Authority
+## Transport and authority
+
+These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from control nodes, app-node CLI
   clients, or the gateway-local CLI to the gateway API.
@@ -63,6 +71,8 @@ platform checks; platform drift belongs to `doctor --family=node`.
 
 ## Access Policy
 
+These terms define the relationship model for node access grants.
+
 - **Consuming node:** The node that receives permission to make an Orbit
   request.
 - **Serving node:** The node that may be accessed by that request.
@@ -72,26 +82,28 @@ do not grant SSH, and do not replace WireGuard authentication.
 
 ## Development DNS Mapping
 
+These terms describe how the gateway maintains DNS resolution for development app nodes.
+
 - **Gateway-owned development DNS mapping:** Node-family gateway configuration
   and gateway-local resolver reality that maps `*.{nodes.tld}` for an active
-  development app node to that node's WireGuard address.
+  development app node to that node's WireGuard address. The gateway owns this mapping.
 - **Development DNS configuration model:** Derived from the active app-node row.
   A mapping exists only when the node row is an active development app node,
   `nodes.tld` is non-empty, and the node row has a non-empty WireGuard address.
   The canonical domain is `*.{nodes.tld}` and the canonical target is the
   node's WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that
-  converges or removes gateway-local development DNS resolver artifacts from
+  converges or removes resolver artifacts on the gateway from
   the derived configuration model. It is used by app-node provisioning, app-node
-  adoption/materialization, node removal, and `doctor --family=node --restore`.
+  adoption and materialization, node removal, and `doctor --family=node --restore`.
 - **Development DNS probe:** Internal node-family gateway service that reads
   gateway-local resolver reality for derived development DNS configuration and
   reports node-family drift when the mapping is absent, points at another
   target, or is publicly exposed.
 
 Development DNS mappings are not a public `dns:*` command surface and do not
-create a `dns` state family. The `dns:*` commands own caller-local resolver
-overrides only. The node family owns the gateway mapping lifecycle because it is
+create a `dns` state family. The `dns:*` commands own only the resolver overrides
+local to the caller. The node family owns the gateway mapping lifecycle because it is
 part of development app-node readiness.
 
 ## Node Family Boundaries

@@ -38,7 +38,7 @@ The pieces fit together like this:
 
 The sections below walk through each layer of the stack in the same order as the table.
 
-## Technology Stack
+## Technology stack
 
 | Layer | Current implementation |
 |---|---|
@@ -65,7 +65,7 @@ Orbit is a single Laravel 13 codebase that runs in two roles. On the gateway, th
 
 Orbit runs from source. There is no PHAR or container image to install — the installer checks out the repo, installs dependencies through Composer, and links `orbit` into the local executable path.
 
-## Persistent State
+## Persistent state
 
 The gateway holds Orbit's only durable store: a single SQLite database at `~/orbit/database/database.sqlite`. Every state family writes here. App nodes do not have their own Orbit database.
 
@@ -81,13 +81,13 @@ See [Architecture: State Model](ARCHITECTURE.md#state-model) and [Architecture: 
 
 Caddy serves the gateway's HTTPS API only on the gateway's WireGuard address. It is not a public internet vhost.
 
-The gateway API ingress is a gateway-owned internal `proxy` entry — managed by the same proxy family that handles every other route. Its proxy/TLS artifact is repaired by `doctor --fix --family=proxy --restore`, not by a backend-named provisioning command.
+The gateway API ingress is an internal `proxy` entry the gateway owns — managed by the same proxy family that handles every other route. Its proxy and TLS artifact is repaired by `doctor --fix --family=proxy --restore`, not by a backend-named provisioning command.
 
 The gateway API listener must not trust client-supplied forwarding identity. Caddy strips `X-Forwarded-For`, `X-Real-IP`, and `Forwarded` before requests reach Laravel. Caller identity comes from the Orbit network identity model, not from forwarded headers.
 
 Streaming and non-streaming gateway API traffic use separate PHP-FPM sockets. Stream and log endpoints route to the stream socket; ordinary command/API execution routes to the exec socket. This prevents long-lived streams from consuming the same execution lane as short command requests.
 
-### Remote Command Progress
+### Remote command progress
 
 Long-running CLI-to-gateway commands stream structured progress over Server-Sent Events when they need live feedback. The gateway emits Orbit progress events, not arbitrary stdout:
 
@@ -98,7 +98,7 @@ Long-running CLI-to-gateway commands stream structured progress over Server-Sent
 
 The CLI consumes these events and renders the normal Orbit progress tree locally. If the stream closes without a `complete` or `error` event, the command is treated as failed. This progress stream is distinct from log streaming and from local process line streaming.
 
-## Gateway To App Node
+## Gateway to app node
 
 See [Architecture: Trust And Transport](ARCHITECTURE.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
 
@@ -121,7 +121,7 @@ Scripts are composed on the gateway. Remote shell work is non-interactive — pr
 
 Caddy is the proxy on every node. It terminates TLS, serves the gateway API on the gateway, and serves app and workspace routes on app nodes. App-route certificates are issued by the Orbit root CA, so app nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
 
-### Caddy Include Boundaries
+### Caddy include boundaries
 
 Caddy configuration is split by exposure boundary, not by who happens to write the file. The global `/etc/caddy/Caddyfile` imports both managed include trees:
 
@@ -134,17 +134,17 @@ Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, 
 
 Installer and doctor repair code must be additive: ensure required imports and managed include files exist, but never replace unrelated site blocks or remove existing imports.
 
-## PHP Runtime
+## PHP runtime
 
 PHP-FPM runs natively on the gateway and on every app node — not in a container. Native execution keeps request latency predictable and avoids container overhead in the request path.
 
 Each workspace gets its own PHP-FPM pool so workspaces are isolated from one another. Production apps get a dedicated pool as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it re-renders the affected PHP-FPM pool on the owning node through `RemoteShell`.
 
-## Process Manager
+## Process manager
 
 Supervisor (`supervisord`) supervises Orbit-managed long-running processes on every gateway and app node. Each process Orbit tracks becomes one Supervisor program. Supervisor restarts crashed processes and captures stdout/stderr into log files surfaced by `process:logs`.
 
-Host init keeps Supervisor itself alive: the distro `supervisor.service` unit on Ubuntu, or the Docker daemon's container restart policy in Docker E2E topologies (`supervisord` runs as PID 1 inside the container, typically under `tini`).
+Host init keeps Supervisor itself alive. On Ubuntu, the distro `supervisor.service` unit does that. In Docker E2E topologies, the Docker daemon's container restart policy does — `supervisord` runs as PID 1 inside the container, typically under `tini`.
 
 Other host services — Caddy, PHP-FPM, Docker, and Supervisor itself — run directly under host init, not under Supervisor. Supervisor manages Orbit-defined processes only, not the host service stack.
 
@@ -167,7 +167,7 @@ Periodic execution comes from the daemon's internal sleep loop, not from Supervi
 
 The daemon's per-tick logic is shared with the `orbit schedule:run` command. The daemon is the steady-state path; `schedule:run` is the on-demand path used for testing, troubleshooting, and recovery.
 
-## Service Containers
+## Service containers
 
 Docker Compose runs supporting services on app nodes — databases, caches, mail servers, websocket utilities, and similar backing infrastructure. Compose files are rendered from gateway-tracked tool configuration and applied through `RemoteShell`. Docker is reserved for services that aren't part of the PHP request path; PHP-FPM and Caddy run on the host directly.
 
@@ -179,7 +179,7 @@ The gateway also acts as the Orbit root certificate authority. It issues TLS cer
 
 ## Public DNS/CDN
 
-Production domains are managed through the first-party Cloudflare provider integration. The gateway calls the Cloudflare API to set up DNS records and to coordinate origin and edge certificates for proxied domains.
+Production domains are managed through Orbit's first-party Cloudflare integration. The gateway calls the Cloudflare API to set up DNS records and to coordinate origin and edge certificates for proxied domains.
 
 Other DNS/CDN providers can be added as extension points without changing core Orbit. The gateway always owns the stored domain configuration and command behavior, even when a provider is plugged in.
 
@@ -193,13 +193,17 @@ Control node setup is local:
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
-The installer prepares the host before Orbit can run: it installs PHP, Composer, Git, and required PHP extensions, then installs the Orbit source checkout, creates the local SQLite database, runs migrations, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging. The installer does not create a gateway-owned control-node identity — that identity is minted by `node:new --role=gateway` for first-gateway bootstrap, or by `node:new --role=control` on an existing gateway before the control machine runs `gateway:add`.
+The installer prepares the host before Orbit can run. It installs PHP, Composer, Git, and the required PHP extensions, checks out the Orbit source, creates the local SQLite database, runs migrations, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
 
-Gateway and app nodes are created through `orbit node:new [name]`. `node:new --role=gateway --host=<host> --control-name=<control-name>` is the first-gateway bootstrap path when no gateway is configured. It bootstraps the gateway runtime, creates the initiating control-node identity, installs that identity locally, stores local gateway trust and endpoint configuration, and verifies gateway API access.
+The installer does not create a control-node identity for the gateway to trust. That identity is minted later — by `node:new --role=gateway` when bootstrapping the first gateway, or by `node:new --role=control` on an existing gateway before the control machine runs `gateway:add`.
 
-`gateway:add [gateway_ip]` is the existing-gateway join path for a control node that already has a gateway-issued WireGuard identity. It stores the local gateway API endpoint, gateway WireGuard IP, and trust material, installs local gateway CA trust when missing, then makes that gateway the default endpoint for subsequent Orbit commands.
+Gateway and app nodes are created through `orbit node:new [name]`.
 
-## Platform And Roles
+When no gateway is configured yet, use `node:new --role=gateway --host=<host> --control-name=<control-name>` to bootstrap one. This command bootstraps the gateway runtime, creates the control-node identity that initiated it, installs that identity locally, stores local gateway trust and endpoint configuration, and verifies gateway API access.
+
+When the control node already has a WireGuard identity issued by an existing gateway, use `gateway:add [gateway_ip]` to join it. This command stores the local gateway API endpoint, the gateway WireGuard IP, and the trust material, installs local gateway CA trust when missing, and makes that gateway the default endpoint for subsequent Orbit commands.
+
+## Platform and roles
 
 Gateways and app nodes are Ubuntu. Control nodes are macOS or Ubuntu. macOS is not an app-hosting platform.
 

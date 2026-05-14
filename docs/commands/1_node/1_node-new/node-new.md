@@ -13,6 +13,8 @@ initiating control node and stores the local gateway configuration.
 
 ## Usage
 
+Run this command to register a new node and provision it when required.
+
 ```bash
 orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
 orbit node:new
@@ -32,7 +34,7 @@ orbit node:new app-2 --role=app --host=203.0.113.20 --environment=production
 orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=control-1
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
@@ -88,8 +90,9 @@ flow, the initiating control node does not run `gateway:add`.
 convergence checks after a gateway already exists. During first-gateway
 bootstrap, the resolved `--host` value becomes the initial gateway endpoint used
 in generated WireGuard peer configs. This endpoint may be a DNS name, public IP,
-private IP, or any address reachable by the nodes that will join the fleet. If
-the requested gateway is already provisioned and active, and the supplied host is
+private IP, or any address reachable by the nodes that will join the fleet.
+
+If the requested gateway is already provisioned and active, and the supplied host is
 compatible with that gateway identity, Orbit converges idempotently without
 reprovisioning and reports the already-provisioned status. If the gateway is
 compatible but drifted or incomplete, `node:new` reports the drift and points to
@@ -126,10 +129,9 @@ or enrolls the node, writes gateway state, and verifies readiness.
 JSON output includes the command result action, node name, role, lifecycle
 status, platform-version identifier, environment when applicable, development
 TLD when applicable, provisioning status, explicit node addresses, and any
-returned WireGuard configuration for control-node enrollment. JSON output
-distinguishes the SSH/bootstrap endpoint from the Orbit WireGuard address, the
-gateway endpoint used in generated peer configs, and operator-recorded public
-IPv4/IPv6 metadata when already present.
+returned WireGuard configuration for control-node enrollment. It distinguishes the SSH/bootstrap endpoint from the Orbit WireGuard address, the
+gateway endpoint used in generated peer configs, and the public IPv4/IPv6
+metadata that the operator recorded when already present.
 
 ## Requirements
 

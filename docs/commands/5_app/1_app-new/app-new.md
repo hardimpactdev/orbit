@@ -25,6 +25,8 @@ service instance in Orbit.
 
 ## Behavior
 
+The steps below describe what the command does during a successful run.
+
 - **Source Creation:** Creates an empty directory or clones a repository onto
   the target node. Cloning runs non-interactively on the target node using the
   credentials that node already has in place; `app:new` does not prompt for or
@@ -56,8 +58,9 @@ service instance in Orbit.
 
 ## Output
 
-- **Human:** A multi-step progress tree covering source creation, registry
-  write, setup, proxy route application, and apply verification.
+You will receive one of the following output formats depending on the flags you supply.
+
+- **Human:** A progress tree covering source creation, registry write, setup, proxy route application, and apply verification — shown step by step.
 - **JSON:** A `success` envelope containing the new app's registry data, or an
   `error` envelope with failure metadata.
 

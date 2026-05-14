@@ -66,7 +66,7 @@ post-filter the result, or run separate scoped invocations.
   receives `error.code=authorization_failed`. This is the only path that
   distinguishes "authorized but empty" from "not allowed to read."
 
-### Filter And Sort Rules
+### Filter and sort rules
 
 - If `--role` is present, include only nodes with the matching role.
 - If `--environment` is present, include only app nodes with the matching

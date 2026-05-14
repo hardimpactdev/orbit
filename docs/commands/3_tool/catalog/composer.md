@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the Composer tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `composer` |

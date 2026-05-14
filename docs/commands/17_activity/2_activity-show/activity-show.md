@@ -22,14 +22,14 @@ orbit activity:show 42
 orbit activity:show 42 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `id`: Activity id to inspect.
 - `--json`: Output JSON.
 
 ## What Happens
 
-`activity:show`:
+Run `activity:show` to inspect what a previous command or API call changed and which other entries share its correlation. `activity:show`:
 
 1. Resolves the requested activity id.
 2. Reads the visible gateway activity record.
@@ -41,7 +41,7 @@ live node state.
 
 ## Output
 
-Human output is a detail view with the activity's time, type, effect, subject,
+Use `--json` for machine-readable output. Human output is a detail view with the activity's time, type, effect, subject,
 actor, command, correlation id, summary, details, and related activity.
 
 JSON output returns the selected activity under `success.data.activity` and
@@ -55,6 +55,8 @@ correlated entries under `success.data.related`.
 - The activity entry exists and is visible to the current node identity.
 
 ## Related Commands
+
+Use these commands to browse the activity history or check live state.
 
 - [`activity:list`](../1_activity-list/activity-list.md) - list recent
   activity entries

@@ -12,7 +12,7 @@ authenticated node record has role `app`.
 The gateway rejects app-role callers before prompts or side effects.
 
 `node:default` exists to store a CLI-local preference for development app-node
-targeting. App-host CLI commands typically infer local app or workspace context
+targeting. CLI commands run from an app host typically infer local app or workspace context
 rather than targeting remote app nodes through a local default.
 
 ## Error Contract

@@ -9,8 +9,7 @@
 **Prerequisites:**
 - A configured local gateway endpoint exists.
 - The caller machine can reach the configured gateway root CA endpoint.
-- The caller platform has an Orbit-supported local trust-store installation
-  path.
+- The caller platform has a local trust-store installation path that Orbit supports.
 - The process has the local OS privileges required to update the trust store.
 
 ## Signature
@@ -131,7 +130,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-- `gateway:trust` repairs only caller-local gateway CA trust.
+- `gateway:trust` repairs only the gateway CA trust that is local to the caller.
 - `doctor --family=node --self` verifies configured gateway trust, gateway API
   reachability, and local caller identity. See
   [`node-doctor.md`](../../../1_node/node-doctor.md).
@@ -162,7 +161,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured gateway endpoint resolution, no-prompt missing gateway failure, root CA fetch, PEM validation, local trust-store side effect, local metadata persistence, idempotent already-trusted success, no gateway configuration writes, no `/api/me` identity verification, no public gateway override, and no public `--export` option. |
+| `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured endpoint resolution, missing gateway failure, root CA fetch, PEM validation, trust-store side effect, metadata persistence, idempotent already-trusted success, no gateway config writes, no `/api/me` verification, no public gateway override, and no public `--export` option. |
 | `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
 | `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform, including local metadata persistence and idempotent convergence. |

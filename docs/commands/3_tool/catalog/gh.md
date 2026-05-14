@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the GitHub CLI tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `gh` |

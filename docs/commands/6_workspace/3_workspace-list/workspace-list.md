@@ -27,7 +27,7 @@ orbit workspace:list --app=docs --node=app-1
 orbit workspace:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--app`: filter by parent app slug.
 - `--node`: filter by owning node slug.
@@ -37,6 +37,8 @@ When both `--app` and `--node` are supplied, results are the intersection
 (workspaces matching both filters).
 
 ## What Happens
+
+Run `workspace:list` to view registered workspaces without connecting to app nodes.
 
 `workspace:list` reads the workspace registry from the gateway and applies the
 requested filters:
@@ -73,6 +75,8 @@ the exact payload shape.
 - The caller identity is authorized to read the workspace registry.
 
 ## Related Commands
+
+Use these commands to inspect or act on individual workspaces.
 
 - [`workspace:new`](../1_workspace-new/workspace-new.md) — register a workspace
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — apply workspace artifacts on the app node

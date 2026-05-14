@@ -4,6 +4,8 @@ This document defines proxy-family vocabulary and invariants. It supports the pr
 
 ## Routes
 
+These terms define the types of routes that the proxy family owns and manages.
+
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
@@ -28,6 +30,8 @@ This document defines proxy-family vocabulary and invariants. It supports the pr
 
 ## TLS
 
+These terms define certificate authority, leaf certificate scope, and hostname compatibility material.
+
 - **Orbit-managed TLS:** Gateway-issued route leaf certificate and key material
   applied on the serving node. Certificates chain to the gateway root CA
   trusted through `gateway:add` and `gateway:trust`.
@@ -47,6 +51,8 @@ This document defines proxy-family vocabulary and invariants. It supports the pr
 
 ## Ingress Contracts
 
+These terms define the ingress behavior applied to app and workspace routes.
+
 - **App ingress baseline:** Standard browser ingress contract applied to app
   and workspace routes: TLS termination, PHP routing to the resolved runtime,
   static file serving from the configured document root, baseline security
@@ -58,6 +64,8 @@ This document defines proxy-family vocabulary and invariants. It supports the pr
   stronger blocking policy.
 
 ## Boundaries
+
+These terms define what the proxy family owns and what remains outside its scope.
 
 - **Proxy-family boundaries:** Proxy commands own the unified ingress
   registry, route TLS configuration, ingress contracts, and convergence of derived

@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the PostgreSQL tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `postgres` |
@@ -49,7 +51,7 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`postgres` exposes a WireGuard-only TCP service endpoint at
+`postgres` exposes a TCP service endpoint reachable only over WireGuard at
 `orbit.<node-tld>:5432` for development app nodes. This is DNS/service endpoint
 configuration owned by the tool definition, not an HTTP proxy route.
 

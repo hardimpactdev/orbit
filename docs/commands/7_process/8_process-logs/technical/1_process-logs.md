@@ -84,7 +84,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, bounded log reads, follow-mode streaming, line count validation, `--json` with `--follow` rejection, no process configuration mutation, no direct app-node Supervisor log read, log read failure, and authorization failure. |
+| `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Context resolution, app-node caller allowance, unknown-role denial, bounded log reads, follow-mode streaming, line count validation, `--json` with `--follow` rejection, no configuration mutation, no direct Supervisor log read, log read failure, and authorization failure. |
 | `tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

@@ -18,7 +18,7 @@ orbit php:use 8.5 --node=app-1 --cli
 orbit php:use 8.5 --app=docs --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `version`: PHP version to select. Required unless `--inherit` is supplied.
 - `--app=<app>`: Target app.
@@ -32,6 +32,8 @@ orbit php:use 8.5 --app=docs --json
   envelope.
 
 ## What Happens
+
+Run this command to select the PHP version for an app, workspace, or node CLI default.
 
 `php:use` resolves exactly one target scope: app runtime, workspace runtime
 override, workspace inheritance, or node CLI default. It validates that the
@@ -49,6 +51,8 @@ mutate Composer constraints.
 
 ## Output
 
+Your output shows the resolved target, the selected version, and any drift warnings.
+
 Human output renders a progress tree and a short result summary. JSON output
 returns `success.data.php` plus `success.data.result`.
 
@@ -64,6 +68,8 @@ returns `success.data.php` plus `success.data.result`.
   applied.
 
 ## Related Commands
+
+Use these commands to list versions, install PHP, or verify runtime health across families.
 
 - [`orbit php:list`](../1_php-list/php-list.md)
 - [`orbit tool:install php`](../../3_tool/3_tool-install/tool-install.md)

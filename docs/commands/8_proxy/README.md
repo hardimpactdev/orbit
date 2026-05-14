@@ -6,6 +6,8 @@ Caddy is the current proxy backend. It is not the product model.
 
 ## Domain Rules
 
+These rules govern ownership, route kinds, and the boundaries of the proxy command family.
+
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
@@ -39,10 +41,7 @@ Caddy is the current proxy backend. It is not the product model.
   authority could mint trusted certificates for arbitrary hosts if compromised.
 - App nodes serve TLS material only. They do not become certificate authorities
   and do not sign certificates for apps, workspaces, or tools.
-- For DNS hostname routes, Orbit-managed TLS also includes app-node
-  compatibility material that lets common Laravel Vite TLS detection paths find
-  the route certificate. This belongs to proxy convergence because it is
-  derived from route TLS configuration. It is not a separate app command.
+- For DNS hostname routes, Orbit-managed TLS also includes compatibility material applied on the app node that lets common Laravel Vite TLS detection paths find the route certificate. This belongs to proxy convergence because it is derived from route TLS configuration. It is not a separate app command.
 - Internal IP-only routes receive gateway-issued leaf certificates for the IP
   target and do not require hostname compatibility material.
 - Proxy reads use gateway configuration by default. Live proxy backend reality belongs
@@ -51,7 +50,7 @@ Caddy is the current proxy backend. It is not the product model.
   of observed backend routes must use explicit
   `doctor --fix --family=proxy --adopt` semantics.
 
-## App And Workspace Ingress Baseline
+## App and workspace ingress baseline
 
 App and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed apps and workspaces:
 
@@ -74,7 +73,7 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
 
 The gateway is the only Orbit certificate authority. For each managed route, it issues a leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures Caddy with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.
 
-Orbit does not delegate intermediate CA authority to app nodes. That delegation would make disconnected node-local certificate minting easier, but it would also expand the blast radius of a compromised app node: the node could sign trusted certificates for hosts it should not control. Per-route gateway-issued leaf certificates keep signing authority centralized on the gateway while still letting every node terminate HTTPS locally.
+Orbit does not delegate intermediate CA authority to app nodes. That delegation would make disconnected node-local certificate minting easier, but it would also expand the blast radius of a compromised app node: the node could sign trusted certificates for hosts it should not control. Leaf certificates issued by the gateway for each route keep signing authority centralized on the gateway while still letting every node terminate HTTPS locally.
 
 ## Gateway Internal Ingress
 
@@ -122,6 +121,8 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | `status` | string | Gateway configuration status, not live backend verification. |
 
 ## Commands
+
+Each command links to its public documentation and technical contract.
 
 1. [`orbit proxy:list`](1_proxy-list/proxy-list.md)
 2. [`orbit proxy:add <domain> --upstream=<url>`](2_proxy-add/proxy-add.md)

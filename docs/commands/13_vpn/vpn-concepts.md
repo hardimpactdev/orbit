@@ -4,29 +4,33 @@ This document defines VPN-command-domain vocabulary and invariants. It supports
 the VPN command contracts; it does not override the
 [Architecture](../../ARCHITECTURE.md).
 
-## Domain And Execution
+## Domain and execution
+
+These terms define the VPN command domain and how commands reach the gateway.
 
 - **VPN command domain:** Gateway infrastructure command domain for the
   `vpn-client:*` and `vpn-web-ui:*` command prefixes. It administers
-  gateway-local VPN backend clients and the backend admin credential, but does
-  not create a `vpn` state family.
+  VPN backend clients that are local to the gateway, and the backend admin
+  credential, but does not create a `vpn` state family.
 - **Gateway-local VPN administration:** The product exception where VPN
   commands must run on the gateway host because the VPN backend is
   gateway-local infrastructure.
 - **Gateway-local execution path:** Control-caller path that uses SSH to the
-  gateway over Orbit/WireGuard, then runs the gateway-local VPN command there.
+  gateway over Orbit/WireGuard, then runs the VPN command on the gateway.
   It is limited to VPN administration and is not a general public SSH path or
   an app-node orchestration path.
-- **Gateway VPN backend:** Gateway-local WireGuard administration backend used
-  by VPN commands to read, create, enable, disable, remove, and authenticate
-  VPN clients. Backend storage layout and API paths are not the product
-  contract.
+- **Gateway VPN backend:** WireGuard administration backend that runs on the
+  gateway, used by VPN commands to read, create, enable, disable, remove, and
+  authenticate VPN clients. Backend storage layout and API paths are not the
+  product contract.
 - **Backend TOTP code:** Numeric one-time code passed to the gateway VPN
   backend when its own second-factor authentication is required. It
   authenticates backend administration; it is not Orbit node identity,
   gateway API authorization, or destructive consent.
 
-## Clients And Classification
+## Clients and classification
+
+These terms define how VPN clients are identified and classified.
 
 - **VPN client:** WireGuard client visible to the gateway VPN backend. VPN
   client commands may list all visible backend peers, but writes are limited to
@@ -34,10 +38,10 @@ the VPN command contracts; it does not override the
 - **VPN client name:** Stable VPN client identifier supplied to `vpn-client:*`
   commands. It must be unique among backend clients and must not collide with
   an active Orbit node name.
-- **Admin VPN client:** Non-node human/operator VPN client created by
-  `vpn-client:new`. It has `kind=admin`, may receive a generated WireGuard
-  client configuration, and does not create an Orbit node record, Orbit node
-  identity, or node access grant.
+- **Admin VPN client:** VPN client for a human or operator, created by
+  `vpn-client:new`; it is not an Orbit node. It has `kind=admin`, may receive a
+  generated WireGuard client configuration, and does not create an Orbit node
+  record, Orbit node identity, or node access grant.
 - **Orbit node peer:** Backend peer that corresponds to an active Orbit node
   identity. It may be listed as `kind=node`, but it is protected from
   `vpn-client:enable`, `vpn-client:disable`, and `vpn-client:remove`.
@@ -63,6 +67,8 @@ the VPN command contracts; it does not override the
 
 ## Web UI Credential
 
+These terms cover the gateway VPN backend admin password and credential storage.
+
 - **VPN web UI password:** Gateway VPN backend admin password changed by
   `vpn-web-ui:change-password`. It must never be printed in human output, JSON
   output, progress output, logs, or error metadata.
@@ -75,6 +81,8 @@ the VPN command contracts; it does not override the
   password rotation.
 
 ## Boundaries
+
+These boundaries define what the VPN command domain owns and what it must not touch.
 
 - **VPN-domain boundaries:** VPN commands own gateway-local VPN backend
   administration for human/operator clients and the VPN web UI credential. They

@@ -128,15 +128,15 @@ register an existing path use
    - **Workspace-owned proxy route:** create or update the workspace
      proxy route record; backend artifact convergence is owned by the
      `proxy` family.
-   - **PHP-FPM:** render and install the workspace-specific FPM pool config
+   - **PHP-FPM:** render and install the FPM pool config specific to this workspace
      on the app node.
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
    - **Inherited runtime units:** render and (re)install Supervisor
      programs derived from the parent app's process definitions.
-   - **HTTP probe:** perform the same setup-time HTTP probe as
-     `workspace:setup`. Probe failures are command warnings, not durable
+   - **HTTP probe:** perform the same HTTP probe that `workspace:setup`
+     performs at setup time. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
 4. **Drift Awareness (Success-with-Warnings):** Once the gateway workspace
    row is written, downstream remote apply failures are reported as
@@ -181,7 +181,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Exit status:** Uses the shared exit status policy. Success and
   success-with-warnings exit `0`; all documented command failures exit with the
   standard command failure status (`1`). This command defines no
-  command-specific numeric exit codes.
+  numeric exit codes specific to this command.
 
 ## Doctor Relationship
 
@@ -199,7 +199,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway configuration write, generic worktree provisioning dispatch, OpenCode and Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
 | `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |
 
 Role-specific behavior and test mapping live in:

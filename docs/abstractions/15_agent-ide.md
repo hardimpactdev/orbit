@@ -12,8 +12,8 @@ top-level product docs.
   communication workflows with active Agent IDE sessions.
 - The domain does not own a state family. There is no
   `doctor --family=agent-ide` contract.
-- Node defaults are node-family gateway intent owned by `node:agent-ide`.
-- App overrides are app-family gateway intent owned by `app:agent-ide`.
+- Node defaults are gateway intent owned by the node family via `node:agent-ide`.
+- App overrides are gateway intent owned by the app family via `app:agent-ide`.
 - Workspace state, setup, teardown, history, and future workspace-level adapter
   overrides belong to the workspace family.
 - Adapter server lifecycle, credentials, and managed adapter tools belong to
@@ -66,8 +66,8 @@ top-level product docs.
 - `--workspace` targets a workspace context and must include or resolve its
   parent app.
 - `--app` targets the app main context and must not imply a workspace.
-- Current-directory inference prefers workspace context over parent app
-  context.
+- When inferring from the current directory, workspace context takes precedence
+  over parent app context.
 - Gateway callers resolve target visibility from gateway database state.
 - Control and app callers forward target-sensitive operations through the
   gateway API so authorization, hidden-target behavior, and adapter delivery
@@ -98,7 +98,7 @@ top-level product docs.
   `App\Http\Gateway\Requests\AgentIde`.
 - Gateway API endpoints return the shared `success` / `error` envelope and
   preserve structured gateway errors through `GatewayApiException`.
-- Gateway-side handlers perform target resolution, authorization, effective
+- Handlers on the gateway side perform target resolution, authorization, effective
   adapter resolution, registry validation, active-session lookup, and adapter
   delivery.
 - Activity logging for `agent-ide:*` should use the cross-cutting Loggable

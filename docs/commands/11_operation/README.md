@@ -12,15 +12,25 @@ The operation command domain does not own a state family. Operation commands are
 
 ## Domain Rules
 
+These rules constrain all commands in the operation domain.
+
+**Scope and authority:**
+
 - Operation commands must not invent durable operation-domain configuration.
 - Fleet-changing operation commands run through gateway-owned authority and node access policy.
-- Local operation commands affect only the caller machine unless the command explicitly documents a gateway-mediated fleet path.
-- Updates change Orbit installations. They do not replace doctor; run the doctor family that owns the changed artifact when configuration drift or runtime readiness matters.
-- `doctor` owns cross-family verification and resolution. Verify mode is read-only; `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively. Family doctor contracts own concrete probes, issue codes, and restore/adopt action maps.
+- Local operation commands affect only the caller machine. A command that extends beyond the caller machine must document a gateway-mediated fleet path.
+
+**Behavior contracts:**
+
+- Updates change Orbit installations. They do not replace doctor; run the doctor family that owns the changed artifact when drift or runtime readiness matters.
+- `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.
+- Family doctor contracts own concrete probes, issue codes, and restore/adopt action maps.
 - Profiling reads request/runtime data and must not mutate app configuration.
 - Operation commands emit activity entries through the cross-cutting Loggable contract. See [`activity-concepts.md`](../17_activity/activity-concepts.md).
 
 ## Commands
+
+These are the commands in the operation domain.
 
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)

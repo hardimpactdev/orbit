@@ -23,7 +23,7 @@ orbit tool:list --app=docs
 orbit tool:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--node`: Limit results to one visible node.
 - `--app`: Resolve the owning app node from an app and limit results to that
@@ -31,6 +31,8 @@ orbit tool:list --json
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run this command to read the tools Orbit expects, manages, or observes on the selected nodes.
 
 `tool:list`:
 
@@ -43,6 +45,8 @@ The command is read-only. It does not install, remove, start, stop, or inspect
 tools on nodes.
 
 ## Output
+
+Use `--json` to get machine-readable tool entities; omit it for a grouped node view.
 
 Human output is grouped by node and shows each tool's name, expected lifecycle
 state, managed flag, and known version when available.
@@ -59,6 +63,8 @@ under `success.meta`.
 - Requested node or app filters are visible to the current node identity.
 
 ## Related Commands
+
+Use these commands to inspect or verify tool state in more detail.
 
 - [`tool:show`](../2_tool-show/tool-show.md) - inspect one registered tool
 - [`doctor --family=tool`](../tool-doctor.md) - compare tool configuration with node reality

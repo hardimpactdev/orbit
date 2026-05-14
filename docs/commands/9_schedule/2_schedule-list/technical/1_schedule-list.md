@@ -32,7 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Reads gateway schedule configuration visible to the caller.
 - Applies the optional app or node filter at the gateway.
-- Returns app-scoped, node-scoped, and Orbit-scoped schedules when no filter is supplied and the caller is authorized to see them.
+- Returns app-scoped, node-scoped, and Orbit-scoped schedules when no filter is supplied.
+- Limits the result to schedules the caller is authorized to see.
 - Includes latest durable run-history summary when available.
 - Does not inspect live Orbit Scheduler state.
 

@@ -1,6 +1,6 @@
 # `orbit vpn-client:remove <name>`
 
-Remove a non-node gateway VPN client.
+Remove a gateway VPN client that is not an Orbit node.
 
 ## Usage
 
@@ -16,7 +16,7 @@ orbit vpn-client:remove laptop --force
 orbit vpn-client:remove laptop --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: VPN client name.
 - `--force`: Skip the destructive confirmation prompt.
@@ -24,6 +24,8 @@ orbit vpn-client:remove laptop --force --json
 - `--json`: Return the removal result in the shared JSON command envelope.
 
 ## What Happens
+
+Run this command to permanently delete an admin VPN client from the gateway backend.
 
 `vpn-client:remove` runs on the gateway host and deletes the named VPN backend
 client after destructive consent. From a control node, Orbit connects to the
@@ -34,6 +36,8 @@ The command is limited to non-node VPN clients. Removing Orbit node peers
 belongs to [`node:remove`](../../1_node/8_node-remove/node-remove.md).
 
 ## Output
+
+Your output confirms the client was removed and shows the action taken.
 
 Human output confirms the client was removed. JSON output returns
 `success.data.client` with `action="removed"`.
@@ -47,6 +51,8 @@ Human output confirms the client was removed. JSON output returns
 - Destructive consent is supplied interactively or with `--force`.
 
 ## Related Commands
+
+Use these commands to list remaining clients or remove an Orbit node.
 
 - [`orbit vpn-client:list`](../1_vpn-client-list/vpn-client-list.md)
 - [`orbit node:remove`](../../1_node/8_node-remove/node-remove.md)

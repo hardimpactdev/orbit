@@ -20,19 +20,24 @@ orbit firewall:deny redis-public --node=app-1 --port=6379 --from=0.0.0.0/0 --rea
 orbit firewall:deny old-admin --node=gateway --port=8080 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: Rule name, unique on the target node. In interactive mode, Orbit prompts when omitted.
 - `--node`: Target node. Defaults to local `node:default` when configured.
+- `--json`: Output JSON.
+
+**Policy fields:**
+
 - `--direction`: Traffic direction. Defaults to `incoming`.
 - `--from`: Source CIDR. Defaults to `any`.
 - `--to`: Destination CIDR when supported.
 - `--port`: Destination port or supported port range.
 - `--protocol`: Protocol. Defaults to `tcp`.
 - `--reason`: Operator note.
-- `--json`: Output JSON.
 
 ## What Happens
+
+Run this command to create or update an Orbit-owned deny rule and apply it on the target node.
 
 `firewall:deny`:
 
@@ -44,6 +49,8 @@ orbit firewall:deny old-admin --node=gateway --port=8080 --json
 6. Reports the expected rule and apply outcome.
 
 ## Output
+
+Use `--json` to get a machine-readable result; omit it for a progress tree.
 
 Human output is a progress tree for validation, gateway configuration, and backend apply.
 
@@ -58,6 +65,8 @@ JSON output returns the rule entity under `success.data.rule`.
 - The gateway can reach the target node through Orbit's node execution primitive.
 
 ## Related Commands
+
+Use these commands to list, remove, or verify firewall rules.
 
 - [`firewall:list`](../1_firewall-list/firewall-list.md) - list expected rules
 - [`firewall:remove`](../4_firewall-remove/firewall-remove.md) - remove an Orbit-owned rule

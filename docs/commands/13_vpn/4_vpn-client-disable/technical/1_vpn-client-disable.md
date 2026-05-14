@@ -65,7 +65,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `vpn-client:disable` mutates gateway VPN backend state for non-node clients. It
 does not create doctor issues, fix drift, or adopt backend state.
 [`doctor --family=node`](../../../1_node/node-doctor.md) owns Orbit node
-WireGuard identity and gateway-managed node peer drift.
+WireGuard identity and node peer drift that the gateway manages.
 
 ## Test Mapping
 

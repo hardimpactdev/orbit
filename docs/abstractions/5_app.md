@@ -56,7 +56,7 @@ product docs.
   show-only registry expansion under `success.data.details`.
 - Human and JSON renderers must be tested separately against the renderer docs.
 
-## Schema And DTO Shape
+## Schema and DTO shape
 
 - The app table should model the canonical app JSON entity first: `name`,
   owning app node, `environment`, primary URL or domain, app `path`, document

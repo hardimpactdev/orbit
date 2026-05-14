@@ -51,7 +51,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `database_path`, `app_user`, `app_name`, `domain`, and `repository`, plus
   nested app and node metadata for placeholder resolution.
 - Executes each configured step on the app's owning node through the gateway.
-- Executes each step from the gateway-tracked app source path.
+- Executes each step from the app source path that the gateway tracks.
 - Renders `{{ key }}` placeholders against the deployment run context before
   execution. Dot notation may address nested context values such as
   `{{ app.name }}`.
@@ -119,5 +119,5 @@ deployment status when reporting `app.latest_deployment_failed` or
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract for production app lookup, app-node denial before prompts or side effects, authorization, empty pipeline failure, run creation, ordered step execution through the gateway from the app source path, timeout enforcement, metadata exposure, progress-tree rendering, streamed control-node progress, single-route stream negotiation, step-failure stop behavior, latest deployment status updates, detached handoff, failure codes, and app-doctor handoff behavior. |
+| `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering: production app lookup; app-node denial before prompts or side effects; authorization; empty pipeline failure; run creation; ordered step execution through the gateway from the app source path; timeout enforcement; metadata exposure; progress-tree rendering; streamed control-node progress; single-route stream negotiation; step-failure stop behavior; latest deployment status updates; detached handoff; failure codes; and app-doctor handoff behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |

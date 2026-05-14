@@ -6,9 +6,11 @@ The gateway is the source of truth for process configuration. When node-side wor
 
 ## Domain Rules
 
+These rules govern process configuration ownership, naming, and runtime unit derivation.
+
 - The gateway owns process configuration.
 - Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters.
-- Runtime units are the process-family product noun: app-owned runtime units derived from app, optional workspace, and process configuration. They are not gateway state rows.
+- Runtime units are the process-family product noun: units derived from app, optional workspace, and process configuration. They are not gateway state rows.
 - Each process definition renders one runtime unit for the main app instance
   and one runtime unit for each workspace of that app.
 - Each rendered runtime unit is a separate Supervisor program with its own
@@ -16,11 +18,13 @@ The gateway is the source of truth for process configuration. When node-side wor
 - The process definition supplies shared fields such as command, restart policy,
   and crash notification policy. The rendering context supplies per-instance
   fields such as main vs. workspace, path, and URL.
-- Process definitions have a stable app-local order. `process:add` appends new definitions after existing definitions. Read and bulk lifecycle commands use that order.
+- Process definitions have a stable app-local order. `process:add` appends new definitions after existing ones.
+- Read and bulk lifecycle commands use that order.
 - Runtime unit names use `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks Orbit ownership; underscores are reserved as backend segment delimiters and are not allowed in identity slugs. The rendered Supervisor program uses the same name.
 - Restart policy is process configuration. Each derived main-app or workspace runtime unit uses the process definition's `never`, `on_failure`, or `always` policy. Manual `process:restart` actions do not change that policy.
 - Process definitions are edited at the app level, not per workspace.
-- Process definitions may opt in to crash notification. When enabled, a `crashed` process event resolves the effective agent IDE for the app or workspace and notifies the active session when one is available. Delivery is best-effort and must not prevent the event from being recorded.
+- Process definitions may opt in to crash notification. When enabled, a `crashed` event resolves the effective agent IDE and notifies the active session when one is available.
+- Crash notification delivery is best-effort and must not prevent the event from being recorded.
 - Crash events come from a narrow internal app-node-to-gateway intake path
   emitted by Orbit-managed runtime hooks.
 - Crash intake accepts only authenticated active app-node identities, only
@@ -29,13 +33,16 @@ The gateway is the source of truth for process configuration. When node-side wor
 - Process lifecycle events are durable history, not process-unit configuration.
   Orbit records `started`, `stopped`, and `crashed` events for SSE consumers,
   CLI streams, and automation.
-- `started` and `stopped` events are recorded by successful gateway runtime
-  lifecycle actions. `crashed` events are recorded when an app-node runtime hook
-  reports an exit.
-- Default process read commands report gateway configuration plus latest durable process events. They do not synchronously SSH to app nodes or run live process manager probes. Live runtime verification belongs to [`doctor --family=process`](process-doctor.md); live event delivery belongs to the internal event stream.
-- Runtime lifecycle commands start, stop, restart, and inspect derived units. When `[name]` is omitted, `process:start`, `process:stop`, and `process:restart` operate on all process definitions for the resolved app or workspace context in process order.
+- `started` and `stopped` events are recorded by successful gateway runtime lifecycle actions.
+- `crashed` events are recorded when the runtime hook on the app node reports an exit.
+- Default process read commands report gateway configuration and the latest durable process events.
+- They do not SSH to app nodes or run live process manager probes.
+- Live runtime verification belongs to [`doctor --family=process`](process-doctor.md). Live event delivery belongs to the internal event stream.
+- Runtime lifecycle commands start, stop, restart, and inspect derived units.
+- When `[name]` is omitted, `process:start`, `process:stop`, and `process:restart` operate on all process definitions in process order for the resolved context.
 - Logs come from Supervisor's stdout/stderr capture for the rendered Supervisor program.
-- Create commands may use positional arguments for required identity or payload fields. Edit commands use named options for editable fields so omitted fields can mean "preserve the current value." This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
+- Create commands use positional arguments for required fields. Edit commands use named options so omitted fields preserve their current value.
+- This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
 
 Implementation-shape details for Supervisor and the Orbit Scheduler live in [BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager) and [BUILDING-BLOCKS.md#scheduler](../../BUILDING-BLOCKS.md#scheduler).
 
@@ -79,13 +86,15 @@ Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by the
 
 ## Crash Event Delivery
 
-Orbit-managed crash hooks post `crashed` events from app nodes back to the gateway when a process definition's crash-notification policy requires crash reporting. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
+The crash hooks that Orbit manages on app nodes post `crashed` events back to the gateway when the process definition's crash-notification policy is enabled. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
 
 When the runtime unit name resolves to active process configuration, the event is linked to the process, app, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
 
 Agent IDE crash notification is a consumer of the recorded crash event. For `agent_ide`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
 
 ## Commands
+
+Each command links to its public documentation and technical contract.
 
 1. [`orbit process:add [name] [command]`](1_process-add/process-add.md)
 2. [`orbit process:edit [name]`](2_process-edit/process-edit.md)

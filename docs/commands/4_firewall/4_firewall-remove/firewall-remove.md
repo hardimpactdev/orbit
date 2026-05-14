@@ -20,7 +20,7 @@ orbit firewall:remove local-vite --node=app-1 --force
 orbit firewall:remove local-vite --node=app-1 --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: Firewall rule name.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -30,6 +30,8 @@ orbit firewall:remove local-vite --node=app-1 --force --json
 Target context is required when neither `--node` nor local `node:default` resolves a node.
 
 ## What Happens
+
+Run this command to remove an Orbit-owned gateway firewall rule and apply the cleanup on the target node.
 
 `firewall:remove`:
 
@@ -44,6 +46,8 @@ The command does not remove node bootstrap policy.
 
 ## Output
 
+Use `--json` to get a machine-readable result; omit it for a progress tree.
+
 Human output is a progress tree for confirmation, backend cleanup, and gateway configuration removal.
 
 JSON output returns the removed or already-absent rule result under `success.data.rule`.
@@ -53,9 +57,12 @@ JSON output returns the removed or already-absent rule result under `success.dat
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity is authorized to manage firewall policy for the selected node.
 - The target node is a registered active Ubuntu `gateway` or `app` node.
-- The gateway can reach the target node through Orbit's node execution primitive, unless the rule is already absent from gateway configuration.
+- The gateway can reach the target node through Orbit's node execution primitive.
+- This requirement is waived when the rule is already absent from gateway configuration.
 
 ## Related Commands
+
+Use these commands to list, add, or verify firewall rules.
 
 - [`firewall:list`](../1_firewall-list/firewall-list.md) - list expected rules
 - [`firewall:allow`](../2_firewall-allow/firewall-allow.md) - add an allow rule

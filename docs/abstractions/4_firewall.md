@@ -23,14 +23,14 @@ top-level product docs.
   before mutation.
 - Role bootstrap policy belongs to the node family. Firewall commands must not
   create, delete, adopt, or repair node bootstrap rules, WireGuard management
-  rules, public SSH ingress for app nodes, or role-specific public ingress
-  policy.
+  rules, public SSH ingress for app nodes, or the public ingress policy that
+  is specific to each role.
 - Firewall reads use gateway intent by default. Live backend reality belongs to
   `doctor --family=firewall_rule`.
 - Backend discovery/import is explicit doctor adoption work, not a firewall
   command or background sync.
 
-## Schema And Model Pattern
+## Schema and model pattern
 
 - `firewall_rules`
   - `node_id`
@@ -79,8 +79,8 @@ shown directly to users.
   destructive consent, then removes the matching backend artifact when it can be
   identified safely.
 - Control and app callers use typed gateway API requests. Gateway callers use
-  local database state and gateway-owned node execution services for backend
-  enactment.
+  local database state and the node execution services that the gateway owns
+  for backend enactment.
 - Runtime backend failures after successful intent persistence are reported as
   firewall-family warnings and repaired by doctor once fix handlers are
   available.
@@ -92,7 +92,7 @@ shown directly to users.
 - UFW rendering should live in a pure renderer that turns a firewall-rule intent
   row into a deterministic canonical string and backend command shape.
 - The renderer should not perform I/O. Shell execution belongs behind the
-  gateway-owned remote execution edge.
+  remote execution edge that the gateway owns.
 - Canonical identity should include direction, action, source, destination,
   port, and protocol. Reason/comment text may be compared as metadata but must
   not cause a different policy to share an identity silently.

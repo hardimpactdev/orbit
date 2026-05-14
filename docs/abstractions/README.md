@@ -21,7 +21,7 @@ because its command docs were converted.
 
 ## Workflow Gates
 
-1. **Pre-implementation gate per family.** Before the first implementation todo
+1. **Implementation gate, per family.** Before the first implementation todo
    for a family is promoted to `worker-ready`, the matching abstraction file
    must exist.
 2. **Read-first gate.** Implementer workers for command-port todos must read

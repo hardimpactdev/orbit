@@ -4,7 +4,9 @@ This document defines PHP-runtime-command-domain vocabulary and invariants. It
 supports the PHP command contracts; it does not override the
 [Architecture](../../ARCHITECTURE.md).
 
-## Domain And Runtime Selection
+## Domain and runtime selection
+
+These terms define the PHP command domain and how PHP runtime selections are tracked.
 
 - **PHP runtime command domain:** The `php:*` command prefix. It owns PHP
   version selection for Orbit-managed app runtime, workspace runtime, and node
@@ -34,9 +36,11 @@ supports the PHP command contracts; it does not override the
 
 ## Runtime Scopes
 
+These terms define each target scope that a PHP command can read or write.
+
 - **App PHP runtime selection:** App-scoped PHP version stored as gateway app
-  configuration. Changing it re-renders app PHP-FPM artifacts and affected app-owned
-  proxy backend artifacts on the owning app node.
+  configuration. Changing it re-renders the PHP-FPM artifacts for the app and
+  the proxy backend artifacts that the app owns on the owning node.
 - **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
   workspace row. It overrides the parent app PHP version for that workspace.
 - **Workspace PHP inheritance:** Workspace state where no workspace PHP override
@@ -48,10 +52,12 @@ supports the PHP command contracts; it does not override the
   when no command selects a version explicitly. It is separate from app and
   workspace PHP-FPM runtime configuration.
 
-## Application And Drift
+## Application and drift
 
-- **PHP-FPM artifact:** Node-side PHP-FPM pool configuration, endpoint, socket,
-  or service state derived from app or workspace PHP runtime configuration. App and
+These terms define what PHP commands apply to nodes and how partial application surfaces as drift.
+
+- **PHP-FPM artifact:** PHP-FPM pool configuration, endpoint, socket, or service
+  state on the node side, derived from app or workspace PHP runtime configuration. App and
   workspace families own artifact convergence.
 - **PHP runtime target:** Resolved app, workspace, or node CLI scope that a PHP
   command reads or writes after target resolution and authorization.
@@ -62,10 +68,11 @@ supports the PHP command contracts; it does not override the
 
 ## Boundaries
 
+These boundaries define what PHP runtime commands own and what they must not touch.
+
 - **PHP-domain boundaries:** PHP runtime commands own selection, inheritance,
   target resolution, runtime reporting, and partial-application warnings for
   `php:*`. They do not install or remove PHP runtimes, own PHP-FPM tool
-  lifecycle, invent `doctor --family=php`, read `.php-version`, mutate
-  Composer files, change framework config, create app or workspace records, or
-  treat PHP selection as proof that app, workspace, proxy, node, or tool drift
-  has converged.
+  lifecycle, invent `doctor --family=php`, read `.php-version`, mutate Composer
+  files, or change framework config. They also do not create app or workspace
+  records, or treat PHP selection as proof that drift has converged.

@@ -7,6 +7,8 @@ the workspace command contracts and the
 
 ## Identity
 
+The terms below define the core identity vocabulary for the workspace family.
+
 - **Workspace:** Gateway-owned working copy of an app, bound to one parent app
   on the app's owning node, with a canonical workspace name, workspace path,
   and one workspace route lifecycle.
@@ -24,25 +26,31 @@ the workspace command contracts and the
 
 ## PHP Version
 
+These terms describe how PHP version is resolved for workspaces.
+
 - **Workspace PHP override:** Optional gateway-tracked PHP version stored on the
   workspace row. When absent, the workspace inherits the parent app PHP version
   and JSON renderers report `php_inherited=true`.
 
-## Setup And Teardown
+## Setup and teardown
 
-- **Setup step definition:** Gateway-owned workspace policy record created by
+The terms below describe setup and teardown step vocabulary.
+
+- **Setup step definition:** A workspace policy record owned by the gateway, created by
   `workspace-setup-step:add` and ordered by setup-step commands.
 - **Setup steps phase:** The `workspace:new` and `workspace:setup` execution
   phase that runs setup step definitions sequentially after core workspace
   artifacts are prepared. Failures during this phase use `phase=setup_steps` in
   JSON output.
-- **Teardown step definition:** Gateway-owned workspace policy record created
-  by `workspace-teardown-step:add` that runs during workspace removal.
+- **Teardown step definition:** A workspace policy record owned by the gateway, created
+  by `workspace-teardown-step:add` and run during workspace removal.
 - **Lifecycle step environment:** `ORBIT_*` and `VITE_*` variables exposed to
   setup and teardown step commands. Separate from process runtime unit
   environment.
 
 ## Lifecycle
+
+The terms below describe how a workspace moves through its active states.
 
 - **Workspace adoption:** Result of `workspace:setup` against an existing path
   that was not previously Orbit-managed. The resulting workspace entity reports
@@ -52,6 +60,8 @@ the workspace command contracts and the
   workspace-unit configuration.
 
 ## Boundaries
+
+These boundaries define what the workspace family owns and what belongs to other families.
 
 - **Workspace-owned route:** Proxy route whose lifecycle is owned by the
   workspace and surfaced as inventory by the `proxy` family.

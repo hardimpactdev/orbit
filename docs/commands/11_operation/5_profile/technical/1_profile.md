@@ -7,7 +7,7 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway when gateway app resolution, authorization, or gateway-origin profiling is required.
+- The CLI caller can reach the Orbit gateway for gateway app resolution, authorization, and gateway-origin profiling.
 - The gateway identifies the calling WireGuard peer and authorizes that peer to read the resolved app.
 - The target app route is reachable from the selected request origin.
 - Authenticated profiles require app-side support for the explicit Toolbar auth header contract.
@@ -85,15 +85,14 @@ This command follows the shared
 - Perform exactly one timed HTTP `GET` request to the resolved URL and URI.
 - Follow redirects and report the final effective URL when it differs from the
   requested URL.
-- Preserve cURL-equivalent baseline timing fields: `dns_ms`, `connect_ms`,
+- Preserve baseline timing fields equivalent to cURL output: `dns_ms`, `connect_ms`,
   `tls_ms`, `ttfb_ms`, `download_ms`, and `total_ms`.
 - Derive `tls_ms` from TLS handshake time, treat `ttfb_ms` as total time until
   the first byte arrives, and derive `download_ms` from total time minus time to
   first byte.
 - Record response status, byte count, completion state, error details, and
   response headers.
-- A completed non-2xx response is a successful profile result because the
-  request was measured.
+- A completed HTTP response is a successful profile result even when the status is not 2xx, because the request was measured.
 
 ### Toolbar Enrichment Rules
 
@@ -169,7 +168,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, gateway authorization by peer role, request-origin selection, request completion semantics, non-2xx success, request failure diagnostics, read-only guarantee, and doctor handoff guidance. |
+| `tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, gateway authorization by peer role, request-origin selection, completion semantics, non-2xx success, failure diagnostics, and read-only guarantee. |
 | `tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
 
 Input-mode-specific test mapping lives in:

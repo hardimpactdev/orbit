@@ -65,7 +65,7 @@ endpoint used in WireGuard peer configs lives on a separate field and is not
 updated by `--public-ipv4` or `--public-ipv6`.
 
 `node:update --host` also does not update the gateway endpoint used in
-already-issued WireGuard peer configs. During first-gateway
+WireGuard peer configs that have already been issued. During first-gateway
 `node:new --role=gateway --host=<host>`, no peer configs exist yet, so the
 bootstrap host seeds the initial gateway endpoint. After bootstrap, gateway
 endpoint rotation needs a separate identity/network contract and is outside
@@ -103,7 +103,7 @@ gateway-owned side effects.
      flags are provided.
 6. Send the typed request to the gateway over HTTPS through WireGuard. The
    gateway authenticates the caller's WireGuard identity and authorizes the
-   request through gateway-owned node access policy before any side effects.
+   request through the node access policy it owns before any side effects.
 
 ## Input Mode Contracts
 
@@ -118,7 +118,7 @@ Input mode behavior is split out of the canonical command contract:
 
 ## Behavior Contract
 
-### Target And Field Validation Rules
+### Target and field validation rules
 
 - Find the node record by name. If not found, fail before side effects.
 - Check role-conditional field rules. If a field is supplied for an
@@ -164,7 +164,7 @@ Input mode behavior is split out of the canonical command contract:
   drift back to the TLD already stored in gateway node configuration, but
   intentional TLD migration requires a future explicit command contract.
 - Update operating system packages, Orbit installations, tools, or system
-  services beyond node-owned artifacts directly affected by the changed field.
+  services beyond the artifacts that the node owns and that are directly affected by the changed field.
 - Update app runtime policy, tool state, firewall policy, proxy routes,
   processes, schedules, or deployment pipelines.
 - SSH into the target node unless re-applying a changed field requires it.
@@ -235,8 +235,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating node fields, role-conditional field validation, no-op success with empty `changed`, node-not-found failure, control-caller gateway forwarding, app-node caller denial before prompts or side effects, artifact re-applying reporting, and warning payload shape for partial-success drift. |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Primary owner for control-caller behavior: configured control callers forward over HTTPS through WireGuard, unconfigured control callers fail before prompts or side effects, forwarded requests require access to the gateway node, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, no-op success with empty `changed`, node-not-found failure, control-caller forwarding, app-node denial, artifact re-applying reporting, and warning payload for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
 

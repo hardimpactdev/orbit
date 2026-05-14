@@ -2,10 +2,20 @@
 
 The command docs linter checks converted `docs/commands/**` files for structure,
 contract coherence, reference integrity, complexity, and prose ambiguity. The
-raw CLI default fails on errors and reports warnings. The `composer docs-lint`
+prose rules (sentence case, compound noun stacks, long section structure,
+bullet complexity, section openers, table cell prose, reader address) also walk
+top-level docs and abstractions when invoked with `--path=docs`.
+
+The raw CLI default fails on errors and reports warnings. The `composer docs-lint`
 script runs the CLI with `--strict --format=agent`, so warnings fail project
 verification and agent-facing output stays compact. Use `composer docs-lint --
 --format=text` for the expanded human report.
+
+Prose rules classify each file by **register profile** to pick thresholds. Files
+under `**/technical/*.md`, `docs/abstractions/**`, `docs/CONCEPTS.md`, and
+`docs/RULES.md` use the **technical** profile with looser sentence/paragraph
+ceilings and skip rules that assume tutorial-shaped prose (reader address,
+section opener, long section structure). Everything else is **reader-facing**.
 
 ## Baseline
 
@@ -80,3 +90,10 @@ specific `(path, rule_id, severity)` tuple. If the count grows, the linter emits
 | Rule | Severity | Checks | Fix |
 | --- | --- | --- | --- |
 | `command_docs.requirement_smell` | warning | Narrative prose contains high-signal ambiguity phrases such as `as needed`, `if possible`, or `and/or`. | Replace vague qualifiers with actor, condition, obligation, and observable result. |
+| `command_docs.sentence_case_heading` | warning | H2/H3/H4 headings do not capitalize mid-heading function words (`And`, `Or`, `The`, `A`, `To`, `For`, `From`, `With`, `In`, `On`, `Of`, `As`, `By`, etc.). | Rewrite `## Hub And Spoke` as `## Hub and spoke`. Acronyms (`API`, `DNS`), hyphenated compounds, and backticked identifiers are preserved. |
+| `command_docs.compound_noun_stack` | warning | Noun phrases anchored by an invented hyphenated compound do not stack more than one additional modifier before the head noun. Established technical compounds (`PHP-FPM`, `WireGuard`, `Server-Sent Events`, `Cloudflare`) are accepted as-is. | Decompose `gateway-owned development DNS mapping` into a sentence: "the development DNS mapping that the gateway owns". |
+| `command_docs.long_section_structure` | warning | Reader-facing sections with 5+ paragraphs contain at least one subheading, list, table, code block, or sentence-initial discourse marker (`If`, `When`, `By default`, `However`, `For example`, etc.). | Split the section with a subheading, surface an example, or rewrite branching behavior with conditional openers (`If you would like to X, you may Y`). |
+| `command_docs.bullet_complexity` | warning | Bullets in reader-facing docs do not combine 25+ words with 2+ clause separators or carry an embedded conditional. Reader-facing docs also do not run more than 8 consecutive bullets without intervening prose. | Split multi-clause bullets into separate items or rewrite as prose with explicit subordination. Break long bullet runs with subheadings or convert to a table. |
+| `command_docs.section_opener_prose` | warning | Reader-facing H2/H3 sections start with at least one prose sentence before any code block, table, or list. Self-describing headings (`Usage`, `Examples`, `Signature`, etc.) are exempt. | Add a one-sentence intro that names the thing and when to use it before the structural content. |
+| `command_docs.table_prose_complexity` | warning | Table cells do not exceed 30 prose words or 3 sentences. Prose hidden in tables escaped the prose linter until this rule landed. | Split the cell, move guidance to surrounding prose, or use a nested list. |
+| `command_docs.reader_address` | warning | Reader-facing command pages address the reader in named action sections (`Usage`, `Examples`, `What Happens`, `Output`, `Recovery`, `Getting Started`, `When to Use`) — either with `you`/`your` or with an imperative-led sentence (`Run`, `Use`, `Pass`, etc.). Technical contracts and concept glossaries are exempt. Sections that are mostly code are exempt. | Open the section with a sentence addressing the reader directly. "You can …" or "Run …" both satisfy the rule. |

@@ -220,7 +220,7 @@ family doctor — not a removal failure.
     (`doctor --fix --family=proxy --restore`).
   - `process.runtime_unit_extra` — orphaned inherited runtime unit
     (`doctor --fix --family=process --restore`).
-- `workspace:remove` does not duplicate per-family drift item shapes; it
+- `workspace:remove` does not duplicate drift item shapes for each family; it
   points operators at the affected `doctor --fix --family=<family> --restore` via the
   warning's `next_command`.
 

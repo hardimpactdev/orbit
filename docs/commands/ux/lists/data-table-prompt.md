@@ -5,12 +5,16 @@ acts on the selection.
 
 ## Use When
 
+Use `datatable` in the following situations.
+
 - The command needs to select a single entity from a list and immediately
   act on it (`orbit profile` selecting an app to profile).
 - The list may grow beyond a handful of rows, so a flat `select` would be
   awkward and a search/filter is valuable.
 
 ## Avoid When
+
+Choose a different primitive in the following situations.
 
 - The command is read-only and only displays results. Use
   [`table`](table.md).
@@ -21,6 +25,8 @@ acts on the selection.
   with the same row data flattened to labels.
 
 ## Contract
+
+These rules govern all uses of `datatable` in Orbit commands.
 
 - Primitive name in input-mode docs: `datatable`.
 - Row keys are the values returned to the caller; row columns are display
@@ -53,11 +59,15 @@ $selected = datatable(
 
 ## Reference Implementation
 
+This command uses `datatable` and is the canonical model to follow.
+
 - `orbit profile` — selects the target app when no positional argument is
   given. See `app/Console/Commands/ProfileCommand.php` and
   `docs/commands/11_operation/5_profile/technical/5.1_profile_input-mode_interactive.md`.
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: datatable](https://laravel.com/docs/13.x/prompts#datatable)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

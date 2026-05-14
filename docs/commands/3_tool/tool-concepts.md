@@ -6,6 +6,8 @@ override the [Architecture](../../ARCHITECTURE.md).
 
 ## Identity
 
+These terms define the core vocabulary used across tool command contracts and the tool doctor.
+
 - **Tool:** Orbit product concept for a node capability Orbit installs,
   configures, observes, or keeps converged.
 - **Tool catalog:** The set of supported tool slugs documented in
@@ -19,6 +21,8 @@ override the [Architecture](../../ARCHITECTURE.md).
   install paths, and probe and repair settings.
 
 ## Support Models
+
+These terms describe how Orbit relates to each tool in the catalog.
 
 - **Required baseline tool:** Catalog tool expected to exist as part of node
   provisioning or host bootstrap. Adopted and kept converged; not provisioned
@@ -36,14 +40,17 @@ override the [Architecture](../../ARCHITECTURE.md).
 
 ## Service Surfaces
 
-- **Tool-owned service endpoint:** Non-secret service endpoint declared by a
-  tool definition. HTTP and WebSocket endpoints surface as tool-owned `proxy`
+These terms describe the network surfaces a tool may declare.
+
+- **Tool-owned service endpoint:** Service endpoint declared by a tool definition that does not expose secret values. HTTP and WebSocket endpoints surface as tool-owned `proxy`
   routes; TCP service endpoints are WireGuard-only host/port records.
 - **Tool credentials:** Orbit-owned generated secrets for credential-bearing
   managed service tools. The default service username is `orbit` when the
   protocol has a username concept.
 
 ## Boundaries
+
+These rules define what tool commands may and may not change.
 
 - **Tool-family boundaries:** Tool commands own tool configuration, tool lifecycle,
   declared service endpoints, and tool catalog membership.

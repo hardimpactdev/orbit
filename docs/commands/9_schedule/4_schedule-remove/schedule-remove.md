@@ -19,7 +19,7 @@ orbit schedule:remove laravel-scheduler --app=docs
 orbit schedule:remove backups --node=app-1 --force
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: schedule slug.
 - `--app`: disambiguate an app-scoped schedule.
@@ -31,13 +31,13 @@ orbit schedule:remove backups --node=app-1 --force
 
 ## What Happens
 
-`schedule:remove` resolves the schedule, records removal on the gateway, and confirms the target node's Orbit Scheduler is reachable so the removal is picked up promptly.
+Run `schedule:remove` when a recurring task no longer needs to be managed by Orbit. `schedule:remove` resolves the schedule, records removal on the gateway, and confirms the target node's Orbit Scheduler is reachable so the removal is picked up promptly.
 
 It does not remove app code, app process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
 
 ## Output
 
-Human output renders a progress tree while the command confirms removal, writes gateway configuration, and notifies the target node's Orbit Scheduler.
+Run without `--json` to see a progress tree while the command confirms removal, writes gateway configuration, and notifies the target node's Orbit Scheduler.
 
 JSON output returns the removed schedule entity and scheduler-pickup result.
 

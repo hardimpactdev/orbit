@@ -1,6 +1,6 @@
 # Node Commands
 
-Nodes are Orbit's foundation. A first-time user usually meets Orbit from a
+Nodes are Orbit's foundation. The first machine a new user meets Orbit on is usually a
 control node: the machine where the CLI is installed, prompts are answered, and
 commands are run.
 
@@ -16,7 +16,7 @@ The stable node-family vocabulary is defined in
 [`node-concepts.md`](node-concepts.md). The node-family drift, restore, and adopt
 contract is defined in [`node-doctor.md`](node-doctor.md). Implementation-shape
 details for runtime roles, transport edges, and gateway-to-app-node applying
-live in [BUILDING-BLOCKS.md](../../BUILDING-BLOCKS.md#runtime-roles) and
+live in [BUILDING-BLOCKS.md](../../BUILDING-BLOCKS.md#platform-and-roles) and
 [BUILDING-BLOCKS.md#gateway-to-app-node](../../BUILDING-BLOCKS.md#gateway-to-app-node).
 
 ## Role Model
@@ -43,7 +43,7 @@ app-node write exception is
 defined by [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node); it remains a
 gateway-mediated local workflow, not local app-node ownership of configuration.
 
-## Thin CLI And Gateway Authority
+## Thin CLI and gateway authority
 
 The Orbit CLI is a thin gateway client. It gathers input, calls the gateway,
 and renders the result. It does not classify itself as control, gateway, or
@@ -64,10 +64,10 @@ caller may do. The CLI does not check or branch on caller role locally.
 Commands that reject specific roles state that in their Prerequisites and
 Failure Semantics.
 
-## Hub And Spoke Model
+## Hub and spoke model
 
 Orbit uses the
-[hub-and-spoke node topology](../../ARCHITECTURE.md#node-roles) defined by the
+[hub-and-spoke topology](../../ARCHITECTURE.md#hub-and-spoke) defined by the
 architecture. The gateway is the hub. Control nodes and app nodes are spokes
 connected to the gateway; they do not coordinate Orbit work with each other
 directly.
@@ -89,11 +89,13 @@ directly.
 ```
 
 Control nodes consume the gateway API. App nodes serve workloads and receive
-gateway-applied changes over SSH. App-node CLI calls also consume the gateway
+gateway-applied changes over SSH. CLI calls from app nodes also consume the gateway
 API and may infer local app or workspace context. Non-CLI app-node to gateway
 traffic is limited to narrow event callbacks such as process lifecycle hooks.
 
 ## Domain Rules
+
+These rules apply to all node commands and define the invariants the family enforces.
 
 - The gateway is the source of truth for all nodes.
 - Node records define fleet membership, role, platform, node identity,
@@ -119,7 +121,7 @@ traffic is limited to narrow event callbacks such as process lifecycle hooks.
 - Node access grants decide which consuming nodes may operate on which serving
   nodes.
 - Every CLI-to-gateway command is authenticated by WireGuard node identity and
-  authorized through gateway-owned node access policy. Grants are not
+  authorized through the node access policy that the gateway owns. Grants are not
   transport-specific and do not grant SSH.
 - A non-gateway consuming node must have access to the serving node that owns
   the requested resource before it can read or mutate that resource. Gateway
@@ -130,7 +132,7 @@ traffic is limited to narrow event callbacks such as process lifecycle hooks.
 - Local node defaults do not grant access. The gateway still authenticates the
   caller and authorizes the requested operation through node access policy.
 - For gateway nodes, node readiness includes the gateway runtime service needed
-  to serve the Orbit API. Process-manager-specific FPM provisioning commands are
+  to serve the Orbit API. FPM provisioning commands specific to the process manager are
   not a public node command surface.
 - `orbit doctor --family=node` verifies role, platform, WireGuard, SSH, and
   reachability expectations, including gateway runtime readiness for gateway
@@ -144,15 +146,14 @@ Node transport has different rules before and after bootstrap:
   does not yet have enough Orbit identity, certificates, network trust, or
   gateway registration to participate in Orbit HTTPS calls.
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
-  local gateway configuration. This lets control nodes and app-node CLI clients
+  local gateway configuration. This lets control nodes and CLI clients on app nodes
   operate without owning fleet state.
 - Gateway VPN administration is the exception: `vpn-client:*` and
   `vpn-web-ui:*` commands run on the gateway host, so a control node initiating
   them needs SSH access to the gateway over Orbit/WireGuard.
 - The gateway uses SSH to communicate with app nodes. On-node work such as file
   writes, service control, log access, package installation, and shell execution
-  is simpler and more explicit over SSH than through an app-node HTTP control
-  plane.
+  is simpler and more explicit over SSH than through an HTTP control plane on the app node.
 
 The steady-state paths are therefore:
 
@@ -248,13 +249,13 @@ constraints belong to access policy, not to the argument names.
 ## Node Identity Issuance
 
 Every CLI caller must present a gateway-known WireGuard identity before it can
-call the gateway. Identity issuance is gateway-owned node lifecycle work: it
+call the gateway. Identity issuance is node lifecycle work owned by the gateway: it
 creates the node registry row, issues the WireGuard peer configuration, and
 marks the node identity as active.
 
-A node identity is the gateway-owned node record plus its WireGuard peer
+A node identity is the node record that the gateway owns, plus its WireGuard peer
 identity, assigned WireGuard address, role, and node name. A compatible existing
-node is an active gateway-known node whose role, node identity, host, app-node
+node is an active node whose role is known to the gateway and whose role, node identity, host, app-node
 environment, and development TLD match the resolved command input for the path
 being requested.
 
@@ -266,10 +267,10 @@ local CLI installation: clone Orbit, install dependencies, and symlink
 First-gateway bootstrap is a complete onboarding flow for the initiating
 control node. When a control node with no configured gateway runs
 `orbit node:new <gateway-name> --role=gateway --host=<host> --control-name=<control-name>`,
-Orbit provisions the gateway, creates the initiating control node identity
-named by `<control-name>`, installs that local WireGuard identity, trusts the
-gateway CA, stores local gateway configuration using `<host>` as the initial
-gateway endpoint for WireGuard peer configs, and verifies gateway API access.
+Orbit provisions the gateway and creates the initiating control node identity named by `<control-name>`.
+It then installs that local WireGuard identity, trusts the gateway CA, and stores local
+gateway configuration using `<host>` as the initial gateway endpoint for WireGuard peer configs.
+Finally it verifies gateway API access.
 That initiating control node does not run `gateway:add` afterward.
 
 Control-node enrollment is a two-machine flow:
@@ -283,7 +284,7 @@ Control-node enrollment is a two-machine flow:
 
 Before a control node can run
 [`orbit gateway:add [gateway_ip]`](../2_gateway/1_gateway-add/gateway-add.md),
-it must already have gateway-issued WireGuard identity material installed and
+it must already have the WireGuard identity material that the gateway issued installed, and
 the Orbit WireGuard network must be active. `gateway:add` discovers or verifies
 the gateway and stores local gateway connection settings; it does not create
 identity or access policy. This does not apply to the initiating control node
@@ -306,9 +307,13 @@ contract, not gateway-local `node:new`.
 
 ### Family Doctor
 
+Run this command to detect and repair drift across all node-family artifacts.
+
 - [`doctor --family=node`](node-doctor.md)
 
-### Add Or Bootstrap
+### Add or bootstrap
+
+Use these commands to register and provision new fleet members.
 
 1. New gateway, app, or control node:
    [`orbit node:new [name]`](1_node-new/node-new.md)
@@ -318,15 +323,21 @@ Gateway onboarding and gateway trust repair commands live in
 
 ### Inventory
 
+Use these commands to list and inspect nodes registered in the gateway.
+
 2. [`orbit node:list`](3_node-list/node-list.md)
 3. [`orbit node:show [name]`](4_node-show/node-show.md)
 
 ### Access Policy
 
+Use these commands to manage which nodes may consume resources from which serving nodes.
+
 4. [`orbit node:grant [consuming_node] [serving_node]`](5_node-grant/node-grant.md)
 5. [`orbit node:revoke [consuming_node] [serving_node]`](6_node-revoke/node-revoke.md)
 
-### Lifecycle And Verification
+### Lifecycle and verification
+
+Use these commands to update, remove, or configure node settings after initial provisioning.
 
 6. [`orbit node:update [name]`](7_node-update/node-update.md)
 7. [`orbit node:remove [name]`](8_node-remove/node-remove.md)

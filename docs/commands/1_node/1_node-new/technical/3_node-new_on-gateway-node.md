@@ -19,7 +19,7 @@ execution.
   is unique in gateway node configuration, and is not already mapped to another
   gateway development DNS target.
 - For `--role=app --environment=development`, the gateway can use the internal
-  node-family development DNS applier to converge `*.{node_new.tld}` to the
+  DNS applier for the node family to converge `*.{node_new.tld}` to the
   app node's WireGuard address without exposing a public resolver.
 - For `--role=app`, the target host platform is supported for the app role.
 - For `--role=gateway`, `node_new.host` can be resolved and is compatible with
@@ -29,12 +29,12 @@ execution.
   the target host platform is supported for the gateway role.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, forbidden control-node provisioning inputs fail as soon
+are known. For example, inputs that are forbidden for control-node provisioning fail as soon
 as `node_new.role=control` and the forbidden supplied input are known, before
 prompting for unrelated later input. In interactive input mode, a correctable
 path blocker shows a validation message at the current corrective prompt so the
 operator can change course or cancel. All path eligibility must complete before
-gateway-owned side effects begin.
+side effects that the gateway owns begin.
 
 ## Allowed Paths
 
@@ -52,7 +52,7 @@ gateway-owned side effects begin.
 - Gateway execution may use SSH to provision app nodes.
 - Gateway execution must not SSH to control nodes for `--role=control`.
 
-## Gateway Convergence And Adoption
+## Gateway convergence and adoption
 
 For `--role=gateway`:
 
@@ -117,26 +117,26 @@ For `--role=app`:
 6. Mint or verify WireGuard identity.
 7. Register node configuration, including `nodes.tld` for development app nodes.
 8. Configure the app node's local TLD default for development app nodes.
-9. Use the internal node-family development DNS applier to create or converge
-   the gateway-owned mapping `*.{node_new.tld}` to the app node's WireGuard
+9. Use the internal DNS applier for the node family to create or converge
+   the development DNS mapping that the gateway owns for `*.{node_new.tld}` to the app node's WireGuard
    address.
 10. Verify node readiness.
 
-The gateway-owned development DNS configuration model is derived from the
+The development DNS configuration model that the gateway owns is derived from the
 active development app-node row, not from a public DNS command record. The
-applier must write only gateway-local Orbit-managed resolver artifacts, bind
+applier must write only resolver artifacts that Orbit manages on the gateway, bind
 them to the Orbit/WireGuard-reachable resolver surface, and avoid public
 open-resolver exposure. If the node row is written but development DNS
 convergence fails, `node:new` reports partial provisioning with a node-family
 drift handoff to `doctor --family=node --restore`.
 
 Compatible app-node adoption may use existing non-active gateway configuration
-only when node-family adoption can prove the registry peer material against
-live WireGuard reality. Active app-node missing-peer adoption may attach
-unowned live WireGuard reality only when node-family adoption proves the
+only when the adoption flow can prove the registry peer material against
+live WireGuard reality. Adopting a missing peer on an active app node may attach
+unowned live WireGuard reality only when the adoption flow proves the
 selected node name, role, supported platform, live interface public key, and
-WireGuard address through a bounded non-secret identity artifact read.
-Unknown-host adoption still requires a separate materialization path before
+WireGuard address through a bounded read of non-secret identity artifacts.
+Adoption of an unknown host still requires a separate materialization path before
 `node:new` can safely attach unowned live reality to gateway configuration.
 Without that proof, `node:new` reports incomplete provisioning or node drift
 and points to `doctor --family=node --restore` or
@@ -192,7 +192,7 @@ identity. It must not overwrite a proven but incompatible host.
   drift for `doctor --family=node --restore`.
 - Control-node enrollment fails if WireGuard peer minting cannot return a peer
   address that matches the node record.
-- App-node provisioning reports partial provisioning if gateway configuration is
+- App-node provisioning reports partial provisioning when gateway configuration is
   written but node readiness verification fails.
 - Missing app-node host or development TLD is handled by the selected input
   mode before side effects, as defined in the canonical contract.
@@ -206,6 +206,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeNewCommandTest.php` | Primary owner for gateway-caller behavior: active local gateway identity requirement, gateway post-input path eligibility, gateway path matrix behavior, gateway `node_new.host` required for every gateway request, already-provisioned gateway convergence without reprovisioning, missing gateway-row materialization being outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --restore`, reset/destructive reprovisioning being outside `node:new`, control-node enrollment without SSH prompts or SSH side effects, canonical forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development app-node TLD persistence, gateway TLD mapping creation, compatible app-node adoption, and incompatible node-record failures before side effects. Renderer tests own exact human prose and JSON envelope shape for these outcomes. |
+| `tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior: active local gateway identity requirement, post-input path eligibility, path matrix behavior, `node_new.host` required for every gateway request, already-provisioned convergence without reprovisioning, missing gateway-row materialization outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --restore`, reset outside `node:new`, control-node enrollment without SSH, forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development TLD persistence, TLD mapping creation, compatible adoption, and incompatible record failures before side effects. Renderer tests own exact output shape. |
 | `tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-node provisioning and development TLD mapping. |
 | `tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-node provisioning without development TLD mapping. |

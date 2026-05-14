@@ -8,8 +8,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied; `control` and `gateway` callers may proceed when authorized.
-- Runtime artifact re-rendering requires gateway reachability to the owning app node.
+- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
+- `control` and `gateway` callers may proceed when authorized.
+- Re-rendering runtime artifacts requires the gateway to reach the owning app node.
 
 ## Signature
 
@@ -66,7 +67,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`process:edit` changes process configuration and attempts to re-render derived runtime units. [`process-doctor.md`](../../process-doctor.md) owns later detection and repair of missing or divergent runtime units and lifecycle event notifier material.
+`process:edit` changes process configuration and attempts to re-render the runtime units derived from that definition. [`process-doctor.md`](../../process-doctor.md) owns later detection and repair of missing or divergent runtime units and lifecycle event notifier material.
 
 ## Activity Logging
 
@@ -86,7 +87,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessEditCommandTest.php` | Command contract for process updates, caller-role denial before prompts or side effects, required editable fields, app resolution, re-rendering derived units, optional restart behavior, repairable warnings after post-configuration apply failure, and no configuration write on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessEditCommandTest.php` | Process update contract, caller-role denial, required editable fields, app resolution, re-rendering derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessEditInputContractTest.php` | Required inputs, editable field validation, enum validation, no-op rejection, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

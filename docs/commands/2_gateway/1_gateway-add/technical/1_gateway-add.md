@@ -52,7 +52,7 @@ This command follows the shared
 
 - Check whether local gateway onboarding is already complete for the target
   gateway. Convergence requires matching local gateway settings, configured
-  `ca_pem_path` and `ca_sha256`, a non-empty CA file whose hash matches
+  `ca_pem_path` and `ca_sha256`, a CA file that is non-empty and whose hash matches
   `ca_sha256`, caller OS trust for that CA file, and successful `/api/me`
   identity verification.
 - When all conditions match, return success with `result.action:
@@ -69,13 +69,13 @@ This command follows the shared
   redirect.
 - Install the fetched CA into local trust storage when local gateway CA trust is
   missing or stale.
-- Use the same local trust-store repair behavior documented by
+- Use the same trust-store repair behavior documented by
   [`gateway:trust`](../../2_gateway-trust/gateway-trust.md), but with the
   gateway endpoint resolved by the onboarding flow.
 
 The trusted gateway root CA is the trust anchor for Orbit-managed app,
 workspace, proxy, gateway, and tool route certificates. `gateway:add` must not
-issue, upload, renew, or clean up route-scoped TLS leaf certificates. Route
+issue, upload, renew, or clean up TLS leaf certificates scoped to routes. Route
 certificate lifecycle belongs to the route-owning domain and its doctor family.
 
 ### Identity Verification Rules

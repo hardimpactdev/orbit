@@ -18,6 +18,8 @@ node-peer drift. There is no `doctor --family=vpn` contract.
 
 ## Domain Rules
 
+These rules govern all VPN commands and their gateway-execution contract.
+
 - VPN commands must start with a VPN compound command prefix before the colon,
   such as `vpn-client:*` or `vpn-web-ui:*`.
 - VPN commands execute on the gateway host because the VPN backend is
@@ -25,9 +27,12 @@ node-peer drift. There is no `doctor --family=vpn` contract.
 - Gateway callers execute the backend operation locally.
 - Control callers may initiate VPN commands only when they can SSH to the
   gateway over the Orbit/WireGuard path. This is a gateway infrastructure
-  exception and does not create a general control-to-gateway public SSH path.
+  exception and does not create a general public SSH path from control to gateway.
 - App-node callers are denied before prompts or side effects.
-- `vpn-client:*` commands manage non-node human/operator VPN clients.
+- `vpn-client:*` commands manage VPN clients for humans and operators, not Orbit node peers.
+
+Node identity is managed separately.
+
 - Orbit node identities are issued through [`node:new`](../1_node/1_node-new/node-new.md)
   and removed through [`node:remove`](../1_node/8_node-remove/node-remove.md),
   not through `vpn-client:new` or `vpn-client:remove`.
@@ -78,6 +83,8 @@ operator requests it:
 ```
 
 ## Commands
+
+The VPN family provides the following commands.
 
 1. [`orbit vpn-client:list`](1_vpn-client-list/vpn-client-list.md)
 2. [`orbit vpn-client:new <name>`](2_vpn-client-new/vpn-client-new.md)

@@ -39,12 +39,12 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets.
-7. **TLS material:** expected Orbit-managed TLS material exists and matches the
+7. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-node
    compatibility material used by Laravel Vite TLS detection. Internal IP-only
    routes skip hostname compatibility checks. Expected TLS material is a
-   gateway-issued route leaf certificate and key, not node-local Caddy CA
-   material and not an app-node intermediate CA.
+   gateway-issued route leaf certificate and key — not CA material issued locally by Caddy,
+   and not an app-node intermediate CA.
 8. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway configuration are reported as extra route drift.
 9. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed backend
@@ -53,6 +53,8 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
 Observed backend routes without Orbit ownership markers are unmanaged node reality by default. They are reported as drift only when the operator requested an explicit adoption scope.
 
 ## Proxy Issue Codes
+
+Each code below identifies a specific proxy-family drift condition that the probe can detect.
 
 | Code | Detected when |
 | --- | --- |
@@ -68,21 +70,25 @@ Observed backend routes without Orbit ownership markers are unmanaged node reali
 
 ## Proxy Fix Map
 
+Use `doctor --fix --restore` to trigger the repair action listed for each code.
+
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
-| `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. If the node is serving Caddy-local certificates or any intermediate-CA-issued material outside Orbit policy, repair must converge back to gateway-issued route leaf certificates. |
+| `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
 `doctor --fix --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, or `proxy.domain_conflict`.
 
 ## Proxy Adopt Map
 
+Use `doctor --fix --adopt` to apply the adoption action listed for each code.
+
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
-| `proxy.route_extra` | Create a custom gateway proxy route row only when the operator selected a specific node and backend route, the domain is not owned by another Orbit route, and the observed route can be represented as either `--upstream` or `--redirect`. |
+| `proxy.route_extra` | Create a custom gateway proxy route row when: the operator selected a specific node and backend route; the domain is unowned; and the observed route maps to `--upstream` or `--redirect`. |
 | `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, workspace, gateway, or tool ownership. |
 
 `doctor --fix --adopt` does not scan arbitrary hosts, adopt app/workspace/gateway/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.

@@ -36,6 +36,8 @@ workspace path on the owning app node.
 
 ## Behavior
 
+The following rules govern how a step is added and when it runs.
+
 - **Deferred Execution**: Adding a step does not execute it immediately.
   Steps run during [`workspace:new`](../1_workspace-new/workspace-new.md) and
   [`workspace:setup`](../2_workspace-setup/workspace-setup.md).
@@ -62,11 +64,17 @@ workspace path on the owning app node.
 ## Examples
 
 ### Add a basic setup step
+
+Run this to append a step to the end of the setup list.
+
 ```bash
 orbit workspace-setup-step:add --command="php artisan migrate"
 ```
 
 ### Insert a step before an existing one
+
+Use `--before` to position the step relative to an existing step ID.
+
 ```bash
 orbit workspace-setup-step:add --command="npm install" --before=12
 ```

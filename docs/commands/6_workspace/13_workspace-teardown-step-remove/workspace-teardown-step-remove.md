@@ -28,6 +28,8 @@ policy used for future executions.
 
 ## Behavior
 
+The following rules govern how the step is removed.
+
 - **Destructive Consent**: This command requires explicit confirmation because
   it permanently deletes a policy definition. Use `--force` to bypass the
   confirmation prompt.
@@ -44,11 +46,17 @@ policy used for future executions.
 ## Examples
 
 ### Remove a step with confirmation
+
+This prompts before removing the step.
+
 ```bash
 orbit workspace-teardown-step:remove --step=18
 ```
 
 ### Force remove a step without prompting
+
+Use `--force` to skip the confirmation prompt.
+
 ```bash
 orbit workspace-teardown-step:remove --step=18 --force
 ```

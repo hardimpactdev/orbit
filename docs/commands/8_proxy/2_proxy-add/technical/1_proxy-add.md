@@ -50,7 +50,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Fails before side effects when the domain is owned by an app, workspace, gateway, or tool route.
 - Never uses `--force` to overwrite a non-custom route.
-- Updating an existing custom route with a different target requires explicit replacement consent: an interactive confirmation prompt or `--force`.
+- Updating an existing custom route with a different target requires explicit replacement consent.
+- Consent is an interactive confirmation prompt or `--force`.
 
 ### Scope Boundaries
 

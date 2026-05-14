@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied; `control` and `gateway` callers may proceed when authorized.
+- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
+- `control` and `gateway` callers may proceed when authorized.
 - Runtime artifact cleanup requires gateway reachability to the owning app node.
 
 ## Signature
@@ -86,7 +87,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Command contract for caller-role denial before prompts or side effects, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Caller-role denial, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php` | Required inputs, app resolution, `--force` destructive consent behavior, `--json` not granting consent, and cancelled confirmation behavior. |
 
 Renderer and input-mode test mapping lives in the split companion files.

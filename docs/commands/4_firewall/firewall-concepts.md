@@ -4,10 +4,14 @@ This document defines firewall-family vocabulary and invariants. It supports the
 
 ## Identity
 
+These terms define the core vocabulary used across firewall command contracts and the firewall doctor.
+
 - **Firewall rule:** Gateway-owned record of one network policy entry on one node, expressed in Orbit terms rather than backend syntax.
 - **Rule name:** Identity of the rule on the target node. Unique per node. Reapplying the same name with the same policy shape is idempotent; reusing the name for a different policy fails before mutation.
 
 ## Rule Shape
+
+Each firewall rule is defined by the following fields.
 
 - **Direction:** Traffic direction. One of `incoming` or `outgoing`.
 - **Action:** Firewall policy action. One of `allow` or `deny`.
@@ -19,9 +23,16 @@ This document defines firewall-family vocabulary and invariants. It supports the
 
 ## Targets
 
+This term defines which nodes firewall commands may target.
+
 - **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway` or `app`. Control nodes, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
 
 ## Policy Boundaries
 
-- **Bootstrap policy:** Role-baseline firewall policy applied during node provisioning, including Orbit/WireGuard management access and role-specific public ingress decisions. Owned by the node domain.
-- **Firewall-family boundaries:** Firewall commands own editable rule configuration on eligible nodes. They do not edit bootstrap policy, do not create public SSH exceptions for app nodes, and do not import observed node reality outside explicit `doctor --fix --family=firewall_rule --adopt` semantics.
+These terms define what firewall commands may and may not change.
+
+- **Bootstrap policy:** Role-baseline firewall policy applied during node provisioning, including Orbit/WireGuard management access and public ingress decisions specific to each node role. Owned by the node domain.
+- **Firewall-family boundaries:** Firewall commands own editable rule configuration on eligible nodes.
+  - They do not edit bootstrap policy.
+  - They do not create public SSH exceptions for app nodes.
+  - They do not import observed node reality outside explicit `doctor --fix --family=firewall_rule --adopt` semantics.

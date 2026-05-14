@@ -26,7 +26,7 @@ orbit node:list --doctor
 orbit node:list --role=app --environment=development --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--role`: filter by node role. Single value, one of `gateway`, `app`, or `control`. Comma-separated input is rejected.
 - `--environment`: filter app nodes by environment. Single value, one of `development` or `production`. Comma-separated input is rejected.
@@ -70,6 +70,8 @@ envelope shape.
 - The current node identity is authorized to read visible node registry configuration.
 
 ## Related Commands
+
+Use these commands to inspect individual nodes or run deeper verification after listing.
 
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:show`](../4_node-show/node-show.md) — show node details

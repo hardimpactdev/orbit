@@ -143,7 +143,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Uses the shared exit status policy. Success exits `0`; all documented command
 failures exit with the standard command failure status (`1`). This command
-defines no command-specific numeric exit codes.
+defines no numeric exit codes specific to it.
 
 ## Doctor Relationship
 

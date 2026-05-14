@@ -82,7 +82,7 @@ detection and safe node-peer cleanup.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, missing client failure, active node peer protection, destructive consent, backend deletion, no node record or grant deletion, and no local config cleanup. |
+| `tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: caller-role denial, gateway-local SSH execution, TOTP handling, missing client failure, node peer protection, destructive consent, backend deletion. No node records, grants, or local config cleanup. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php` | Interactive confirmation prompt, `--force` bypass, declined confirmation failure before side effects, and prompt abort behavior. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php` | Non-interactive missing-`--force` failure, `--json` forcing non-interactive mode, and no prompts. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

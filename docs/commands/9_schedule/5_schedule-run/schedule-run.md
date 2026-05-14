@@ -19,7 +19,7 @@ orbit schedule:run laravel-scheduler --app=docs
 orbit schedule:run backups --node=app-1
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: schedule slug.
 - `--app`: disambiguate an app-scoped schedule.
@@ -30,13 +30,13 @@ orbit schedule:run backups --node=app-1
 
 ## What Happens
 
-`schedule:run` resolves the schedule from gateway configuration, executes its stored command or script once on the target node through the gateway, and records the run output in gateway schedule history.
+Use `schedule:run` when you want to test a schedule or run a missed task on demand. `schedule:run` resolves the schedule from gateway configuration, executes its stored command or script once on the target node through the gateway, and records the run output in gateway schedule history.
 
 It does not change the recurring interval, enabled state, app process definitions, or schedule ownership.
 
 ## Output
 
-Human output renders a progress tree and streams the scheduled command output.
+Run without `--json` to see a progress tree and stream the scheduled command output.
 
 JSON output returns a bounded run result with captured output. Scheduled command failure is represented as an Orbit command failure with the scheduled process exit code captured in JSON data.
 

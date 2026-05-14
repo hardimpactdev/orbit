@@ -12,9 +12,9 @@ The Agent IDE command family owns the `agent-ide:*` command prefix.
 The `agent-ide` command domain does not own a state family. It consumes adapter
 configuration and active-session capabilities owned by other families.
 
-[`doctor --family=node`](../1_node/node-doctor.md) owns node-level agent IDE
-default configuration. [`doctor --family=app`](../5_app/app-doctor.md) owns
-app-level agent IDE settings and app runtime health.
+[`doctor --family=node`](../1_node/node-doctor.md) owns the Agent IDE defaults
+configured at the node level. [`doctor --family=app`](../5_app/app-doctor.md) owns
+the Agent IDE settings configured at the app level, and app runtime health.
 [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
 workspace state and workspace artifacts. [`doctor --family=process`](../7_process/process-doctor.md)
 owns crash-event policy and history that may trigger Agent IDE notifications.
@@ -24,6 +24,8 @@ tool lifecycle, such as `opencode-server` and `polyscope-server`.
 There is no `doctor --family=agent-ide` contract.
 
 ## Domain Rules
+
+These rules define the Agent IDE command domain and its authorization model.
 
 - Agent IDE defaults are gateway configuration owned by nodes and apps.
 - `node:agent-ide` defines the node default.
@@ -45,6 +47,8 @@ There is no `doctor --family=agent-ide` contract.
   defaults, but it is not authorization.
 
 ## Commands
+
+The Agent IDE family provides the following commands.
 
 1. [`orbit agent-ide:message [message]`](1_agent-ide-message/agent-ide-message.md)
 

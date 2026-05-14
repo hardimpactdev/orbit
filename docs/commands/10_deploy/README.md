@@ -21,6 +21,8 @@ adoptable by doctor.
 
 ## Domain Rules
 
+These rules define what the deploy command family owns and how it behaves.
+
 - The deploy command family owns the `deploy:*` command prefix.
 - Deployment policy and history belong to production apps.
 - The gateway is the source of truth for deployment step definitions, step
@@ -28,8 +30,8 @@ adoptable by doctor.
 - Deployment commands apply only to production apps.
 - Deployment steps are arbitrary shell commands. Orbit does not assume every
   deployment is a zero-downtime release flow.
-- Deployment steps execute from the gateway-tracked app source path on the
-  app's owning node.
+- Deployment steps execute from the app source path tracked by the gateway, on
+  the app's owning node.
 - Retention is optional deploy-step metadata for steps that create or prune
   versioned releases. It is not global app policy and not a standalone state
   family.
@@ -103,6 +105,8 @@ Deploy JSON renderers that return one run entity embed this shape under
 | `steps[]` | array | Per-step run summaries. |
 
 ## Commands
+
+Use these commands to manage deployment steps, run deployments, and inspect deployment history.
 
 1. [`orbit deploy:step-add`](1_deploy-step-add/deploy-step-add.md)
 2. [`orbit deploy:step-list`](2_deploy-step-list/deploy-step-list.md)

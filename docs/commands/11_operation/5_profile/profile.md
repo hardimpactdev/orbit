@@ -2,13 +2,13 @@
 
 [Back to Operation commands.](../README.md)
 
-**Purpose:** Profile one Orbit-managed app request and report request timing.
+Profile one Orbit-managed app request and report request timing.
 
-**Description:** `profile` runs a fresh HTTP `GET` request against a resolved app
-route, reports network timing from Orbit's request profiler, and enriches the
-result with Laravel Toolbar data when the app exposes it for that request.
-
-`profile` is a development diagnostic command. It observes one request; it does not change app configuration, proxy routes, process state, or deployment state.
+`profile` runs a fresh HTTP `GET` request against a resolved app route, reports
+network timing from Orbit's request profiler, and enriches the result with
+Laravel Toolbar data when the app exposes it for that request. It is a
+development diagnostic command that observes one request without changing app
+configuration, proxy routes, process state, or deployment state.
 
 ## Usage
 
@@ -27,29 +27,16 @@ orbit profile --app=docs --as-first-user
 orbit profile --app=docs --user=1
 ```
 
-## Behavior
+## Behavior Summary
 
-- Resolves a target app from `[target]`, `--app`, or the current directory.
-- Accepts a full URL target by splitting it into host target and request URI.
-- Sends one HTTP `GET` request with a per-run request id.
-- Measures DNS, connect, TLS, time to first byte, download, total time, response
-  status, and response size.
-- Sends explicit Toolbar auth headers when `--as-first-user` or `--user=<id>`
-  is supplied.
-- Enriches the baseline timings with Laravel Toolbar summary data when the app
-  exposes it for the request.
-- Treats completed non-2xx HTTP responses as successful profile runs.
+`profile` resolves a target app, sends one timed HTTP request, and returns the result.
 
-Toolbar enrichment never changes the measured baseline timing values.
-
-## Output
-
-Human output renders the resolved request, status, total time, timing timeline,
-and query summary when Toolbar data is available.
-
-JSON output returns the same result in the shared `success` or `error` envelope.
-See the [JSON renderer contract](technical/6.2_profile_output-render_json.md)
-for the exact shape.
+- **Target Resolution**: Resolves a target app from `[target]`, `--app`, or the current directory. Accepts a full URL target by splitting it into host target and request URI.
+- **Request**: Sends one HTTP `GET` request with a per-run request id.
+- **Timing**: Measures DNS, connect, TLS, time to first byte, download, total time, response status, and response size.
+- **Authentication**: Sends explicit Toolbar auth headers when `--as-first-user` or `--user=<id>` is supplied.
+- **Toolbar Enrichment**: Enriches the baseline timings with Laravel Toolbar summary data when the app exposes it for the request. Toolbar enrichment never changes the measured baseline timing values.
+- **Success Condition**: Treats a completed HTTP response as a successful profile run, even when the status code is not 2xx.
 
 ## Requirements
 
@@ -57,8 +44,14 @@ for the exact shape.
 - The gateway authorizes the calling WireGuard peer to read the resolved app.
 - The target app is an Orbit-managed app.
 - The resolved request URL is reachable from the selected request origin.
-- Authenticated profiles require app-side support for Orbit's Toolbar auth
-  headers.
+- Authenticated profiles require app-side support for Orbit's Toolbar auth headers.
+
+## Output Summary
+
+The output format depends on whether `--json` is passed.
+
+- **Human**: Renders the resolved request, status, total time, timing timeline, and query summary when Toolbar data is available.
+- **JSON**: Returns the same result in the shared `success` or `error` envelope. See the [JSON renderer contract](technical/6.2_profile_output-render_json.md) for the exact shape.
 
 ## Related
 
@@ -67,4 +60,6 @@ for the exact shape.
 - [`orbit app:show [app]`](../../5_app/4_app-show/app-show.md)
 - [`orbit activity:show [id]`](../../17_activity/2_activity-show/activity-show.md)
 
-See [`profile` technical contract](technical/1_profile.md).
+***
+
+**Technical Contract:** [technical/1_profile.md](technical/1_profile.md)

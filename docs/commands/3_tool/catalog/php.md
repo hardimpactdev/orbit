@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the PHP-FPM tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `php` |

@@ -1,7 +1,7 @@
 # Gateway Commands
 
 Gateway commands manage the caller's relationship with an Orbit gateway after
-gateway-owned node identity exists.
+a node identity that the gateway owns has been established.
 
 The gateway command family owns the `gateway:*` command prefix. It does not own
 node provisioning, fleet membership, WireGuard peer issuance, or node drift
@@ -17,7 +17,7 @@ trust material, and gateway API access policy.
 The gateway root CA is the trust anchor for Orbit-managed HTTPS inside the
 Orbit network. The gateway owns root CA private material and route certificate
 issuance. App, workspace, proxy, gateway, and tool route domains may receive
-gateway-issued leaf certificate material on their serving nodes, but route
+leaf certificate material that the gateway issues on their serving nodes, but route
 applying and route doctor families own those artifacts. Gateway commands only
 install or repair caller-local trust for the public root.
 
@@ -28,6 +28,8 @@ do not create a gateway doctor family.
 
 ## Domain Rules
 
+These rules apply to all gateway commands and define the invariants the family enforces.
+
 - Gateway commands must start with the `gateway:` prefix.
 - Gateway commands may read gateway-owned node identity and access policy when
   they verify the caller's gateway relationship.
@@ -37,8 +39,8 @@ do not create a gateway doctor family.
   which is the root that Orbit-managed route certificates chain to.
 - Gateway commands must not create gateway node rows, control node rows, app
   node rows, WireGuard peer material, or node access grants.
-- Gateway commands must not issue, upload, renew, or clean up route-scoped TLS
-  leaf certificates; that belongs to the route-owning domain and its doctor
+- Gateway commands must not issue, upload, renew, or clean up TLS leaf certificates
+  that are scoped to a route; that belongs to the route-owning domain and its doctor
   family.
 - First-gateway bootstrap and node identity issuance belong to
   [`node:new`](../1_node/1_node-new/node-new.md).
@@ -46,6 +48,8 @@ do not create a gateway doctor family.
   belong to [`doctor --family=node`](../1_node/node-doctor.md).
 
 ## Commands
+
+These are the two gateway-family commands available to control-node callers.
 
 1. Existing gateway onboarding:
    [`orbit gateway:add [gateway_ip]`](1_gateway-add/gateway-add.md)

@@ -10,8 +10,8 @@ product docs.
 
 - Gateway commands manage caller-local gateway relationship and trust, not
   gateway node provisioning.
-- `LocalGatewaySettings::current()` is the single-row local gateway settings
-  accessor.
+- `LocalGatewaySettings::current()` is the accessor for local gateway settings,
+  which are stored as a single row.
 - Gateway CA fetch is bootstrap-safe: fetch trust material before relying on
   configured CA verification.
 - Trust installation goes through `TrustStoreInstaller` and OS-specific

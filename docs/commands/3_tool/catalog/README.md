@@ -7,7 +7,7 @@ command docs describe command behavior; each catalog file describes what a
 specific tool supports, what Orbit owns for that tool, and which command
 surfaces apply.
 
-## Credential And Endpoint Policy
+## Credential and endpoint policy
 
 Managed service tools must not rely on unauthenticated upstream defaults. When
 a supported service has an authentication concept, Orbit owns credential
@@ -86,5 +86,5 @@ Each tool file owns:
 - supported command capability surface;
 - credential behavior and example output when credentials are supported;
 - service endpoint behavior when the tool is reachable over the Orbit network;
-- tool-specific Orbit ownership notes;
+- ownership notes specific to the tool and Orbit's management of it;
 - doctor fix and adopt boundaries.

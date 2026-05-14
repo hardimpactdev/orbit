@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Resolves the target node.
 - Reads the selected tool row from gateway configuration.

@@ -23,7 +23,7 @@ orbit deploy:run docs --detach
 orbit deploy:run docs --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: production app name or domain.
 - `--detach`: start the deployment under gateway control and return after the
@@ -32,7 +32,7 @@ orbit deploy:run docs --json
 
 ## What Happens
 
-`deploy:run` resolves the production app, reads its ordered deployment steps,
+Use `deploy:run` when you want to execute the configured deployment pipeline for a production app. `deploy:run` resolves the production app, reads its ordered deployment steps,
 creates a gateway deployment run with a reusable run context, renders
 `{{ ... }}` placeholders in each step, and executes the configured shell
 scripts on the app's owning node through the gateway. It stops at the first
@@ -48,8 +48,7 @@ Detached runs return the run identifier without streaming step output.
 
 ## Output
 
-Human output renders a progress tree, streamed deployment output, and a final
-run summary.
+Run without `--json` to see a progress tree, streamed deployment output, and a final run summary.
 
 JSON output returns the deployment run entity and captured output for bounded
 foreground runs. Detached JSON output returns the created run with

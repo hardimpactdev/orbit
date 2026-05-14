@@ -1,10 +1,12 @@
 # Firewall Commands
 
-Firewall commands manage Orbit-owned node network policy. The command family is `firewall:*`; the durable state family and doctor key is `firewall_rule`.
+Firewall commands manage network policy that Orbit owns on each node. The command family is `firewall:*`; the durable state family and doctor key is `firewall_rule`.
 
 UFW is the current backend for supported Ubuntu nodes. It is not the product model.
 
 ## Domain Rules
+
+These rules govern what the firewall command family owns and what it may not touch.
 
 - The firewall command family owns the `firewall:*` command prefix.
 - `firewall_rule` is a state family. The gateway is the source of truth for firewall rule configuration.
@@ -14,7 +16,10 @@ UFW is the current backend for supported Ubuntu nodes. It is not the product mod
 - Rule names are unique on the target node. Reapplying the same named rule with the same policy shape is idempotent; reusing the name for a different policy fails before mutation.
 - Firewall commands resolve input locally, then the gateway writes configuration and applies host policy through the current firewall backend.
 - Role bootstrap policy remains part of the node domain and is not edited through firewall commands.
-- Bootstrap policy includes Orbit/WireGuard management access and role-specific public ingress decisions. Firewall commands do not create public SSH policy exceptions for app nodes.
+
+**Read and adopt rules:**
+
+- Bootstrap policy includes Orbit/WireGuard management access and public ingress decisions specific to each node role. Firewall commands do not create public SSH policy exceptions for app nodes.
 - Firewall reads use gateway configuration by default. Live firewall reality belongs to `doctor --family=firewall_rule`.
 - Node reality import is not part of the firewall command surface. Adoption of observed firewall reality must use explicit `doctor --fix --family=firewall_rule --adopt` semantics.
 
@@ -51,6 +56,8 @@ Firewall JSON renderers that return one rule entity embed this shape under `succ
 | `status` | string | Command-specific outcome, such as `expected`, `enacted`, `removed`, or `already_absent`. |
 
 ## Commands
+
+The `firewall:*` family covers listing, creating, and removing Orbit-owned firewall rules.
 
 1. [`orbit firewall:list`](1_firewall-list/firewall-list.md)
 2. [`orbit firewall:allow [name]`](2_firewall-allow/firewall-allow.md)

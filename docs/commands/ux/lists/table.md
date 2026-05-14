@@ -4,12 +4,16 @@ Read-only tabular display for list commands.
 
 ## Use When
 
+Use `table` in the following situations.
+
 - Rendering multiple rows of structured data (`node:list`, `app:list`,
   `tool:list`, `proxy:list`, `firewall:list`, `process:list`,
   `schedule:list`, `workspace:list`, `activity:list`).
 - The command is a list/read command and does not select a row.
 
 ## Avoid When
+
+Choose a different primitive in the following situations.
 
 - The user must pick a row to act on. Use
   [`data-table-prompt`](data-table-prompt.md).
@@ -19,6 +23,8 @@ Read-only tabular display for list commands.
   [progress tree](../progress/progress-tree.md).
 
 ## Contract
+
+These rules govern all uses of `table` in Orbit commands.
 
 - Primitive name in renderer docs: `table`.
 - The `## Primitive` section of the renderer doc links to this page.
@@ -53,9 +59,13 @@ table(
 
 ## Reference Implementation
 
+This command is the canonical model for the table primitive.
+
 - `orbit node:list` — primary reference for the table primitive.
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: tables](https://laravel.com/docs/13.x/prompts#tables)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

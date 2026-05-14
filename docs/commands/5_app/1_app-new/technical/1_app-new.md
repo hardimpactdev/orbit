@@ -142,7 +142,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   command reports success and surfaces the drift in `success.meta.warnings[]`
   with a `next_command` handoff (e.g. `doctor --fix --family=app --restore` or
   `app:register [name] --domain=<host>`). Examples include node-side PHP
-  version unavailable (`app.php_version_unavailable`) and pending domain
+  When the PHP version is unavailable on the node (`app.php_version_unavailable`) or domain
   activation (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
   as process-family warnings such as `process.runtime_backend_unavailable` or
   `process.runtime_unit_missing`.

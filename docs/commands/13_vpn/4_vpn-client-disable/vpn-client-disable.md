@@ -1,6 +1,6 @@
 # `orbit vpn-client:disable <name>`
 
-Disable an existing non-node gateway VPN client without deleting it.
+Disable an existing gateway VPN client that is not an Orbit node, without deleting it.
 
 ## Usage
 
@@ -16,13 +16,15 @@ orbit vpn-client:disable laptop --totp=123456
 orbit vpn-client:disable laptop --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: VPN client name.
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
 - `--json`: Return the updated client in the shared JSON command envelope.
 
 ## What Happens
+
+Run this command to block a VPN client from connecting without removing it.
 
 `vpn-client:disable` runs on the gateway host and marks the named VPN backend
 client as disabled. The peer record remains available so it can be enabled
@@ -32,6 +34,8 @@ The command is limited to non-node VPN clients. Active Orbit node peers are
 protected because disabling them would break node identity and reachability.
 
 ## Output
+
+Your output confirms the new disabled state of the named client.
 
 Human output confirms the client was disabled. JSON output returns
 `success.data.client` with `enabled=false` and `action="disabled"`.
@@ -44,6 +48,8 @@ Human output confirms the client was disabled. JSON output returns
 - The named client exists and is not an active Orbit node peer.
 
 ## Related Commands
+
+Use these commands to re-enable, list, or check node health for VPN clients.
 
 - [`orbit vpn-client:enable`](../3_vpn-client-enable/vpn-client-enable.md)
 - [`orbit vpn-client:list`](../1_vpn-client-list/vpn-client-list.md)

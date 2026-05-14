@@ -23,13 +23,15 @@ orbit gateway:add 10.6.0.2
 orbit gateway:add 10.6.0.2 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `gateway_ip`: optional gateway WireGuard API address. When omitted, Orbit
   derives it from the active Orbit WireGuard network.
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `gateway:add` after joining the Orbit WireGuard network to configure your local CLI to use the gateway.
 
 `gateway:add` performs local control-node onboarding for an already-issued
 gateway identity. It does not create gateway registry rows, local registry
@@ -71,12 +73,12 @@ provision hosts, does not mint access grants, and does not repair unrelated node
 drift.
 
 First-gateway bootstrap via `node:new --role=gateway --host=<host>
---control-name=<control-name>` already completes initiating control-node
-onboarding; that initiating control node must not run `gateway:add` afterward.
+--control-name=<control-name>` already completes the onboarding for the initiating control node;
+that initiating control node must not run `gateway:add` afterward.
 
 ## Output
 
-Human output uses a progress tree while the command resolves the gateway,
+Your local CLI shows a progress tree while the command resolves the gateway,
 fetches trust material, verifies reachability, verifies identity, and stores
 local configuration.
 
@@ -93,6 +95,8 @@ identity, command result action, and local onboarding state.
   before this machine has local OS-level trust installed.
 
 ## Related Commands
+
+Use these commands before or after `gateway:add` to complete node enrollment and manage trust.
 
 - [`node:new`](../../1_node/1_node-new/node-new.md) — create or enroll nodes,
   including first-gateway bootstrap

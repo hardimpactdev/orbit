@@ -149,7 +149,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Uses the shared exit status policy. Success exits `0`; all documented command
 failures exit with the standard command failure status (`1`). This command
-defines no command-specific numeric exit codes.
+defines no numeric exit codes specific to it.
 
 ## Doctor Relationship
 
@@ -178,6 +178,6 @@ teardown-step creation attempts.
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/AddTeardownStepActionTest.php` | Registry write for `(app, phase=teardown, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Input resolution (explicit `--app`, `.orbit/config` marker, gateway path lookup, interactive prompt, non-interactive failure), mutual exclusivity of `--before` / `--after`, strict positive `--timeout` validation including `0` rejection, additive (non-converging) re-run behavior, warning payload shape for `success.meta.warnings[]`, and absence of runtime lock against in-flight `workspace:remove`. |
+| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Input resolution chain, `--before`/`--after` mutual exclusivity, `--timeout` positive validation including `0` rejection, additive re-run behavior, `success.meta.warnings[]` shape, and no runtime lock against in-flight `workspace:remove`. |
 | `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCallerRoleTest.php` | Control / gateway peer acceptance and app-node peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceTeardownStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification for `phase=teardown`, and JSON envelope alignment. |

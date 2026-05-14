@@ -23,7 +23,7 @@ orbit tool:logs redis --node=app-1 --follow
 orbit tool:logs redis --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -38,6 +38,8 @@ contract unless a future streaming JSON frame contract is added.
 
 ## What Happens
 
+Run this command to read or stream log output for a registered tool that declares a log source.
+
 `tool:logs`:
 
 1. Resolves the target node and registered tool row.
@@ -46,6 +48,8 @@ contract unless a future streaming JSON frame contract is added.
 4. Renders the log lines.
 
 ## Output
+
+Use `--json` for finite reads as machine-readable output; use `--follow` to stream new lines.
 
 Human output prints log lines in the tool's log order. With `--follow`, output
 continues until the user stops the stream or the gateway stream fails.
@@ -64,6 +68,8 @@ and node metadata under `success.data.logs`.
   primitive.
 
 ## Related Commands
+
+Use these commands to inspect tool state or verify managed tool health.
 
 - [`tool:show`](../2_tool-show/tool-show.md) - inspect tool configuration and live state
 - [`doctor --family=tool`](../tool-doctor.md) - verify expected tool state

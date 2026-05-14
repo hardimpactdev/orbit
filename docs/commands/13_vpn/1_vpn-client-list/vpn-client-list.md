@@ -16,12 +16,14 @@ orbit vpn-client:list --totp=123456
 orbit vpn-client:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
 - `--json`: Return the client list in the shared JSON command envelope.
 
 ## What Happens
+
+Run this command to inspect the gateway VPN backend's current client inventory.
 
 `vpn-client:list` runs on the gateway host and reads the gateway VPN backend's
 client inventory. From a control node, Orbit connects to the gateway over the
@@ -31,6 +33,8 @@ The command may show backend peers that correspond to active Orbit node
 identities, but it does not verify node reachability or repair node drift.
 
 ## Output
+
+Use the table below to read each client's status at a glance.
 
 Human output renders a client table with name, WireGuard address, enabled
 state, kind, and latest handshake timestamp. JSON output returns
@@ -44,6 +48,8 @@ state, kind, and latest handshake timestamp. JSON output returns
 - The operator can authenticate to the VPN backend when TOTP is required.
 
 ## Related Commands
+
+Use these commands to manage VPN clients or investigate node health.
 
 - [`orbit vpn-client:new`](../2_vpn-client-new/vpn-client-new.md)
 - [`doctor --family=node`](../../1_node/node-doctor.md)

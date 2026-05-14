@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Installs a rule that enables cache settings and respects origin
   `Cache-Control` headers.
 - Treats an equivalent existing Orbit-managed rule as successful convergence.
-- Does not create path-specific custom cache behavior.
+- Does not create custom cache behavior for specific paths.
 
 ### Scope Boundaries
 

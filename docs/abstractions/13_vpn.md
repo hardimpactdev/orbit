@@ -9,7 +9,7 @@ product docs.
 ## Domain Constraints
 
 - VPN is a gateway infrastructure command domain, not a state family.
-- VPN commands administer gateway-local WireGuard backend clients for
+- VPN commands administer WireGuard backend clients that run on the gateway for
   human/operator access.
 - Orbit node WireGuard identity remains owned by the node family.
 - `vpn-client:*` writes must not mutate peers classified as active Orbit

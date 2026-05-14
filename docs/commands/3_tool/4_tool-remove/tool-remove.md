@@ -22,7 +22,7 @@ orbit tool:remove redis --app=docs --force
 orbit tool:remove redis --node=app-1 --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -35,6 +35,8 @@ Target context is required when neither `--node`, `--app`, nor local
 `node:default` resolves a node.
 
 ## What Happens
+
+Run this command to remove Orbit-managed artifacts for a tool and delete its gateway row through the supported removal path.
 
 `tool:remove`:
 
@@ -51,6 +53,8 @@ The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.
 
 ## Output
+
+Use `--json` to get a machine-readable result; omit it for a progress tree.
 
 Human output is a progress tree for confirmation, node cleanup, and gateway
 configuration removal.
@@ -70,6 +74,8 @@ JSON output returns removal outcome under `success.data.tool` and warnings under
   primitive.
 
 ## Related Commands
+
+Use these commands to stop or audit managed tool state without removing.
 
 - [`tool:stop`](../6_tool-stop/tool-stop.md) - stop a managed tool without removing it
 - [`doctor --family=tool`](../tool-doctor.md) - report leftover managed artifacts

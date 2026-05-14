@@ -12,17 +12,23 @@ node, and runs configured setup steps.
 ## Usage
 
 ```bash
-# Set up the current directory as a workspace for an app
+# Re-converge an already-managed workspace (identity resolved from CWD)
+cd /var/www/my-app/.worktrees/feature-a
+orbit workspace:setup
+
+# Register and set up an adapter-managed worktree (e.g. a Polyscope worktree
+# Orbit does not yet know about): identity discovered from the adapter
+cd /var/www/my-app/.worktrees/feature-a
+orbit workspace:setup
+
+# Set up or adopt a workspace by explicit identity
 orbit workspace:setup feature-a --app=my-app
 
 # Adopt an existing path as a workspace
 orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/feature-a
-
-# Re-converge an already-managed workspace (idempotent no-op refresh)
-orbit workspace:setup feature-a
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: The workspace identity slug. Required unless local workspace context
   can resolve it; can be prompted in interactive mode.
@@ -35,7 +41,61 @@ orbit workspace:setup feature-a
   effects.
 - `--json`: Output JSON.
 
+## Path Awareness
+
+`workspace:setup` resolves its target from the caller's current directory
+when explicit input is not supplied. The gateway path-ownership lookup keyed
+on (caller node identity, absolute CWD) returns one of:
+
+- **A registered workspace path** — the workspace identity (`name` and
+  parent `app`) and `path` are resolved from gateway configuration. The
+  command proceeds as a re-converge or repair of that workspace.
+- **A registered app's own root path** — the CWD is the parent app's own
+  path, not a workspace path under it. The command fails before side effects
+  with `error.code=workspace.path_is_app_root` and a hint to run
+  [`workspace:new`](../1_workspace-new/workspace-new.md) instead. Use
+  `workspace:setup` only when the CWD is (or will be adopted as) a workspace
+  path; the app root is never itself a workspace.
+- **A path inside a registered app** — the CWD is under a known app's path
+  but not a registered workspace. The parent app is resolved from the lookup.
+  The workspace identity is filled in through the adapter probe described in
+  the next subsection, or falls through to prompts.
+- **An unregistered path** — the CWD does not match any known app or
+  workspace path. The agent-IDE adapter probe runs across the caller's
+  configured adapters; on a single match, identity is resolved from the
+  adapter. Otherwise the command falls through to explicit input (`[name]`,
+  `--app`, `--path`) or interactive prompts.
+
+### Agent-IDE adapter probe
+
+`workspace:setup` registers adapter-managed worktrees on first run. Some
+adapters expose a `workspace_path_resolution` capability. Polyscope is one.
+An adapter with this capability answers a single question: which managed
+workspace does this absolute path belong to?
+
+Orbit consults the probe when `[name]` and `--app` are both missing and the
+gateway lookup returned `inside_app` or `unregistered`. A successful probe
+fills in the workspace name and parent app. The adapter also returns its
+own id for the workspace, which Orbit stores. Adoption then proceeds as
+usual (`result.action=adopted`).
+
+See
+[`agent-ide-concepts.md`](../../15_agent-ide/agent-ide-concepts.md#adapter-model)
+for the capability definition.
+
+Probe outcomes:
+
+- **One adapter resolves the path** — adoption proceeds using the adapter's
+  answer. `--app` and `[name]`, if also supplied, must agree with the
+  adapter or the command fails with `validation_failed`.
+- **No adapter resolves the path** — fall through to prompts (interactive)
+  or `validation_failed` (non-interactive).
+- **Multiple adapters claim the path** — fails with `validation_failed`
+  asking the operator to disambiguate with `--app`.
+
 ## Behavior Summary
+
+The following steps describe what the command does during a successful run.
 
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
   or interactive prompts.
@@ -67,6 +127,8 @@ operators and agents can see what changed.
 - The gateway can reach the owning app node over SSH.
 
 ## Output Summary
+
+The output format depends on whether `--json` is passed.
 
 - **Human**: A step tree showing progress of artifact application and setup
   steps, concluding with a `result.action`-keyed success line and the

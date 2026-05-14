@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the Redis tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `redis` |
@@ -49,7 +51,7 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`redis` exposes a WireGuard-only TCP service endpoint at
+`redis` exposes a TCP service endpoint reachable only over WireGuard at
 `orbit.<node-tld>:6379` for development app nodes. This is DNS/service endpoint
 configuration owned by the tool definition, not an HTTP proxy route.
 

@@ -74,5 +74,5 @@ health checks and may reference latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract for production app lookup, authorization, run lookup, step filtering, line filtering, stored-output read behavior, read-only side-effect boundary, no live SSH or process manager log reads, failure codes, and app-doctor handoff behavior. |
+| `tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract covering: production app lookup; authorization; run lookup; step filtering; line filtering; stored-output read behavior; read-only side-effect boundary; no live SSH or process manager log reads; failure codes; and app-doctor handoff behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, per-step output shape, run-to-app ownership validation, step lookup rules, line filtering, and stored output mapping. |

@@ -118,7 +118,7 @@ execute because an earlier step failed; it is not synthesised at read time.
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
   [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
   the [`app:prune`](../../../5_app/7_app-prune/app-prune.md) cascade when an
-  app-level command triggers workspace removal.
+  app-level command removes a workspace.
 - A run record may exist with its captured output pruned only if a future
   per-row retention rule lands; until then, `error.code=workspace.log_not_found` is
   reserved for that case but is not produced by the default contract.
@@ -174,7 +174,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php` | Command contract: input resolution and `<run>` validation, run lookup, authorization check, log-not-found vs run-not-found distinction, per-run and per-step timing storage, absence of lifecycle env capture, truncation policy with `[TRUNCATED]` marker and per-step truncation booleans, status taxonomy mapping, read-only and gateway-only guarantees, and failure semantics. |
+| `tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php` | Input resolution and `<run>` validation, run lookup, authorization, log-not-found vs run-not-found, per-run and per-step timing, absence of lifecycle env capture, truncation policy and per-step truncation booleans, status taxonomy, read-only guarantee, and failure semantics. |
 | `tests/E2E/WorkspaceLogTest.php` | Real read-only `workspace:log <run> --json` against a workspace with both a completed and a failed setup run, asserting captured stdout/stderr, per-step timing, and truncation reporting. |
 
 Renderer-specific test mapping lives in:

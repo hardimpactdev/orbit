@@ -6,6 +6,8 @@ not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Adapter Model
 
+These terms define the adapter model that Agent IDE commands use to reach an active session.
+
 - **Agent IDE integration:** Orbit adapter surface for developer- and
   agent-facing workflows. Adapter implementations may live in core Orbit or in
   installed Orbit extensions.
@@ -20,7 +22,7 @@ not override the [Architecture](../../ARCHITECTURE.md).
   human label, source (`core` or `extension`), and capability flags such as
   message delivery and workspace discovery. Core descriptors for `opencode` and
   `polyscope` are always present. Extension descriptors are added only through
-  the gateway-side extension registration surface.
+  the extension registration surface on the gateway.
 - **Agent IDE adapter choices API:** Typed gateway read path used by CLI
   gateway clients before prompts and validation. It returns the same registry
   descriptors the gateway uses internally, plus command-owned reserved tokens
@@ -32,8 +34,18 @@ not override the [Architecture](../../ARCHITECTURE.md).
 - **Workspace discovery capability:** Optional adapter capability that reports
   adapter-known workspaces for an app. It informs app-scoped pruning but does
   not make the adapter the owner of Orbit workspace state.
+- **Workspace path resolution capability:** Optional adapter capability that
+  reverse-maps an absolute filesystem path to an adapter-managed workspace
+  descriptor (workspace name, parent app slug, absolute path, adapter
+  workspace id). It enables CWD-driven adoption flows such as
+  `workspace:setup` registering a Polyscope worktree on first run. The
+  adapter is not the owner of Orbit workspace state; resolved descriptors
+  feed an Orbit-side registration that goes through the workspace family's
+  standard adoption path.
 
 ## Resolution
+
+These terms define the inheritance chain used to resolve the effective adapter for an app or workspace.
 
 - **Node Agent IDE default:** Node-owned gateway configuration set through
   `node:agent-ide`. It is the root of the current inheritance chain.
@@ -52,11 +64,15 @@ not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Communication
 
+This section defines the message delivery model.
+
 - **Agent IDE message:** Best-effort communication sent to the active Agent IDE
   session for a resolved app or workspace context. Accepted delivery means the
   adapter accepted the message; it does not mean the requested work completed.
 
 ## Boundaries
+
+These boundaries define what Agent IDE commands own and what they must not touch.
 
 - **Agent-IDE-domain boundaries:** Agent IDE commands own the `agent-ide:*`
   command prefix, adapter communication vocabulary, target-context messaging,

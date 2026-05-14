@@ -43,8 +43,8 @@ The forwarded request includes:
 - the authenticated control-caller WireGuard identity.
 
 The gateway authenticates the caller through WireGuard identity and authorizes
-the request through gateway-owned node access policy. Because `node:update`
-mutates gateway-owned fleet configuration, the control-role caller must have
+the request through the node access policy it owns. Because `node:update`
+mutates fleet configuration that the gateway owns, the control-role caller must have
 access to the gateway node. Access to the target node alone does not authorize
 the update write.
 

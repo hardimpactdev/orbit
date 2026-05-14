@@ -23,7 +23,7 @@ orbit tool:show redis --node=app-1 --live
 orbit tool:show redis --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -36,6 +36,8 @@ Target context is required when neither `--node`, `--app`, nor local
 
 ## What Happens
 
+Run this command to read a tool's gateway configuration and optionally inspect its live state on the target node.
+
 `tool:show`:
 
 1. Resolves the target node.
@@ -47,14 +49,16 @@ The command does not mutate gateway configuration or node artifacts.
 
 ## Output
 
+Use `--json` to get a machine-readable result; omit it for a detail view.
+
 Human output is a detail view with identity, target node, expected state,
 managed flag, version/config metadata, service endpoint metadata when declared,
 and live status when requested. Secret values are not rendered by
 `tool:show`; use `tool:credentials` for authorized credential reads.
 
 JSON output returns the tool entity under `success.data.tool` and live detail
-under `success.data.live` when `--live` is present. Non-secret service
-endpoint metadata may be included under `success.data.tool.endpoints`.
+under `success.data.live` when `--live` is present. Service endpoint metadata
+that is not secret may be included under `success.data.tool.endpoints`.
 
 ## Requirements
 
@@ -67,6 +71,8 @@ endpoint metadata may be included under `success.data.tool.endpoints`.
   execution primitive.
 
 ## Related Commands
+
+Use these commands to list, review logs, or verify tool state.
 
 - [`tool:list`](../1_tool-list/tool-list.md) - list registered tool configuration
 - [`tool:logs`](../8_tool-logs/tool-logs.md) - read logs for log-capable managed tools

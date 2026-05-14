@@ -22,7 +22,7 @@ orbit update:all
 orbit update:all --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--json`: Output JSON.
 
@@ -50,6 +50,8 @@ needs convergence verification.
 
 ## Output
 
+Run `orbit update:all` to see per-node progress and a final summary of updated and failed nodes.
+
 Human output shows a per-node progress tree. Each node row moves through
 `Pulling source`, `Installing dependencies`, `Running migrations`, and `Done`.
 On full success, the final tree footer reports the total updated node count.
@@ -67,6 +69,8 @@ included as command-specific error data.
   Composer, and PHP runtime capable of running migrations.
 
 ## Related Commands
+
+Use these commands before or after running `orbit update:all`.
 
 - [`update`](../1_update/update.md) - update only the local Orbit checkout
 - `doctor` - verify drift after updates once the doctor command contract is

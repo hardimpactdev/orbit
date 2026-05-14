@@ -16,6 +16,8 @@ block on downstream family state and does not cascade into app cleanup.
 
 ## Usage
 
+Run this command when you need to unregister a node from the fleet.
+
 ```bash
 orbit node:remove [name] [--force] [--json]
 ```
@@ -33,7 +35,7 @@ orbit node:remove app-1 --force
 orbit node:remove app-1 --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: node name to remove. Must exist in gateway node configuration and must
   not be a gateway node.
@@ -44,6 +46,8 @@ orbit node:remove app-1 --force --json
 
 ## What Happens
 
+Use `node:remove` when you want to permanently unregister a node and detach its identity from the gateway.
+
 `node:remove` performs gateway-owned removal of a node identity. Gateway callers
 execute locally; configured control callers forward the request to the gateway
 over HTTPS through WireGuard. SSH to the gateway is not used for this command.
@@ -52,7 +56,7 @@ over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 2. Refuses to remove any gateway node.
 3. Removes all node access grants where the node is the consumer or the
    serving node.
-4. Removes the node's gateway-managed WireGuard peer identity.
+4. Removes the node's WireGuard peer identity that the gateway manages.
 5. Removes the node record from the gateway registry.
 6. Reports partial WireGuard detach as a structured warning and remaining
    node-family drift.
@@ -88,7 +92,7 @@ must still exist and the grant row is only a relationship edge between them.
 
 ## Output
 
-Human output shows a confirmation prompt in interactive mode unless `--force`
+You will see a confirmation prompt in interactive mode unless `--force`
 is supplied, then a success message with the removed node name. When WireGuard
 detach partially fails, a warning is shown and the stale peer remains
 node-family drift.
@@ -106,12 +110,14 @@ path under `success.meta.warnings`.
 - The target node must exist in gateway configuration.
 - The target node must not be any gateway node.
 - Removing a non-existent node is a validation failure, not an idempotent
-  success. Grant revocation is the node-family idempotent absent-edge command;
+  success. Grant revocation is the command in the node family that handles an absent edge idempotently;
   node identity removal is not.
 - Destructive consent is required through the interactive confirmation prompt
   or `--force`. Non-interactive input mode requires `--force`.
 
 ## Related Commands
+
+Use these commands to clean up downstream state before or after removing a node.
 
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes

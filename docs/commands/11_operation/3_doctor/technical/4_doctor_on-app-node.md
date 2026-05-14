@@ -26,9 +26,9 @@ This page describes behavior when `orbit doctor` is invoked from an app node —
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
 - Reject `--self` combined with `--node` before forwarding.
 - App-node working-directory reality is not enough to authorize an app or workspace scope. The gateway must still authorize the resulting scope.
-- Working-directory hints may help choose defaults only when the selected family contract explicitly defines that behavior.
+- Working-directory hints may help choose defaults, but only for families whose contract explicitly defines this behavior.
 
-## Category Set By Target Role
+## Category set by target role
 
 The rendered category set is derived from the *target* node's role, not the
 calling peer's role.
@@ -51,7 +51,7 @@ source lands.
 
 App peers are not the authority path for doctor. In normal verify mode, the CLI forwards the request to the gateway. The gateway owns authorization, family dispatch, and final diagnostic construction for the single-node target.
 
-Family contracts may define narrow verify-mode local context behavior, such as:
+Family contracts may define narrow local context behavior for verify mode, such as:
 
 - resolving the current app from the caller's working directory;
 - resolving a workspace from the caller's working directory;
@@ -67,7 +67,7 @@ App peers must not:
 - mutate gateway configuration or node reality from `doctor`;
 - repair node, proxy, firewall, tool, schedule, or unrelated app/workspace state merely because the CLI is available on the app node.
 
-## Progress And Rendering
+## Progress and rendering
 
 In human verify mode, the CLI renders gateway-streamed progress when available and then renders the framed result panel defined by [`6.1_doctor_output-render_human.md`](6.1_doctor_output-render_human.md), restricted to the target-role category set.
 

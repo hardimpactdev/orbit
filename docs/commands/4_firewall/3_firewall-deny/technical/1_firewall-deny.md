@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Firewall Configuration And Apply Rules
+### Firewall configuration and apply rules
 
 - Resolves a firewall-eligible target node.
 - Validates the rule shape and baseline policy boundary before side effects.

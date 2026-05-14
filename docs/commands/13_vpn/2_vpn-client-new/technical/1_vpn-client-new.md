@@ -34,7 +34,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Client Creation Rules
 
-- Create exactly one non-node admin VPN backend client for `name`.
+- Create exactly one admin VPN backend client for `name`; the client is not an Orbit node.
 - Refuse duplicate backend client names.
 - Refuse names that match an active Orbit node identity.
 - Return the backend client ID and assigned WireGuard address.
@@ -57,7 +57,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Do not expose a public `node` client profile.
 - Node WireGuard peer creation belongs to `node:new`.
 
-### DNS And Route Boundaries
+### DNS and route boundaries
 
 `vpn-client:new` must not create gateway development DNS mappings,
 caller-local DNS overrides, app routes, proxy routes, or Cloudflare records.
@@ -83,12 +83,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `vpn-client:new` creates gateway VPN backend state for non-node clients. It does
 not create doctor issues, fix drift, or adopt backend state.
 [`doctor --family=node`](../../../1_node/node-doctor.md) owns Orbit node WireGuard
-identity and gateway-managed node peer drift.
+identity and node peer drift that the gateway manages.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, duplicate name failure, active node name collision, config inclusion, no node records or grants, and no DNS or proxy side effects. |
+| `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: caller-role denial, gateway-local SSH execution, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
 | `tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php` | Human and JSON renderer output, config rendering, and every documented `error.code` value. |
 | `tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php` | Wg-easy adapter normalization of generated client configs to `DNS = <wireguard-server-ip>`. |

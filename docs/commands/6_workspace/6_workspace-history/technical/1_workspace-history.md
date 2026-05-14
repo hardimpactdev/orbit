@@ -118,7 +118,7 @@ are not part of the initial contract.
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
   [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
   the [`app:prune`](../../../5_app/7_app-prune/app-prune.md) cascade when an
-  app-level command triggers workspace removal.
+  app-level command removes a workspace.
 
 ## Renderer Contracts
 

@@ -9,7 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway identifies the calling WireGuard peer and authorizes the selected scope.
-- When the calling peer is identified as an app-node peer, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects unless the selected family doctor contract documents a narrow app-node write-mode exception.
+- When the calling peer is identified as an app-node peer, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects.
+- Exception: the gateway allows a resolution mode when the selected family doctor contract documents a narrow app-node write-mode exception.
 
 ## Signature
 
@@ -34,7 +35,7 @@ This command follows the shared
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Target Role And Category Set
+## Target role and category set
 
 The rendered category set is derived from the target node's role:
 
@@ -57,7 +58,7 @@ A future `DNS/TLD` row is reserved for control/app targets and a `DNS` row for g
    - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
    - Omitted node scope defaults to `--self`.
    - `--self` combined with `--node` is rejected before forwarding.
-4. Call the gateway to authorize the scope, derive the target-role category set, dispatch family probes, and (in resolution modes) attempt actions. Family filters intersect with the target-role category set; families outside the set are rejected by the gateway.
+4. Call the gateway to authorize the scope, derive the target-role category set, and dispatch family probes. In resolution modes, the gateway also attempts actions. Family filters intersect with the target-role category set; families outside the set are rejected by the gateway.
 5. Render the gateway's diagnostic.
 
 Input-mode-specific contracts are required for resolution modes:
@@ -89,30 +90,34 @@ Input-mode-specific contracts are required for resolution modes:
 
 `--adopt` is explicit adoption-mode consent for family-declared adoption actions. It is the only doctor mode that may intentionally mutate gateway configuration.
 
-### Scope And Authorization Rules
+### Scope and authorization rules
 
 - Resolve and validate all scope filters before probes or side effects.
 - Resolve a single-node target before probes; multi-node scopes are not supported.
 - Apply gateway-owned authorization to the resolved scope before probes or side effects.
-- Fail before probes when mutually exclusive options are combined: any pair of `--fix`, `--restore`, `--adopt`, or `--self` with `--node`.
+- Fail before probes when mutually exclusive options are combined.
+- Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
 - Fail before probes when a requested family, node, app, or workspace scope cannot be resolved.
 - Fail before probes when a requested family is outside the target node's role-derived category set.
-- Fail before side effects when the selected family does not support the requested mode for the attempted issue actions.
+- Fail before side effects when the selected family does not support the requested mode.
 
 ### App-Node Write Boundaries
 
 - App-node CLI availability is not generic doctor write permission.
 - The gateway authorizes verify-mode scopes for app-node peers.
-- The gateway denies `--fix`, `--restore`, or `--adopt` from app-node peers unless the selected family doctor contract documents a narrow app-node exception.
-- App-node working-directory hints may help family-specific verify-mode scope resolution only when the family contract defines that behavior. They are not authorization to mutate gateway configuration or node reality.
+- The gateway denies `--fix`, `--restore`, or `--adopt` from app-node peers.
+- Exception: the gateway allows a resolution mode when the selected family doctor contract documents a narrow app-node exception.
+- App-node working-directory hints may help scope resolution in verify mode, but only when the family contract defines that behavior.
+- Working-directory hints do not authorize mutation of gateway configuration or node reality.
 
 ### Result Classification Rules
 
 - Return healthy success when no drift or probe errors remain after the selected mode completes.
-- Return a drift failure when issues remain after the selected mode completes.
+- Return a drift failure when issues remain after the mode completes.
 - In verify mode, do not change gateway configuration or node reality.
 - In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
-- A family probe error prevents a healthy result unless the family contract defines a more specific recoverable behavior.
+- A family probe error prevents a healthy result.
+- Exception: a family contract may define more specific recoverable behavior for that family's probe errors.
 
 ### Scope Boundaries
 
@@ -186,12 +191,12 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic doctor input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-node write-mode denial, exit-code semantics, JSON success/error envelope, and family dispatch boundaries without asserting family implementation internals. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-node write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
 | `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target role, `--family` rejection for families outside the target role's set, and per-node probe scoping for app/workspace/proxy families. |
 | `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 
-Family-specific doctor test mapping lives in family doctor contracts, such as
+Test mapping for each family lives in its family doctor contract, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).
 
 Peer-specific behavior and test mapping live in:

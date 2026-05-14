@@ -4,7 +4,7 @@
 
 `doctor --family=app` verifies whether gateway app records still match the
 app facts that make those records runnable on their owning app nodes. It also
-detects stale Orbit-owned app runtime artifacts whose identity no longer maps
+detects stale runtime artifacts owned by Orbit whose identity no longer maps
 to active gateway app configuration, so post-removal cleanup can be repaired without
 recreating deleted app records.
 
@@ -12,7 +12,7 @@ The app family owns these facts:
 
 - gateway-owned app records: name, environment, owning app node, app path,
   document root, PHP version, production policy, deployment pipeline configuration,
-  and app-level agent IDE default;
+  and the app-level agent IDE default;
 - app source location: the managed app path exists on the owning app node and
   the configured document root exists inside that path;
 - app runtime artifacts: app PHP-FPM configuration, production app user and
@@ -56,9 +56,8 @@ The apps probe reads gateway app records and checks these layers:
    policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
    run.
-8. **App agent IDE default:** an app-level agent IDE default points at a
-   supported adapter when one is configured.
-9. **Stale app artifacts:** Orbit-owned app PHP-FPM or runtime artifacts whose
+8. **App agent IDE default:** when an app-level agent IDE default is configured, it points at a supported adapter.
+9. **Stale app artifacts:** App PHP-FPM or runtime artifacts owned by Orbit whose
    encoded app identity no longer maps to an active app record are reported as
    orphaned app drift.
 
@@ -67,6 +66,8 @@ duplicate proxy route, workspace, process, schedule, tool, firewall, or node
 probe results as app-family issue codes.
 
 ## App Issue Codes
+
+Each code below corresponds to a specific layer in the apps probe.
 
 | Code | Detected when |
 | --- | --- |
@@ -93,6 +94,8 @@ probe results as app-family issue codes.
 | `app.unregistered_path` | During an explicit adoption scope, a selected app path exists on an app node without a matching gateway app record. |
 
 ## App Fix Map
+
+The table below shows what `doctor --fix --restore` does for each fixable code.
 
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
@@ -121,6 +124,8 @@ workspace/process/schedule configuration, runs deployments, clears deployment hi
 or changes node reachability.
 
 ## App Adopt Map
+
+The table below shows what `doctor --fix --adopt` does for each adoptable code.
 
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
@@ -152,8 +157,8 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, app probe-layer selection, app issue codes including deployment health issue codes, app fix map, app adopt map, denied app fix/adopt cases, related-family handoff behavior, and scope filtering as it affects app probes. |
-| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior for registry configuration, owning node eligibility, source path, document root, PHP runtime, PHP-FPM configuration, runtime configuration, production user policy, production health, deployment pipeline configuration, latest deployment status, app agent IDE defaults, stale Orbit-owned app artifacts, and exclusion of proxy route/workspace/process/schedule/node/tool/firewall drift from apps issue codes. |
+| `tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, probe-layer selection, issue codes (including deployment health), fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
+| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior for registry configuration, owning node eligibility, source path, document root, PHP runtime, PHP-FPM configuration, runtime configuration, production user policy, production health, deployment pipeline configuration, latest deployment status, agent IDE defaults, stale artifacts, and exclusion of proxy/workspace/process/schedule/node/tool/firewall drift. |
 | `tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
 | `tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
 | `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |

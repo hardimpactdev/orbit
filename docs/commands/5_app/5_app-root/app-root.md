@@ -18,13 +18,15 @@ orbit app:root docs public
 orbit app:root my-app .
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: The name or hostname of the application to update.
 - `root`: The new document root path, relative to the application's base path.
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `app:root` when you need to change the document root and re-apply artifacts on the node.
 
 `app:root` updates the application's document root configuration on the gateway
 and then re-applies the necessary runtime artifacts on the application node.
@@ -45,10 +47,11 @@ and then re-applies the necessary runtime artifacts on the application node.
 
 `app:root` is convergent and idempotent. Re-running it with the same root as
 gateway configuration is a documented success path and is safe to use as a "redo
-apply" recovery action. The command always re-applies an apply so an
-already-managed re-run still refreshes node artifacts.
+apply" recovery action. The command always re-applies artifacts, so re-running it on an already-managed app still refreshes node artifacts.
 
 ## Output
+
+Use `--json` to receive structured output; omit it for a human-readable summary.
 
 - **Human Output:** Summarizes the changed runtime configuration and the
   status of re-applied artifacts on the node.
@@ -66,6 +69,8 @@ already-managed re-run still refreshes node artifacts.
 - The application node must be reachable by the gateway over SSH.
 
 ## Related Commands
+
+Use these commands before or after `app:root` to inspect or repair app configuration.
 
 - [`orbit app:show [app]`](../4_app-show/app-show.md)
 - [`orbit app:register [name]`](../2_app-register/app-register.md)

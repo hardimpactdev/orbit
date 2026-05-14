@@ -15,7 +15,7 @@ orbit cf-ssl:disable example.com
 orbit cf-ssl:disable example.com --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `zone`: Cloudflare zone ID or domain name.
 - `--force`: Confirm disabling SSL without an interactive prompt.
@@ -33,6 +33,8 @@ Non-interactive use, including `--json`, requires `--force`.
 
 ## Output
 
+You will see a confirmation that Cloudflare SSL was disabled for the zone.
+
 Human output confirms that Cloudflare SSL was disabled. JSON output returns
 `success.data.ssl`.
 
@@ -44,6 +46,8 @@ Human output confirms that Cloudflare SSL was disabled. JSON output returns
 - The selected zone exists in the Cloudflare account.
 
 ## Related Commands
+
+Use these commands to re-enable SSL or review proxy routes after disabling.
 
 - [`orbit cf-ssl:enable`](../8_cf-ssl-enable/cf-ssl-enable.md)
 - [`orbit proxy:list`](../../8_proxy/1_proxy-list/proxy-list.md)

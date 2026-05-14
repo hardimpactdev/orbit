@@ -12,6 +12,8 @@ input resolution and before side effects begin. Two patterns:
 
 ## Selection Rule
 
+Use this table to choose between the progress tree and the spinner.
+
 | If the command... | Use |
 | --- | --- |
 | Has multiple discrete steps and may take more than one second | [progress tree](progress-tree.md) |
@@ -22,6 +24,8 @@ Read/list/show commands do not render progress. They render the table or
 key-value tree directly. See [`table`](../lists/table.md).
 
 ## Pages
+
+Each page documents one progress primitive with selection guidance, contract, and reference implementations.
 
 - [`progress-tree`](progress-tree.md) — custom Orbit dot tree (primary).
 - [`spinner`](spinner.md) — single-line indeterminate spinner.

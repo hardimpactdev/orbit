@@ -44,8 +44,8 @@ The forwarded request includes:
 - the authenticated control-caller WireGuard identity.
 
 The gateway authenticates the caller through WireGuard identity and authorizes
-the request through gateway-owned node access policy. Because `node:revoke`
-mutates gateway-owned access policy, the control-role caller must have access
+the request through the node access policy it owns. Because `node:revoke`
+mutates access policy that the gateway owns, the control-role caller must have access
 to the gateway node. Access to the target nodes alone does not authorize the
 revocation write.
 
@@ -101,4 +101,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded request payload, gateway-node access authorization, self-lockout behavior, destructive consent coverage for self-lockout and normal revocation, gateway-unavailable failure, authorization failure, and result rendering. |
+| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS, no SSH-to-gateway path, forwarded payload, gateway-node access authorization, self-lockout behavior, destructive consent for self-lockout and normal revocation, gateway-unavailable failure, authorization failure, and result rendering. |

@@ -22,7 +22,7 @@ orbit deploy:log docs 42 --step=13
 orbit deploy:log docs 42 --lines=200 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: production app name or domain.
 - `run`: deployment run id from [`deploy:history`](../5_deploy-history/deploy-history.md).
@@ -33,14 +33,11 @@ orbit deploy:log docs 42 --lines=200 --json
 
 ## What Happens
 
-`deploy:log` resolves the production app and run id, verifies the run belongs
-to that app, reads captured per-step output from gateway deployment history,
-applies optional step and line filters, and renders the selected output.
+Run `deploy:log` when you need to inspect the captured output from a specific deployment run. `deploy:log` resolves the production app and run id, verifies the run belongs to that app, reads captured per-step output from gateway deployment history, applies optional step and line filters, and renders the selected output.
 
 ## Output
 
-Human output shows the run summary and captured output grouped by deployment
-step.
+Pass `--json` to receive machine-readable output; omit it to see the run summary and captured output grouped by deployment step.
 
 JSON output returns the run entity and per-step captured output.
 

@@ -57,7 +57,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`deploy:step-list` reads app-owned deployment policy only. It does not own a
+`deploy:step-list` reads deployment policy that the app owns. It does not own a
 doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) owns production
 app health checks that may incorporate deployment pipeline validity.
 

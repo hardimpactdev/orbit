@@ -40,7 +40,7 @@ The forwarded request includes:
 - the authenticated control-caller WireGuard identity.
 
 The gateway authenticates the caller through WireGuard identity and authorizes
-the request through gateway-owned node access policy. Because `node:grant`
+the request through the node access policy it owns. Because `node:grant`
 mutates gateway-owned fleet configuration, the control-role caller must have
 access to the gateway node. Access to the target nodes alone does not
 authorize the grant write.

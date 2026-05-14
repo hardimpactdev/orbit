@@ -4,6 +4,8 @@
 
 ## Catalog
 
+These fields describe the OpenCode Server tool's identity, backend, and support model in Orbit.
+
 | Field | Value |
 | --- | --- |
 | Slug | `opencode-server` |
@@ -49,8 +51,8 @@ Example JSON shape:
 
 Orbit-managed OpenCode Server must have generated authentication credentials.
 When legacy or adopted state has no password configured, the credential fields
-must make the no-auth state explicit rather than returning a misleading empty
-password.
+must explicitly indicate that no authentication is set rather than returning a
+misleading empty password.
 
 ## Service Endpoint
 

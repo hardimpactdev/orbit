@@ -19,10 +19,12 @@ owns app PHP runtime health and app PHP-FPM artifacts.
 workspace PHP runtime health and workspace PHP-FPM artifacts.
 [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns app and workspace
 proxy backend artifact drift when PHP runtime targets change.
-[`doctor --family=node`](../1_node/node-doctor.md) owns node-level CLI PHP
-default configuration. There is no `doctor --family=php` contract.
+[`doctor --family=node`](../1_node/node-doctor.md) owns the default PHP CLI
+configuration at the node level. There is no `doctor --family=php` contract.
 
 ## Domain Rules
+
+These rules define what PHP runtime commands own and how they operate.
 
 - PHP runtime commands are explicitly admitted tool-specific commands. This
   does not imply that every tool receives a top-level command family.
@@ -69,10 +71,14 @@ command explicitly requests live inspection.
 
 ## Commands
 
+The PHP family provides the following commands.
+
 1. [`orbit php:list`](1_php-list/php-list.md)
 2. [`orbit php:use [version]`](2_php-use/php-use.md)
 
 ## Related
+
+Related command families and doctor contracts that intersect with PHP runtime selection.
 
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit app:*`](../5_app/README.md)

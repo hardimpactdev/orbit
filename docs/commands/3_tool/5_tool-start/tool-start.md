@@ -21,7 +21,7 @@ orbit tool:start redis --app=docs
 orbit tool:start redis --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -33,6 +33,8 @@ Target context is required when neither `--node`, `--app`, nor local
 
 ## What Happens
 
+Run this command to set a managed tool's expected state to `running` and start it through the gateway.
+
 `tool:start`:
 
 1. Resolves the target node and registered tool row.
@@ -42,6 +44,8 @@ Target context is required when neither `--node`, `--app`, nor local
 5. Reports the resulting state.
 
 ## Output
+
+Use `--json` to get a machine-readable result; omit it for a summary of the start action.
 
 Human output reports the start action and resulting intended state.
 
@@ -58,6 +62,8 @@ JSON output returns the tool entity under `success.data.tool`.
   primitive.
 
 ## Related Commands
+
+Use these commands for related tool lifecycle actions.
 
 - [`tool:stop`](../6_tool-stop/tool-stop.md) - stop a managed tool service
 - [`tool:restart`](../7_tool-restart/tool-restart.md) - restart a managed tool service

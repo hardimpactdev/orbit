@@ -35,7 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Verifies the tool supports managed removal.
 - Requires destructive consent before side effects.

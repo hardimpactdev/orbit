@@ -21,7 +21,7 @@ orbit deploy:step-remove docs 12
 orbit deploy:step-remove docs "Run migrations" --force
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: production app name or domain.
 - `step`: step id or exact title.
@@ -30,13 +30,11 @@ orbit deploy:step-remove docs "Run migrations" --force
 
 ## What Happens
 
-`deploy:step-remove` resolves the production app and step, requires destructive
-consent, and removes the step from gateway-owned deployment policy. It does not
-remove deployment run history or logs.
+Run `deploy:step-remove` when a deployment task no longer belongs in the pipeline. `deploy:step-remove` resolves the production app and step, requires destructive consent, and removes the step from deployment policy on the gateway. It does not remove deployment run history or logs.
 
 ## Output
 
-Human output confirms the removed step.
+Run without `--json` to see confirmation of the removed step.
 
 JSON output returns the removed step entity with removal metadata.
 

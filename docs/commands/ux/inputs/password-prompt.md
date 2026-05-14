@@ -5,11 +5,15 @@ passphrases, and access tokens.
 
 ## Use When
 
+Use `password` in the following situations.
+
 - The value is sensitive and must not appear in the terminal scrollback.
 - The value is captured once and forwarded to a credential store or
   immediate side effect.
 
 ## Avoid When
+
+Choose a different primitive in the following situations.
 
 - The value is non-sensitive free text. Use [`text`](text-prompt.md).
 - The secret is being supplied via an option flag or environment variable
@@ -18,13 +22,14 @@ passphrases, and access tokens.
 
 ## Contract
 
+These rules govern all uses of `password` in Orbit commands.
+
 - Primitive name in input-mode docs: `password`.
 - Echo is suppressed; no characters render as the operator types.
 - Validation timing matches [`text`](text-prompt.md): on submit and on
   supplied-value read.
-- In `--json` or non-interactive mode the prompt is not rendered; missing
-  required input fails with `validation_failed`. Secrets passed by flag are
-  read directly.
+- In `--json` or non-interactive mode the prompt is not rendered; missing required input fails with `validation_failed`.
+- Secrets passed by flag are read directly.
 - Captured values must never be logged or echoed back as part of human
   output, JSON output, or activity logging.
 
@@ -50,10 +55,14 @@ $token = password(
 
 ## Reference Implementations
 
+No node commands use `password` at plan time.
+
 - None in the node domain at plan time. Add a row here when a node command
   adopts `password`.
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: password](https://laravel.com/docs/13.x/prompts#password)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

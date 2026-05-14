@@ -16,7 +16,7 @@ orbit cf-dns:add docs.example.com 2001:db8::10 --type=AAAA --zone=example.com
 orbit cf-dns:add docs.example.com 203.0.113.10 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: Fully qualified DNS record name.
 - `content`: IPv4 address for `A` records or IPv6 address for `AAAA` records.
@@ -29,6 +29,8 @@ orbit cf-dns:add docs.example.com 203.0.113.10 --json
 
 ## What Happens
 
+Run `orbit cf-dns:add` to create one Cloudflare `A` or `AAAA` address record.
+
 `cf-dns:add` asks the gateway to create one Cloudflare address record. It is
 idempotent when the same zone, name, type, content, and proxy setting already
 exist.
@@ -36,6 +38,8 @@ exist.
 The command refuses general DNS administration. It does not create CNAME, TXT, MX, CAA, SRV, or other record types, and it does not create Orbit proxy route configuration.
 
 ## Output
+
+You will see a confirmation of the created or existing record.
 
 Human output confirms the record outcome. JSON output returns
 `success.data.record`.
@@ -48,6 +52,8 @@ Human output confirms the record outcome. JSON output returns
 - The selected zone exists in the Cloudflare account.
 
 ## Related Commands
+
+Use these commands to list existing records or remove one you no longer need.
 
 - [`orbit cf-dns:list`](../2_cf-dns-list/cf-dns-list.md)
 - [`orbit cf-dns:remove`](../4_cf-dns-remove/cf-dns-remove.md)

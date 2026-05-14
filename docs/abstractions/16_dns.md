@@ -10,16 +10,16 @@ product docs.
 
 - DNS commands are caller-local control-node commands.
 - DNS commands must not query or mutate gateway intent, app routes, proxy
-  routes, Cloudflare records, public DNS, or gateway-owned development DNS
-  mappings.
+  routes, Cloudflare records, public DNS, or the development DNS mappings
+  owned by the gateway.
 - `dns:resolve-tld` is the DNS-family write command and owns local resolver
   mutation.
-- `dns:list` is read-only and lists Orbit-managed local resolver overrides from
-  the same local resolver storage used by `dns:resolve-tld`.
+- `dns:list` is read-only and lists the local resolver overrides that Orbit
+  manages, reading from the same local resolver storage used by `dns:resolve-tld`.
 - Missing local node role resolves as `control`; unsupported local role values
   resolve as `unknown` and fail before local resolver reads.
 - `dns:list` supports read-only inspection on Linux and macOS because it reads
-  Orbit-managed local resolver files, not OS resolver state.
+  the local resolver files that Orbit manages, not OS resolver state.
 - `dns:resolve-tld` currently mutates only the macOS dnsmasq backend. Linux
   write support stays deferred until that command contract or E2E lane needs it.
 - Old Orbit's DNS list path queried a gateway/container dnsmasq config. That is

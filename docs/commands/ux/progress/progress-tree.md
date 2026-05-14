@@ -5,6 +5,8 @@ that may take longer than one second.
 
 ## Use When
 
+Use the progress tree in the following situations.
+
 - The command performs remote calls, SSH, network I/O, package
   installation, process startup or shutdown, WireGuard changes,
   destructive mutation, or multi-step gateway writes.
@@ -12,12 +14,16 @@ that may take longer than one second.
 
 ## Avoid When
 
+Choose a simpler alternative in the following situations.
+
 - The command is a fast read-only path that completes below one second.
   Render the result directly with no progress UI.
 - The command performs a single short async wait without meaningful
   sub-steps. Use a [spinner](spinner.md).
 
 ## Contract
+
+These rules govern all uses of the progress tree in Orbit commands.
 
 - Primitive name in renderer docs: `progress-tree`.
 - The renderer doc's `## Progress Tree` section defines the initial step
@@ -40,6 +46,8 @@ that may take longer than one second.
   (`Resolved target`).
 
 ## Anatomy
+
+The tree has one header line, one step row per action, and a footer line.
 
 ```text
   ┌  Removing node 'app-1'
@@ -88,7 +96,7 @@ header).
 Orbit disables `laravel/pao` output cleaning by default because progress trees
 are a CLI contract, not cosmetic decoration. When debugging tree rendering in a
 context where Pao may still be active, run the command with `PAO_DISABLE=1` so
-agent-observed output preserves box drawing, status glyphs, and ANSI state.
+the output that an agent observes preserves box drawing, status glyphs, and ANSI state.
 
 ## Example
 
@@ -114,12 +122,16 @@ return $this->runStepTree('Removing node \'app-1\'', [
 
 ## Reference Implementations
 
+These commands use the progress tree and are good models to follow.
+
 - `TldResolveCommand` — sequential `runStepTree`.
 - `GatewayConnectCommand` — simple sequential `runStepTree`.
 - `NodeUpdateCommand` — low-level `WithStepTree`.
 - `DeployCommand` — low-level `WithStepTree` with custom rendering.
 
 ## Cross References
+
+See also these related resources.
 
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
   for trait API, ANSI codes, async patterns, and SSE event shapes.

@@ -20,7 +20,7 @@ orbit schedule:add laravel-scheduler --app=docs --command="php artisan schedule:
 orbit schedule:add backups --node=app-1 --script=/opt/orbit/schedules/backup.sh --interval="daily at 02:00" --timezone=Europe/Amsterdam
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: schedule slug, unique within the selected app or node scope.
 - `--app`: app target for an app-scoped schedule.
@@ -37,13 +37,13 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 
 ## What Happens
 
-`schedule:add` validates the target, validates the execution source and interval, writes gateway schedule configuration, and confirms the target node's Orbit Scheduler is reachable. The scheduler picks up the new schedule on its next sync and begins evaluating it on each minute boundary.
+Use `schedule:add` when you need to define a new recurring task for an app or node. `schedule:add` validates the target, validates the execution source and interval, writes gateway schedule configuration, and confirms the target node's Orbit Scheduler is reachable. The scheduler picks up the new schedule on its next sync and begins evaluating it on each minute boundary.
 
-It does not create apps, nodes, app process definitions, proxy routes, firewall rules, or scheduler-only schedules outside gateway configuration.
+It does not create apps, nodes, app process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
 
 ## Output
 
-Human output renders a progress tree while the command validates input, writes gateway configuration, and confirms the target node's Orbit Scheduler is reachable.
+Run without `--json` to see a progress tree while the command validates input, writes gateway configuration, and confirms the target node's Orbit Scheduler is reachable.
 
 JSON output returns the created schedule entity and scheduler-pickup result.
 

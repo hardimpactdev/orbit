@@ -66,7 +66,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Setup Step Addition Rules
 
-`workspace-setup-step:add` writes a single gateway-owned setup step record
+`workspace-setup-step:add` writes a single setup step record owned by the gateway
 for an app's workspace lifecycle. The step is *not* executed during this
 command; it is applied by `workspace:new` and `workspace:setup` at
 `phase=setup_steps`.
@@ -92,7 +92,7 @@ command; it is applied by `workspace:new` and `workspace:setup` at
    per-step `on_failure` knob. Working directory is pinned to the workspace
    path on the owning app node and exposed through `ORBIT_WORKSPACE_PATH`
    (see the [Workspaces README](../../README.md#lifecycle-step-environment)).
-   Failure policy is the family-wide fail-fast contract resolved by
+   Failure policy is the fail-fast contract shared across the family, resolved by
    `workspace:setup`.
 5. **Idempotence**: This command is *additive*. Running the same `add` twice
    creates two separate step records (each with its own `id`). There is no
@@ -129,7 +129,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Uses the shared exit status policy. Success exits `0`; all documented command
 failures exit with the standard command failure status (`1`). This command
-defines no command-specific numeric exit codes.
+defines no numeric exit codes specific to it.
 
 ## Doctor Relationship
 

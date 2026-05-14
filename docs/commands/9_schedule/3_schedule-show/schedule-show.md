@@ -19,7 +19,7 @@ orbit schedule:show laravel-scheduler --app=docs
 orbit schedule:show backups --node=app-1
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: schedule slug.
 - `--app`: disambiguate an app-scoped schedule.
@@ -30,11 +30,11 @@ orbit schedule:show backups --node=app-1
 
 ## What Happens
 
-`schedule:show` reads one schedule and latest durable run history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair drift, or adopt scheduler-side state.
+Run `schedule:show` when you need the full detail view for a specific schedule. `schedule:show` reads one schedule and latest durable run history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair drift, or adopt scheduler-side state.
 
 ## Output
 
-Human output renders a detail view for the schedule.
+Pass `--json` to receive machine-readable output; omit it to see a detail view for the schedule.
 
 JSON output returns one schedule entity.
 

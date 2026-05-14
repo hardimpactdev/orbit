@@ -16,7 +16,7 @@ orbit vpn-web-ui:change-password 'new-long-password' --force
 orbit vpn-web-ui:change-password 'new-long-password' --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `password`: New gateway VPN backend web UI password. Interactive input mode
   prompts when omitted.
@@ -28,21 +28,27 @@ orbit vpn-web-ui:change-password 'new-long-password' --force --json
 
 ## What Happens
 
+Run this command to rotate the admin password for the gateway VPN backend web UI.
+
 `vpn-web-ui:change-password` runs on the gateway host and rotates the password
 used to administer the gateway VPN backend. It verifies backend authentication,
 updates the backend credential, invalidates existing backend admin sessions when
-the backend supports it, and updates Orbit-managed gateway-local credential
-storage.
+the backend supports it, and updates the Orbit-managed credential storage on the
+gateway.
 
 The command does not rotate WireGuard client keys, node identities, gateway CA
 material, or Orbit node access grants.
 
 ## Output
 
+Your output confirms the password was rotated successfully.
+
 Human output renders a progress tree and confirms password rotation. JSON
 output returns `success.data.vpn.password_changed=true`.
 
 ## Requirements
+
+All of the following must be true before the command runs.
 
 - The caller is a gateway or authorized control node.
 - Control callers can SSH to the gateway over Orbit/WireGuard.
@@ -52,6 +58,8 @@ output returns `success.data.vpn.password_changed=true`.
 - Destructive consent is supplied interactively or with `--force`.
 
 ## Related Commands
+
+Use these commands to list VPN clients or investigate node health.
 
 - [`orbit vpn-client:list`](../1_vpn-client-list/vpn-client-list.md)
 - [`doctor --family=node`](../../1_node/node-doctor.md)

@@ -8,18 +8,35 @@ use OrbitDocsLinter\CommandDocsLintContext;
 use OrbitDocsLinter\CommandDocsLintFinding;
 use OrbitDocsLinter\CommandDocsLintRule;
 use OrbitDocsLinter\CommandDocsLintSeverity;
+use OrbitDocsLinter\Rules\Prose\DocProfile;
+use OrbitDocsLinter\Rules\Prose\MarkdownFileWalker;
+use OrbitDocsLinter\Rules\Prose\ProseSegmenter;
 
 final class DocumentComplexityRule implements CommandDocsLintRule
 {
-    private const MaxSentenceWords = 55;
+    /**
+     * Thresholds are calibrated against Laravel 13.x docs (sentence p90 ~29,
+     * paragraph p90 ~63, LIX ~50). Reader-facing prose uses the tighter band;
+     * technical contracts accept denser prose because the audience already knows
+     * the domain and contracts trade clarity for precision.
+     */
+    private const READER_FACING = [
+        'max_sentence_words' => 40,
+        'max_paragraph_words' => 100,
+        'max_bullet_words' => 35,
+        'max_lix' => 60.0,
+        'max_long_sentence_words' => 25,
+        'max_long_sentence_share' => 0.20,
+    ];
 
-    private const MaxParagraphWords = 150;
-
-    private const MaxBulletWords = 45;
-
-    private const MaxLix = 75.0;
-
-    private const MaxLongSentenceShare = 0.35;
+    private const TECHNICAL = [
+        'max_sentence_words' => 50,
+        'max_paragraph_words' => 130,
+        'max_bullet_words' => 45,
+        'max_lix' => 70.0,
+        'max_long_sentence_words' => 30,
+        'max_long_sentence_share' => 0.30,
+    ];
 
     public function id(): string
     {
@@ -35,45 +52,19 @@ final class DocumentComplexityRule implements CommandDocsLintRule
     {
         $findings = [];
 
-        foreach ($this->markdownFiles($context) as $file) {
+        foreach (MarkdownFileWalker::files($context) as $file) {
             $contents = $context->read($file);
+            $profile = DocProfile::fromPath($context->relativePath($file));
+            $thresholds = $profile === DocProfile::Technical ? self::TECHNICAL : self::READER_FACING;
 
             array_push(
                 $findings,
                 ...$this->duplicateHeadingFindings($context, $file, $contents),
-                ...$this->proseFindings($context, $file, $contents),
+                ...$this->proseFindings($context, $file, $contents, $thresholds),
             );
         }
 
         return $findings;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function markdownFiles(CommandDocsLintContext $context): array
-    {
-        $files = [];
-
-        foreach ($context->convertedFamilyDirectories() as $familyDirectory) {
-            foreach ($context->markdownFiles($familyDirectory, recursive: false) as $file) {
-                $files[] = $file;
-            }
-
-            foreach ($context->commandDirectories($familyDirectory) as $commandDirectory) {
-                foreach ($context->markdownFiles($commandDirectory, recursive: false) as $file) {
-                    $files[] = $file;
-                }
-
-                foreach ($context->technicalMarkdownFiles("{$commandDirectory}/technical") as $file) {
-                    $files[] = $file;
-                }
-            }
-        }
-
-        sort($files);
-
-        return $files;
     }
 
     /**
@@ -110,45 +101,46 @@ final class DocumentComplexityRule implements CommandDocsLintRule
     }
 
     /**
+     * @param  array{max_sentence_words: int, max_paragraph_words: int, max_bullet_words: int, max_lix: float, max_long_sentence_words: int, max_long_sentence_share: float}  $thresholds
      * @return list<CommandDocsLintFinding>
      */
-    private function proseFindings(CommandDocsLintContext $context, string $file, string $contents): array
+    private function proseFindings(CommandDocsLintContext $context, string $file, string $contents, array $thresholds): array
     {
         $findings = [];
-        $paragraphs = $this->paragraphs($contents);
+        $paragraphs = ProseSegmenter::segment($contents);
         $sentenceLengths = [];
         $wordCount = 0;
         $longWordCount = 0;
 
         foreach ($paragraphs as $paragraph) {
-            if ($paragraph['kind'] === 'bullet') {
-                $words = $this->words($paragraph['text']);
+            if ($paragraph['kind'] === ProseSegmenter::KIND_BULLET) {
+                $words = ProseSegmenter::words($paragraph['text']);
 
-                if (count($words) > self::MaxBulletWords) {
+                if (count($words) > $thresholds['max_bullet_words']) {
                     $findings[] = $this->warning(
                         context: $context,
                         path: $file,
                         line: $paragraph['line'],
-                        message: sprintf('Bullet item has %d prose words, above calibrated threshold %d. Split condition, actor, action, and result.', count($words), self::MaxBulletWords),
+                        message: sprintf('Bullet item has %d prose words, above threshold %d. Split condition, actor, action, and result.', count($words), $thresholds['max_bullet_words']),
                     );
                 }
 
                 continue;
             }
 
-            $paragraphWords = $this->words($paragraph['text']);
+            $paragraphWords = ProseSegmenter::words($paragraph['text']);
 
-            if (count($paragraphWords) > self::MaxParagraphWords) {
+            if (count($paragraphWords) > $thresholds['max_paragraph_words']) {
                 $findings[] = $this->warning(
                     context: $context,
                     path: $file,
                     line: $paragraph['line'],
-                    message: sprintf('Paragraph has %d prose words, above calibrated threshold %d. Split the paragraph into separate requirement blocks.', count($paragraphWords), self::MaxParagraphWords),
+                    message: sprintf('Paragraph has %d prose words, above threshold %d. Split the paragraph.', count($paragraphWords), $thresholds['max_paragraph_words']),
                 );
             }
 
-            foreach ($this->sentences($paragraph['text']) as $sentence) {
-                $words = $this->words($sentence);
+            foreach (ProseSegmenter::sentences($paragraph['text']) as $sentence) {
+                $words = ProseSegmenter::words($sentence);
 
                 if ($words === []) {
                     continue;
@@ -158,12 +150,12 @@ final class DocumentComplexityRule implements CommandDocsLintRule
                 $wordCount += count($words);
                 $longWordCount += count(array_filter($words, fn (string $word): bool => strlen($word) > 6));
 
-                if (count($words) > self::MaxSentenceWords) {
+                if (count($words) > $thresholds['max_sentence_words']) {
                     $findings[] = $this->warning(
                         context: $context,
                         path: $file,
                         line: $paragraph['line'],
-                        message: sprintf('Sentence has %d prose words, above calibrated threshold %d. Split condition, actor, action, and result.', count($words), self::MaxSentenceWords),
+                        message: sprintf('Sentence has %d prose words, above threshold %d. Split condition, actor, action, and result.', count($words), $thresholds['max_sentence_words']),
                     );
                 }
             }
@@ -175,144 +167,36 @@ final class DocumentComplexityRule implements CommandDocsLintRule
 
         $lix = (float) (array_sum($sentenceLengths) / count($sentenceLengths)) + (($longWordCount * 100) / $wordCount);
 
-        if ($lix > self::MaxLix) {
+        if ($lix > $thresholds['max_lix']) {
             $findings[] = $this->warning(
                 context: $context,
                 path: $file,
                 line: 1,
-                message: sprintf('Document LIX is %.1f, above calibrated threshold %.1f. Prefer shorter sentences and simpler prose words.', $lix, self::MaxLix),
+                message: sprintf('Document LIX is %.1f, above threshold %.1f. Prefer shorter sentences and simpler prose words.', $lix, $thresholds['max_lix']),
             );
         }
 
-        $longSentences = count(array_filter($sentenceLengths, fn (int $length): bool => $length > 30));
+        $longSentences = count(array_filter(
+            $sentenceLengths,
+            fn (int $length): bool => $length > $thresholds['max_long_sentence_words'],
+        ));
         $longSentenceShare = $longSentences / count($sentenceLengths);
 
-        if (count($sentenceLengths) >= 4 && $longSentenceShare > self::MaxLongSentenceShare) {
+        if (count($sentenceLengths) >= 4 && $longSentenceShare > $thresholds['max_long_sentence_share']) {
             $findings[] = $this->warning(
                 context: $context,
                 path: $file,
                 line: 1,
-                message: sprintf('%.0f%% of sentences exceed 30 prose words, above calibrated threshold %.0f%%. Split dense requirement prose.', $longSentenceShare * 100, self::MaxLongSentenceShare * 100),
+                message: sprintf(
+                    '%.0f%% of sentences exceed %d prose words, above threshold %.0f%%. Split dense requirement prose.',
+                    $longSentenceShare * 100,
+                    $thresholds['max_long_sentence_words'],
+                    $thresholds['max_long_sentence_share'] * 100,
+                ),
             );
         }
 
         return $findings;
-    }
-
-    /**
-     * @return list<array{kind: string, text: string, line: int}>
-     */
-    private function paragraphs(string $contents): array
-    {
-        $paragraphs = [];
-        $buffer = [];
-        $bufferLine = 1;
-        $inFence = false;
-
-        foreach (explode("\n", $contents) as $index => $line) {
-            $lineNumber = $index + 1;
-
-            if (preg_match('/^\s*```/', $line) === 1) {
-                $this->flushParagraph($paragraphs, $buffer, $bufferLine);
-                $inFence = ! $inFence;
-
-                continue;
-            }
-
-            if ($inFence || $this->isIgnoredLine($line)) {
-                $this->flushParagraph($paragraphs, $buffer, $bufferLine);
-
-                continue;
-            }
-
-            if (preg_match('/^\s*(?:[-*+]|\d+\.)\s+(?<text>.+)$/', $line, $matches) === 1) {
-                $this->flushParagraph($paragraphs, $buffer, $bufferLine);
-                $paragraphs[] = [
-                    'kind' => 'bullet',
-                    'text' => $this->cleanProse($matches['text']),
-                    'line' => $lineNumber,
-                ];
-
-                continue;
-            }
-
-            $text = $this->cleanProse($line);
-
-            if (trim($text) === '') {
-                $this->flushParagraph($paragraphs, $buffer, $bufferLine);
-
-                continue;
-            }
-
-            if ($buffer === []) {
-                $bufferLine = $lineNumber;
-            }
-
-            $buffer[] = $text;
-        }
-
-        $this->flushParagraph($paragraphs, $buffer, $bufferLine);
-
-        return $paragraphs;
-    }
-
-    /**
-     * @param  list<array{kind: string, text: string, line: int}>  $paragraphs
-     * @param  list<string>  $buffer
-     */
-    private function flushParagraph(array &$paragraphs, array &$buffer, int $line): void
-    {
-        if ($buffer === []) {
-            return;
-        }
-
-        $paragraphs[] = [
-            'kind' => 'paragraph',
-            'text' => implode(' ', $buffer),
-            'line' => $line,
-        ];
-
-        $buffer = [];
-    }
-
-    private function isIgnoredLine(string $line): bool
-    {
-        $trimmed = trim($line);
-
-        return $trimmed === ''
-            || str_starts_with($trimmed, '#')
-            || str_starts_with($trimmed, '|')
-            || preg_match('/^\s*\|?\s*-{3,}/', $line) === 1;
-    }
-
-    private function cleanProse(string $line): string
-    {
-        $line = preg_replace('/`[^`]*`/', ' ', $line) ?? $line;
-        $line = preg_replace('/https?:\/\/\S+/', ' ', $line) ?? $line;
-        $line = preg_replace('/(?<!\w)--[a-z0-9][a-z0-9-]*/i', ' ', $line) ?? $line;
-        $line = preg_replace('/(?:\.{0,2}\/|~\/|\/)[^\s]+/', ' ', $line) ?? $line;
-
-        return trim(preg_replace('/\s+/', ' ', $line) ?? $line);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function sentences(string $paragraph): array
-    {
-        $sentences = preg_split('/(?<=[.!?])\s+/', $paragraph) ?: [];
-
-        return array_values(array_filter(array_map('trim', $sentences)));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function words(string $text): array
-    {
-        preg_match_all('/[A-Za-z][A-Za-z\'-]*/', $text, $matches);
-
-        return $matches[0];
     }
 
     private function warning(CommandDocsLintContext $context, string $path, int $line, string $message): CommandDocsLintFinding

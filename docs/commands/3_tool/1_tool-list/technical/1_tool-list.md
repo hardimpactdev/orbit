@@ -28,7 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Reads gateway tool configuration visible to the caller.
 - Applies node and app filters at the gateway.

@@ -28,7 +28,7 @@ orbit app:show docs.test
 orbit app:show docs --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: app name or app hostname to inspect. Optional. Defaults to the app
   resolved from the current working directory context. See
@@ -43,6 +43,8 @@ already addresses an app uniquely; `app:show` does not accept a `--node` flag.
 
 ## What Happens
 
+Run `app:show` to inspect a single app's gateway configuration without triggering any writes.
+
 `app:show` performs a read-only registry inspection of a single app:
 
 1. Resolves the target app from input, current directory context, or
@@ -53,7 +55,7 @@ already addresses an app uniquely; `app:show` does not accept a `--node` flag.
    through gateway-owned access policy.
 4. Aggregates the durable gateway configuration the app owns: workspaces, processes,
    and app-owned proxy routes.
-5. Returns the registry-backed app detail view.
+5. Returns the app detail view backed by the registry.
 
 `app:show` does not:
 
@@ -79,6 +81,8 @@ exact payload shape.
   access policy.
 
 ## Related Commands
+
+Use these commands to take action after inspecting an app with `app:show`.
 
 - [`app:new`](../1_app-new/app-new.md) — create or clone an app
 - [`app:list`](../3_app-list/app-list.md) — list registered apps

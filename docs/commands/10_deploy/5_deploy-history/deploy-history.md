@@ -22,7 +22,7 @@ orbit deploy:history docs --limit=10
 orbit deploy:history docs --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: production app name or domain.
 - `--limit`: Maximum number of runs to return. Defaults to `50`; hard cap
@@ -31,13 +31,11 @@ orbit deploy:history docs --json
 
 ## What Happens
 
-`deploy:history` resolves the production app, reads deployment run history from
-gateway app state, sorts newest runs first, and renders the selected output.
+Run `deploy:history` when you want to see past deployment attempts for a production app. `deploy:history` resolves the production app, reads deployment run history from gateway app state, sorts newest runs first, and renders the selected output.
 
 ## Output
 
-Human output renders a run list with run id, status, start time, duration, and
-failed step summary when available.
+Pass `--json` to receive machine-readable output; omit it to see a run list with run id, status, start time, duration, and failed step summary when available.
 
 JSON output returns `success.data.runs[]` plus pagination metadata.
 

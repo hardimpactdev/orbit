@@ -5,11 +5,15 @@ string fields.
 
 ## Use When
 
+Use `text` in the following situations.
+
 - The field accepts arbitrary string input that is not a fixed enum
   (`name`, `host`, `path`, `repository`, IP addresses).
 - A regex or domain rule validates the value, with re-prompt on failure.
 
 ## Avoid When
+
+Choose a different primitive in the following situations.
 
 - The field is one of a small fixed enum. Use [`select`](select-prompt.md).
 - The value is a secret that should not echo. Use
@@ -19,6 +23,8 @@ string fields.
   [`suggest`](suggest-prompt.md).
 
 ## Contract
+
+These rules govern all uses of `text` in Orbit commands.
 
 - Primitive name in input-mode docs: `text`.
 - The `Primitive` column of the `## Prompt Mapping` table names `text` and
@@ -51,11 +57,15 @@ $name = text(
 
 ## Reference Implementations
 
+These commands use `text` and are good models to follow.
+
 - `orbit node:new` — `node_new.name`, `node_new.host`,
   `node_new.control_name`, `node_new.tld`, `node_new.ssh_user` all use
   `text`.
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: text](https://laravel.com/docs/13.x/prompts#text)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

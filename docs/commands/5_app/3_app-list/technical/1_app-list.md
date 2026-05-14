@@ -35,8 +35,8 @@ part of the initial contract.
 
 ## Visibility Behavior
 
-Visibility is filtered at the gateway as set membership against
-gateway-owned app access policy. Callers receive only the apps their
+Visibility is filtered at the gateway as set membership against the app access
+policy that the gateway owns. Callers receive only the apps their
 authenticated identity is authorized to see.
 
 - An authorized caller whose visible set is empty receives an empty list

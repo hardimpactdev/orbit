@@ -21,7 +21,7 @@ orbit update
 orbit update --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--json`: Output JSON.
 
@@ -41,6 +41,8 @@ Use [`update:all`](../2_update-all/update-all.md) when the operator needs to
 roll out the same Orbit code update across the fleet.
 
 ## Output
+
+Run `orbit update` to see a live progress tree and a final success or failure result.
 
 Human output shows a live progress tree for the local update sequence and
 reports whether the local checkout updated successfully.
@@ -68,6 +70,8 @@ shared command envelope.
 - The local PHP runtime can run Orbit migrations.
 
 ## Related Commands
+
+Use these commands before or after running `orbit update`.
 
 - [`update:all`](../2_update-all/update-all.md) - update the local checkout and
   every managed Orbit installation

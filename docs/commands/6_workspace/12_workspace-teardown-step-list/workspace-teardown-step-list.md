@@ -19,7 +19,7 @@ orbit workspace-teardown-step:list --app=my-app
 orbit workspace-teardown-step:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--app=<app>`: The parent app slug. When omitted, Orbit infers the app
   using the same precedence chain as
@@ -33,7 +33,9 @@ orbit workspace-teardown-step:list --json
 
 ## What Happens
 
-`workspace-teardown-step:list` reads the gateway-owned teardown-step policy
+Run `workspace-teardown-step:list` to view the teardown steps that will run during workspace removal.
+
+`workspace-teardown-step:list` reads the teardown-step policy owned by the gateway
 for the resolved app:
 
 1. Resolves the parent app from `--app` or the shared cwd-inference chain.

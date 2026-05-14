@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Verifies the registered tool is managed and restartable.
 - Runs the lifecycle restart action through the gateway.

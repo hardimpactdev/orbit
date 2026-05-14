@@ -113,7 +113,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 and unverifiable live checks are not part of this command's default read path.
 Operators who need readiness or drift information should run
 [`doctor --family=workspace`](../../workspace-doctor.md) for runtime artifact
-drift. Setup-time HTTP probe results belong to `workspace:setup` command
+drift. HTTP probe results from setup time belong to `workspace:setup` command
 metadata.
 
 ## Doctor Relationship

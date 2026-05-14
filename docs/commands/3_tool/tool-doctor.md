@@ -19,7 +19,7 @@ The tool family owns these facts:
   state;
 - reload, update, reconfigure, and removal support declared by the tool
   definition;
-- tool-owned service endpoint configuration declared by the tool definition, while
+- service endpoint configuration owned by the tool and declared by the tool definition, while
   backend proxy artifacts and firewall application remain verified by their own
   state families;
 - adoption facts for explicitly selected observed node capabilities that can be
@@ -61,6 +61,8 @@ depend on facts the probe could not establish.
 
 ## Tool Issue Codes
 
+Each code below identifies a specific kind of drift the tool probe can detect.
+
 | Code | Detected when |
 | --- | --- |
 | `tool.record_incomplete` | A selected gateway tool row lacks node, name, expected state, managed flag, or definition-specific required fields. |
@@ -77,6 +79,8 @@ depend on facts the probe could not establish.
 | `tool.unregistered_capability` | During an explicit adoption scope, a selected observed capability has no matching gateway tool row. |
 
 ## Tool Fix Map
+
+This table shows what `doctor --fix --restore` does for each fixable issue code.
 
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
@@ -95,8 +99,8 @@ depend on facts the probe could not establish.
 Tools without a safe repair path are reported with the required manual action.
 Tool doctor never creates apps, workspaces, processes, schedules, custom proxy
 routes, non-tool firewall rules, node identities, or node grants. It may repair
-tool-owned endpoint configuration only when the selected tool definition owns that
-configuration; live proxy and firewall artifact drift remains in the `proxy` and
+endpoint configuration owned by the tool only when the selected tool definition declares that
+ownership; live proxy and firewall artifact drift remains in the `proxy` and
 `firewall_rule` families.
 
 Tool fixes apply existing gateway configuration to node reality. They do not change
@@ -105,11 +109,13 @@ configuration to match observed node state; adoption owns those configuration ch
 
 ## Tool Adopt Map
 
+This table shows what `doctor --fix --adopt` does for each adoptable issue code.
+
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
-| `tool.unregistered_capability` | Create a gateway tool row only when the operator selected a specific node and observed capability, the capability maps to a supported tool definition, and the tool definition declares what observed facts may become configuration. |
+| `tool.unregistered_capability` | Create a gateway tool row when: the operator selected a specific node and observed capability; the capability maps to a supported tool definition; and the tool definition declares what observed facts may become configuration. |
 | `tool.version_mismatch` | Update expected version only when the observed version is supported and the operator selected the specific tool for adoption. |
-| `tool.config_mismatch` | Update expected config only when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
+| `tool.config_mismatch` | Update expected config when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
 
 `doctor --fix --adopt` does not scan arbitrary hosts for inventory, adopt unsupported
@@ -123,7 +129,7 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/ToolsFamilyDoctorContractTest.php` | Tools-family dispatch, probe-layer selection, tool issue codes, tool fix map, tool adopt map, denied fix/adopt cases, and scope filtering as it affects tool probes. |
-| `tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior for registry configuration, node eligibility, capability presence, version drift, configuration drift, credential drift, lifecycle state drift, adoption scopes, and exclusion of app, workspace, process, schedule, proxy route, firewall, and node drift from tool issue codes. |
+| `tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior for: registry configuration, node eligibility, capability presence, version/configuration/credential/lifecycle drift, adoption scopes, and exclusion of app, workspace, process, schedule, proxy, firewall, and node drift from tool issue codes. |
 | `tests/E2E/Read/ToolsDoctorTest.php` | Real read-only `doctor --family=tool --json` against nodes with managed and observational tool rows. |
 | `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --fix --family=tool --restore` repair of safe managed tool drift. |
 | `tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --fix --family=tool --adopt` for compatible selected observed tool adoption. |

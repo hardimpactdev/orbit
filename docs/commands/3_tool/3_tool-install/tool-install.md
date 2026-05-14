@@ -22,7 +22,7 @@ orbit tool:install redis --app=docs --status=running
 orbit tool:install redis --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
@@ -35,6 +35,8 @@ Target context is required when neither `--node`, `--app`, nor local
 
 ## What Happens
 
+Run this command to bootstrap a supported tool on the target node and record gateway configuration.
+
 `tool:install`:
 
 1. Resolves the target node and tool definition.
@@ -42,7 +44,7 @@ Target context is required when neither `--node`, `--app`, nor local
 3. Creates or updates the gateway tool row for the node.
 4. Generates managed credentials when the selected tool declares a credential
    contract.
-5. Creates or updates tool-owned service endpoint configuration when the selected tool
+5. Creates or updates service endpoint configuration owned by the tool when the selected tool
    declares one.
 6. Applies the managed install/configuration through the gateway.
 7. Starts the tool when the expected state is `running`.
@@ -52,6 +54,8 @@ If the tool is already managed and the operator wants to change its version,
 use [`tool:update`](../9_tool-update/tool-update.md).
 
 ## Output
+
+Use `--json` to get a machine-readable result; omit it for a progress tree.
 
 Human output is a progress tree for configuration write, install/configuration, and
 optional start steps.
@@ -70,6 +74,8 @@ outcome metadata under `success.meta`.
   primitive.
 
 ## Related Commands
+
+Use these commands for related tool lifecycle and configuration actions.
 
 - [`tool:update`](../9_tool-update/tool-update.md) - change intended version for a managed tool
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun setup without changing version

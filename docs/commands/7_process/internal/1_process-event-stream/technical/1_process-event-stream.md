@@ -56,7 +56,7 @@ Every stream frame is one JSON object with a `type` discriminator:
 This internal command does not mutate process configuration or runtime state.
 
 ## Failure Semantics
-Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
+Standard failures defined in [Common Failures](../../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |

@@ -32,4 +32,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppNewOnAppNodeRejectionTest.php` | App-node caller rejection: `app:new` exits before prompts, side effects, or registry reads when the gateway identifies the caller as an app node, with `error.code=caller_role_not_allowed` in JSON output and the documented human message in TTY output. |
+| `tests/Feature/Commands/Apps/AppNewOnAppNodeRejectionTest.php` | App-node caller rejection: `app:new` exits before prompts, side effects, or registry reads when the gateway identifies the caller as an app node. Verifies `error.code=caller_role_not_allowed` in JSON output and the documented human message in TTY output. |

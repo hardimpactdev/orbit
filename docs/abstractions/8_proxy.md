@@ -24,7 +24,7 @@ product docs.
 - Backend discovery/import is explicit doctor adoption work, not a permanent
   sync command.
 
-## Schema And Model Pattern
+## Schema and model pattern
 
 - `proxy_routes`
   - `node_id`

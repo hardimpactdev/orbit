@@ -4,7 +4,7 @@ This file captures implementation patterns shared by two or more concrete
 callers. It is not product authority; command behavior remains in
 `docs/commands/**` and the top-level product docs.
 
-## Gateway API Transport And Envelope Parsing
+## Gateway API transport and envelope parsing
 
 **Problem:** CLI-to-gateway calls need one transport shape for base URL, trust,
 headers, request typing, and response envelope parsing.
@@ -31,13 +31,13 @@ headers, request typing, and response envelope parsing.
 
 **Invariants:**
 
-- Use `GatewayConnector` for steady-state CLI-to-gateway HTTP calls.
+- Use `GatewayConnector` for HTTP calls from the CLI to the gateway during steady state.
 - Preserve `LocalGatewaySettings` CA verification, `allow_redirects=false`,
   explicit timeout/connect timeout, JSON accept headers, and Orbit correlation
   headers.
 - `GatewayConnector` owns the base URL and default transport config. Do not
-  duplicate gateway URL, CA, redirect, timeout, or client-header setup inside
-  commands.
+  duplicate gateway URL, CA, redirect, timeout, or client-header setup in
+  individual commands.
 - Use typed `GatewayRequest` subclasses under
   `App\Http\Gateway\Requests\<Family>` once an endpoint has a stable
   command/API contract.
@@ -57,7 +57,7 @@ headers, request typing, and response envelope parsing.
   the pre-trust CA bootstrap path. It runs before the gateway CA is trusted and
   should not use `GatewayConnector`.
 
-## Command Renderer And Test Pairing
+## Command renderer and test pairing
 
 **Problem:** Commands with human and JSON output can drift unless tests mirror
 the command-doc renderer ownership.
@@ -83,7 +83,7 @@ the command-doc renderer ownership.
 - Human and JSON paths must be tested independently when behavior differs.
 - New commands should not introduce alternate JSON envelope shapes.
 
-## Caller-Role Resolution And Branching
+## Caller-role resolution and branching
 
 **Problem:** Caller role changes command flow before prompts or side effects,
 and repeated private helpers can diverge.
@@ -118,9 +118,7 @@ and repeated private helpers can diverge.
 
 ## Role-Path Test Shape
 
-**Problem:** Commands with caller-role branching need tests that prove each role
-selects the correct local or forwarding path, and the setup helpers for those
-tests are repeated per command.
+**Problem:** Commands that branch on caller role need tests that prove each role selects the correct local or forwarding path, and the setup helpers for those tests are repeated per command.
 
 **Current pointers:**
 
@@ -195,7 +193,7 @@ the product topology before implementing forwarding or node-side execution.
 
 ## Verification Gate Selection
 
-**Problem:** Command-port todos need consistent gate selection without
+**Problem:** Todos for command ports need consistent gate selection without
 duplicating the full testing contract.
 
 **Current pointers:**
@@ -219,7 +217,7 @@ duplicating the full testing contract.
 and current command invocations. This entry keeps the decision point in the
 worker's read-first context.
 
-## Doctor Probe And Action Integration
+## Doctor probe and action integration
 
 **Problem:** Family probes and fix/adopt handlers can drift in how they convert
 intent/reality differences into report issues and action payloads.
@@ -238,8 +236,9 @@ intent/reality differences into report issues and action payloads.
 
 - Family probes own product-family issue codes. They emit `DriftEntry` values;
   the global doctor runner does not invent family-specific drift.
-- The runner converts unresolved drift entries into issue payloads and leaves
-  family-owned diagnostic details intact for the command/API renderers.
+- The runner converts unresolved drift entries into issue payloads and preserves
+  the diagnostic details that each family owns, so they remain available to
+  the command/API renderers.
 - In `verify` mode, the runner compares only and must not attempt fixer/adopter
   actions.
 - In `fix` and `adopt` modes, completed actions suppress the corresponding

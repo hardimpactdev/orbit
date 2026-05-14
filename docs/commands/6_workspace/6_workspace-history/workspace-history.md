@@ -6,7 +6,7 @@ Show workspace setup and lifecycle history.
 
 `orbit workspace:history [name] [--app=<slug>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: Workspace slug. Optional when the current working directory resolves
   to a known workspace path.

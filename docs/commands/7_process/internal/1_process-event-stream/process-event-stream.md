@@ -20,20 +20,29 @@
 
 ## Behavior
 
+Use this command to open a live event stream for one or more process runtime scopes.
+
+### Stream behavior
+
 - Sends an initial snapshot for the selected runtime scope by deriving process units and probing live status.
 - Streams later `started`, `stopped`, and `crashed` events from `process_events`.
-- Observes lifecycle events recorded by internal process-family mechanics. Crashed events may originate from Orbit-managed runtime hooks, but the intake path is not a CLI command contract.
+
+### Constraints
+
+- Observes lifecycle events recorded by internal process-family mechanics. Crashed events may originate from runtime hooks that Orbit manages, but the intake path is not a CLI command contract.
 - Supports resume from an event id.
 - Does not mutate process configuration or runtime state.
 
 ## Inputs
+
+These flags scope the stream to the selected runtime context.
 
 - `--app=<app>`: filter by app.
 - `--workspace=<workspace>`: filter by workspace.
 - `--node=<node>`: filter by node.
 - `--process=<name>`: filter by process slug.
 - `--after-id=<id>`: resume after a known process event id.
-- `--json`: stream newline-delimited structured event objects. This is an internal stream frame contract, not a single `success`/`error` response envelope.
+- `--json`: stream event objects as newline-delimited JSON. This is an internal stream frame contract, not a single `success`/`error` response envelope.
 
 ## Doctor Relationship
 

@@ -20,12 +20,14 @@ orbit firewall:list --node=app-1
 orbit firewall:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--node`: Optional target node filter.
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run this command to read Orbit firewall policy recorded on the gateway for the selected node scope.
 
 `firewall:list`:
 
@@ -38,6 +40,8 @@ The command does not probe node firewall reality and does not mutate configurati
 
 ## Output
 
+Use `--json` to get machine-readable rule entities; omit it for a table grouped by node.
+
 Human output is a table grouped by node.
 
 JSON output returns firewall rule entities under `success.data.rules` and the applied node filter under `success.meta`.
@@ -49,6 +53,8 @@ JSON output returns firewall rule entities under `success.data.rules` and the ap
 - Filtered target nodes must be registered active Ubuntu `gateway` or `app` nodes.
 
 ## Related Commands
+
+Use these commands to add, remove, or verify firewall rules.
 
 - [`firewall:allow`](../2_firewall-allow/firewall-allow.md) - add an allow rule
 - [`firewall:deny`](../3_firewall-deny/firewall-deny.md) - add a deny rule

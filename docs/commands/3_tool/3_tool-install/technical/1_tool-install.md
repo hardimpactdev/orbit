@@ -30,13 +30,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Verifies the tool supports managed installation on the target node.
 - Writes or updates gateway tool configuration.
 - Generates managed credential material when the tool definition owns
   credentials.
-- Creates or updates tool-owned service endpoint configuration when the tool
+- Creates or updates service endpoint configuration owned by the tool when the tool
   definition declares an endpoint.
 - Applies install and configuration through the gateway.
 - Starts the tool when expected status is running.

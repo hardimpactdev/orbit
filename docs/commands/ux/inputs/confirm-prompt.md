@@ -5,6 +5,8 @@ input resolution.
 
 ## Use When
 
+Use `confirm` in the following situations.
+
 - A destructive command needs explicit consent before side effects, and
   `--force` was not supplied.
 - An interactive branch in input resolution can be skipped without prompting
@@ -12,11 +14,15 @@ input resolution.
 
 ## Avoid When
 
+Choose a different primitive in the following situations.
+
 - The choice has more than two options. Use [`select`](select-prompt.md).
 - The command is non-interactive. Destructive commands require `--force` in
   non-interactive mode; do not synthesize a confirm.
 
 ## Contract
+
+These rules govern all uses of `confirm` in Orbit commands.
 
 - Primitive name in input-mode docs: `confirm`.
 - Default is `false` for destructive consent prompts. The operator must
@@ -47,10 +53,14 @@ $proceed = confirm(
 
 ## Reference Implementations
 
+These commands use `confirm` and are good models to follow.
+
 - `orbit node:remove` — destructive consent before removing a node.
 - `orbit node:revoke` — destructive consent before revoking trust material.
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: confirm](https://laravel.com/docs/13.x/prompts#confirm)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

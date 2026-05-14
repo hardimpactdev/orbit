@@ -6,6 +6,8 @@ valid app targets.
 
 ## Domain Rules
 
+These rules govern all app family commands.
+
 - The gateway owns app registry, runtime policy, deployment policy, and app
   health configuration.
 - App names are identity slugs: lowercase letters, digits, and hyphens only.
@@ -111,6 +113,8 @@ defined by [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node) and owned 
 workspace command contract.
 
 ## Commands
+
+The following commands are available in the `app` family.
 
 1. [`orbit app:new [name]`](1_app-new/app-new.md)
 2. [`orbit app:register [name]`](2_app-register/app-register.md)

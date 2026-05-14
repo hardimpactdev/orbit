@@ -23,7 +23,7 @@ orbit tool:update --node=app-1
 orbit tool:update redis --app=docs --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Optional tool name. When omitted, Orbit attempts to update all managed
   tools on the target node that support updates.
@@ -55,6 +55,8 @@ without changing intended version.
 
 ## Output
 
+Use `--json` to get machine-readable results; omit it for a progress tree grouped by tool.
+
 Human output is a progress tree grouped by selected tool.
 
 JSON output returns updated tool entities under `success.data.updated`, skipped
@@ -73,6 +75,8 @@ when some selected tools cannot be updated.
   primitive.
 
 ## Related Commands
+
+Use these commands for related tool installation and configuration actions.
 
 - [`tool:install`](../3_tool-install/tool-install.md) - install or configure a managed tool
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun configuration/setup

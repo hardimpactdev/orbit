@@ -4,12 +4,16 @@ Pick one value from a large or dynamic set, with type-to-filter search.
 
 ## Use When
 
+Use `search` in the following situations.
+
 - The candidate set is too large to render as a flat `select` (apps,
   workspaces, tools across nodes).
 - The candidates are computed at prompt time from a query (`gh` repository
   search, gateway-driven app discovery).
 
 ## Avoid When
+
+Choose a different primitive in the following situations.
 
 - The set is small and static. Use [`select`](select-prompt.md).
 - Each candidate has multiple display columns the operator needs to compare.
@@ -20,6 +24,8 @@ Pick one value from a large or dynamic set, with type-to-filter search.
   list. Use [`suggest`](suggest-prompt.md).
 
 ## Contract
+
+These rules govern all uses of `search` in Orbit commands.
 
 - Primitive name in input-mode docs: `search`.
 - The `Source` row of the prompt mapping names the data source (gateway
@@ -52,10 +58,14 @@ $repository = search(
 
 ## Reference Implementations
 
+No node domain commands use `search` at plan time.
+
 - None in the node domain at plan time. The `app:new` repository field is a
   planned future user (out of scope for the node-first plan).
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: search](https://laravel.com/docs/13.x/prompts#search)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

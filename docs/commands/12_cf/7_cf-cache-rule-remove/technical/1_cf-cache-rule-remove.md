@@ -48,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Cache Rule Removal Rules
 
 - Removes Orbit's standard Cloudflare cache settings rule for the resolved zone.
-- Fails when no matching Orbit-managed cache rule exists.
+- Fails when no matching cache rule managed by Orbit exists.
 - Does not remove unrelated Cloudflare rulesets or custom operator rules.
 
 ### Scope Boundaries

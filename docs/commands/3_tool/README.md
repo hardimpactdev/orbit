@@ -6,6 +6,8 @@ binaries, containers, and services are backend details.
 
 ## Domain Rules
 
+These rules govern what the tool command family owns and what it may not touch.
+
 - The tool command family owns the `tool:*` command prefix.
 - `tool` is a state family. A gateway tool row is the expected state for one
   tool on one node.
@@ -123,14 +125,27 @@ the entity in the command result.
 
 ## Commands
 
+The `tool:*` family covers inventory, lifecycle, configuration, and credential operations.
+
+### Inventory and inspection
+
 1. [`orbit tool:list`](1_tool-list/tool-list.md)
 2. [`orbit tool:show <tool>`](2_tool-show/tool-show.md)
+
+### Provisioning
+
 3. [`orbit tool:install <tool>`](3_tool-install/tool-install.md)
 4. [`orbit tool:remove <tool>`](4_tool-remove/tool-remove.md)
+
+### Lifecycle
+
 5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
 6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)
 7. [`orbit tool:restart <tool>`](7_tool-restart/tool-restart.md)
 8. [`orbit tool:logs <tool>`](8_tool-logs/tool-logs.md)
+
+### Configuration and credentials
+
 9. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
 10. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
 11. [`orbit tool:reload [tool]`](11_tool-reload/tool-reload.md)

@@ -27,9 +27,10 @@ Control peers do not probe fleet reality directly. The CLI is a client of the ga
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
 - Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's role to derive the rendered category set.
 - Reject `--self` combined with `--node` before forwarding.
-- The CLI does not infer gateway-local or app-local defaults. App and workspace filters are forwarded only when explicit options are present.
+- The CLI does not infer gateway-local or app-local defaults.
+- App and workspace filters are forwarded only when explicit options are present.
 
-## Category Set By Target Role
+## Category set by target role
 
 The rendered category set is derived from the *target* node's role, not the
 calling peer's role. The CLI forwards the request, the gateway authorizes
@@ -74,7 +75,7 @@ Control peers must not:
 - run local family probes for non-control fleet reality;
 - repair or adopt state from `doctor` without a resolution mode flag; resolution requires `doctor --fix`, `doctor --restore`, or `doctor --adopt`.
 
-## Progress And Rendering
+## Progress and rendering
 
 In human mode, progress is gateway-streamed when transport supports it. The CLI renders the same doctor check-up frame defined by [`6.1_doctor_output-render_human.md`](6.1_doctor_output-render_human.md), restricted to the target-role category set.
 

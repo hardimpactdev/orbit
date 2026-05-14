@@ -136,9 +136,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, consuming node not found, serving node not found, grant policy violation including self-grant, control-caller gateway forwarding, app-node caller denial before prompts or side effects, and JSON envelope shape. |
+| `tests/Feature/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, consuming/serving node not found, grant policy violation including self-grant, control-caller forwarding, app-node denial, and JSON envelope. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
-| `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Primary owner for control-caller behavior: configured control callers forward over HTTPS through WireGuard, unconfigured control callers fail before side effects, forwarded requests require access to the gateway node, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Renderer-specific test mapping lives in:
 

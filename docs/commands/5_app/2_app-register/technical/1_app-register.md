@@ -19,7 +19,7 @@ orbit app:register [name] [--node=] [--path=] [--root=] [--php-version=] [--doma
 ```
 
 `--repo` is intentionally absent. In the current converted app command surface,
-repository URL is creation-time metadata captured only by `app:new`.
+repository URL is metadata that is captured only at creation time by `app:new`.
 `app:register` re-applies management for an existing path; it never clones,
 re-clones, mutates app source, or changes repository metadata. Re-registering an
 existing app preserves its stored repository value. Adopting an unmanaged path
@@ -100,12 +100,12 @@ This command follows the shared
     proxy route registry write failure) fail validation up front before any
     side effects and use the `error` envelope.
 - **Idempotence (Re-apply Refresh)**: `app:register` always re-applies
-  management. Re-running on an already-managed app re-renders artifacts and
-  verifies command-owned application; if nothing changes, the command still
+  management. Re-running on an app that is already managed re-renders artifacts and
+  verifies the result; if nothing changes, the command still
   succeeds. This verification does not assert application HTTP readiness. A new
   or adopted app may still need project setup steps before it is healthy, and
-  durable runtime health belongs to `doctor --family=app`. The
-  command-outcome layer reports which path was taken via `result.action`:
+  durable runtime health belongs to `doctor --family=app`. The outcome layer
+  reports which path was taken via `result.action`:
   - `registered` — first-time registration of a previously-known path that
     was not yet managed by Orbit.
   - `adopted` — first-time registration where the path existed on the node
@@ -134,7 +134,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   existing app first; there is no interactive re-assign prompt.
 - **Remote Execution Failures**: SSH timeout before configuration can be written, permission
   denied that prevents Orbit from determining whether configuration was applied, or
-  another non-convergent app-node execution failure
+  an app-node execution failure that is not convergent
   (`error.code=app.enactment_failed`).
 - **Retryable Artifact Drift**: After configuration is durable, PHP-FPM or runtime
   configuration drift is reported as `success.meta.warnings[]` with singular
@@ -147,8 +147,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
     `success.meta.warnings[]`; the registration itself succeeds.
 - **Exit status**: Uses the shared exit status policy. Success and
   success-with-warnings exit `0`; all documented command failures exit with the
-  standard command failure status (`1`). This command defines no
-  command-specific numeric exit codes.
+  standard command failure status (`1`). This command defines no numeric exit codes specific to it.
 
 ## Doctor Relationship
 

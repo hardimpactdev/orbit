@@ -4,11 +4,15 @@ Pick one value from a small fixed set of choices.
 
 ## Use When
 
+Use `select` in the following situations.
+
 - The field is a closed enum with a handful of values (`role`,
   `environment`, `php_version`).
 - All choices are knowable at prompt time without a query.
 
 ## Avoid When
+
+Choose a different primitive in the following situations.
 
 - The set of choices is large or dynamic. Use [`search`](search-prompt.md)
   or [`data-table-prompt`](../lists/data-table-prompt.md).
@@ -17,6 +21,8 @@ Pick one value from a small fixed set of choices.
 - The decision is binary yes / no. Use [`confirm`](confirm-prompt.md).
 
 ## Contract
+
+These rules govern all uses of `select` in Orbit commands.
 
 - Primitive name in input-mode docs: `select`.
 - The `Choices` row of the prompt mapping lists the exact admitted values.
@@ -46,9 +52,13 @@ $role = select(
 
 ## Reference Implementations
 
+These commands use `select` and are good models to follow.
+
 - `orbit node:new` — `node_new.role`, `node_new.environment` use `select`.
 
 ## Cross References
+
+See also these related resources.
 
 - [Laravel Prompts: select](https://laravel.com/docs/13.x/prompts#select)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)

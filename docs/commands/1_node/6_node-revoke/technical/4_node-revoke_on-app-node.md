@@ -34,7 +34,7 @@ This command may only be run from a control or gateway node.
 
 JSON mode returns a structured error with the same message.
 
-## Gateway-Side Rules For App Callers
+## Gateway-side rules for app callers
 
 - Do not write durable gateway-owned node state.
 - Do not read or mutate node access grants on behalf of the caller.

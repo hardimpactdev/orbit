@@ -9,7 +9,7 @@ Before adding or changing a command:
 
 1. Update `docs/ARCHITECTURE.md` if the change affects Orbit's architecture or
    domain model.
-2. Update `docs/BUILDING-BLOCKS.md` if the change affects implementation shape, backend boundaries, process manager behavior, transport edges, or scheduler mechanics.
+2. Update `docs/BUILDING-BLOCKS.md` for changes to implementation shape, backend boundaries, process manager behavior, transport edges, or scheduler mechanics.
 3. Update the relevant command contract in this directory.
 4. Confirm the command contracts remain consistent with each other.
 5. Implement code to match the contract.
@@ -22,6 +22,8 @@ command docs. When the documentation structure changes, update the linter first,
 then migrate docs until it passes.
 
 ## Contract Rules
+
+These rules govern every command contract in this directory.
 
 - Commands are the product contract for humans, LLM agents, CI, and shell
   automation. Future UI behavior belongs in typed API or service contracts, not
@@ -109,7 +111,8 @@ then migrate docs until it passes.
   methods, handler names, or temporary implementation structure.
 - Migration mappings from old commands belong in contraction audits, not here.
 - Backend-shaped import or sync commands are not stable command contracts. Migration adoption must be explicit through `doctor --adopt` or live outside permanent command docs.
-- Upgrade work belongs in Laravel migrations, `orbit doctor --restore`, or explicit `orbit doctor --adopt`. Public versioned migration commands and one-off upgrade helper commands are not part of the stable command surface.
+- Upgrade work belongs in Laravel migrations, `orbit doctor --restore`, or explicit `orbit doctor --adopt`.
+- Public versioned migration commands and helper commands for one-off upgrades are not part of the stable command surface.
 
 ## Documentation Structure
 
@@ -132,7 +135,7 @@ Each numbered domain directory contains:
   `6.2_command-name_output-render_json.md`: optional renderer-specific command
   contracts. Use when human output and JSON output have enough behavior or
   tests to deserve separate ownership.
-- `<family-singular>-doctor.md`: optional family-level doctor probe, drift, restore, and adopt contract when the family owns doctor behavior beyond individual commands. Match the family-specific command signature, such as `node-doctor.md` for `doctor --family=node`.
+- `<family-singular>-doctor.md`: optional family-level doctor contract covering probe, drift, restore, and adopt behavior when the family owns doctor work beyond individual commands. Use the family-specific signature, such as `node-doctor.md` for `doctor --family=node`.
 - `internal/`: optional subdirectory for internal Orbit machinery commands.
 
 The shared [`ux/`](ux/README.md) tree under `docs/commands/` lists the admitted
@@ -149,7 +152,7 @@ contract, and renderer contracts. Add companion technical files for caller-role
 authorization, topology, input-mode, destructive consent, cross-node, or E2E
 behavior when those contracts need separate ownership.
 
-### Domains And State Families
+### Domains and state families
 
 Command directories are documentation domains. State families are doctor and
 convergence families. They often align, but they are not the same concept.
@@ -163,8 +166,8 @@ product prefixes, such as `node.wireguard_peer_missing`,
 `proxy.route_extra`, and `schedule.unit_extra`.
 
 Warning `family` is `null` only for command-owned warnings that are not doctor
-issue codes and do not point at `doctor` as the recovery command. Command-owned
-warning codes still use the singular product prefix for the command's domain.
+issue codes and do not point at `doctor` as the recovery command. Warning codes
+that a command owns still use the singular product prefix for the command's domain.
 
 Family issue-code condition names should use the product relationship term for
 that family, such as `app.owner_node_invalid`,
@@ -222,7 +225,7 @@ reuse the parent command directory ordinal.
 
 ## External Decision Tracking
 
-Command docs do not keep in-repo ambiguity sidecar files. When requested
+Command docs do not keep sidecar files for tracking in-repo ambiguity. When requested
 behavior, existing docs, implementation evidence, tests, or product vocabulary
 disagree, track the unresolved question outside the project. Once the user
 decides, update the authoritative command docs directly. Do not leave product
@@ -237,6 +240,8 @@ field validation and path eligibility run incrementally as soon as their needed
 fields are known.
 
 ### Input Modes
+
+Use this table to determine which input mode applies and how missing input is handled.
 
 | Mode | Used when | Missing required input |
 | --- | --- | --- |
@@ -265,11 +270,11 @@ before side effects begin.
   uses non-interactive input mode, so destructive commands still require
   `--force`.
 
-Interactive input mode re-prompts invalid field-local input until the value is
-valid, the answer changes the path so the prompt is no longer needed, or the
-user aborts. There is no generic retry cap unless the command contract
-documents one. Prompt aborts such as Ctrl-C, EOF, or a primitive-supported
-cancel action exit with the standard command failure status and no side
+Interactive input mode re-prompts invalid input for the current field until the
+value is valid, the answer changes the path so the prompt is no longer needed,
+or the user aborts. There is no generic retry cap unless the command contract
+documents one. Prompt aborts such as Ctrl-C, EOF, or a cancel action supported
+by the primitive exit with the standard command failure status and no side
 effects.
 
 ### Exit Status
@@ -282,9 +287,11 @@ contract and maps tests for that exception.
 - `1`: Orbit-handled command failure, including validation, authorization, gateway reachability, domain eligibility, and remote apply failures.
 - `2`: invalid CLI usage before Orbit can apply the command contract, such as an unknown option or malformed invocation rejected by the console runtime.
 
-JSON `error.code` is the stable machine-readable classifier for command failures. Do not create per-domain numeric exit classes such as "validation error = 2" or "remote apply failure = 3" in command docs.
+JSON `error.code` is the stable machine-readable classifier for command failures. Do not create numeric exit codes that vary by domain, such as "validation error = 2" or "remote apply failure = 3", in command docs.
 
 ### Invocation Matrix
+
+This table maps each invocation context to the input mode and output renderer that apply.
 
 | Invocation | Input mode | Output renderer |
 | --- | --- | --- |
@@ -294,6 +301,8 @@ JSON `error.code` is the stable machine-readable classifier for command failures
 | No TTY with `--json` | Non-interactive | JSON |
 
 ### Output Renderers
+
+Every command supports one or both of these renderers, selected by invocation context.
 
 | Renderer | Used when | Contract |
 | --- | --- | --- |
@@ -358,6 +367,8 @@ field.
 
 ### Contract Boundaries
 
+Each contract section below owns a distinct layer of command behavior.
+
 - The input contract states which fields exist, when they are required, when
   they are forbidden, defaults, and validation rules.
 - The input resolution flow states the order in which fields are resolved and
@@ -380,7 +391,8 @@ field.
   and performs no slow external work.
 - JSON output renderer contracts own envelopes, payload data shapes, error
   codes, error messages, and error metadata.
-- Family doctor contracts own probe layers, drift kinds, restore behavior, adopt behavior, and doctor test mapping. Command-level doctor sections link to the family doctor contract and describe only command-created drift or repair relationships.
+- Family doctor contracts own probe layers, drift kinds, restore behavior, adopt behavior, and doctor test mapping.
+- Doctor sections in individual command contracts link to the family doctor contract and describe only the drift or repair relationships that the command creates.
 - Failure semantics describe command/domain failures after input resolution:
   invalid combinations, authorization failures, network failures, remote
   execution failures, partial provisioning, drift, and exit codes.
@@ -389,9 +401,9 @@ field.
 
 ## Common Failures
 
-Every gateway-call command can produce these failures. Per-command Failure
-Semantics sections must not restate them; document only command-specific
-failures.
+Every gateway-call command can produce these failures. The Failure Semantics
+section in each command contract must not restate them; document only
+command-specific failures.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
@@ -563,6 +575,9 @@ build on top of that foundation.
 6. [Workspaces](6_workspace/README.md)
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
+
+App-owned runtime domains build on nodes, gateway, and the core app/workspace foundation.
+
 9. [Schedules](9_schedule/README.md)
 10. [Deployments](10_deploy/README.md)
 11. [Operations](11_operation/README.md)

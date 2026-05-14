@@ -9,7 +9,7 @@ The schedule family owns these facts:
 - gateway-owned schedule rows: scope, target, interval, timezone, execution source, enabled state, and scheduler metadata;
 - the `orbit_scheduler` Supervisor program on every gateway and app node that targets schedules;
 - Orbit Scheduler liveness, heartbeat freshness, registry-sync freshness, and schedule lock health;
-- run-history capture hooks needed for schedule observability;
+- the hooks needed to capture run history for schedule observability;
 - drift between gateway schedule configuration and scheduler-side execution reality.
 
 App source, app PHP-FPM, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the Orbit Scheduler and its run-history hooks, not application health.
@@ -21,15 +21,20 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 1. **Registry configuration:** every selected schedule has valid scope, target, interval, timezone, execution source, enabled state, and scheduler metadata.
 2. **Target eligibility:** the app, node, or Orbit maintenance target resolves and is visible to the caller.
 3. **Node eligibility:** the target node resolves to a visible active gateway or app node with schedule capability.
-4. **Process manager availability:** the target node has Supervisor installed and reachable. When this layer fails, the probe reports `schedule.runtime_backend_unavailable` and skips downstream scheduler layers.
+4. **Process manager availability:** the target node has Supervisor installed and reachable. When this layer fails, the probe reports `schedule.runtime_backend_unavailable` and skips all downstream scheduler layers.
+
+**Scheduler layers** (skipped when layer 4 fails):
+
 5. **Orbit Scheduler presence:** the `orbit_scheduler` Supervisor program exists on the target node.
 6. **Orbit Scheduler liveness:** the `orbit_scheduler` program is in a running state and the daemon's local heartbeat is fresh enough to be considered live.
 7. **Heartbeat freshness:** the most recent heartbeat reported to the gateway is within the configured threshold.
 8. **Registry sync freshness:** the scheduler's most recent schedule-configuration sync is within the configured threshold.
 9. **Schedule lock health:** no schedule lock exceeds the configured stale-lock threshold.
-10. **Run-history hook material:** scheduler-side hook material required to capture stdout/exit-status for the selected schedules exists and matches gateway configuration.
+10. **Run-history hook material:** the hook material required to capture stdout and exit status for the selected schedules exists on the scheduler side and matches gateway configuration.
 
 ## Schedule Issue Codes
+
+The table below lists every issue code the schedule probe may emit and the condition that triggers it.
 
 | Code | Detected when |
 | --- | --- |
@@ -45,6 +50,8 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 | `schedule.run_history_hook_mismatch` | Scheduler-side run-history hook material differs from gateway configuration. |
 
 ## Schedule Fix Map
+
+The table below lists what `doctor --fix --restore` does for each issue code.
 
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
@@ -63,9 +70,11 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 
 ## Schedule Adopt Map
 
+The table below lists what `doctor --fix --adopt` does for each issue code.
+
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
-| (no codes adopt by default) | Schedules are gateway configuration. There is no observed-artifact-as-configuration path. Adoption candidates that an operator wants to materialize as schedules must use `schedule:add` directly. |
+| (no codes adopt by default) | Schedules are gateway configuration. There is no observed-artifact-as-configuration path. Use `schedule:add` directly to create a schedule from an observed candidate. |
 
 `doctor --fix --adopt` does not scan arbitrary hosts or import scheduler-local state into gateway schedule configuration.
 

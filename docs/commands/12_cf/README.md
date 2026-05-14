@@ -19,15 +19,17 @@ There is no `doctor --family=cf` contract.
 
 ## Domain Rules
 
+These rules constrain all Cloudflare commands.
+
 - Cloudflare commands are gateway-admin provider utilities.
 - The gateway is the only Orbit node that talks directly to the Cloudflare API.
 - Cloudflare API tokens are external secrets stored on the gateway.
-- Control-node callers invoke Cloudflare commands through the gateway API and
+- Callers on control nodes invoke Cloudflare commands through the gateway API and
   must be authorized for provider administration.
 - App-node callers are denied before prompts or side effects. Cloudflare
   provider administration is not app-local runtime work.
 - Cloudflare commands require a real configured domain in a Cloudflare zone.
-  Development TLDs and caller-local DNS resolver overrides are not valid
+  Development TLDs and DNS resolver overrides local to the caller are not valid
   Cloudflare targets.
 - Cloudflare DNS writes are limited to `A` and `AAAA` records. CNAME, TXT, MX,
   CAA, SRV, and general DNS administration are outside Orbit's current scope.
@@ -38,8 +40,8 @@ There is no `doctor --family=cf` contract.
   `Cache-Control` headers. Routes with `Cache-Control: public` may be cached at
   the edge.
 - `cf-ssl:enable` defaults to `strict`. `full` is an explicit migration or
-  troubleshooting mode. `flexible` is out of scope because Orbit-managed
-  ingress expects encrypted Cloudflare-to-origin traffic.
+  troubleshooting mode. `flexible` is out of scope because Orbit ingress
+  requires encrypted traffic from Cloudflare to the origin.
 
 ## Cloudflare JSON Entities
 
@@ -73,13 +75,23 @@ the resolved `zone`, `action`, and any app or mode field needed by the command.
 
 ## Commands
 
+These are the commands in the Cloudflare domain.
+
+**Zone and DNS:**
+
 1. [`orbit cf-zone:list`](1_cf-zone-list/cf-zone-list.md)
 2. [`orbit cf-dns:list <zone>`](2_cf-dns-list/cf-dns-list.md)
 3. [`orbit cf-dns:add <name> <content>`](3_cf-dns-add/cf-dns-add.md)
 4. [`orbit cf-dns:remove <record-id> --zone=<zone>`](4_cf-dns-remove/cf-dns-remove.md)
+
+**Cache:**
+
 5. [`orbit cf-cache:flush [--zone=<zone>]`](5_cf-cache-flush/cf-cache-flush.md)
 6. [`orbit cf-cache-rule:add <app>`](6_cf-cache-rule-add/cf-cache-rule-add.md)
 7. [`orbit cf-cache-rule:remove <app>`](7_cf-cache-rule-remove/cf-cache-rule-remove.md)
+
+**SSL:**
+
 8. [`orbit cf-ssl:enable <zone>`](8_cf-ssl-enable/cf-ssl-enable.md)
 9. [`orbit cf-ssl:disable <zone>`](9_cf-ssl-disable/cf-ssl-disable.md)
 

@@ -69,8 +69,8 @@ This command follows the shared
 - Explicit `--workspace` wins over current-directory context.
 - Explicit `--app` targets the app's main context and does not imply a
   workspace.
-- Current-directory resolution prefers workspace context over parent app
-  context.
+- When resolving from the current directory, workspace context takes priority
+  over parent app context.
 - A workspace target includes its parent app in command results.
 - If the requested target is hidden from the caller, return
   `authorization_failed` instead of leaking target existence.
@@ -150,9 +150,8 @@ adapter credentials, raw adapter output, or secrets.
 ## Doctor Relationship
 
 - `agent-ide:message` is communication, not convergence.
-- `doctor --family=node` verifies node-owned Agent IDE defaults when supported.
-- `doctor --family=app` verifies app-owned Agent IDE configuration when
-  supported.
+- `doctor --family=node` verifies Agent IDE defaults that are owned by the node, when supported.
+- `doctor --family=app` verifies Agent IDE configuration that is owned by the app, when supported.
 - `doctor --family=workspace` owns workspace state that adapters may reference.
 - `doctor --family=process` owns crash-event policy and history that may trigger
   Agent IDE notifications.
@@ -164,7 +163,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution from explicit app, explicit workspace, and cwd context; caller-role behavior; authorization failures; effective adapter resolution; stdin message delivery; no-adapter failure; no-active-session failure; adapter delivery failure; accepted delivery success; read-only guarantee for Orbit state; and no session creation. |
+| `tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution (explicit app, workspace, cwd); caller-role behavior; authorization failures; adapter resolution; stdin delivery; no-adapter failure; no-session failure; adapter delivery failure; accepted delivery success; read-only guarantee; no session creation. |
 
 Input-mode-specific test mapping lives in:
 

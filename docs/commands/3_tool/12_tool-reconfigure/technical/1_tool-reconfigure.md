@@ -35,12 +35,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Tool Configuration And Apply Rules
+### Tool configuration and apply rules
 
 - Resolves a reconfigurable registered tool.
 - Runs setup/configuration through the gateway.
 - Updates generated secrets or backend config only when the tool definition owns those values.
-- Updates tool-owned service endpoint configuration only when the tool definition
+- Updates service endpoint configuration owned by the tool only when the tool definition
   owns that endpoint.
 - Preserves the expected version.
 - Supplying `--password` for a tool that does not own password reconfiguration

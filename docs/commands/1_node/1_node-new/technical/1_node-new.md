@@ -31,7 +31,7 @@ This command follows the shared
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
 | `role` | `--role` | Always. | Never. | None. | One of `gateway`, `app`, `control`. |
 | `host` | `--host` | Requested role = `app` or `gateway`. | Requested role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. |
-| `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
+| `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../ARCHITECTURE.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
 | `environment` | `--environment` | Requested role = `app`. | Requested role = `gateway` or `control`. | None. | One of `development`, `production`. |
 | `tld` | `--tld` | Requested role = `app` and `environment=development`. | Requested role = `gateway`, requested role = `control`, or requested role = `app` and `environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Requested role = `control`. | `root`. | Bootstrap SSH user. The gateway stores it as the steady-state `nodes.user` after provisioning sets up the gateway-managed SSH user. |
@@ -97,12 +97,12 @@ Input mode behavior is split out of the canonical command contract:
 
 - Create the gateway registry row with `role=control`, mint a WireGuard peer,
   and return the interface config.
-- The returned control-node WireGuard peer address must match `nodes.wg_ip`.
+- The WireGuard peer address returned for the control node must match `nodes.wg_ip`.
   A generic `vpn-client:new` peer without a matching active control-node row is
   ignored by gateway API authorization for Orbit CLI calls protected by
   WireGuard identity.
 
-### Gateway Bootstrap And Convergence
+### Gateway bootstrap and convergence
 
 - Provision the target host over SSH only when the host has not already been
   provisioned for the requested identity.
@@ -130,7 +130,7 @@ Input mode behavior is split out of the canonical command contract:
 - Provision the target host over SSH only when the host has not already been
   provisioned for the requested identity.
 - For development app nodes, persist `nodes.tld`, configure the app node's local
-  TLD default, and create the gateway-owned development DNS mapping so
+  TLD default, and create the development DNS mapping that the gateway owns so
   `*.tld` resolves to the app node's WireGuard IP.
 - Future development apps created on that app node use the node TLD for app and
   workspace route domains.
@@ -145,7 +145,7 @@ Input mode behavior is split out of the canonical command contract:
   configuration as `nodes.user`, and `RemoteShell` uses that stored user for
   later gateway-to-node applying.
 
-### Adoption And Drift Boundaries
+### Adoption and drift boundaries
 
 - `node:new` is an explicit node-membership adoption and convergence path. It may
   adopt compatible app hosts into gateway configuration as part of adding that
@@ -159,12 +159,12 @@ Input mode behavior is split out of the canonical command contract:
   artifacts, except node-owned bootstrap artifacts such as minimum app-node
   runtime readiness, node identity readiness, and development TLD mapping.
 
-### Out Of Scope
+### Out of scope
 
 - `node:new` does not detect, infer, or store public IPv4/IPv6 metadata.
-  `node_new.host` is the operator-supplied SSH/bootstrap endpoint, and for
+  `node_new.host` is the SSH/bootstrap endpoint the operator supplies, and for
   first-gateway bootstrap it also seeds the initial gateway endpoint.
-  Operator-supplied public IP metadata may be recorded later through
+  Public IP metadata may be recorded later through
   `node:update`, but node doctor does not probe or drift-check it.
 - `node:new` does not set the local default development app node. Operators must
   run [`node:default`](../../9_node-default/node-default.md) explicitly to set
@@ -239,7 +239,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Primary owner for the canonical input contract table: fields, sources, required conditions, forbidden conditions, defaults, value validation, `control_name` being required only for first-gateway bootstrap, and post-input path eligibility timing/delegation. It asserts resolved input and validation outcomes, not resolver classes or handler internals. Input-mode-specific prompting/failure behavior and gateway-side authorization-by-role contents/outcomes are owned by the split contracts. |
+| `tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Owns the canonical input contract: fields, sources, required/forbidden conditions, defaults, value validation, `control_name` required only for first-gateway bootstrap, and post-input path eligibility timing. Asserts resolved input and validation outcomes — not resolver internals. Input-mode prompting and gateway-side authorization outcomes belong to the split contracts. |
 
 Input-mode-specific test mapping lives in:
 

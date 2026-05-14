@@ -10,6 +10,8 @@ required input fails with `validation_failed`.
 
 ## Selection Rule
 
+Use this table to choose the right primitive for a given field shape.
+
 | Field shape | Use |
 | --- | --- |
 | Free text (names, IPs, paths, hostnames) | [`text`](text-prompt.md) |
@@ -33,6 +35,8 @@ The concern wraps `text` and `confirm` today; extend it the same PR a
 command introduces another primitive that needs cancellation handling.
 
 ## Pages
+
+Each page documents one prompt primitive with use cases, contract, and a reference implementation.
 
 - [`text`](text-prompt.md)
 - [`password`](password-prompt.md)

@@ -135,7 +135,7 @@ into remote nodes or mutate host state:
 - Platform reality (`node.platform_unsupported`, `node.platform_record_mismatch`)
   - Runs only when `--self` inspects the local host.
   - Detects the current host platform using `PlatformDetector`.
-  - Reports mismatch when the local-host node record's platform identifier
+  - Reports mismatch when the platform identifier on the local host's node record
     differs from local detection.
 
 ### Implemented Remote Read Checks
@@ -180,9 +180,8 @@ additional external services:
     the selected host: local active node name, role, status, platform,
     WireGuard address, registry public key, and live interface public key when
     available.
-  - `NodesProbe` consumes this read-only service for selected active app-node
-    missing-peer adoption. Unknown-host and gateway-role adoption still require
-    a separate materialization path before they can use this proof safely.
+  - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active app node. Adoption of an unknown host or a gateway-role node still requires
+    a separate materialization path before the proof can be used safely.
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
   - `DevelopmentDnsMappingProbe` reads gateway-local Orbit-managed development
     DNS resolver artifacts for the derived node configuration model:
@@ -211,11 +210,11 @@ address metadata.
 
 ### Identity Artifact Proof Contract
 
-Unknown-host adoption and active-node missing-peer adoption require stronger
-proof than an operator-supplied host, a live WireGuard peer, or a registry row
-alone. `NodeIdentityArtifactProbe` reads bounded, non-secret node identity facts
-from the target host. `NodesProbe` compares those facts with gateway configuration for
-selected active app-node missing-peer adoption before it attaches unowned live
+Adopting an unknown host or adopting a missing peer on an active node requires stronger
+proof than a host supplied by the operator, a live WireGuard peer, or a registry row
+alone. `NodeIdentityArtifactProbe` reads bounded, non-secret identity facts
+from the target host. `NodesProbe` compares those facts with gateway configuration when
+adopting a missing peer on a selected active app node before it attaches unowned live
 reality to a node record.
 
 The minimum proof set is:
@@ -243,7 +242,7 @@ node names or roles from unselected live reality.
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active app-node records only when identity artifact proof and live WireGuard reality agree. The private key is intentionally left empty because the proof path never reads private keys. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active app-node records when identity artifact proof and live WireGuard reality agree. The proof path never reads private keys, so the private key is left empty. |
 | `node.wireguard_address_mismatch` | Stub: reserved for gateway-managed peer rewrite. |
 | `node.gateway_runtime_unready` | Stub: reserved for gateway-side runtime restart. |
 | `node.app_runtime_missing` | Stub: reserved for app-node bootstrap rerun. |
@@ -271,7 +270,7 @@ when a supported compatible record can be safely adopted:
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active app-node records only when identity artifact proof and live WireGuard reality agree. The private key is intentionally left empty because the proof path never reads private keys. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active app-node records when identity artifact proof and live WireGuard reality agree. The proof path never reads private keys, so the private key is left empty. |
 | `node.wireguard_peer_extra` | Activates the selected non-active node record when existing registry peer material matches a live WireGuard peer by public key and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the process manager is available; returns a conflict when runtime readiness cannot be verified. |

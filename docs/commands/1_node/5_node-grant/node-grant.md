@@ -22,7 +22,7 @@ orbit node:grant control-1 app-1
 orbit node:grant app-1 gateway-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `consuming_node`: node receiving permission to make Orbit requests against the
   serving node. Must match an existing active node record in gateway configuration.
@@ -31,6 +31,8 @@ orbit node:grant app-1 gateway-1 --json
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `node:grant` to write a new access relationship from one node to another.
 
 `node:grant` writes gateway-owned grant configuration in `node_access` from
 `consuming_node` to `serving_node`. Gateway callers execute locally; configured
@@ -53,7 +55,7 @@ The command:
 
 ## Output
 
-Human output confirms the grant and distinguishes a newly created grant from an
+You will see a confirmation of the grant, distinguishing a newly created grant from an
 already-existing one.
 
 JSON output returns the grant result, both node names, and whether the grant was
@@ -70,6 +72,8 @@ newly created or already present.
 - The grant must not violate node access policy. Self-grant is rejected.
 
 ## Related Commands
+
+Use these commands to manage access relationships and inspect the current state.
 
 - [`node:revoke`](../6_node-revoke/node-revoke.md) — remove a node access grant
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet

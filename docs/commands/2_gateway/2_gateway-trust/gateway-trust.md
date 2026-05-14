@@ -31,7 +31,7 @@ orbit gateway:trust
 orbit gateway:trust --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--json`: Output JSON.
 
@@ -41,7 +41,7 @@ orbit gateway:trust --json
 
 1. Resolve the configured local gateway endpoint.
 2. Fetch the gateway root CA through the bootstrap-safe trust path.
-3. Validate that the response contains a PEM-encoded root CA certificate.
+3. Validate that the response contains a root CA certificate in PEM encoding.
 4. Install the certificate into the local OS trust store.
 5. Store local trust metadata, including the gateway endpoint, CA fingerprint,
    and trust timestamp.
@@ -62,8 +62,7 @@ needs local gateway endpoint, identity, and trust diagnostics.
 
 ## Output
 
-Human output shows a short progress tree and reports whether the gateway CA is
-trusted.
+You will see a short progress tree showing whether the gateway CA is now trusted.
 
 JSON output reports the trusted gateway URL, trust status, and CA fingerprint
 using the shared command envelope.
@@ -72,10 +71,12 @@ using the shared command envelope.
 
 - A configured local gateway endpoint exists.
 - The gateway root CA endpoint is reachable from the caller machine.
-- The caller machine supports Orbit's local trust-store installation path.
+- The caller machine supports the local trust-store installation path that Orbit uses.
 - The process has the local OS privileges required to update the trust store.
 
 ## Related Commands
+
+Use these commands when you need to go beyond trust repair or diagnose deeper gateway drift.
 
 - [`gateway:add`](../1_gateway-add/gateway-add.md) - configure a control node
   for an already-issued gateway identity

@@ -6,7 +6,9 @@ the [Architecture](../../ARCHITECTURE.md).
 
 ## Identity
 
-- **App:** A gateway-owned application record bound to one app node, with a
+The terms below define the core identity vocabulary for the app family.
+
+- **App:** An application record owned by the gateway, bound to one app node, with a
   stable identity slug, environment, primary URL, app path, document root, and
   optional repository.
 - **App identity slug:** Lowercase identity slug used as the app's globally
@@ -21,7 +23,9 @@ the [Architecture](../../ARCHITECTURE.md).
   app-derived artifacts. Apps may only run on app nodes; gateway and control
   nodes are never valid app targets.
 
-## Environment And Hosting
+## Environment and hosting
+
+These terms describe the two environments an app may occupy.
 
 - **Development app:** App whose hostname uses the development TLD. Workspaces
   may attach to the app for branch-style isolation.
@@ -38,6 +42,8 @@ the [Architecture](../../ARCHITECTURE.md).
 
 ## Lifecycle
 
+The terms below describe how an app moves through its active states.
+
 - **App registration:** Idempotent convergence of app configuration and node artifacts
   performed by `app:register`. Used to install Orbit management on a new path,
   re-apply management to an existing app, or retry production domain activation.
@@ -48,6 +54,8 @@ the [Architecture](../../ARCHITECTURE.md).
   doctor drift repair.
 
 ## Boundaries
+
+These boundaries define what the app family owns and what belongs to other families.
 
 - **App-owned route:** Proxy route whose lifecycle is owned by the app, edited
   through app commands, and surfaced as inventory by the `proxy` family.

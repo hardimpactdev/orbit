@@ -48,8 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-`--dry-run` is intentionally part of `app:prune`, not a family-wide destructive
-command convention. This command discovers its destructive target set from
+`--dry-run` is intentionally part of `app:prune`, not a convention shared with other destructive commands. This command discovers its destructive target set from
 external agent IDE adapter state; previewing that computed set is a distinct
 read operation before workspace removal side effects begin. Commands that
 operate on an explicit named target, such as `app:remove` or
@@ -90,7 +89,7 @@ If `dry_run` is `false`:
   - Phase B runs the workspace removal cleanup order: stop traffic, stop
     inherited processes, run teardown steps, remove the workspace FPM pool, and
     remove the worktree.
-  - App-node SSH cleanup reachability is not a pre-prune prerequisite. If Phase
+  - SSH reachability of the app node for cleanup is not a pre-prune prerequisite. If Phase
     B cannot finish after workspace configuration removal, the workspace removal still
     succeeds with warnings.
   - Partial Phase B failures become `success.meta.warnings[]` using the same

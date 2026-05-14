@@ -14,8 +14,7 @@
 - The target app exists in gateway configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
-  installed Orbit extensions through the gateway-side extension registration
-  surface. `inherit` and `none` are reserved input values handled by
+  installed Orbit extensions through the extension registration surface on the gateway. `inherit` and `none` are reserved input values handled by
   `app:agent-ide` itself, not adapters in the registry.
 - Destructive switches require explicit consent (`--force` or interactive
   confirmation).
@@ -115,19 +114,18 @@ This command follows the shared
    any cleanup results.
 
 `app:agent-ide` is a configuration write with the single explicit destructive side
-effect of removing app-owned workspaces under the previous adapter when the
-adapter changes. The app configuration write is not rolled back if post-write cleanup
-cannot finish; cleanup drift is reported as success with warnings and repaired
-by the same `app:prune`, `workspace:remove`, and doctor paths used elsewhere.
+effect of removing workspaces that belong to the app when the adapter changes. The app
+configuration write is not rolled back if post-write cleanup cannot finish; cleanup
+drift is reported as success with warnings and repaired by the same `app:prune`,
+`workspace:remove`, and doctor paths used elsewhere.
+
 This cleanup is deliberately app-scoped. `node:agent-ide` may change the
 inherited effective adapter for apps on a node, but it does not prune
 workspaces; callers that want cleanup after changing a node default run
-`app:prune` for each affected app. Beyond app-scoped cleanup, downstream
-consumers resolve their effective agent IDE per-event using the current
-inheritance chain (`app → node → none`); the architecture reserves a future
-workspace-level override slot above app scope. The writer does not push a
-notification to consumers. A change to the app default is naturally picked up
-at the next consumer-side resolution event.
+`app:prune` for each affected app. Downstream consumers resolve their effective
+agent IDE per-event using the current inheritance chain (`app → node → none`);
+the architecture reserves a future workspace-level override slot above app scope.
+A change to the app default is naturally picked up at the next consumer-side resolution event.
 
 ### Scope Boundaries
 
@@ -162,10 +160,9 @@ failure.
 
 ## Doctor Relationship
 
-- `doctor --family=app --app=<app>` verifies app-owned agent IDE configuration.
+- `doctor --family=app --app=<app>` verifies the agent IDE configuration owned by the app.
   See [`app-doctor.md`](../../app-doctor.md).
-- Cross-reference `app-doctor.md` for `doctor --family=app --app=<app>`
-  agent-IDE drift checks instead of redefining doctor semantics here.
+- Cross-reference `app-doctor.md` for drift checks on agent IDE configuration instead of redefining doctor semantics here.
 
 ## Activity Logging
 

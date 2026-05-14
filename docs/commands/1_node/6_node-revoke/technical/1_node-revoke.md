@@ -17,7 +17,7 @@
 
 **Post-input path eligibility:**
 - Destructive consent is resolved by interactive confirmation or `--force`.
-- The caller is authorized through gateway-owned node access policy to manage
+- The caller is authorized through the node access policy that the gateway owns to manage
 node access grants.
 
 ## Signature
@@ -84,10 +84,10 @@ This command follows the shared
 - Find both node records by name.
 - If either node record is not found, fail before side effects.
 
-### Authorization And Consent Rules
+### Authorization and consent rules
 
 - Verify the caller is authorized to manage node access grants through
-  gateway-owned access policy.
+  the access policy that the gateway owns.
 - Apply the destructive consent rules from the selected input mode.
 
 ### Grant Revocation Rules
@@ -157,8 +157,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation of a grant, idempotent absent success, node-not-found validation, control-caller gateway forwarding, app-node caller denial before prompts or side effects, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
-| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Primary owner for control-caller behavior: configured control callers forward over HTTPS through WireGuard, unconfigured control callers fail before prompts or side effects, forwarded requests require access to the gateway node, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation, idempotent absent success, node-not-found validation, control-caller forwarding, app-node denial, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
+| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before prompts or side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
 

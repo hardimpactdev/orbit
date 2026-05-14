@@ -30,7 +30,7 @@ Gateway peers are the authority path for doctor.
 - Reject `--self` combined with `--node`.
 - Apply authorization before probing the selected target node.
 
-## Category Set By Target Role
+## Category set by target role
 
 The rendered category set is derived from the *target* node's role, not the
 calling peer's role.
@@ -55,7 +55,7 @@ The gateway owns the family dispatch loop for the single-node target. Each selec
 
 | Family | Gateway-owned probing behavior |
 | --- | --- |
-| `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. All node-family facts render under the `Node` row today; the planned `DNS`/`DNS/TLD` slice will pull resolver-specific findings out into their own row when available. |
+| `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. All node-family facts render under the `Node` row today; a planned `DNS`/`DNS/TLD` slice will separate resolver-specific findings when available. |
 | `app` | Check app configuration and app-node runtime facts on the target app node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace configuration and the target app node's workspace reality, using app-suffixed workspace identifiers in human output. |
 | `process` | Check process configuration and process supervisor/runtime reality on the target app node. |
@@ -76,7 +76,7 @@ Gateway peers must not:
 - create, restore, adopt, or remove durable records from `doctor` verify-mode runs;
 - probe more than one target node per run.
 
-## Progress And Rendering
+## Progress and rendering
 
 In human mode, the gateway renders the doctor check-up frame directly, restricted to the target-role category set. Category rows update as each family starts, gathers results, finishes, skips, or fails. Issue and action details render inline under the category that owns them.
 

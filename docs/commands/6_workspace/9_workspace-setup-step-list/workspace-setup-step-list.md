@@ -19,7 +19,7 @@ orbit workspace-setup-step:list --app=my-app
 orbit workspace-setup-step:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--app=<app>`: The parent app slug. When omitted, Orbit infers the app
   using the same precedence chain as
@@ -33,7 +33,9 @@ orbit workspace-setup-step:list --json
 
 ## What Happens
 
-`workspace-setup-step:list` reads the gateway-owned setup-step policy for
+Run `workspace-setup-step:list` to view the setup steps that will run during workspace creation.
+
+`workspace-setup-step:list` reads the setup-step policy owned by the gateway for
 the resolved app:
 
 1. Resolves the parent app from `--app` or the shared cwd-inference chain.

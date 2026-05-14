@@ -6,6 +6,8 @@ app, has a canonical name, and owns one workspace route lifecycle.
 
 ## Domain Rules
 
+These rules govern all workspace family commands.
+
 - The gateway owns workspace configuration.
 - Workspace artifacts are applied by the gateway over SSH on the owning app
   node.
@@ -30,17 +32,15 @@ app, has a canonical name, and owns one workspace route lifecycle.
 - A workspace hostname is the workspace slug prepended to the parent app's
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
-- Workspaces inherit app process definitions as runtime units. Each
-  inherited runtime unit is rendered by the process manager as a separate
-  Supervisor program owned by the workspace, with its own program name,
-  working directory, environment block, and log paths — distinct from the
-  main app instance and from sibling workspaces. The parent app's process
-  definition supplies the shared fields (command, restart policy, crash
-  notification policy); the workspace context supplies the per-instance
-  fields (working directory derived from the workspace path, environment
-  with workspace-specific URL and Orbit-managed TLS material, log paths
-  scoped to the workspace's program name). Runtime unit convergence
-  belongs to the `process` family.
+- Workspaces inherit app process definitions as runtime units. Each inherited
+  runtime unit becomes a separate Supervisor program owned by the workspace.
+  It has its own program name, working directory, environment block, and log
+  paths — distinct from the main app instance and from sibling workspaces.
+  The parent app's process definition supplies the shared fields (command,
+  restart policy, crash notification policy). The workspace context supplies
+  the per-instance fields (working directory, workspace-specific URL,
+  Orbit-managed TLS material, and log paths scoped to the program name).
+  Runtime unit convergence belongs to the `process` family.
 - Workspace setup and teardown step definitions are gateway-owned workspace
   policy. Adding, listing, removing, and ordering those definitions are explicit
   workspace commands, not doctor repair actions.
@@ -63,8 +63,8 @@ returns the physical path that Orbit stores on the gateway workspace record.
   resolves the parent OpenCode project, asks OpenCode to create a UI-visible
   workspace, then aligns the returned workspace worktree to branch
   `<workspace>` from the requested `--base` ref. Orbit stores
-  `agent_ide.adapter=opencode`, the returned workspace path, and the
-  best-effort OpenCode session id when session creation succeeds.
+  `agent_ide.adapter=opencode`, the returned workspace path, and the OpenCode
+  session id when session creation succeeds (stored on a best-effort basis).
 - **Polyscope driver:** used when the effective adapter is `polyscope`. It
   creates the workspace through the Polyscope SDK using the app node's
   Polyscope server identity and the parent app's Polyscope repository id.
@@ -135,7 +135,9 @@ workspace id.
 
 ## Terminology
 
-- **Setup step definition:** gateway-owned workspace policy record created by
+The terms below define the key vocabulary used across workspace command contracts.
+
+- **Setup step definition:** A workspace policy record owned by the gateway, created by
   `workspace-setup-step:add` and ordered by setup-step commands.
 - **Setup steps phase:** the `workspace:new` / `workspace:setup` execution phase
   that runs setup step definitions sequentially after core workspace artifacts
@@ -160,7 +162,7 @@ caller's WireGuard peer identity and applies gateway-owned access policy.
   applies artifacts locally.
 - The gateway denies app-node peers running `workspace:new`,
   `workspace:remove`, setup-step mutation, teardown-step mutation, or other
-  gateway-owned workspace policy mutations unless a command explicitly
+  mutations to workspace policy that the gateway owns, unless a command explicitly
   documents a future exception.
 - Local context on the caller filesystem may resolve defaults (parent app,
   workspace identity), but it is never used as authorization.
@@ -188,6 +190,10 @@ instead of depending on command-string substitution.
 
 ## Commands
 
+The following commands are available in the `workspace` family.
+
+**Core workspace commands:**
+
 1. [`orbit workspace:new [name]`](1_workspace-new/workspace-new.md)
 2. [`orbit workspace:setup [name]`](2_workspace-setup/workspace-setup.md)
 3. [`orbit workspace:list`](3_workspace-list/workspace-list.md)
@@ -195,6 +201,9 @@ instead of depending on command-string substitution.
 5. [`orbit workspace:remove [name]`](5_workspace-remove/workspace-remove.md)
 6. [`orbit workspace:history [name]`](6_workspace-history/workspace-history.md)
 7. [`orbit workspace:log [run]`](7_workspace-log/workspace-log.md)
+
+**Step management commands:**
+
 8. [`orbit workspace-setup-step:add`](8_workspace-setup-step-add/workspace-setup-step-add.md)
 9. [`orbit workspace-setup-step:list`](9_workspace-setup-step-list/workspace-setup-step-list.md)
 10. [`orbit workspace-setup-step:remove`](10_workspace-setup-step-remove/workspace-setup-step-remove.md)

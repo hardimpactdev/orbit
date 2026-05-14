@@ -23,7 +23,7 @@ orbit node:revoke control-1 app-1 --force
 orbit node:revoke control-1 app-1 --force --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `consuming_node`: node losing permission to make Orbit requests. Must exist in
 gateway node configuration.
@@ -34,6 +34,8 @@ gateway node configuration.
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `node:revoke` to delete a specific access grant and confirm the result.
 
 `node:revoke` deletes a gateway-owned `node_access` grant configuration from
 `consuming_node` to `serving_node`. Gateway callers execute locally; configured
@@ -63,7 +65,7 @@ for node removal.
 
 ## Output
 
-Human output shows a confirmation prompt in interactive mode unless `--force` is
+You will see a confirmation prompt in interactive mode unless `--force` is
 supplied, then a success message with the revoked nodes.
 
 JSON output returns the command result, consuming node, serving node, and grant
@@ -86,6 +88,8 @@ Revoking a missing grant is a successful convergence to the desired relationship
 state after both endpoint identities are known.
 
 ## Related Commands
+
+Use these commands to manage access grants and inspect node state.
 
 - [`node:grant`](../5_node-grant/node-grant.md) — create a node access grant
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes

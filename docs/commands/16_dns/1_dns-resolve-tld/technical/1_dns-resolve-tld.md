@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The caller is authorized as a `control` role peer.
-- The caller platform has an Orbit-supported local resolver backend.
+- The caller platform has a local resolver backend that Orbit supports.
 - The process has the local OS privileges required to update resolver
   configuration and refresh the resolver backend.
 
@@ -56,12 +56,10 @@ This command follows the shared
 
 ### Local Resolver Rules
 
-- Write only Orbit-managed caller-local resolver configuration for the selected
-  TLD.
+- Write only the resolver configuration that Orbit manages on the caller machine for the selected TLD.
 - Resolve path: configure `*.{tld}` to resolve to the supplied IP address
   through the platform resolver backend.
-- Reset path: remove only the Orbit-managed local resolver override for the
-  selected TLD.
+- Reset path: remove only the local resolver override that Orbit manages for the selected TLD.
 - Use stable Orbit-managed file labels or config blocks so repeated runs
   converge the same local mapping.
 - Return success when the requested mapping already exists or the requested
@@ -72,7 +70,7 @@ This command follows the shared
 ### Development DNS Boundary Rules
 
 - `dns:resolve-tld` is not the source of truth for app-node development TLDs.
-- Gateway-owned development DNS mappings for `*.nodes.tld` are created by
+- Development DNS mappings owned by the gateway for `*.nodes.tld` are created by
   `node:new --role=app --environment=development` and repaired by
   `doctor --fix --family=node --restore`.
 - This command must not write gateway configuration, node records, app routes, proxy
@@ -91,7 +89,7 @@ This command follows the shared
 
 `dns:resolve-tld` must not:
 - Mutate gateway configuration or node reality.
-- Inspect or repair gateway-owned development DNS mappings.
+- Inspect or repair the development DNS mappings that the gateway owns.
 - Create arbitrary per-host DNS mappings.
 - Query or mutate Cloudflare or public DNS.
 - Bypass platform-specific privilege checks.
@@ -113,9 +111,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-- `dns:resolve-tld` manages caller-local resolver overrides only.
-- `doctor --family=node --self` verifies node-family development TLD readiness
-  and gateway-owned development DNS mappings. It is not a substitute for
+- `dns:resolve-tld` manages only the resolver overrides on the caller machine.
+- `doctor --family=node --self` verifies development TLD readiness for the node family
+  and the DNS mappings the gateway owns. It is not a substitute for
   listing local resolver overrides.
 
 ## Activity Logging

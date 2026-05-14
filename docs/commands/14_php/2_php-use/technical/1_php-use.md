@@ -56,12 +56,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Writes the app PHP version in gateway app configuration.
 - Re-renders and applies app PHP-FPM artifacts through the gateway-to-node SSH
   path.
-- Re-renders affected app-owned proxy backend artifacts when the route target
+- Re-renders the proxy backend artifacts owned by the app when the route target
   depends on the selected PHP runtime.
 - Reports app-family drift warnings when configuration was written but app artifact
   application did not converge.
-- Reports proxy-family drift warnings when app-owned proxy backend artifact
-  convergence did not complete.
+- Reports proxy-family drift warnings when proxy backend artifact convergence for
+  the app did not complete.
 
 ### Workspace Runtime Selection
 
@@ -69,12 +69,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Clears the workspace PHP override when `--inherit` is supplied.
 - Re-renders and applies workspace PHP-FPM artifacts through the
   gateway-to-node SSH path.
-- Re-renders affected workspace-owned proxy backend artifacts when the route
+- Re-renders the proxy backend artifacts owned by the workspace when the route
   target depends on the selected PHP runtime.
 - Reports workspace-family drift warnings when configuration was written but workspace
   artifact application did not converge.
-- Reports proxy-family drift warnings when workspace-owned proxy backend
-  artifact convergence did not complete.
+- Reports proxy-family drift warnings when proxy backend artifact convergence for
+  the workspace did not complete.
 
 ### Node CLI Selection
 

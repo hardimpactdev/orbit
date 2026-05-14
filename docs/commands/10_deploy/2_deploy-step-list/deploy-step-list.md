@@ -20,19 +20,18 @@ orbit deploy:step-list docs
 orbit deploy:step-list docs --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `app`: production app name or domain.
 - `--json`: Output JSON.
 
 ## What Happens
 
-`deploy:step-list` reads deployment step definitions from gateway app configuration. It
-does not inspect node state, execute steps, or read deployment run history.
+Run `deploy:step-list` when you need to inspect the ordered deployment policy for an app. `deploy:step-list` reads deployment step definitions from gateway app configuration. It does not inspect node state, execute steps, or read deployment run history.
 
 ## Output
 
-Human output renders an ordered step table with the command body in the table.
+Pass `--json` to receive machine-readable output; omit it to see an ordered step table with the command body in the table.
 Multiline scripts keep their stored line breaks, and shell chains joined with
 `&&` are split across display lines for readability.
 

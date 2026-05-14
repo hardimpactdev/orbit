@@ -40,7 +40,7 @@ This command may only be run from a control or gateway node.
 
 JSON mode returns a structured error with the same message.
 
-## Gateway-Side Rules For App Callers
+## Gateway-side rules for app callers
 
 - Do not authorize any node creation, enrollment, provisioning, or
   convergence path.

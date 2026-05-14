@@ -39,7 +39,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Fails before side effects unless the route owner is `custom`.
 - Removes the custom proxy route row from gateway configuration.
 - Removes the backend route artifact from the serving node.
-- Removes Orbit-managed TLS material only when it is route-scoped and not shared by any remaining proxy route.
+- Removes TLS material that Orbit manages only when it is route-scoped.
+- TLS material shared by remaining proxy routes is not removed.
 
 ### Destructive Consent Rules
 

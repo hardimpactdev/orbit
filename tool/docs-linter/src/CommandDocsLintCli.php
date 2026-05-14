@@ -9,11 +9,14 @@ use OrbitDocsLinter\Rules\ActivityLoggingContractRule;
 use OrbitDocsLinter\Rules\AppNodeWriteDenialRule;
 use OrbitDocsLinter\Rules\AppPhpVersionContractRule;
 use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
+use OrbitDocsLinter\Rules\BulletComplexityRule;
 use OrbitDocsLinter\Rules\CanonicalTechnicalContractRule;
 use OrbitDocsLinter\Rules\CommandContractComplexityRule;
 use OrbitDocsLinter\Rules\CommandDirectoryStructureRule;
+use OrbitDocsLinter\Rules\CommandPageStructureRule;
 use OrbitDocsLinter\Rules\CommonFailureNotRestatedRule;
 use OrbitDocsLinter\Rules\CompoundCommandPrefixRule;
+use OrbitDocsLinter\Rules\CompoundNounStackRule;
 use OrbitDocsLinter\Rules\ConceptIndexRule;
 use OrbitDocsLinter\Rules\ConvertedFamilyStructureRule;
 use OrbitDocsLinter\Rules\DestructiveConsentRule;
@@ -30,20 +33,25 @@ use OrbitDocsLinter\Rules\InputModeContractRule;
 use OrbitDocsLinter\Rules\JsonRendererEnvelopeRule;
 use OrbitDocsLinter\Rules\JsonRendererExampleRule;
 use OrbitDocsLinter\Rules\JsonWarningShapeRule;
+use OrbitDocsLinter\Rules\LongSectionStructureRule;
 use OrbitDocsLinter\Rules\MarkdownLinkIntegrityRule;
 use OrbitDocsLinter\Rules\NextActionContractRule;
 use OrbitDocsLinter\Rules\NoCommandAmbiguityFilesRule;
-use OrbitDocsLinter\Rules\NoPerCommandAuthorizationSectionRule;
 use OrbitDocsLinter\Rules\NonStateDomainHandoffRule;
+use OrbitDocsLinter\Rules\NoPerCommandAuthorizationSectionRule;
 use OrbitDocsLinter\Rules\ProductCodeNamespaceRule;
 use OrbitDocsLinter\Rules\PublicJsonOptionContractRule;
 use OrbitDocsLinter\Rules\ReadCommandNoLiveProbeRule;
+use OrbitDocsLinter\Rules\ReaderAddressRule;
 use OrbitDocsLinter\Rules\RendererPrimitiveReferenceRule;
 use OrbitDocsLinter\Rules\RequirementSmellRule;
 use OrbitDocsLinter\Rules\RoleCompanionCoverageRule;
+use OrbitDocsLinter\Rules\SectionOpenerProseRule;
+use OrbitDocsLinter\Rules\SentenceCaseHeadingRule;
 use OrbitDocsLinter\Rules\SharedFailureVocabularyRule;
 use OrbitDocsLinter\Rules\SignatureArgumentOrderRule;
 use OrbitDocsLinter\Rules\SignatureOptionConsistencyRule;
+use OrbitDocsLinter\Rules\TableProseComplexityRule;
 use OrbitDocsLinter\Rules\TechnicalSlotSemanticsRule;
 use OrbitDocsLinter\Rules\TechnicalTestMappingRule;
 use OrbitDocsLinter\Rules\TestMappingFormatRule;
@@ -253,6 +261,7 @@ final class CommandDocsLintCli
         return [
             new ConvertedFamilyStructureRule,
             new CommandDirectoryStructureRule,
+            new CommandPageStructureRule,
             new FamilyCommandPrefixRule,
             new CompoundCommandPrefixRule,
             new NoCommandAmbiguityFilesRule,
@@ -293,6 +302,13 @@ final class CommandDocsLintCli
             new CommandContractComplexityRule,
             new DocumentComplexityRule,
             new RequirementSmellRule,
+            new SentenceCaseHeadingRule,
+            new CompoundNounStackRule,
+            new LongSectionStructureRule,
+            new BulletComplexityRule,
+            new SectionOpenerProseRule,
+            new TableProseComplexityRule,
+            new ReaderAddressRule,
         ];
     }
 

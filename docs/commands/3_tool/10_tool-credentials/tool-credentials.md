@@ -24,7 +24,7 @@ orbit tool:credentials --node=app-1
 orbit tool:credentials postgres --node=app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from credential-bearing tools visible on the resolved node.
@@ -36,6 +36,8 @@ Target context is required when neither `--node`, `--app`, nor local
 `node:default` resolves a node.
 
 ## What Happens
+
+Run this command to read connection credentials for a managed tool on the target node.
 
 `tool:credentials`:
 
@@ -51,6 +53,8 @@ credential contract.
 
 ## Output
 
+Use `--json` to get machine-readable credential fields; omit it for a grouped detail view.
+
 Human output shows connection fields in a grouped detail view.
 
 JSON output returns credential fields under `success.data.credentials.fields`
@@ -65,6 +69,8 @@ with tool and node metadata under `success.data.credentials`.
 - The tool is registered for the resolved node and declares credentials.
 
 ## Related Commands
+
+Use these commands to inspect, repair, or verify managed tool state.
 
 - [`tool:show`](../2_tool-show/tool-show.md) - inspect tool metadata
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun setup when credentials need repair

@@ -16,7 +16,7 @@ product docs.
   selection changes.
 - Proxy owns backend route artifact drift affected by app/workspace PHP target
   changes.
-- Node owns node-level CLI PHP default drift.
+- Node owns drift in the CLI PHP default at the node level.
 - PHP commands must not read `.php-version`, mutate Composer files, or change
   framework config.
 
@@ -48,7 +48,7 @@ product docs.
 - Use Docker feature E2E for target resolution, intent updates, and controlled
   artifact refresh behavior.
 - Use Incus VM-feature only if a test needs real PHP-FPM service behavior or
-  host-level CLI alternative switching.
+  switching CLI alternatives at the host level.
 
 ## Evidence Pointers
 

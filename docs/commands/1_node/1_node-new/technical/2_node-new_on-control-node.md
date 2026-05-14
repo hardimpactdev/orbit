@@ -37,7 +37,7 @@ complete before side effects begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local control-node onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| `app` | Resolve required app-node inputs, then forward to the configured gateway over HTTPS. Interactive input mode prompts for missing values; non-interactive input mode and `--json` fail before forwarding when required values are absent. |
+| `app` | Resolve required app-node inputs, then forward to the gateway over HTTPS. Interactive mode prompts for missing values; non-interactive mode and `--json` fail before forwarding when required values are absent. |
 | `control` | Forward to the configured gateway over HTTPS. |
 
 ## First-Gateway Bootstrap
@@ -100,6 +100,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Primary owner for control-caller behavior: post-input path eligibility, first-gateway bootstrap eligibility, complete local onboarding for the initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded from `node_new.host`, gateway-connected forwarding for gateway convergence or adoption, app-node creation, and control-node enrollment, forwarded gateway host input, forwarded development app-node host and TLD input, missing-gateway failure for app/control requests, and no durable gateway-owned node state written locally outside first-gateway local onboarding artifacts. |
+| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Control-caller behavior: post-input path eligibility, first-gateway bootstrap eligibility, complete local onboarding for the initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded from `node_new.host`, gateway-connected forwarding for convergence/adoption/app-node creation/control-node enrollment, forwarded host and TLD input, missing-gateway failure for app/control requests, and no durable node state written locally outside first-gateway onboarding. |
 | `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from a control node with no gateway configured, including SSH bootstrap, explicit initiating control-node name, initiating control-node identity installation, gateway endpoint/trust storage from the bootstrap host, `/api/me` verification, and no follow-up `gateway:add` requirement. |
 | `tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for control-node execution after `gateway:add`, proving gateway convergence or adoption, app-node creation, and control-node enrollment are forwarded to the gateway over WireGuard instead of applied locally. |

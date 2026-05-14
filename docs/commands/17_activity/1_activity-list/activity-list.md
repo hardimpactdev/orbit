@@ -27,7 +27,7 @@ orbit activity:list --correlation=9f7307e8-38b2-45b8-9b94-cfc341456b85
 orbit activity:list --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `--app`: Limit results to activity associated with the recorded app key.
 - `--node`: Limit results to activity associated with the recorded node name.
@@ -38,7 +38,7 @@ orbit activity:list --json
 
 ## What Happens
 
-`activity:list`:
+Run `activity:list` to retrieve recent gateway history filtered by app, node, effect, or correlation id. `activity:list`:
 
 1. Validates the requested filters.
 2. Asks the gateway for recent activity history visible to the caller.
@@ -49,7 +49,7 @@ query app-node runtimes.
 
 ## Output
 
-Human output is a compact activity table with time, id, effect, type, subject,
+Use `--json` for machine-readable output. Human output is a compact activity table with time, id, effect, type, subject,
 actor, and command columns.
 
 JSON output returns activity objects under `success.data.activities` with filter
@@ -63,6 +63,8 @@ and count metadata under `success.meta`.
   the requested filters.
 
 ## Related Commands
+
+Use these commands to drill into individual entries or to check live state.
 
 - [`activity:show`](../2_activity-show/activity-show.md) - show one activity
   entry and its correlated context

@@ -22,7 +22,7 @@ endpoint and trust artifacts are installed and repaired by the gateway through
 node bootstrap, app-node readiness repair, and node-family doctor behavior.
 `gateway:add` is not the app-node path for managing those artifacts.
 
-When an app-node CLI command needs to reach the gateway, it uses the
+When a CLI command on an app node needs to reach the gateway, it uses the
 gateway-managed endpoint and trust available on the app node, then calls the
 gateway over HTTPS through WireGuard. App-node gateway-client configuration is a
 node bootstrap artifact, not a separate state family and not a control-node local

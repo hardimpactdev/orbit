@@ -23,7 +23,7 @@ product docs.
   availability does not grant tool write permission.
 - Tool writes are gateway-owned writes and enactment flows. Control callers use
   typed gateway API requests. Gateway callers may enact node-side artifacts only
-  through the gateway-owned node execution edge.
+  through the node execution edge that the gateway owns.
 - Required baseline tools are materialized during node provisioning or host
   bootstrap. `tool:install` should not create baseline tools unless the
   catalogued tool contract explicitly allows that support model.
@@ -55,7 +55,7 @@ Keep credentials out of normal list/show payloads unless a command explicitly
 owns credential display. Store secret-bearing values encrypted and avoid
 duplicating tool-specific secret columns.
 
-## Model And Catalog Pattern
+## Model and catalog pattern
 
 - Keep the tool catalog separate from persisted node tool intent.
 - Catalog definitions provide stable metadata: slug, label, backend, support

@@ -26,7 +26,7 @@ orbit node:show app-1
 orbit node:show app-1 --json
 ```
 
-## Arguments And Options
+## Arguments and options
 
 - `name`: node name to inspect. Optional. Defaults to the local default
   development app node when configured; otherwise defaults to the calling node.
@@ -38,6 +38,8 @@ orbit node:show app-1 --json
 - `--json`: Output JSON.
 
 ## What Happens
+
+Run `node:show` to inspect a single node's registry record without triggering any live checks.
 
 `node:show` performs a read-only registry inspection of a single node:
 
@@ -71,6 +73,8 @@ exact payload shape.
   access policy.
 
 ## Related Commands
+
+Use these commands to act on the node after reviewing its details.
 
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes

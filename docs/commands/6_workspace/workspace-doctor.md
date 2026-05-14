@@ -4,8 +4,8 @@
 
 `doctor --family=workspace` verifies whether gateway workspace records still
 match the workspace facts that make those records usable development contexts
-on their parent app's node. It also detects stale Orbit-owned workspace
-artifacts whose identity no longer maps to active gateway workspace configuration, so
+on their parent app's node. It also detects stale workspace artifacts owned by Orbit
+whose identity no longer maps to active gateway workspace configuration, so
 post-removal cleanup can be repaired without recreating deleted workspace
 records.
 
@@ -20,7 +20,7 @@ The workspace family owns these facts:
   the workspace environment;
 - workspace-owned adoption facts: selected existing workspace paths that can be
   tied to an explicit app and workspace name during `doctor --fix --adopt`.
-- stale Orbit-owned workspace artifacts whose identity no longer maps to an
+- stale workspace artifacts owned by Orbit whose identity no longer maps to an
   active gateway workspace record.
 
 A workspace record that points at a missing, unauthorized, or non-workspaceable
@@ -28,9 +28,8 @@ parent app is a workspace record issue because the workspace cannot resolve.
 Parent app runtime health belongs to the app family. Node reachability belongs
 to the node family. Workspace-owned proxy routes belong to `proxy`.
 Inherited process runtime units belong to `process`. Tool installation and
-firewall policy belong to `tool` and `firewall_rule`. Setup-time HTTP probe
-warnings such as `workspace.http_probe_unhealthy` are command outcome
-metadata from `workspace:setup`, not workspace-family doctor issue codes.
+firewall policy belong to `tool` and `firewall_rule`. HTTP probe warnings from setup time, such as `workspace.http_probe_unhealthy`, are command outcome
+metadata from `workspace:setup`, not doctor issue codes for the workspace family.
 
 ## Probe Layers
 
@@ -66,6 +65,8 @@ results as workspace-family issue codes.
 
 ## Workspace Issue Codes
 
+Each code below corresponds to a specific layer in the workspaces probe.
+
 | Code | Detected when |
 | --- | --- |
 | `workspace.record_incomplete` | A selected workspace record lacks name, parent app reference, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
@@ -83,6 +84,8 @@ results as workspace-family issue codes.
 | `workspace.php_hint_unsupported` | During adoption, `composer.json` provides a PHP version hint that Orbit does not support. |
 
 ## Workspace Fix Map
+
+The table below shows what `doctor --fix --restore` does for each fixable code.
 
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
@@ -108,6 +111,8 @@ edits inherited runtime units, or changes node reachability.
 
 ## Workspace Adopt Map
 
+The table below shows what `doctor --fix --adopt` does for each adoptable code.
+
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `workspace.unregistered_path` | Create workspace configuration only when the selected scope provides an explicit app, workspace name, and path, and the observed path is compatible with `workspace:setup` adoption rules. |
@@ -125,7 +130,7 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, workspace probe-layer selection, workspace issue codes, workspace fix map, workspace adopt map, denied workspace fix/adopt cases, related-family handoff behavior, and scope filtering as it affects workspace probes. |
+| `tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
 | `tests/Unit/Services/Workspaces/WorkspacesProbeTest.php` | In-memory workspace probe diff behavior for registry configuration, parent app eligibility, source path, workspace path policy, PHP runtime, PHP-FPM configuration, runtime configuration, stale Orbit-owned workspace artifacts, adoption hints, `.php-version` exclusion, and exclusion of proxy route/process/app/node/tool/firewall drift from workspace issue codes. |
 | `tests/E2E/Read/WorkspacesDoctorTest.php` | Real read-only `doctor --family=workspace --json` against registered workspaces. |
 | `tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --fix --family=workspace --restore` repair of safe workspace runtime drift. |

@@ -85,19 +85,19 @@ This command follows the shared
 - Delete all `node_access` records where the node is the consumer or the
   serving node.
 - When the removed node is a development app node with a stored TLD, remove the
-  gateway-owned development DNS mapping for `*.{nodes.tld}` through the
-  internal node-family development DNS applier before deleting the node row.
+  development DNS mapping that the gateway owns for `*.{nodes.tld}` through the
+  internal DNS applier for the node family before deleting the node row.
 - Delete the node record from the gateway registry.
 
 The development DNS cleanup target is derived from the node row being removed:
 domain `*.{nodes.tld}`, target WireGuard address, and owner node name. Removal
-must delete only Orbit-managed gateway resolver artifacts for that derived
+must delete only the resolver artifacts that Orbit manages on the gateway for that derived
 mapping. It must not call `dns:*`, remove caller-local resolver overrides, or
 edit public/provider DNS.
 
 ### WireGuard Detach Rules
 
-- Attempt to remove the node's gateway-managed WireGuard peer identity.
+- Attempt to remove the node's WireGuard peer identity that the gateway manages.
 - If the peer is already absent, continue without failure.
 - If peer removal fails for any other reason, capture the warning as remaining
   node-family drift and continue.
@@ -192,9 +192,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/NodeRemoveCommandTest.php` | Command contract: removal of a node, grant cleanup, WireGuard peer teardown, structured warning reporting when WireGuard teardown fails, warning payload shape for partial WireGuard detach, DNS mapping cleanup, control-caller gateway forwarding, self-removal of the current control caller, app-node caller denial before prompts or side effects, node-not-found validation failure rather than idempotent success, any-gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when the WireGuard peer is already absent; any-gateway-node rejection. |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Primary owner for control-caller behavior: configured control callers forward over HTTPS through WireGuard, unconfigured control callers fail before prompts or side effects, forwarded requests require access to the gateway node, and no SSH-to-gateway path is used. |
+| `tests/Feature/NodeRemoveCommandTest.php` | Command contract: node removal, grant cleanup, WireGuard peer teardown, warning payload shape for partial detach, DNS mapping cleanup, control-caller forwarding, self-removal, app-node denial, node-not-found as validation failure, gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
+| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
 

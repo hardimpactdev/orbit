@@ -42,6 +42,8 @@ artifact removal.
 
 ## Behavior
 
+The following rules govern how a step is added and when it runs.
+
 - **Deferred Execution**: Adding a step does not execute it immediately.
   Steps run during
   [`workspace:remove`](../5_workspace-remove/workspace-remove.md) and
@@ -81,11 +83,17 @@ artifact removal.
 ## Examples
 
 ### Add a basic teardown step
+
+Run this to append a step to the end of the teardown list.
+
 ```bash
 orbit workspace-teardown-step:add --command="dropdb docs_feature"
 ```
 
 ### Insert a step before an existing one
+
+Use `--before` to position the step relative to an existing step ID.
+
 ```bash
 orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --before=18
 ```
