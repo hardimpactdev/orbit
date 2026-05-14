@@ -62,6 +62,7 @@ trait PromptsForRegistryEntities
         ?string $role = null,
         ?string $environment = null,
         bool $activeOnly = true,
+        ?string $preferred = null,
     ): string|GatewayApiException {
         $nodes = $this->visibleNodePromptPayloads($role, $environment, $activeOnly);
 
@@ -78,7 +79,7 @@ trait PromptsForRegistryEntities
         return (string) $this->promptDataTable(
             label: $label,
             headers: ['Node', 'Role', 'Environment', 'Host', 'Status'],
-            rows: $this->nodePromptRows($nodes),
+            rows: $this->nodePromptRows($this->preferNodePromptPayload($nodes, $preferred)),
         );
     }
 
@@ -340,6 +341,32 @@ trait PromptsForRegistryEntities
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $nodes
+     * @return list<array<string, mixed>>
+     */
+    private function preferNodePromptPayload(array $nodes, ?string $preferred): array
+    {
+        if ($preferred === null || $preferred === '') {
+            return $nodes;
+        }
+
+        $preferredNodes = [];
+        $otherNodes = [];
+
+        foreach ($nodes as $node) {
+            if ($this->promptString($node['name'] ?? null) === $preferred) {
+                $preferredNodes[] = $node;
+
+                continue;
+            }
+
+            $otherNodes[] = $node;
+        }
+
+        return [...$preferredNodes, ...$otherNodes];
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +69,40 @@ it('creates source on the target app node before writing gateway app intent', fu
             'adopted' => false,
         ])
         ->and($payload['success']['meta']['warnings'])->toBe([]);
+});
+
+it('uses local node default in non-interactive mode when node option is missing', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-2',
+        'role' => 'app',
+        'environment' => 'development',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    LocalNodeDefault::query()->create([
+        'default_node_name' => 'app-2',
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
+        ->and($payload['success']['data']['app']['node'])->toBe('app-2')
+        ->and(App::query()->where('name', 'docs')->value('node_id'))->toBe($targetNode->id);
 });
 
 it('uses gh cli for github shorthand source creation and registry write', function (): void {

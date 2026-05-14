@@ -40,10 +40,15 @@ This command follows the shared
 
 ### Input Resolution
 
-1. **Node Resolution:** Use explicit `--node`. If missing, use local
-   `node:default` development app node if configured. If still missing,
-   interactive mode prompts; non-interactive mode fails.
-2. **Name Validation:** Validate `name` against the slug regex and length limit.
+1. **Node Resolution:** Use explicit `--node`. If missing, interactive mode
+   prompts for a visible active app node and preselects the local
+   `node:default` development app node when one is configured. In
+   non-interactive mode, use local `node:default` if configured; otherwise
+   fail.
+2. **Name Validation:** Validate `name` against the slug regex and length
+   limit. In interactive mode, this validation happens at the app-name prompt
+   after node resolution so the operator can correct the value before repository
+   input is requested.
 3. **Collision Check:** Fail if `name` is already taken in the gateway app
    registry. App slugs are globally unique across all app nodes; there is no
    per-node uniqueness namespace and no `--node`-disambiguation prompt.

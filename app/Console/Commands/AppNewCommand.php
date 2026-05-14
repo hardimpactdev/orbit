@@ -15,6 +15,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Http\Gateway\Responses\Apps\AppCreateResponse;
 use App\Models\App;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Support\GitRepositoryReference;
@@ -43,6 +44,11 @@ class AppNewCommand extends Command
 
     private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
 
+    /**
+     * @var array<string, string>|null
+     */
+    private ?array $appNameNodeIndex = null;
+
     public function handle(CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): int
     {
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
@@ -63,20 +69,19 @@ class AppNewCommand extends Command
             return $node;
         }
 
-        $existingApp = App::query()
-            ->with('node')
-            ->where('name', $input['name'])
-            ->first();
+        $this->appNameNodeIndex = null;
+        $existingNode = $this->existingAppNodeForName($input['name']);
 
-        if ($existingApp instanceof App) {
+        if ($existingNode instanceof GatewayApiException) {
             return $this->failCommand(
-                code: 'app.collision',
-                message: "App name '{$input['name']}' is already registered in the gateway app registry on node '{$existingApp->node?->name}'.",
-                meta: [
-                    'name' => $input['name'],
-                    'node' => $existingApp->node?->name,
-                ],
+                code: $existingNode->errorCode() ?? 'gateway_unavailable',
+                message: $existingNode->getMessage(),
+                meta: $existingNode->errorMeta(),
             );
+        }
+
+        if ($existingNode !== null) {
+            return $this->failAppNameCollision($input['name'], $existingNode);
         }
 
         $routeDomain = $this->proxyRouteDomain($input, $node);
@@ -323,22 +328,14 @@ class AppNewCommand extends Command
      */
     private function resolveInput(): array|int
     {
-        $name = $this->stringArgument('name');
-        if ($name === null && $this->isInteractiveInput()) {
-            $name = trim(text(label: 'App name (slug)', required: true));
-        }
-
-        if ($name === null) {
-            return $this->failValidation('name', 'App name is required.');
-        }
-
-        if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) || mb_strlen($name) > 40) {
-            return $this->failValidation('name', 'App name must be a slug of 40 characters or fewer.');
-        }
-
         $node = $this->resolveNodeInput();
         if (is_int($node)) {
             return $node;
+        }
+
+        $name = $this->resolveNameInput();
+        if (is_int($name)) {
+            return $name;
         }
 
         $repository = $this->stringOption('repo');
@@ -377,6 +374,59 @@ class AppNewCommand extends Command
         ];
     }
 
+    private function resolveNameInput(): string|int
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failValidation('name', 'App name is required.');
+            }
+
+            $appNameNodeIndex = $this->appNameNodeIndex();
+
+            if ($appNameNodeIndex instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $appNameNodeIndex->errorCode() ?? 'gateway_unavailable',
+                    message: $appNameNodeIndex->getMessage(),
+                    meta: $appNameNodeIndex->errorMeta(),
+                );
+            }
+
+            return trim(text(
+                label: 'App name (slug)',
+                required: true,
+                validate: fn (string $value): ?string => $this->appNameValidationMessage(trim($value), $appNameNodeIndex),
+            ));
+        }
+
+        $shapeError = $this->appNameShapeValidationMessage($name);
+
+        if ($shapeError !== null) {
+            return $this->failValidation('name', $shapeError);
+        }
+
+        if (! (bool) config('orbit.is_gateway', false)) {
+            return $name;
+        }
+
+        $existingNode = $this->existingAppNodeForName($name);
+
+        if ($existingNode instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $existingNode->errorCode() ?? 'gateway_unavailable',
+                message: $existingNode->getMessage(),
+                meta: $existingNode->errorMeta(),
+            );
+        }
+
+        if ($existingNode !== null) {
+            return $this->failAppNameCollision($name, $existingNode);
+        }
+
+        return $name;
+    }
+
     private function resolveNodeInput(): string|int
     {
         $node = $this->stringOption('node');
@@ -386,6 +436,20 @@ class AppNewCommand extends Command
         }
 
         if (! $this->isInteractiveInput()) {
+            $default = $this->validLocalDefaultAppNodeName();
+
+            if ($default instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $default->errorCode() ?? 'gateway_unavailable',
+                    message: $default->getMessage(),
+                    meta: $default->errorMeta(),
+                );
+            }
+
+            if ($default !== null) {
+                return $default;
+            }
+
             return $this->failValidation('node', 'The --node option is required in non-interactive mode.');
         }
 
@@ -393,6 +457,7 @@ class AppNewCommand extends Command
             $node = $this->promptForVisibleNode(
                 label: 'Select target app node',
                 role: 'app',
+                preferred: $this->localDefaultNodeName(),
             );
         } catch (PromptAborted) {
             return $this->failValidation('node', 'Operation cancelled.');
@@ -407,6 +472,150 @@ class AppNewCommand extends Command
         }
 
         return $node;
+    }
+
+    /**
+     * @param  array<string, string>  $appNameNodeIndex
+     */
+    private function appNameValidationMessage(string $name, array $appNameNodeIndex): ?string
+    {
+        $shapeError = $this->appNameShapeValidationMessage($name);
+
+        if ($shapeError !== null) {
+            return $shapeError;
+        }
+
+        if (array_key_exists($name, $appNameNodeIndex)) {
+            return $this->appNameCollisionMessage($name, $appNameNodeIndex[$name]);
+        }
+
+        return null;
+    }
+
+    private function appNameShapeValidationMessage(string $name): ?string
+    {
+        if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) || mb_strlen($name) > 40) {
+            return 'App name must be a slug of 40 characters or fewer.';
+        }
+
+        return null;
+    }
+
+    private function existingAppNodeForName(string $name): string|GatewayApiException|null
+    {
+        $appNameNodeIndex = $this->appNameNodeIndex();
+
+        if ($appNameNodeIndex instanceof GatewayApiException) {
+            return $appNameNodeIndex;
+        }
+
+        if (! array_key_exists($name, $appNameNodeIndex)) {
+            return null;
+        }
+
+        return $appNameNodeIndex[$name];
+    }
+
+    /**
+     * @return array<string, string>|GatewayApiException
+     */
+    private function appNameNodeIndex(): array|GatewayApiException
+    {
+        if ($this->appNameNodeIndex !== null) {
+            return $this->appNameNodeIndex;
+        }
+
+        if ((bool) config('orbit.is_gateway', false)) {
+            $this->appNameNodeIndex = App::query()
+                ->with('node')
+                ->get()
+                ->mapWithKeys(fn (App $app): array => [
+                    $app->name => $app->node->name,
+                ])
+                ->all();
+
+            return $this->appNameNodeIndex;
+        }
+
+        $apps = $this->visibleAppPromptPayloads();
+
+        if ($apps instanceof GatewayApiException) {
+            return $apps;
+        }
+
+        $index = [];
+
+        foreach ($apps as $app) {
+            $name = is_string($app['name'] ?? null) ? $app['name'] : '';
+
+            if ($name === '') {
+                continue;
+            }
+
+            $index[$name] = is_string($app['node'] ?? null) ? $app['node'] : '';
+        }
+
+        $this->appNameNodeIndex = $index;
+
+        return $this->appNameNodeIndex;
+    }
+
+    private function validLocalDefaultAppNodeName(): string|GatewayApiException|null
+    {
+        $name = $this->localDefaultNodeName();
+
+        if ($name === null) {
+            return null;
+        }
+
+        if ((bool) config('orbit.is_gateway', false)) {
+            $node = Node::query()
+                ->where('name', $name)
+                ->where('role', 'app')
+                ->where('environment', 'development')
+                ->where('status', 'active')
+                ->first();
+
+            return $node instanceof Node ? $node->name : null;
+        }
+
+        $nodes = $this->visibleNodePromptPayloads(role: 'app', environment: 'development', activeOnly: true);
+
+        if ($nodes instanceof GatewayApiException) {
+            return $nodes;
+        }
+
+        foreach ($nodes as $node) {
+            if (($node['name'] ?? null) === $name) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    private function localDefaultNodeName(): ?string
+    {
+        $name = LocalNodeDefault::query()->value('default_node_name');
+
+        return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    private function failAppNameCollision(string $name, string $node): int
+    {
+        return $this->failCommand(
+            code: 'app.collision',
+            message: $this->appNameCollisionMessage($name, $node),
+            meta: [
+                'name' => $name,
+                'node' => $node,
+            ],
+        );
+    }
+
+    private function appNameCollisionMessage(string $name, string $node): string
+    {
+        return "App name '{$name}' is already registered in the gateway app registry on node '{$node}'.";
     }
 
     private function resolveTargetNode(string $nodeName): Node|int

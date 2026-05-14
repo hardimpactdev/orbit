@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Prompts\DataTablePrompt;
@@ -36,6 +37,75 @@ it('prompts for missing name and target app node', function (): void {
         ->assertExitCode(0);
 
     expect(App::query()->where('name', 'docs')->exists())->toBeTrue();
+});
+
+it('preselects the local default app node when prompting for the target node', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'environment' => 'development',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    $defaultNode = Node::factory()->create([
+        'name' => 'app-2',
+        'role' => 'app',
+        'environment' => 'development',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    LocalNodeDefault::query()->create([
+        'default_node_name' => 'app-2',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppNewInteractiveRecordingRemoteShell);
+
+    DataTablePrompt::fake([Key::ENTER]);
+
+    $this->artisan('app:new')
+        ->expectsQuestion('App name (slug)', 'docs')
+        ->expectsConfirmation('Clone from a git repository?', 'no')
+        ->expectsOutputToContain("App 'docs' created successfully on node 'app-2'.")
+        ->assertExitCode(0);
+
+    expect(App::query()->where('name', 'docs')->value('node_id'))->toBe($defaultNode->id);
+});
+
+it('validates prompted app name availability before asking for repository input', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $targetNode->id,
+    ]);
+
+    $remoteShell = new AppNewInteractiveRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    DataTablePrompt::fake([Key::ENTER]);
+
+    $this->artisan('app:new')
+        ->expectsQuestion('App name (slug)', 'docs')
+        ->expectsOutputToContain("App name 'docs' is already registered in the gateway app registry on node 'app-1'.")
+        ->assertExitCode(1);
+
+    expect($remoteShell->scripts)->toBe([]);
 });
 
 it('prompts for an optional repository and canonicalizes github shorthand', function (): void {
