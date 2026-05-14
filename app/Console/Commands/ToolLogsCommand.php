@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Contracts\ToolLogGatewayStream;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Http\Gateway\Responses\Tools\ToolLogsResponse;
 use App\Models\Node;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLogFollower;
 use App\Services\Tools\ToolLogReader;
 use App\Services\Tools\ToolRegistryFailure;
@@ -19,7 +22,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('tool:logs
-    {tool : Tool catalog name to read logs for}
+    {tool? : Tool catalog name to read logs for}
     {--app= : Resolve target by app selector}
     {--node= : Resolve target by node}
     {--lines=100 : Number of historical lines}
@@ -28,9 +31,11 @@ use Throwable;
 #[Description('Read managed tool logs')]
 class ToolLogsCommand extends Command
 {
-    public function handle(ToolLogReader $logs, ToolLogFollower $follower, ToolLogGatewayStream $gatewayStream): int
+    use HandlesPromptCancellation;
+
+    public function handle(ToolLogReader $logs, ToolLogFollower $follower, ToolLogGatewayStream $gatewayStream, ToolCatalog $catalog): int
     {
-        $input = $this->validatedInput();
+        $input = $this->validatedInput($catalog);
 
         if (is_int($input)) {
             return $input;
@@ -108,12 +113,28 @@ class ToolLogsCommand extends Command
     /**
      * @return array{tool: string, app: string|null, node: string|null, lines: int, follow: bool}|int
      */
-    private function validatedInput(): array|int
+    private function validatedInput(ToolCatalog $catalog): array|int
     {
         $tool = $this->stringArgument('tool');
 
         if ($tool === null) {
-            return $this->failValidation('tool', 'A tool is required.');
+            if (! $this->isInteractiveInput()) {
+                return $this->failValidation('tool', 'A tool is required.');
+            }
+
+            try {
+                $names = $catalog->names();
+                $tool = (string) $this->promptSearch(
+                    label: 'Tool name',
+                    options: fn (string $value): array => array_values(array_filter($names, fn (string $n): bool => $value === '' || str_contains($n, $value))),
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
         }
 
         if ($this->wantsJson() && $this->option('follow') === true) {
@@ -199,6 +220,11 @@ class ToolLogsCommand extends Command
     private function isGatewayCaller(): bool
     {
         return (bool) config('orbit.is_gateway', false);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function writeStreamOutput(string $output): void

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\AddProcess;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\AddProcessRequest;
@@ -19,6 +21,9 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
+
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
 
 #[Signature('process:add
     {name? : Process name}
@@ -31,6 +36,7 @@ use Throwable;
 #[Description('Add an app process definition')]
 class ProcessAddCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -149,6 +155,8 @@ class ProcessAddCommand extends Command
      */
     private function validatedInput(): array|int
     {
+        $isInteractive = ! $this->wantsJson() && $this->input->isInteractive();
+
         $app = $this->stringOption('app');
         $name = $this->stringArgument('name');
         $command = $this->stringArgument('processCommand');
@@ -156,11 +164,30 @@ class ProcessAddCommand extends Command
         $crashNotificationInput = $this->stringOption('crash-notification') ?? ProcessCrashNotification::None->value;
 
         if ($app === null) {
-            return $this->failValidation('app', 'An app context is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('app', 'An app context is required.');
+            }
+
+            try {
+                $appNames = App::query()->orderBy('name')->pluck('name')->all();
+                $app = (string) ($appNames !== []
+                    ? select(label: 'App', options: $appNames, required: true)
+                    : $this->promptText(label: 'App', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         if ($name === null) {
-            return $this->failValidation('name', 'The process name is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('name', 'The process name is required.');
+            }
+
+            try {
+                $name = trim($this->promptText(label: 'Process name', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         if (! preg_match(self::NAME_PATTERN, $name)) {
@@ -168,7 +195,15 @@ class ProcessAddCommand extends Command
         }
 
         if ($command === null) {
-            return $this->failValidation('command', 'The process command is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('command', 'The process command is required.');
+            }
+
+            try {
+                $command = trim(text(label: 'Command', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         $restartPolicy = ProcessRestartPolicy::tryFrom($restartPolicyInput);
@@ -282,6 +317,15 @@ class ProcessAddCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 
     /**

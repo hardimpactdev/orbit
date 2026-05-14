@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\CredentialsToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolCredentialsResponse;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolCredentialsReader;
 use App\Services\Tools\ToolRegistryFailure;
 use Illuminate\Console\Attributes\Description;
@@ -23,18 +26,36 @@ use Throwable;
 #[Description('Read managed tool credentials')]
 class ToolCredentialsCommand extends Command
 {
-    public function handle(ToolCredentialsReader $reader): int
+    use HandlesPromptCancellation;
+
+    public function handle(ToolCredentialsReader $reader, ToolCatalog $catalog): int
     {
         $tool = $this->stringArgument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
 
         if ($tool === null) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: 'A tool name is required.',
-                meta: ['field' => 'tool'],
-            );
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'A tool name is required.',
+                    meta: ['field' => 'tool'],
+                );
+            }
+
+            try {
+                $names = $catalog->names();
+                $tool = (string) $this->promptSearch(
+                    label: 'Tool name',
+                    options: fn (string $value): array => array_values(array_filter($names, fn (string $n): bool => $value === '' || str_contains($n, $value))),
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
         }
 
         $result = $this->isGatewayCaller()
@@ -97,6 +118,11 @@ class ToolCredentialsCommand extends Command
     private function isGatewayCaller(): bool
     {
         return (bool) config('orbit.is_gateway', false);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function stringArgument(string $name): ?string

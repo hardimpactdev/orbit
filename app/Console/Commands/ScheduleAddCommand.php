@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\AddSchedule;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
@@ -18,6 +20,8 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
+
+use function Laravel\Prompts\select;
 
 #[Signature('schedule:add
     {name? : Schedule name}
@@ -31,6 +35,7 @@ use Throwable;
 #[Description('Add a recurring schedule')]
 class ScheduleAddCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -165,24 +170,88 @@ class ScheduleAddCommand extends Command
         $command = $this->stringOption('command');
         $script = $this->stringOption('script');
 
+        // schedule.add.name
         if ($name === null) {
-            return $this->failValidation('name', 'The schedule name is required.');
+            if (! $this->isInteractiveInput()) {
+                return $this->failValidation('name', 'The schedule name is required.');
+            }
+
+            try {
+                $name = $this->promptText(label: 'Schedule name', required: true);
+            } catch (PromptAborted) {
+                return $this->promptAbortedExit();
+            }
         }
 
         if (! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $name)) {
             return $this->failValidation('name', 'The schedule name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['value' => $name]);
         }
 
-        if (($app === null) === ($node === null)) {
+        // Conflict check before prompting for target
+        if ($app !== null && $node !== null) {
             return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => ['app', 'node']]);
         }
 
-        if (($command === null) === ($script === null)) {
+        // schedule.add.target_type / schedule.add.app / schedule.add.node
+        if ($app === null && $node === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => ['app', 'node']]);
+            }
+
+            try {
+                $targetType = select(
+                    label: 'Scope',
+                    options: ['app' => 'App', 'node' => 'Node'],
+                );
+
+                if ($targetType === 'app') {
+                    $app = $this->promptText(label: 'App name', required: true);
+                } else {
+                    $node = $this->promptText(label: 'Node name', required: true);
+                }
+            } catch (PromptAborted) {
+                return $this->promptAbortedExit();
+            }
+        }
+
+        // Conflict check before prompting for execution source
+        if ($command !== null && $script !== null) {
             return $this->failValidation('execution_source', 'Exactly one schedule execution source is required.', ['fields' => ['command', 'script']]);
         }
 
+        // schedule.add.execution_type / schedule.add.command / schedule.add.script
+        if ($command === null && $script === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failValidation('execution_source', 'Exactly one schedule execution source is required.', ['fields' => ['command', 'script']]);
+            }
+
+            try {
+                $executionType = select(
+                    label: 'Source',
+                    options: ['command' => 'Inline command', 'script' => 'Repo script'],
+                );
+
+                if ($executionType === 'command') {
+                    $command = $this->promptText(label: 'Command', required: true);
+                } else {
+                    $script = $this->promptText(label: 'Script path', required: true);
+                }
+            } catch (PromptAborted) {
+                return $this->promptAbortedExit();
+            }
+        }
+
+        // schedule.add.interval
         if ($interval === null) {
-            return $this->failCommand('schedule.interval_invalid', 'The schedule interval is required.', ['field' => 'interval']);
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand('schedule.interval_invalid', 'The schedule interval is required.', ['field' => 'interval']);
+            }
+
+            try {
+                $interval = $this->promptText(label: 'Interval (cron expression)', required: true);
+            } catch (PromptAborted) {
+                return $this->promptAbortedExit();
+            }
         }
 
         if (! in_array($timezone, timezone_identifiers_list(), true)) {
@@ -200,6 +269,16 @@ class ScheduleAddCommand extends Command
             'execution_type' => $command === null ? 'script' : 'command',
             'execution_value' => $command ?? (string) $script,
         ];
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    private function promptAbortedExit(): int
+    {
+        return $this->failCommand('validation_failed', 'Operation cancelled.', []);
     }
 
     private function resolveTarget(?string $app, ?string $node): App|Node|int

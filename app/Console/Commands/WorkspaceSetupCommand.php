@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Actions\Workspaces\SetupWorkspaceProgress;
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -32,6 +34,8 @@ use Throwable;
 #[Description('Converge a workspace to a ready-to-develop-in state')]
 class WorkspaceSetupCommand extends Command
 {
+    use HandlesPromptCancellation;
+
     public function handle(
         SetupWorkspace $setupWorkspace,
         SetupWorkspaceProgress $setupProgress,
@@ -47,6 +51,23 @@ class WorkspaceSetupCommand extends Command
                 message: 'Path must be absolute.',
                 meta: ['field' => 'path'],
             );
+        }
+
+        if ($this->stringOption('app') === null && $this->stringArgument('name') === null && $this->isInteractiveInput()) {
+            try {
+                $promptedApp = trim($this->promptText(
+                    label: 'Parent app',
+                    required: true,
+                ));
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+
+            $this->input->setOption('app', $promptedApp);
         }
 
         if ($callerRole === 'control') {
@@ -337,6 +358,11 @@ class WorkspaceSetupCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function resolveErrorCode(string $message): string

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleLogsRequest;
@@ -16,7 +18,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('schedule:logs
-    {name : Schedule name}
+    {name? : Schedule name}
     {--app= : Filter by app scope}
     {--node= : Filter by node scope}
     {--run= : Run history id}
@@ -25,8 +27,16 @@ use Throwable;
 #[Description('Show captured output for a schedule run')]
 class ScheduleLogsCommand extends Command
 {
+    use HandlesPromptCancellation;
+
     public function handle(ScheduleLogsPayload $payload, CallerRoleResolver $callerRoleResolver): int
     {
+        $name = $this->resolveNameInput();
+
+        if (is_int($name)) {
+            return $name;
+        }
+
         $callerRole = $callerRoleResolver->resolve();
 
         $run = $this->positiveIntegerOption('run');
@@ -42,11 +52,11 @@ class ScheduleLogsCommand extends Command
 
         try {
             if ($callerRole !== 'gateway') {
-                return $this->forwardLogs($run, $lines);
+                return $this->forwardLogs($name, $run, $lines);
             }
 
             $result = $payload->forSchedule(
-                name: (string) $this->argument('name'),
+                name: $name,
                 app: $this->stringOption('app'),
                 node: $this->stringOption('node'),
                 runId: $run,
@@ -61,12 +71,12 @@ class ScheduleLogsCommand extends Command
         return $this->successPayload($result['data'], $result['meta']);
     }
 
-    private function forwardLogs(?int $run, int $lines): int
+    private function forwardLogs(string $name, ?int $run, int $lines): int
     {
         /** @var ScheduleLogsResponse $dto */
         $dto = app(GatewayConnector::class)
             ->send(new ShowScheduleLogsRequest(
-                name: (string) $this->argument('name'),
+                name: $name,
                 app: $this->stringOption('app'),
                 node: $this->stringOption('node'),
                 run: $run,
@@ -141,6 +151,36 @@ class ScheduleLogsCommand extends Command
         return self::FAILURE;
     }
 
+    private function resolveNameInput(): string|int
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->failCommand(
+                'validation_failed',
+                'The schedule name is required.',
+                ['field' => 'name', 'reason' => 'missing'],
+            );
+        }
+
+        try {
+            return $this->promptText(label: 'Schedule name', required: true);
+        } catch (PromptAborted) {
+            return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+        }
+    }
+
+    private function stringArgument(string $key): ?string
+    {
+        $value = $this->argument($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
     private function stringOption(string $key): ?string
     {
         $value = $this->option($key);
@@ -161,6 +201,11 @@ class ScheduleLogsCommand extends Command
         }
 
         return (int) $value;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function wantsJson(): bool

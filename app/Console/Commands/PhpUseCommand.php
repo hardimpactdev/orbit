@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Data\Php\PhpRuntimeFailure;
 use App\Data\Php\PhpRuntimeOperation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Php\UsePhpRuntimeRequest;
 use App\Http\Gateway\Responses\Php\PhpRuntimeUseResponse;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimeManager;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -29,12 +32,27 @@ use Throwable;
 #[Description('Select PHP runtime intent for an app, workspace, or node CLI default')]
 class PhpUseCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
+    private ?string $resolvedVersion = null;
+
     public function handle(PhpRuntimeManager $php): int
     {
+        $this->resolvedVersion = null;
+
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+
+        if ($this->option('inherit') !== true) {
+            $versionResult = $this->resolveVersionInput();
+
+            if (is_int($versionResult)) {
+                return $versionResult;
+            }
+
+            $this->resolvedVersion = $versionResult;
+        }
 
         if (! $this->wantsJson()) {
             return $this->handleHuman($php, $callerRole);
@@ -55,6 +73,37 @@ class PhpUseCommand extends Command
         }
 
         return $this->jsonSuccess($result->payload, $result->meta);
+    }
+
+    private function resolveVersionInput(): string|int
+    {
+        $version = $this->stringArgument('version');
+
+        if ($version !== null) {
+            return $version;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->failCommand(new PhpRuntimeFailure(
+                code: 'validation_failed',
+                message: 'A PHP version is required.',
+                meta: ['field' => 'version', 'reason' => 'missing'],
+            ));
+        }
+
+        try {
+            return (string) $this->promptSelect(
+                label: 'PHP version',
+                options: PhpRuntimeCatalog::SUPPORTED,
+                default: PhpRuntimeCatalog::SUPPORTED[0] ?? null,
+            );
+        } catch (PromptAborted) {
+            return $this->failCommand(new PhpRuntimeFailure(
+                code: 'validation_failed',
+                message: 'Operation cancelled.',
+                meta: [],
+            ));
+        }
     }
 
     private function handleHuman(PhpRuntimeManager $php, string $callerRole): int
@@ -122,7 +171,7 @@ class PhpUseCommand extends Command
         }
 
         return $php->use(
-            version: $this->stringArgument('version'),
+            version: $this->effectiveVersion(),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
             node: $this->stringOption('node'),
@@ -136,7 +185,7 @@ class PhpUseCommand extends Command
         try {
             $dto = app(GatewayConnector::class)
                 ->send(new UsePhpRuntimeRequest(
-                    version: $this->stringArgument('version'),
+                    version: $this->effectiveVersion(),
                     app: $this->stringOption('app'),
                     workspace: $this->stringOption('workspace'),
                     node: $this->stringOption('node'),
@@ -158,6 +207,11 @@ class PhpUseCommand extends Command
             ],
             meta: $dto->meta,
         );
+    }
+
+    private function effectiveVersion(): ?string
+    {
+        return $this->resolvedVersion ?? $this->stringArgument('version');
     }
 
     /**
@@ -183,7 +237,7 @@ class PhpUseCommand extends Command
             return 'Restoring workspace PHP inheritance';
         }
 
-        $version = $this->stringArgument('version') ?? '(unknown)';
+        $version = $this->effectiveVersion() ?? '(unknown)';
 
         if ($this->option('cli') === true) {
             return "Updating CLI PHP runtime to PHP {$version}";
@@ -212,7 +266,7 @@ class PhpUseCommand extends Command
             return 'Successfully restored workspace PHP inheritance';
         }
 
-        $version = $this->stringArgument('version') ?? '(unknown)';
+        $version = $this->effectiveVersion() ?? '(unknown)';
 
         if ($this->option('cli') === true) {
             return "Successfully updated CLI PHP runtime to PHP {$version}";
@@ -233,6 +287,11 @@ class PhpUseCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     /**

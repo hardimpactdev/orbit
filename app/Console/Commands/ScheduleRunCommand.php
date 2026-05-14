@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\RunSchedule;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
@@ -19,31 +21,38 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('schedule:run
-    {name : Schedule name}
+    {name? : Schedule name}
     {--app= : Filter by app scope}
     {--node= : Filter by node scope}
     {--json : Output JSON}')]
 #[Description('Run one configured schedule immediately')]
 class ScheduleRunCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
     public function handle(SchedulePayload $payload, RunSchedule $runSchedule, CallerRoleResolver $callerRoleResolver): int
     {
+        $name = $this->resolveNameInput();
+
+        if (is_int($name)) {
+            return $name;
+        }
+
         $callerRole = $callerRoleResolver->resolve();
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $payload, $runSchedule, &$result, &$failure): string {
+        $operation = function () use ($name, $callerRole, $payload, $runSchedule, &$result, &$failure): string {
             try {
                 if ($callerRole !== 'gateway') {
-                    $result = $this->forwardRunResult();
+                    $result = $this->forwardRunResult($name);
 
                     return 'gateway accepted';
                 }
 
-                $schedule = $payload->find((string) $this->argument('name'), $this->stringOption('app'), $this->stringOption('node'));
+                $schedule = $payload->find($name, $this->stringOption('app'), $this->stringOption('node'));
                 $result = $runSchedule->handle($schedule);
 
                 return 'scheduled command completed';
@@ -111,12 +120,12 @@ class ScheduleRunCommand extends Command
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    private function forwardRunResult(): array
+    private function forwardRunResult(string $name): array
     {
         /** @var ScheduleManualRunResponse $dto */
         $dto = app(GatewayConnector::class)
             ->send(new RunScheduleRequest(
-                name: (string) $this->argument('name'),
+                name: $name,
                 app: $this->stringOption('app'),
                 node: $this->stringOption('node'),
             ))
@@ -186,11 +195,46 @@ class ScheduleRunCommand extends Command
         return self::FAILURE;
     }
 
+    private function resolveNameInput(): string|int
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->failCommand(
+                'validation_failed',
+                'The schedule name is required.',
+                ['field' => 'name', 'reason' => 'missing'],
+            );
+        }
+
+        try {
+            return $this->promptText(label: 'Schedule name', required: true);
+        } catch (PromptAborted) {
+            return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+        }
+    }
+
+    private function stringArgument(string $key): ?string
+    {
+        $value = $this->argument($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
     private function stringOption(string $key): ?string
     {
         $value = $this->option($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function wantsJson(): bool

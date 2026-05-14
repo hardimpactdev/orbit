@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
@@ -23,6 +25,8 @@ use Illuminate\Console\Command;
 #[Description('Send a message to an active Agent IDE session')]
 class AgentIdeMessageCommand extends Command
 {
+    use HandlesPromptCancellation;
+
     public function handle(
         AgentIdeMessageDelivery $delivery,
     ): int {
@@ -40,14 +44,26 @@ class AgentIdeMessageCommand extends Command
         }
 
         if ($message === null) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: 'Message is required.',
-                meta: [
-                    'field' => 'message',
-                    'reason' => 'missing_required_input',
-                ],
-            );
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Message is required.',
+                    meta: [
+                        'field' => 'message',
+                        'reason' => 'missing_required_input',
+                    ],
+                );
+            }
+
+            try {
+                $message = $this->promptText(label: 'Message', required: true);
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
         }
 
         $appSelector = $this->stringOption('app');
@@ -249,6 +265,11 @@ class AgentIdeMessageCommand extends Command
         }
 
         return trim($value);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function wantsJson(): bool

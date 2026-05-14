@@ -10,7 +10,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 
 #[Signature('vpn-client:enable
-    {name : VPN client name}
+    {name? : VPN client name}
     {--totp= : One-time code for the gateway VPN backend}
     {--json : Output as JSON}')]
 #[Description('Enable a non-node gateway VPN client')]
@@ -38,7 +38,17 @@ class VpnClientEnableCommand extends VpnCommandSupport
         $name = $this->stringArgument('name');
 
         if ($name === null) {
-            return $this->failCommand('validation_failed', 'VPN client name is required.', ['field' => 'name']);
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand('validation_failed', 'VPN client name is required.', ['field' => 'name', 'reason' => 'missing']);
+            }
+
+            $nameInput = $this->promptForText('VPN client name');
+
+            if (is_int($nameInput)) {
+                return $nameInput;
+            }
+
+            $name = $nameInput;
         }
 
         $this->activityClientName = $name;

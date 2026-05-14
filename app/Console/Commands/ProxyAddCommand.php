@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Proxy\AddProxyRouteRequest;
@@ -29,6 +31,7 @@ use Throwable;
 #[Description('Create or update custom proxy route intent')]
 class ProxyAddCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -202,20 +205,64 @@ class ProxyAddCommand extends Command
         $redirect = $this->stringOption('redirect');
         $codeInput = $this->stringOption('code');
 
+        $isInteractive = $this->isInteractiveInput();
+
         if ($domain === null) {
-            return $this->failValidation('domain', 'The proxy route domain is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('domain', 'The proxy route domain is required.');
+            }
+
+            try {
+                $domain = $this->promptText(label: 'Domain', required: true);
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         if ($node === null) {
-            return $this->failValidation('node', 'A serving node is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('node', 'A serving node is required.');
+            }
+
+            try {
+                $node = $this->promptText(label: 'Serving node', required: true);
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
-        if (($upstream === null && $redirect === null) || ($upstream !== null && $redirect !== null)) {
+        if ($upstream !== null && $redirect !== null) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: 'Select exactly one of --upstream or --redirect.',
                 meta: ['fields' => ['upstream', 'redirect']],
             );
+        }
+
+        if ($upstream === null && $redirect === null) {
+            if (! $isInteractive) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Select exactly one of --upstream or --redirect.',
+                    meta: ['fields' => ['upstream', 'redirect']],
+                );
+            }
+
+            try {
+                $routeShape = (string) $this->promptSelect(
+                    label: 'Route type',
+                    options: ['upstream' => 'Upstream', 'redirect' => 'Redirect'],
+                    default: 'upstream',
+                );
+
+                if ($routeShape === 'upstream') {
+                    $upstream = $this->promptText(label: 'Upstream URL', required: true);
+                } else {
+                    $redirect = $this->promptText(label: 'Redirect URL', required: true);
+                }
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         if ($upstream !== null && $codeInput !== null) {
@@ -330,6 +377,11 @@ class ProxyAddCommand extends Command
         $value = $this->option($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function wantsJson(): bool

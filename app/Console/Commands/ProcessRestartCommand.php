@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\RestartProcesses;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\RestartProcessesRequest;
@@ -19,6 +21,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\select;
+
 #[Signature('process:restart
     {name? : Existing process name}
     {--app= : Parent app slug}
@@ -27,6 +31,7 @@ use Throwable;
 #[Description('Restart app process runtime units')]
 class ProcessRestartCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -121,6 +126,7 @@ class ProcessRestartCommand extends Command
      */
     private function resolveContext(): array|int
     {
+        $isInteractive = ! $this->wantsJson() && $this->input->isInteractive();
         $appName = $this->stringOption('app');
         $workspaceName = $this->stringOption('workspace');
 
@@ -149,7 +155,18 @@ class ProcessRestartCommand extends Command
         }
 
         if ($appName === null) {
-            return $this->failValidation('app', 'An app context is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('app', 'An app context is required.');
+            }
+
+            try {
+                $appNames = App::query()->orderBy('name')->pluck('name')->all();
+                $appName = (string) ($appNames !== []
+                    ? select(label: 'App', options: $appNames, required: true)
+                    : $this->promptText(label: 'App', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         $app = App::query()->with('node')->where('name', $appName)->first();
@@ -159,6 +176,15 @@ class ProcessRestartCommand extends Command
         }
 
         return [$app, null];
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 
     /**

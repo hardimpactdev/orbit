@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Console\Commands\Concerns\RendersDeployResponses;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Deploy\ShowDeployLogRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
+use App\Models\App;
 use App\Services\Deploy\DeployManager;
 use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
@@ -24,6 +27,7 @@ use Illuminate\Console\Command;
 #[Description('Show stored deployment output for a production app run')]
 class DeployLogCommand extends Command
 {
+    use HandlesPromptCancellation;
     use RendersDeployResponses;
 
     public function handle(DeployManager $deploy, CallerRoleResolver $roles): int
@@ -33,8 +37,28 @@ class DeployLogCommand extends Command
         $app = $this->stringArgument('app');
         $run = $this->stringArgument('run');
 
-        if ($app === null || $run === null || ! ctype_digit($run) || (int) $run < 1) {
-            return $this->failCommand('validation_failed', 'App and positive run id are required.', ['field' => $app === null ? 'app' : 'run']);
+        if ($app === null) {
+            if ($this->wantsJson() || ! $this->input->isInteractive()) {
+                return $this->failCommand('validation_failed', 'App and positive run id are required.', ['field' => 'app']);
+            }
+
+            try {
+                $app = $this->promptSearch(
+                    label: 'App',
+                    options: fn (string $value): array => App::query()
+                        ->where('environment', 'production')
+                        ->where('name', 'like', "%{$value}%")
+                        ->pluck('name', 'name')
+                        ->all(),
+                    placeholder: 'docs',
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
+        }
+
+        if ($run === null || ! ctype_digit($run) || (int) $run < 1) {
+            return $this->failCommand('validation_failed', 'App and positive run id are required.', ['field' => 'run']);
         }
 
         $step = $this->optionalPositiveIntOption('step');

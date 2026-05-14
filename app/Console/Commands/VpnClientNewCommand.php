@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 
 #[Signature('vpn-client:new
-    {name : VPN client name}
+    {name? : VPN client name}
     {--config : Include the generated WireGuard config}
     {--totp= : One-time code for the gateway VPN backend}
     {--json : Output as JSON}')]
@@ -38,7 +38,17 @@ final class VpnClientNewCommand extends VpnCommandSupport
         $name = $this->stringArgument('name');
 
         if ($name === null) {
-            return $this->failCommand('validation_failed', 'VPN client name is required.', ['field' => 'name']);
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand('validation_failed', 'VPN client name is required.', ['field' => 'name', 'reason' => 'missing']);
+            }
+
+            $nameInput = $this->promptForText('VPN client name');
+
+            if (is_int($nameInput)) {
+                return $nameInput;
+            }
+
+            $name = $nameInput;
         }
 
         $this->activityClientName = $name;

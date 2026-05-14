@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\RestartToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Tools\ToolActionProgressRunner;
@@ -19,21 +22,47 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('tool:restart
-    {tool : Tool catalog name to restart}
+    {tool? : Tool catalog name to restart}
     {--app= : Resolve target by app selector}
     {--node= : Resolve target by node}
     {--json : Output JSON}')]
 #[Description('Restart a managed tool')]
 class ToolRestartCommand extends Command
 {
+    use HandlesPromptCancellation;
     use RunsToolActionProgress;
 
     public function handle(
         ToolLifecycleManager $lifecycle,
         ToolActionProgressRunner $progress,
         ToolActionGatewayStreamClient $stream,
+        ToolCatalog $catalog,
     ): int {
-        $tool = (string) $this->argument('tool');
+        $tool = $this->stringArgument('tool');
+
+        if ($tool === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'A tool name is required.',
+                    meta: ['field' => 'tool'],
+                );
+            }
+
+            try {
+                $names = $catalog->names();
+                $tool = (string) $this->promptSearch(
+                    label: 'Tool name',
+                    options: fn (string $value): array => array_values(array_filter($names, fn (string $n): bool => $value === '' || str_contains($n, $value))),
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+        }
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
 
@@ -123,6 +152,18 @@ class ToolRestartCommand extends Command
     private function isGatewayCaller(): bool
     {
         return (bool) config('orbit.is_gateway', false);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    private function stringArgument(string $name): ?string
+    {
+        $value = $this->argument($name);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function stringOption(string $name): ?string

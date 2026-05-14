@@ -5,20 +5,25 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\EditProcess;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\EditProcessRequest;
 use App\Http\Gateway\Responses\Processes\ProcessEditResponse;
 use App\Models\App;
+use App\Models\Process;
 use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
+
+use function Laravel\Prompts\select;
 
 #[Signature('process:edit
     {name? : Existing process name}
@@ -31,6 +36,7 @@ use Throwable;
 #[Description('Edit an app process definition')]
 class ProcessEditCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -154,6 +160,8 @@ class ProcessEditCommand extends Command
      */
     private function validatedInput(): array|int
     {
+        $isInteractive = ! $this->wantsJson() && $this->input->isInteractive();
+
         $app = $this->stringOption('app');
         $name = $this->stringArgument('name');
         $command = $this->stringOption('command');
@@ -161,11 +169,37 @@ class ProcessEditCommand extends Command
         $crashNotificationInput = $this->stringOption('crash-notification');
 
         if ($app === null) {
-            return $this->failValidation('app', 'An app context is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('app', 'An app context is required.');
+            }
+
+            try {
+                $appNames = App::query()->orderBy('name')->pluck('name')->all();
+                $app = (string) ($appNames !== []
+                    ? select(label: 'App', options: $appNames, required: true)
+                    : $this->promptText(label: 'App', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         if ($name === null) {
-            return $this->failValidation('name', 'The process name is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('name', 'The process name is required.');
+            }
+
+            try {
+                $processNames = Process::query()
+                    ->whereHas('app', fn ($q) => $q->where('name', $app))
+                    ->orderBy('name')
+                    ->pluck('name')
+                    ->all();
+                $name = (string) ($processNames !== []
+                    ? select(label: 'Process name', options: $processNames, required: true)
+                    : $this->promptText(label: 'Process name', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null) {
@@ -295,5 +329,14 @@ class ProcessEditCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 }

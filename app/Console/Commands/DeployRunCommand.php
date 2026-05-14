@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Console\Commands\Concerns\RendersDeployResponses;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\DeployRunGatewayStreamClient;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Deploy\RunDeployRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
+use App\Models\App;
 use App\Services\Deploy\DeployManager;
 use App\Services\Nodes\CallerRoleResolver;
 use App\Support\Cli\RemoteProgressRenderer;
@@ -25,6 +28,7 @@ use Illuminate\Console\Command;
 #[Description('Run the deployment pipeline for a production app')]
 class DeployRunCommand extends Command
 {
+    use HandlesPromptCancellation;
     use RendersDeployResponses;
 
     public function handle(
@@ -42,7 +46,23 @@ class DeployRunCommand extends Command
         $app = $this->stringArgument('app');
 
         if ($app === null) {
-            return $this->failCommand('validation_failed', 'App is required.', ['field' => 'app']);
+            if ($this->wantsJson() || ! $this->input->isInteractive()) {
+                return $this->failCommand('validation_failed', 'App is required.', ['field' => 'app']);
+            }
+
+            try {
+                $app = $this->promptSearch(
+                    label: 'App',
+                    options: fn (string $value): array => App::query()
+                        ->where('environment', 'production')
+                        ->where('name', 'like', "%{$value}%")
+                        ->pluck('name', 'name')
+                        ->all(),
+                    placeholder: 'docs',
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         if (! $this->wantsJson()) {

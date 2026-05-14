@@ -9,6 +9,8 @@ use Closure;
 use Laravel\Prompts\Prompt;
 
 use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\search;
+use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
 trait HandlesPromptCancellation
@@ -19,6 +21,26 @@ trait HandlesPromptCancellation
     protected function promptText(string $label, bool|string $required = false, mixed $validate = null): string
     {
         return $this->withPromptCancellation(fn (): string => text(label: $label, required: $required, validate: $validate));
+    }
+
+    /**
+     * @param  Closure(string): array<int|string, string>  $options
+     *
+     * @throws PromptAborted
+     */
+    protected function promptSearch(string $label, Closure $options, string $placeholder = ''): string
+    {
+        return $this->withPromptCancellation(fn (): string => search(label: $label, options: $options, placeholder: $placeholder, required: true));
+    }
+
+    /**
+     * @param  array<int|string, string>  $options
+     *
+     * @throws PromptAborted
+     */
+    protected function promptSelect(string $label, array $options, string|int|null $default = null): string|int
+    {
+        return $this->withPromptCancellation(fn (): string|int => select(label: $label, options: $options, default: $default));
     }
 
     /**

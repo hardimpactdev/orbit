@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\InstallToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolInstallResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Tools\ToolActionProgressRunner;
@@ -19,7 +22,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('tool:install
-    {tool : Tool catalog name to install}
+    {tool? : Tool catalog name to install}
     {--app= : Resolve target by app selector}
     {--node= : Resolve target by node}
     {--status=installed : Desired state after install (installed|running)}
@@ -28,14 +31,40 @@ use Throwable;
 #[Description('Install a managed tool')]
 class ToolInstallCommand extends Command
 {
+    use HandlesPromptCancellation;
     use RunsToolActionProgress;
 
     public function handle(
         ToolInstaller $installer,
         ToolActionProgressRunner $progress,
         ToolActionGatewayStreamClient $stream,
+        ToolCatalog $catalog,
     ): int {
-        $tool = (string) $this->argument('tool');
+        $tool = $this->stringArgument('tool');
+
+        if ($tool === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'A tool name is required.',
+                    meta: ['field' => 'tool'],
+                );
+            }
+
+            try {
+                $names = $catalog->names();
+                $tool = (string) $this->promptSearch(
+                    label: 'Tool name',
+                    options: fn (string $value): array => array_values(array_filter($names, fn (string $n): bool => $value === '' || str_contains($n, $value))),
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+        }
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
         $status = (string) $this->option('status');
@@ -162,6 +191,18 @@ class ToolInstallCommand extends Command
     private function isGatewayCaller(): bool
     {
         return (bool) config('orbit.is_gateway', false);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    private function stringArgument(string $name): ?string
+    {
+        $value = $this->argument($name);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function stringOption(string $name): ?string

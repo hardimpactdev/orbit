@@ -5,19 +5,24 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\ShowProcessLogs;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\ShowProcessLogsRequest;
 use App\Http\Gateway\Responses\Processes\ProcessLogsResponse;
 use App\Models\App;
+use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
+
+use function Laravel\Prompts\select;
 
 #[Signature('process:logs
     {name? : Existing process name}
@@ -29,6 +34,7 @@ use Throwable;
 #[Description('Read app process runtime logs')]
 class ProcessLogsCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -120,10 +126,27 @@ class ProcessLogsCommand extends Command
      */
     private function validatedInput(): array|int
     {
+        $isInteractive = ! $this->wantsJson() && $this->input->isInteractive();
         $name = $this->stringArgument('name');
+        $appOption = $this->stringOption('app');
 
         if ($name === null) {
-            return $this->failValidation('name', 'The process name is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('name', 'The process name is required.');
+            }
+
+            try {
+                $processQuery = Process::query()->orderBy('name');
+                if ($appOption !== null) {
+                    $processQuery->whereHas('app', fn ($q) => $q->where('name', $appOption));
+                }
+                $processNames = $processQuery->pluck('name')->all();
+                $name = (string) ($processNames !== []
+                    ? select(label: 'Process name', options: $processNames, required: true)
+                    : $this->promptText(label: 'Process name', required: true));
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
         }
 
         $lines = $this->lines();
@@ -138,7 +161,7 @@ class ProcessLogsCommand extends Command
 
         return [
             'name' => $name,
-            'app' => $this->stringOption('app'),
+            'app' => $appOption,
             'workspace' => $this->stringOption('workspace'),
             'lines' => $lines,
             'follow' => $this->option('follow') === true,
@@ -280,5 +303,14 @@ class ProcessLogsCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 }

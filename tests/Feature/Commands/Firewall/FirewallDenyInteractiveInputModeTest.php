@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\Node;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Node::factory()->create([
+        'name' => 'local-gateway',
+        'role' => 'gateway',
+        'host' => '10.6.0.1',
+        'wireguard_address' => '10.6.0.1',
+        'platform' => 'ubuntu',
+    ]);
+    Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+});
+
+it('prompts for rule name, node, and port in interactive mode when all are missing', function (): void {
+    $this->artisan('firewall:deny')
+        ->expectsQuestion('Rule name', 'my-rule')
+        ->expectsQuestion('Target node', 'app-1')
+        ->expectsQuestion('Port', '8080')
+        ->assertSuccessful();
+});
+
+it('does not prompt when all required inputs are supplied', function (): void {
+    $this->artisan('firewall:deny', ['name' => 'my-rule', '--node' => 'app-1', '--port' => '8080'])
+        ->doesntExpectOutput('Rule name')
+        ->doesntExpectOutput('Target node')
+        ->doesntExpectOutput('Port')
+        ->assertSuccessful();
+});
+
+it('returns validation_failed for missing name in non-interactive mode', function (): void {
+    $exitCode = Artisan::call('firewall:deny', ['--node' => 'app-1', '--port' => '8080', '--json' => true]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error']['code'])->toBe('validation_failed')
+        ->and($payload['error']['meta']['field'])->toBe('name');
+});
+
+it('returns validation_failed for missing port in non-interactive mode', function (): void {
+    $exitCode = Artisan::call('firewall:deny', ['name' => 'my-rule', '--node' => 'app-1', '--json' => true]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error']['code'])->toBe('validation_failed')
+        ->and($payload['error']['meta']['field'])->toBe('port');
+});

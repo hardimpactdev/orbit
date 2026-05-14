@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Firewall\StoreFirewallRuleRequest;
@@ -18,6 +20,7 @@ use Throwable;
 
 abstract class AbstractFirewallStoreCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -175,16 +178,42 @@ abstract class AbstractFirewallStoreCommand extends Command
         $node = $this->stringOption('node') ?? $this->defaultNodeName();
         $port = $this->stringOption('port');
 
+        $isInteractive = $this->isInteractiveInput();
+
         if ($name === null) {
-            return $this->failValidation('name', 'The firewall rule name is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('name', 'The firewall rule name is required.');
+            }
+
+            try {
+                $name = $this->promptText(label: 'Rule name', required: true);
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         if ($node === null) {
-            return $this->failValidation('node', 'A firewall target node is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('node', 'A firewall target node is required.');
+            }
+
+            try {
+                $node = $this->promptText(label: 'Target node', required: true);
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         if ($port === null) {
-            return $this->failValidation('port', 'The firewall rule port is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('port', 'The firewall rule port is required.');
+            }
+
+            try {
+                $port = $this->promptText(label: 'Port', required: true);
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         return [
@@ -284,6 +313,11 @@ abstract class AbstractFirewallStoreCommand extends Command
         $value = $this->option($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function wantsJson(): bool

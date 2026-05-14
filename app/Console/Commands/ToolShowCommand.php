@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ShowToolRequest;
@@ -18,7 +20,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('tool:show
-    {tool : Tool catalog name to inspect}
+    {tool? : Tool catalog name to inspect}
     {--app= : Resolve target by app selector}
     {--node= : Resolve target by node}
     {--live : Request live gateway inspection}
@@ -26,9 +28,35 @@ use Throwable;
 #[Description('Show one tool tracked by the gateway registry')]
 class ToolShowCommand extends Command
 {
+    use HandlesPromptCancellation;
+
     public function handle(ToolCatalog $catalog, ToolRegistry $registry, ToolPayloadMapper $payloads): int
     {
-        $tool = (string) $this->argument('tool');
+        $tool = $this->stringArgument('tool');
+
+        if ($tool === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'A tool name is required.',
+                    meta: ['field' => 'tool'],
+                );
+            }
+
+            try {
+                $names = $catalog->names();
+                $tool = (string) $this->promptSearch(
+                    label: 'Tool name',
+                    options: fn (string $value): array => array_values(array_filter($names, fn (string $n): bool => $value === '' || str_contains($n, $value))),
+                );
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+        }
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
 
@@ -119,6 +147,18 @@ class ToolShowCommand extends Command
     private function isGatewayCaller(): bool
     {
         return (bool) config('orbit.is_gateway', false);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    private function stringArgument(string $name): ?string
+    {
+        $value = $this->argument($name);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function stringOption(string $name): ?string

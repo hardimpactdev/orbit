@@ -8,7 +8,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 
 #[Signature('vpn-client:disable
-    {name : VPN client name}
+    {name? : VPN client name}
     {--totp= : One-time code for the gateway VPN backend}
     {--json : Output as JSON}')]
 #[Description('Disable a non-node gateway VPN client')]

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Workspaces\RemoveWorkspace;
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
@@ -19,6 +21,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
+use function Laravel\Prompts\search;
+
 #[Signature('workspace:remove
     {name? : Workspace name}
     {--app= : Parent app slug}
@@ -28,6 +32,7 @@ use Throwable;
 #[Description('Remove a workspace and its owned artifacts')]
 class WorkspaceRemoveCommand extends Command
 {
+    use HandlesPromptCancellation;
     use WithSpinner;
     use WithStepTree;
 
@@ -45,11 +50,23 @@ class WorkspaceRemoveCommand extends Command
             $app ??= $workspaceFromCwd?->app?->name;
         }
 
+        if ($name === null && $this->isInteractiveInput()) {
+            try {
+                $name = $this->promptWorkspaceName();
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+        }
+
         if ($name === null) {
             return $this->failCommand(
-                code: 'workspace.unresolved_cwd',
-                message: 'Current directory is not inside a registered workspace.',
-                meta: [],
+                code: 'validation_failed',
+                message: 'Workspace name is required.',
+                meta: ['field' => 'name'],
             );
         }
 
@@ -182,6 +199,38 @@ class WorkspaceRemoveCommand extends Command
 
                 return $workspacePath === $cwd || str_starts_with($cwd, "{$workspacePath}/");
             });
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    /**
+     * @throws PromptAborted
+     */
+    private function promptWorkspaceName(): string
+    {
+        return (string) search(
+            label: 'Workspace name',
+            options: function (string $query): array {
+                $workspaces = Workspace::query()
+                    ->with('app')
+                    ->when($query !== '', fn (Builder $q): Builder => $q->where('name', 'like', "%{$query}%"))
+                    ->orderBy('name')
+                    ->get();
+
+                $result = [];
+
+                foreach ($workspaces as $workspace) {
+                    $appName = $workspace->app?->name ?? 'unknown';
+                    $result[$workspace->name] = "{$workspace->name} ({$appName})";
+                }
+
+                return $result;
+            },
+            required: true,
+        );
     }
 
     private function stringArgument(string $key): ?string

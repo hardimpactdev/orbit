@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Console\Commands\Concerns\RendersDeployResponses;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Deploy\AddDeployStepRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
+use App\Models\App;
 use App\Models\DeployStep;
 use App\Services\Deploy\DeployManager;
 use App\Services\Nodes\CallerRoleResolver;
@@ -27,6 +30,7 @@ use Illuminate\Console\Command;
 #[Description('Add a deployment pipeline step for a production app')]
 class DeployStepAddCommand extends Command
 {
+    use HandlesPromptCancellation;
     use RendersDeployResponses;
 
     public function handle(DeployManager $deploy, CallerRoleResolver $roles): int
@@ -40,8 +44,35 @@ class DeployStepAddCommand extends Command
         $app = $this->stringArgument('app');
         $command = $this->stringArgument('deploy_command');
 
+        $isInteractive = ! $this->wantsJson() && $this->input->isInteractive();
+
         if ($app === null || $command === null) {
-            return $this->failCommand('validation_failed', 'App and command are required.', ['field' => $app === null ? 'app' : 'command']);
+            if (! $isInteractive) {
+                return $this->failCommand('validation_failed', 'App and command are required.', ['field' => $app === null ? 'app' : 'command']);
+            }
+
+            try {
+                if ($app === null) {
+                    $app = $this->promptSearch(
+                        label: 'App',
+                        options: fn (string $value): array => App::query()
+                            ->where('environment', 'production')
+                            ->where('name', 'like', "%{$value}%")
+                            ->pluck('name', 'name')
+                            ->all(),
+                        placeholder: 'docs',
+                    );
+                }
+
+                if ($command === null) {
+                    $command = $this->promptText(
+                        label: 'Command',
+                        required: 'Command is required.',
+                    );
+                }
+            } catch (PromptAborted) {
+                return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+            }
         }
 
         $timeout = $this->positiveIntOption('timeout', DeployStep::DEFAULT_TIMEOUT_SECONDS);
