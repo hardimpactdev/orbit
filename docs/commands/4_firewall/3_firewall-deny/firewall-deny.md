@@ -50,11 +50,11 @@ Run this command to create or update an Orbit-owned deny rule and apply it on th
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for a progress tree.
+Use `--json` to get a machine-readable result; omit it for progress.
 
-Human output is a progress tree for validation, gateway configuration, and backend apply.
+Human output shows progress for validation, gateway configuration, and backend apply.
 
-JSON output returns the rule entity under `success.data.rule`.
+Use `--json` for the machine-readable firewall rule result.
 
 ## Requirements
 

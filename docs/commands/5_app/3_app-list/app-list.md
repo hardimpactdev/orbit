@@ -60,7 +60,7 @@ workspaces registered to an app are shown immediately below that app as
 indented child rows, using the workspace URL and lifecycle status.
 
 JSON output returns a flat list of apps in the same order under the standard
-success envelope. Each app item includes its registered workspaces as a nested
+machine-readable result. Each app item includes its registered workspaces as a nested
 `workspaces` array. See the
 [JSON renderer contract](technical/6.2_app-list_output-render_json.md) for the
 exact payload shape.

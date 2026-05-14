@@ -78,9 +78,9 @@ The following steps describe what the command does during a successful run.
 
 The output format depends on whether `--json` is passed.
 
-- **Human**: A step tree covering worktree creation, runtime artifacts, proxy
+- **Human**: Progress covering worktree creation, runtime artifacts, proxy
   route registration, and setup step execution.
-- **JSON**: A `success` envelope including the new workspace record.
+- **JSON**: A machine-readable result including the new workspace record.
 
 ## Related
 

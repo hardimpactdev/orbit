@@ -44,8 +44,9 @@ The following steps describe the removal sequence in order.
 
 You will receive a summary of the removal result in the chosen output format.
 
-- **Human:** Framed destructive confirmation followed by a step tree. Drift after gateway configuration removal renders as a footer with one line per affected family doctor.
-- **JSON:** A single top-level `success` or `error` envelope. Partial cleanup is `success` with structured warnings under `success.meta.warnings[]` (each carrying `code`, `family`, `message`, and `next_command`).
+- **Human:** Framed destructive confirmation followed by progress. Drift after gateway configuration removal renders as a footer with one line per affected family doctor.
+- **JSON:** A machine-readable output. Partial cleanup is reported with
+  structured warning metadata and repair guidance.
 
 ## Requirements
 

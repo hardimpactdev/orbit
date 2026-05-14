@@ -27,8 +27,8 @@ orbit workspace-setup-step:list --json
   `.orbit/config` marker on the caller filesystem → gateway path-ownership
   lookup keyed on `(caller node identity, absolute cwd)`. Project files
   such as `composer.json`, `package.json`, and `.php-version` are never
-  inspected. If the app still cannot be resolved, the command fails with
-  `error.code=validation_failed`; it does not prompt for app selection.
+  inspected. If the app still cannot be resolved, the command fails validation;
+  it does not prompt for app selection.
 - `--json`: Output JSON.
 
 ## What Happens
@@ -62,8 +62,8 @@ required by
 matching the resolved list-exemplar precedent of `node:list`, `app:list`,
 and `workspace:list`.
 
-JSON output returns a flat array under `success.data.steps`. Each step
-record uses the shared step shape published by
+JSON output returns a flat machine-readable step list. Each step record uses the
+shared step shape published by
 [`workspace-setup-step:add`](../8_workspace-setup-step-add/workspace-setup-step-add.md):
 `{ id, app, phase, order, command, timeout_seconds }`. See the
 [JSON renderer contract](technical/6.2_workspace-setup-step-list_output-render_json.md)

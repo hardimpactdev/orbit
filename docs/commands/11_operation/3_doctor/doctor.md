@@ -4,7 +4,7 @@
 
 Verify gateway configuration against observed node reality for one node at a time, and optionally repair or adopt supported drift.
 
-`doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`. The global command owns scope resolution, mode selection, authorization, exit status, and output envelopes. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
+`doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`. The global command owns scope resolution, mode selection, authorization, result handling, and output selection. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
 
 The categories rendered for a run are derived from the target node's role:
 
@@ -72,9 +72,8 @@ output must still say what was checked. In `--fix` modes (interactive,
 restore, adopt), action results render inline below the owning category.
 Verify-mode runs do not render action tables.
 
-JSON output uses the shared command envelope. Healthy diagnostics are returned
-under `success.data.doctor`. Drift or probe/action failures return the same
-doctor diagnostic under `error.data.doctor`.
+Use `--json` for machine-readable diagnostics. Exact JSON fields live in the
+technical renderer contract.
 
 When no drift or probe errors remain, `doctor` exits successfully. When drift
 remains, a probe fails, or scope cannot be resolved, `doctor` exits failed and

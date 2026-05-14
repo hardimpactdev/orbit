@@ -70,7 +70,7 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 
 Human output is a registry detail view.
 
-JSON output returns the app record under a structured envelope. See the
+JSON output returns the app record under a machine-readable output. See the
 [JSON renderer contract](technical/6.2_app-show_output-render_json.md) for the
 exact payload shape.
 

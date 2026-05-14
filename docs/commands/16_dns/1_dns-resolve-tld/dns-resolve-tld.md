@@ -51,7 +51,8 @@ repaired by node doctor. This command is only for caller-local resolver state.
 
 ## Output
 
-Use `--json` to get machine-readable output; the human renderer shows a progress tree by default. Human output shows a progress tree for local resolver writes and refreshes.
+Use `--json` to get machine-readable output. Human output shows progress for
+local resolver writes and refreshes.
 
 JSON output reports the TLD, target, action, status, resolver backend, and
 whether local state changed.

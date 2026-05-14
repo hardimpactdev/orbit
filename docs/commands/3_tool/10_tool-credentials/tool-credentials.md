@@ -57,8 +57,8 @@ Use `--json` to get machine-readable credential fields; omit it for a grouped de
 
 Human output shows connection fields in a grouped detail view.
 
-JSON output returns credential fields under `success.data.credentials.fields`
-with tool and node metadata under `success.data.credentials`.
+Use `--json` for machine-readable credential fields with tool and node
+metadata.
 
 ## Requirements
 

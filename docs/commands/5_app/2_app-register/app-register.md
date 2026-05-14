@@ -65,8 +65,8 @@ This command is idempotent. Re-running on an already-managed app re-renders arti
 
 You will receive output in the format determined by the presence of `--json`.
 
-- **Human**: A progress tree showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
-- **JSON**: A `success` envelope with `success.data.result.action` and the app's registry data, including a durable `adopted` flag set when the path was first adopted via registration.
+- **Human**: A progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
+- **JSON**: A machine-readable result with the app's registry data, including a durable `adopted` flag set when the path was first adopted via registration.
 
 ## Requirements
 

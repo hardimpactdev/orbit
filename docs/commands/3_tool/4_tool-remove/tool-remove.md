@@ -54,13 +54,13 @@ definition explicitly owns that data.
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for a progress tree.
+Use `--json` to get a machine-readable result; omit it for progress.
 
-Human output is a progress tree for confirmation, node cleanup, and gateway
+Human output shows progress for confirmation, node cleanup, and gateway
 configuration removal.
 
-JSON output returns removal outcome under `success.data.tool` and warnings under
-`success.meta.warnings` when cleanup is partial.
+Use `--json` for the machine-readable removal outcome and any partial-cleanup
+warnings.
 
 ## Requirements
 

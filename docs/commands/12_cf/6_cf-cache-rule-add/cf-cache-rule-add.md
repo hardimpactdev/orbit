@@ -18,7 +18,7 @@ orbit cf-cache-rule:add docs --json
 ## Arguments and options
 
 - `app`: Orbit app name whose primary domain resolves to a Cloudflare zone.
-- `--json`: Return the cache rule result in the shared JSON command envelope.
+- `--json`: Return the cache rule result in the JSON output.
 
 ## What Happens
 
@@ -35,8 +35,8 @@ routes.
 
 You will see a confirmation of the cache rule outcome for the app.
 
-Human output confirms the app cache rule outcome. JSON output returns
-`success.data.rule`.
+Human output confirms the app cache rule outcome. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

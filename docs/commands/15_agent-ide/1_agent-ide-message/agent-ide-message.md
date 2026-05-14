@@ -49,7 +49,7 @@ Use this section to understand how the command resolves its target and delivers 
 The output format depends on whether `--json` is passed.
 
 - **Human**: Reports the target context, adapter, and delivery result.
-- **JSON**: Returns the same result in the shared `success` or `error` envelope. See the [JSON renderer contract](technical/6.2_agent-ide-message_output-render_json.md) for the exact shape.
+- **JSON**: Returns the same result as machine-readable output. See the [JSON renderer contract](technical/6.2_agent-ide-message_output-render_json.md) for the exact shape.
 
 ## Related
 

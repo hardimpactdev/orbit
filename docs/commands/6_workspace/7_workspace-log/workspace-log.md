@@ -41,9 +41,8 @@ one run.
 
 ### Human Output
 
-The human renderer displays a step-by-step view of the captured run, with
-an icon per step, the executed command, the exit code on failures, and the
-captured stdout/stderr for each step.
+Human output displays a step-by-step view of the captured run, with the executed
+command, failure details, and captured stdout/stderr for each step.
 
 ### JSON Output
 

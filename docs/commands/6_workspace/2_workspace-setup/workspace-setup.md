@@ -52,7 +52,7 @@ on (caller node identity, absolute CWD) returns one of:
   command proceeds as a re-converge or repair of that workspace.
 - **A registered app's own root path** — the CWD is the parent app's own
   path, not a workspace path under it. The command fails before side effects
-  with `error.code=workspace.path_is_app_root` and a hint to run
+  with a hint to run
   [`workspace:new`](../1_workspace-new/workspace-new.md) instead. Use
   `workspace:setup` only when the CWD is (or will be adopted as) a workspace
   path; the app root is never itself a workspace.
@@ -130,14 +130,12 @@ operators and agents can see what changed.
 
 The output format depends on whether `--json` is passed.
 
-- **Human**: A step tree showing progress of artifact application and setup
+- **Human**: Progress showing artifact application and setup
   steps, concluding with a `result.action`-keyed success line and the
   workspace URL.
-- **JSON**: A `success` envelope with `success.data.result.action`
-  (`set_up`/`adopted`/`converged`) and the workspace's registry data
+- **JSON**: A machine-readable result with the workspace's registry data,
   including a durable `workspace.adopted` flag set when the path was first
-  adopted via setup. The setup-time HTTP probe result is reported under
-  `success.meta.http_probe`.
+  adopted via setup. The setup-time HTTP probe result is included in metadata.
 
 ## Related
 

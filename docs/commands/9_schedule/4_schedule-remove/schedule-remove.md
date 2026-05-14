@@ -37,7 +37,7 @@ It does not remove app code, app process definitions, nodes, scripts outside the
 
 ## Output
 
-Run without `--json` to see a progress tree while the command confirms removal, writes gateway configuration, and notifies the target node's Orbit Scheduler.
+Run without `--json` to see progress while the command confirms removal, writes gateway configuration, and notifies the target node's Orbit Scheduler.
 
 JSON output returns the removed schedule entity and scheduler-pickup result.
 

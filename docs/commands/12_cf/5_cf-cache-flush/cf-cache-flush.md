@@ -20,7 +20,7 @@ orbit cf-cache:flush --zone=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
 
 - `--zone=<zone>`: Cloudflare zone ID, zone domain name, or Orbit app name with
   a configured Cloudflare zone.
-- `--json`: Return the flush result in the shared JSON command envelope.
+- `--json`: Return the flush result in the JSON output.
 
 ## What Happens
 
@@ -37,8 +37,8 @@ services, change proxy routes, or change Cloudflare cache rules.
 
 You will see a confirmation of the flushed zone.
 
-Human output confirms the flushed zone. JSON output returns a status object
-under `success.data.cache`.
+Human output confirms the flushed zone. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

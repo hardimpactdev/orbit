@@ -78,7 +78,7 @@ that initiating control node must not run `gateway:add` afterward.
 
 ## Output
 
-Your local CLI shows a progress tree while the command resolves the gateway,
+Your local CLI shows progress while the command resolves the gateway,
 fetches trust material, verifies reachability, verifies identity, and stores
 local configuration.
 

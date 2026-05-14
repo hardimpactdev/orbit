@@ -44,7 +44,7 @@ Use `--json` to get machine-readable rule entities; omit it for a table grouped 
 
 Human output is a table grouped by node.
 
-JSON output returns firewall rule entities under `success.data.rules` and the applied node filter under `success.meta`.
+Use `--json` for machine-readable firewall rules and the applied node filter.
 
 ## Requirements
 

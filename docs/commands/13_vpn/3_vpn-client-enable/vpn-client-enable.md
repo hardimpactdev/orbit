@@ -20,7 +20,7 @@ orbit vpn-client:enable laptop --json
 
 - `name`: VPN client name.
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
-- `--json`: Return the updated client in the shared JSON command envelope.
+- `--json`: Return the updated client in the JSON output.
 
 ## What Happens
 
@@ -37,8 +37,8 @@ protected because node WireGuard identity belongs to the node lifecycle.
 
 Your output confirms the new enabled state of the named client.
 
-Human output confirms the client was enabled. JSON output returns
-`success.data.client` with `enabled=true` and `action="enabled"`.
+Human output confirms the client was enabled. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

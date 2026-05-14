@@ -17,7 +17,7 @@ orbit cf-zone:list --json
 
 ## Arguments and options
 
-- `--json`: Return the zone list in the shared JSON command envelope.
+- `--json`: Return the zone list in the JSON output.
 
 ## What Happens
 
@@ -35,7 +35,7 @@ doctor state.
 You will see a zone table with the Cloudflare zone ID, domain name, and provider status.
 
 Human output renders a zone table with Cloudflare zone ID, domain name, and
-provider status. JSON output returns `success.data.zones[]`.
+provider status. Use `--json` for machine-readable output.
 
 ## Requirements
 

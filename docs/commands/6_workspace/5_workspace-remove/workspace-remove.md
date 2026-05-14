@@ -97,11 +97,10 @@ workspace teardown step.
 
 The output format depends on whether `--json` is passed.
 
-- **Human:** Framed destructive confirmation followed by a step tree. Drift
+- **Human:** Framed destructive confirmation followed by progress. Drift
   after Phase A renders as a footer with one line per affected family doctor.
-- **JSON:** A single top-level `success` or `error` envelope. Partial cleanup
-  is `success` with structured warnings under `success.meta.warnings[]` (each
-  carrying `code`, `family`, `message`, and `next_command`).
+- **JSON:** A machine-readable output. Partial cleanup
+  is reported with structured warning metadata and repair guidance.
 
 ## Requirements
 

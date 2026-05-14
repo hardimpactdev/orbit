@@ -52,8 +52,8 @@ query app-node runtimes.
 Use `--json` for machine-readable output. Human output is a compact activity table with time, id, effect, type, subject,
 actor, and command columns.
 
-JSON output returns activity objects under `success.data.activities` with filter
-and count metadata under `success.meta`.
+Use `--json` for machine-readable activity objects, filters, and count
+metadata.
 
 ## Requirements
 

@@ -28,7 +28,9 @@ orbit proxy:remove old.test --force --json
 
 ## Output
 
-Pass `--json` to receive machine-readable output. Human output renders a destructive confirmation in interactive mode, then a progress tree and a summary naming the removed domain and serving node. JSON output returns `success.data.route` with the removed route.
+Pass `--json` to receive machine-readable output. Human output renders a
+destructive confirmation in interactive mode, then progress and a summary
+naming the removed domain and serving node.
 
 ## Requirements
 

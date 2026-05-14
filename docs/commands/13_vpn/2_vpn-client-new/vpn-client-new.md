@@ -21,7 +21,7 @@ orbit vpn-client:new laptop --totp=123456 --json
 - `name`: VPN client name.
 - `--config`: Include the generated WireGuard client configuration in output.
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
-- `--json`: Return the created client in the shared JSON command envelope.
+- `--json`: Return the created client in the JSON output.
 
 ## What Happens
 
@@ -47,8 +47,8 @@ it must not include public fallback resolvers.
 Your output will include the new client's WireGuard address and, when requested, the generated config.
 
 Human output confirms the client, shows its WireGuard address, and prints the
-WireGuard config only when `--config` is supplied. JSON output returns
-`success.data.client`.
+WireGuard config only when `--config` is supplied. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

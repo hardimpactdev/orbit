@@ -55,10 +55,9 @@ Use `--json` to receive structured output; omit it for a human-readable summary.
 
 - **Human Output:** Summarizes the changed runtime configuration and the
   status of re-applied artifacts on the node.
-- **JSON Output:** Returns a structured `success` or `error` envelope
-  containing the updated app state. Drift during a successful run is
-  reported under `success.meta.warnings[]` using singular `app.*` doctor codes
-  with `family: "app"`.
+- **JSON Output:** Returns a machine-readable result or failure containing the
+  updated app state. Drift during a successful run is reported as app-family
+  warning metadata.
 
 ## Requirements
 

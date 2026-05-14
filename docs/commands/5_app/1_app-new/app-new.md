@@ -60,9 +60,9 @@ The steps below describe what the command does during a successful run.
 
 You will receive one of the following output formats depending on the flags you supply.
 
-- **Human:** A progress tree covering source creation, registry write, setup, proxy route application, and apply verification — shown step by step.
-- **JSON:** A `success` envelope containing the new app's registry data, or an
-  `error` envelope with failure metadata.
+- **Human:** Progress covering source creation, registry write, setup, proxy route application, and apply verification.
+- **JSON:** A machine-readable result containing the new app's registry data, or
+  a machine-readable failure with diagnostic metadata.
 
 ## Related
 

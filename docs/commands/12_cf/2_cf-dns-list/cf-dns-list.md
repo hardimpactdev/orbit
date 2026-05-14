@@ -18,7 +18,7 @@ orbit cf-dns:list aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
 ## Arguments and options
 
 - `zone`: Cloudflare zone ID or domain name.
-- `--json`: Return DNS records in the shared JSON command envelope.
+- `--json`: Return DNS records in the JSON output.
 
 ## What Happens
 
@@ -35,8 +35,8 @@ zone. Listing them does not imply Orbit manages those records.
 
 You will see a DNS record table for the selected zone.
 
-Human output renders a DNS record table. JSON output returns
-`success.data.records[]`.
+Human output renders a DNS record table. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

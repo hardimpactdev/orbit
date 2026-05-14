@@ -19,7 +19,7 @@ orbit cf-cache-rule:remove docs --force --json
 
 - `app`: Orbit app name whose Cloudflare cache rule should be removed.
 - `--force`: Confirm removal without an interactive prompt.
-- `--json`: Return the removal result in the shared JSON command envelope.
+- `--json`: Return the removal result in the JSON output.
 
 ## What Happens
 
@@ -36,8 +36,8 @@ is supplied. Non-interactive use, including `--json`, requires `--force`.
 
 You will see a confirmation of the removed cache rule.
 
-Human output confirms the removed cache rule. JSON output returns
-`success.data.rule`.
+Human output confirms the removed cache rule. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

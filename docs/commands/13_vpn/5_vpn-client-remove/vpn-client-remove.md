@@ -21,7 +21,7 @@ orbit vpn-client:remove laptop --force --json
 - `name`: VPN client name.
 - `--force`: Skip the destructive confirmation prompt.
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
-- `--json`: Return the removal result in the shared JSON command envelope.
+- `--json`: Return the removal result in the JSON output.
 
 ## What Happens
 
@@ -39,8 +39,8 @@ belongs to [`node:remove`](../../1_node/8_node-remove/node-remove.md).
 
 Your output confirms the client was removed and shows the action taken.
 
-Human output confirms the client was removed. JSON output returns
-`success.data.client` with `action="removed"`.
+Human output confirms the client was removed. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

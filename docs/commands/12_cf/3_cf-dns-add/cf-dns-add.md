@@ -25,7 +25,7 @@ orbit cf-dns:add docs.example.com 203.0.113.10 --json
 - `--zone=<zone>`: Cloudflare zone ID or domain name. When omitted, Orbit tries
   to resolve the zone from `name`.
 - `--proxied`: Enable Cloudflare HTTP proxying for the address record.
-- `--json`: Return the created or existing record in the shared JSON command envelope.
+- `--json`: Return the created or existing record in the JSON output.
 
 ## What Happens
 
@@ -41,8 +41,8 @@ The command refuses general DNS administration. It does not create CNAME, TXT, M
 
 You will see a confirmation of the created or existing record.
 
-Human output confirms the record outcome. JSON output returns
-`success.data.record`.
+Human output confirms the record outcome. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

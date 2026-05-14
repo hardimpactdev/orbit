@@ -43,8 +43,8 @@ material, or Orbit node access grants.
 
 Your output confirms the password was rotated successfully.
 
-Human output renders a progress tree and confirms password rotation. JSON
-output returns `success.data.vpn.password_changed=true`.
+Human output shows progress and confirms password rotation. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

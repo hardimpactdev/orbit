@@ -51,7 +51,7 @@ orbit profile --app=docs --user=1
 The output format depends on whether `--json` is passed.
 
 - **Human**: Renders the resolved request, status, total time, timing timeline, and query summary when Toolbar data is available.
-- **JSON**: Returns the same result in the shared `success` or `error` envelope. See the [JSON renderer contract](technical/6.2_profile_output-render_json.md) for the exact shape.
+- **JSON**: Returns the same result as machine-readable output. See the [JSON renderer contract](technical/6.2_profile_output-render_json.md) for the exact shape.
 
 ## Related
 

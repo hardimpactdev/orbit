@@ -56,9 +56,8 @@ managed flag, version/config metadata, service endpoint metadata when declared,
 and live status when requested. Secret values are not rendered by
 `tool:show`; use `tool:credentials` for authorized credential reads.
 
-JSON output returns the tool entity under `success.data.tool` and live detail
-under `success.data.live` when `--live` is present. Service endpoint metadata
-that is not secret may be included under `success.data.tool.endpoints`.
+Use `--json` for machine-readable tool and live details. Service endpoint
+metadata that is not secret may be included in the machine-readable output.
 
 ## Requirements
 

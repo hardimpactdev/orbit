@@ -37,7 +37,7 @@ Run `deploy:history` when you want to see past deployment attempts for a product
 
 Pass `--json` to receive machine-readable output; omit it to see a run list with run id, status, start time, duration, and failed step summary when available.
 
-JSON output returns `success.data.runs[]` plus pagination metadata.
+Use `--json` for machine-readable output.
 
 ## Requirements
 

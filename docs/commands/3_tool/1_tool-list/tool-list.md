@@ -51,8 +51,7 @@ Use `--json` to get machine-readable tool entities; omit it for a grouped node v
 Human output is grouped by node and shows each tool's name, expected lifecycle
 state, managed flag, and known version when available.
 
-JSON output returns tool entities under `success.data.tools` and applied filters
-under `success.meta`.
+Use `--json` for machine-readable tool entities and applied filters.
 
 ## Requirements
 

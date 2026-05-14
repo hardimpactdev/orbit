@@ -41,6 +41,7 @@ use OrbitDocsLinter\Rules\NoCommandAmbiguityFilesRule;
 use OrbitDocsLinter\Rules\NonStateDomainHandoffRule;
 use OrbitDocsLinter\Rules\NoPerCommandAuthorizationSectionRule;
 use OrbitDocsLinter\Rules\ProductCodeNamespaceRule;
+use OrbitDocsLinter\Rules\PublicCommandPageBoundaryRule;
 use OrbitDocsLinter\Rules\PublicJsonOptionContractRule;
 use OrbitDocsLinter\Rules\ReadCommandNoLiveProbeRule;
 use OrbitDocsLinter\Rules\ReaderAddressRule;
@@ -288,6 +289,7 @@ final class CommandDocsLintCli
             new AppNodeWriteDenialRule,
             new NoPerCommandAuthorizationSectionRule,
             new CommonFailureNotRestatedRule,
+            new PublicCommandPageBoundaryRule,
             new InputModeContractRule,
             new PublicJsonOptionContractRule,
             new HumanRendererProgressTreeRule,

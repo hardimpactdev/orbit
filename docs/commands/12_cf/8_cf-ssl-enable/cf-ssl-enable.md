@@ -21,7 +21,7 @@ orbit cf-ssl:enable aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
 - `zone`: Cloudflare zone ID or domain name.
 - `--mode=<mode>`: Cloudflare SSL mode. Allowed values: `strict`, `full`.
   Default: `strict`.
-- `--json`: Return the SSL result in the shared JSON command envelope.
+- `--json`: Return the SSL result in the JSON output.
 
 ## What Happens
 
@@ -38,8 +38,8 @@ origin serves HTTPS but strict validation is not ready.
 
 You will see a confirmation of the SSL mode set for the zone.
 
-Human output confirms the selected mode. JSON output returns
-`success.data.ssl`.
+Human output confirms the selected mode. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

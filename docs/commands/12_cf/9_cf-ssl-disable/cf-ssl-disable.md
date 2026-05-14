@@ -19,7 +19,7 @@ orbit cf-ssl:disable example.com --force --json
 
 - `zone`: Cloudflare zone ID or domain name.
 - `--force`: Confirm disabling SSL without an interactive prompt.
-- `--json`: Return the SSL result in the shared JSON command envelope.
+- `--json`: Return the SSL result in the JSON output.
 
 ## What Happens
 
@@ -35,8 +35,8 @@ Non-interactive use, including `--json`, requires `--force`.
 
 You will see a confirmation that Cloudflare SSL was disabled for the zone.
 
-Human output confirms that Cloudflare SSL was disabled. JSON output returns
-`success.data.ssl`.
+Human output confirms that Cloudflare SSL was disabled. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

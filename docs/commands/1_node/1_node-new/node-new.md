@@ -123,7 +123,7 @@ and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt
 
 ## Output
 
-Human output uses a progress tree while the command validates input, provisions
+Human output uses progress while the command validates input, provisions
 or enrolls the node, writes gateway state, and verifies readiness.
 
 JSON output includes the command result action, node name, role, lifecycle

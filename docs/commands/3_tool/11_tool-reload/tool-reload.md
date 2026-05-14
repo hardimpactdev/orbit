@@ -50,12 +50,11 @@ declares restart-as-reload behavior.
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for a progress tree.
+Use `--json` to get a machine-readable result; omit it for progress.
 
-Human output is a progress tree for the reload action.
+Human output shows progress for the reload action.
 
-JSON output returns the tool entity and action result under
-`success.data.tool`.
+Use `--json` for the machine-readable tool and action result.
 
 ## Requirements
 

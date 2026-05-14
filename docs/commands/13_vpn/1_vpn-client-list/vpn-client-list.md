@@ -19,7 +19,7 @@ orbit vpn-client:list --json
 ## Arguments and options
 
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
-- `--json`: Return the client list in the shared JSON command envelope.
+- `--json`: Return the client list in the JSON output.
 
 ## What Happens
 
@@ -37,8 +37,8 @@ identities, but it does not verify node reachability or repair node drift.
 Use the table below to read each client's status at a glance.
 
 Human output renders a client table with name, WireGuard address, enabled
-state, kind, and latest handshake timestamp. JSON output returns
-`success.data.clients[]`.
+state, kind, and latest handshake timestamp. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

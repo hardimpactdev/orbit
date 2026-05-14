@@ -62,10 +62,10 @@ needs local gateway endpoint, identity, and trust diagnostics.
 
 ## Output
 
-You will see a short progress tree showing whether the gateway CA is now trusted.
+You will see a short progress showing whether the gateway CA is now trusted.
 
 JSON output reports the trusted gateway URL, trust status, and CA fingerprint
-using the shared command envelope.
+using the JSON output.
 
 ## Requirements
 

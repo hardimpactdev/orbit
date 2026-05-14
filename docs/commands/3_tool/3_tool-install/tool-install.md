@@ -55,13 +55,12 @@ use [`tool:update`](../9_tool-update/tool-update.md).
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for a progress tree.
+Use `--json` to get a machine-readable result; omit it for progress.
 
-Human output is a progress tree for configuration write, install/configuration, and
+Human output shows progress for configuration write, install/configuration, and
 optional start steps.
 
-JSON output returns the tool entity under `success.data.tool` and command
-outcome metadata under `success.meta`.
+Use `--json` for the machine-readable tool and command outcome metadata.
 
 ## Requirements
 

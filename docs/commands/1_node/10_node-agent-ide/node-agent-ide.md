@@ -83,7 +83,7 @@ Human output summarizes the configured default and distinguishes a newly set
 value from an already-matching value.
 
 JSON output returns the node name, the configured adapter, its source, and the
-command action under a structured envelope. See the
+command action under a machine-readable output. See the
 [JSON renderer contract](technical/6.2_node-agent-ide_output-render_json.md) for the exact
 payload shape.
 

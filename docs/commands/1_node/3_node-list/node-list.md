@@ -43,14 +43,13 @@ as part of the default list operation. Live node reality belongs to
 Only nodes visible to the authenticated caller are returned. Hidden nodes are
 omitted entirely; `node:list` does not surface placeholder rows for nodes the
 caller cannot access. An authorized caller with no visible nodes sees an
-empty list and exit zero. A caller that is not authorized to read the node
-registry at all receives an authorization error.
+empty list. A caller that is not authorized to read the node registry at all
+receives an authorization error.
 
 When `--doctor` is supplied, runs node doctor checks as an explicit secondary
-operation and includes the resulting summary. Doctor findings do not change
-the exit code: the command exits zero whenever the registry read succeeds.
-Use `orbit doctor --family=node [--json]` when exit-on-drift semantics are
-required.
+operation and includes the resulting summary. Doctor findings do not change the
+list result. Use `orbit doctor --family=node [--json]` when drift should fail
+the command.
 
 This flag is intentionally limited to `node:list`. App and workspace list
 commands stay registry-only and direct live verification to their family doctor

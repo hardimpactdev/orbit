@@ -41,7 +41,8 @@ orbit proxy:list --json
 
 ## Output
 
-Run with `--json` to get machine-readable output. Human output renders a table of route domain, kind, owner, node, target, TLS summary, and status. JSON output returns `success.data.routes[]` using the family proxy route entity shape.
+Run with `--json` to get machine-readable output. Human output renders a table
+of route domain, kind, owner, node, target, TLS summary, and status.
 
 ## Requirements
 

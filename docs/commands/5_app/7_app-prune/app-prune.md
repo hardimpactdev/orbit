@@ -54,10 +54,10 @@ Run `app:prune` to compare Orbit's workspace registry against configured agent I
 
 ## Output Summary
 
-Use `--json` to receive structured output; omit it for a human-readable step tree.
+Use `--json` to receive structured output; omit it for human-readable progress.
 
-- **Human**: A step tree grouped by stale workspace, showing the cleanup progress for each artifact.
-- **JSON**: A `success` or `error` envelope containing the app details and a list of processed workspaces.
+- **Human**: Progress grouped by stale workspace, showing the cleanup status for each artifact.
+- **JSON**: A machine-readable result or failure containing the app details and a list of processed workspaces.
 
 ## Related
 

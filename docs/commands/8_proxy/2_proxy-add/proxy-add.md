@@ -35,7 +35,8 @@ orbit proxy:add old.test --redirect=https://docs.test --force --json
 
 ## Output
 
-Pass `--json` to receive machine-readable output. Human output renders a progress tree and a summary naming the domain, route kind, serving node, and target. JSON output returns `success.data.route` using the family proxy route entity shape.
+Pass `--json` to receive machine-readable output. Human output renders progress
+and a summary naming the domain, route kind, serving node, and target.
 
 ## Requirements
 

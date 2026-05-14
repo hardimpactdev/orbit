@@ -46,11 +46,11 @@ The command does not remove node bootstrap policy.
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for a progress tree.
+Use `--json` to get a machine-readable result; omit it for progress.
 
-Human output is a progress tree for confirmation, backend cleanup, and gateway configuration removal.
+Human output shows progress for confirmation, backend cleanup, and gateway configuration removal.
 
-JSON output returns the removed or already-absent rule result under `success.data.rule`.
+Use `--json` for the machine-readable removed or already-absent rule result.
 
 ## Requirements
 

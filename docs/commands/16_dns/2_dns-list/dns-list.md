@@ -40,7 +40,7 @@ configuration and does not inspect the development DNS mappings that the gateway
 
 Use `--json` for machine-readable output. Human output is a local DNS summary.
 
-JSON output returns local resolver entries under `success.data.dns`.
+Use `--json` for machine-readable resolver entries.
 
 ## Requirements
 

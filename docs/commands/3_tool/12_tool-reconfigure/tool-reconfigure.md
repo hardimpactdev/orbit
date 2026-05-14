@@ -54,12 +54,11 @@ explicit `doctor --fix --family=tool --adopt` semantics for supported adoption.
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for a progress tree.
+Use `--json` to get a machine-readable result; omit it for progress.
 
-Human output is a progress tree for setup/configuration steps.
+Human output shows progress for setup/configuration steps.
 
-JSON output returns the tool entity and action result under
-`success.data.tool`.
+Use `--json` for the machine-readable tool and action result.
 
 ## Requirements
 

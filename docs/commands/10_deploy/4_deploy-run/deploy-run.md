@@ -48,7 +48,7 @@ Detached runs return the run identifier without streaming step output.
 
 ## Output
 
-Run without `--json` to see a progress tree, streamed deployment output, and a final run summary.
+Run without `--json` to see progress, streamed deployment output, and a final run summary.
 
 JSON output returns the deployment run entity and captured output for bounded
 foreground runs. Detached JSON output returns the created run with

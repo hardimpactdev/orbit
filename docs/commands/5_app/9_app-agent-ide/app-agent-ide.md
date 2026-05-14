@@ -76,8 +76,8 @@ does not prune workspaces for those apps.
 - Grant node access or alter node transport.
 - SSH into the target node (except as part of workspace removal side effects).
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
-  cached workspace-level overrides, or emit `success.meta.warnings[]` for
-  "downstream consumers still using the old adapter". Current workspaces
+  cached workspace-level overrides, or emit warnings for "downstream consumers
+  still using the old adapter". Current workspaces
   resolve their effective agent IDE per-event through the app default, then the
   owning node default, and pick up the new app default at the next
   consumer-side resolution event.
@@ -89,7 +89,7 @@ lists any workspaces removed during an adapter switch.
 
 JSON output returns the app name, the resulting adapter configuration, and any
 cleanup results. Cleanup that fails after the app configuration write is reported as
-success with structured warnings under `success.meta.warnings[]`. See the
+success with structured warning metadata. See the
 [JSON renderer contract](technical/6.2_app-agent-ide_output-render_json.md) for the exact
 payload shape.
 

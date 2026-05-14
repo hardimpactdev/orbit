@@ -49,7 +49,7 @@ Use `--json` to get a machine-readable result; omit it for a summary of the star
 
 Human output reports the start action and resulting intended state.
 
-JSON output returns the tool entity under `success.data.tool`.
+Use `--json` for the machine-readable tool result.
 
 ## Requirements
 

@@ -54,8 +54,7 @@ Use `--json` for finite reads as machine-readable output; use `--follow` to stre
 Human output prints log lines in the tool's log order. With `--follow`, output
 continues until the user stops the stream or the gateway stream fails.
 
-JSON output returns finite log lines under `success.data.logs.lines` with tool
-and node metadata under `success.data.logs`.
+Use `--json` for finite machine-readable log lines with tool and node metadata.
 
 ## Requirements
 

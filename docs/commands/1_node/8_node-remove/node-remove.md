@@ -99,8 +99,8 @@ node-family drift.
 
 JSON output returns the command result, removed node name, whether the removed
 node was the current caller, grant and peer removal status. If WireGuard detach
-partially fails, JSON output keeps the result successful and reports the repair
-path under `success.meta.warnings`.
+partially fails, JSON output keeps the result successful and reports repair
+guidance in machine-readable metadata.
 
 ## Requirements
 

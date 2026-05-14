@@ -36,9 +36,11 @@ It does not change the recurring interval, enabled state, app process definition
 
 ## Output
 
-Run without `--json` to see a progress tree and stream the scheduled command output.
+Run without `--json` to see progress and stream the scheduled command output.
 
-JSON output returns a bounded run result with captured output. Scheduled command failure is represented as an Orbit command failure with the scheduled process exit code captured in JSON data.
+JSON output returns a bounded run result with captured output. Scheduled command
+failure is represented as an Orbit command failure with the scheduled process
+result captured in machine-readable data.
 
 ## Requirements
 

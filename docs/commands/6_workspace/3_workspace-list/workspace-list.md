@@ -65,7 +65,7 @@ case-insensitive).
 Human output presents that ordering as tables grouped by parent app within node.
 
 JSON output returns a flat list of workspaces in the same order under the
-standard success envelope. See the
+machine-readable output. See the
 [JSON renderer contract](technical/6.2_workspace-list_output-render_json.md) for
 the exact payload shape.
 

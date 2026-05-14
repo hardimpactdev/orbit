@@ -44,8 +44,7 @@ live node state.
 Use `--json` for machine-readable output. Human output is a detail view with the activity's time, type, effect, subject,
 actor, command, correlation id, summary, details, and related activity.
 
-JSON output returns the selected activity under `success.data.activity` and
-correlated entries under `success.data.related`.
+Use `--json` for machine-readable selected-activity and related-entry details.
 
 ## Requirements
 

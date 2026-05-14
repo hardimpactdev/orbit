@@ -53,8 +53,8 @@ mutate Composer constraints.
 
 Your output shows the resolved target, the selected version, and any drift warnings.
 
-Human output renders a progress tree and a short result summary. JSON output
-returns `success.data.php` plus `success.data.result`.
+Human output renders progress and a short result summary. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

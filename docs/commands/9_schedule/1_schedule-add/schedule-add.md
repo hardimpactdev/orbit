@@ -43,7 +43,7 @@ It does not create apps, nodes, app process definitions, proxy routes, firewall 
 
 ## Output
 
-Run without `--json` to see a progress tree while the command validates input, writes gateway configuration, and confirms the target node's Orbit Scheduler is reachable.
+Run without `--json` to see progress while the command validates input, writes gateway configuration, and confirms the target node's Orbit Scheduler is reachable.
 
 JSON output returns the created schedule entity and scheduler-pickup result.
 

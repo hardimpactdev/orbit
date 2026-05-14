@@ -51,7 +51,7 @@ through the timeline is done by re-querying with
 A table of runs including run ID, lifecycle phase, status, and timestamps.
 
 ### JSON Output
-A success envelope containing a `runs` array.
+A machine-readable result containing a `runs` array.
 
 ## Requirements
 

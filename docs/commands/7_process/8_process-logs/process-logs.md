@@ -22,7 +22,7 @@ Use this command to read or stream Supervisor logs for a resolved process runtim
 - **Context Resolution**: Resolves the process and app/workspace runtime context.
 - **Log Streaming**: Streams or returns Supervisor logs through the gateway.
 - **No Mutations**: Does not mutate process configuration.
-- **JSON Restriction**: Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream with `error.code=validation_failed`.
+- **JSON Restriction**: Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream.
 
 ## Related
 

@@ -55,12 +55,11 @@ without changing intended version.
 
 ## Output
 
-Use `--json` to get machine-readable results; omit it for a progress tree grouped by tool.
+Use `--json` to get machine-readable results; omit it to see progress grouped by tool.
 
-Human output is a progress tree grouped by selected tool.
+Human output shows progress grouped by selected tool.
 
-JSON output returns updated tool entities under `success.data.updated`, skipped
-tools under `success.data.skipped`, and warnings under `success.meta.warnings`
+Use `--json` for machine-readable updated tools, skipped tools, and warnings
 when some selected tools cannot be updated.
 
 ## Requirements

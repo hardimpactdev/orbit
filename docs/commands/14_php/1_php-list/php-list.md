@@ -29,7 +29,7 @@ orbit php:list --node=app-1 --json
   app.
 - `--live`: Inspect the target node for installed PHP versions during this
   command instead of using gateway-tracked tool facts.
-- `--json`: Return the PHP runtime view in the shared JSON command envelope.
+- `--json`: Return the PHP runtime view in the JSON output.
 
 ## What Happens
 
@@ -50,7 +50,7 @@ Your output shows the resolved PHP versions and selections for each available sc
 
 Human output renders supported versions, installed versions, node CLI default,
 app selection, and workspace effective selection when those contexts are
-available. JSON output returns `success.data.php`.
+available. Use `--json` for machine-readable output.
 
 ## Requirements
 

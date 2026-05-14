@@ -20,7 +20,7 @@ orbit cf-dns:remove record-1 --zone=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --force --j
 - `record-id`: Cloudflare DNS record ID to remove.
 - `--zone=<zone>`: Cloudflare zone ID or domain name that contains the record.
 - `--force`: Confirm removal without an interactive prompt.
-- `--json`: Return the removal result in the shared JSON command envelope.
+- `--json`: Return the removal result in the JSON output.
 
 ## What Happens
 
@@ -37,8 +37,8 @@ is supplied. Non-interactive use, including `--json`, requires `--force`.
 
 You will see a confirmation of the removed record ID.
 
-Human output confirms the removed record ID. JSON output returns
-`success.data.record`.
+Human output confirms the removed record ID. Use `--json` for machine-readable
+output.
 
 ## Requirements
 

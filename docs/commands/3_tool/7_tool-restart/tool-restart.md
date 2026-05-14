@@ -51,7 +51,7 @@ Use `--json` to get a machine-readable result; omit it for a summary of the rest
 
 Human output reports the restart action and resulting intended state.
 
-JSON output returns the tool entity under `success.data.tool`.
+Use `--json` for the machine-readable tool result.
 
 ## Requirements
 

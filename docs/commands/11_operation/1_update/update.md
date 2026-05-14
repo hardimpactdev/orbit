@@ -42,25 +42,13 @@ roll out the same Orbit code update across the fleet.
 
 ## Output
 
-Run `orbit update` to see a live progress tree and a final success or failure result.
+Run `orbit update` to see live progress and a final success or failure result.
 
-Human output shows a live progress tree for the local update sequence and
-reports whether the local checkout updated successfully.
+Human output reports whether the local checkout updated successfully. A failed
+step remains visible with captured Git, Composer, or migration output.
 
-```text
-┌ Update Orbit
-○ Pull source
-○ Install dependencies
-○ Run migrations
-└ Local Orbit checkout updated
-```
-
-As each step runs, the command updates that line in place. Completed steps are
-shown as completed, and a failed step remains visible with captured Git,
-Composer, or migration output printed below the tree.
-
-JSON output reports the local update result and any failure metadata using the
-shared command envelope.
+Use `--json` for the machine-readable local update result and any failure
+metadata.
 
 ## Requirements
 

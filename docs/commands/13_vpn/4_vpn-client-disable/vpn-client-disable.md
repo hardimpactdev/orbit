@@ -20,7 +20,7 @@ orbit vpn-client:disable laptop --json
 
 - `name`: VPN client name.
 - `--totp=<code>`: One-time code for the gateway VPN backend when required.
-- `--json`: Return the updated client in the shared JSON command envelope.
+- `--json`: Return the updated client in the JSON output.
 
 ## What Happens
 
@@ -37,8 +37,8 @@ protected because disabling them would break node identity and reachability.
 
 Your output confirms the new disabled state of the named client.
 
-Human output confirms the client was disabled. JSON output returns
-`success.data.client` with `enabled=false` and `action="disabled"`.
+Human output confirms the client was disabled. Use `--json` for
+machine-readable output.
 
 ## Requirements
 

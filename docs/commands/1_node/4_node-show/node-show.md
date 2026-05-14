@@ -62,7 +62,7 @@ Run `node:show` to inspect a single node's registry record without triggering an
 
 Human output is a registry detail view.
 
-JSON output returns the node record under a structured envelope. See the
+JSON output returns the node record under a machine-readable output. See the
 [JSON renderer contract](technical/6.2_node-show_output-render_json.md) for the
 exact payload shape.
 
