@@ -151,7 +151,7 @@ it('rejects generic workspace paths outside the app worktrees directory', functi
 it('forwards control callers to gateway', function (): void {
     config(['orbit.is_gateway' => false]);
 
-    MockClient::global([
+    $mock = MockClient::global([
         SetupWorkspaceRequest::class => MockResponse::make([
             'success' => [
                 'data' => [
@@ -181,6 +181,7 @@ it('forwards control callers to gateway', function (): void {
     expect($exitCode)->toBe(0);
     expect($payload['success']['data']['workspace'])->toBe('feature-a');
     expect($payload['success']['data']['action'])->toBe('set_up');
+    $mock->assertSent(fn (SetupWorkspaceRequest $request): bool => is_string($request->callerCwd) && $request->callerCwd !== '');
 });
 
 it('streams progress for forwarded human setup calls', function (): void {
@@ -300,7 +301,7 @@ final class WorkspaceSetupTestShell implements RemoteShell
 
 final class WorkspaceSetupTestStreamClient extends WorkspaceSetupGatewayStreamClient
 {
-    public function run(?string $name, ?string $app, ?string $path, callable $onEvent): int
+    public function run(?string $name, ?string $app, ?string $path, ?string $callerCwd, callable $onEvent): int
     {
         $onEvent('tree', [
             'title' => 'Setting Up Workspace',

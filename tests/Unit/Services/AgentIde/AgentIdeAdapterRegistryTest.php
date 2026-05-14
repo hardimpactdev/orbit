@@ -12,13 +12,13 @@ it('returns deterministic core adapter descriptors without reserved tokens', fun
             'name' => 'opencode',
             'label' => 'opencode',
             'source' => 'core',
-            'capabilities' => ['message_delivery'],
+            'capabilities' => ['message_delivery', 'workspace_path_resolution'],
         ],
         [
             'name' => 'polyscope',
             'label' => 'polyscope',
             'source' => 'core',
-            'capabilities' => ['message_delivery'],
+            'capabilities' => ['message_delivery', 'workspace_path_resolution'],
         ],
     ])
         ->and($registry->isRegisteredAdapter('opencode'))->toBeTrue()

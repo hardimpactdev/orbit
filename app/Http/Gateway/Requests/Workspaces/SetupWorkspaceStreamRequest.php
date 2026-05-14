@@ -19,6 +19,7 @@ final class SetupWorkspaceStreamRequest extends GatewayStreamRequest implements 
         public readonly ?string $name = null,
         public readonly ?string $app = null,
         public readonly ?string $path = null,
+        public readonly ?string $callerCwd = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -35,6 +36,7 @@ final class SetupWorkspaceStreamRequest extends GatewayStreamRequest implements 
             'name' => $this->name,
             'app' => $this->app,
             'path' => $this->path,
+            'caller_cwd' => $this->callerCwd,
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
     }
 

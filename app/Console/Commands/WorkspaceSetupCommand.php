@@ -8,7 +8,7 @@ use App\Actions\Workspaces\SetupWorkspace;
 use App\Actions\Workspaces\SetupWorkspaceProgress;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
-use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\SetupWorkspaceRequest;
@@ -17,11 +17,11 @@ use App\Http\Gateway\WorkspaceSetupGatewayStreamClient;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use App\Support\Cli\RemoteProgressRenderer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 use Throwable;
 
@@ -64,6 +64,12 @@ class WorkspaceSetupCommand extends Command
     {
         try {
             [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace();
+        } catch (WorkspaceSetupResolutionFailed $e) {
+            return $this->failCommand(
+                code: $e->errorCode,
+                message: $e->getMessage(),
+                meta: $e->meta,
+            );
         } catch (RuntimeException $e) {
             return $this->failCommand(
                 code: $this->resolveErrorCode($e->getMessage()),
@@ -125,9 +131,10 @@ class WorkspaceSetupCommand extends Command
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
         $path = $this->stringOption('path');
+        $callerCwd = realpath((string) getcwd()) ?: (string) getcwd();
 
         if (! $this->wantsJson()) {
-            return $this->forwardSetupForHuman($setupStream, $name, $app, $path);
+            return $this->forwardSetupForHuman($setupStream, $name, $app, $path, $callerCwd);
         }
 
         try {
@@ -137,6 +144,7 @@ class WorkspaceSetupCommand extends Command
                     name: $name,
                     app: $app,
                     path: $path,
+                    callerCwd: $callerCwd,
                 ))
                 ->dto();
         } catch (GatewayApiException $e) {
@@ -173,13 +181,14 @@ class WorkspaceSetupCommand extends Command
         ?string $name,
         ?string $app,
         ?string $path,
+        ?string $callerCwd,
     ): int {
         $renderer = new RemoteProgressRenderer($this->output);
         $completeData = [];
         $errorData = [];
         $footer = 'Done';
 
-        $result = $setupStream->run($name, $app, $path, function (string $event, array $payload) use ($renderer, &$completeData, &$errorData, &$footer): void {
+        $result = $setupStream->run($name, $app, $path, $callerCwd, function (string $event, array $payload) use ($renderer, &$completeData, &$errorData, &$footer): void {
             if ($event === 'tree') {
                 $title = is_string($payload['title'] ?? null) ? $payload['title'] : '';
                 $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
@@ -261,161 +270,7 @@ class WorkspaceSetupCommand extends Command
         $appName = $this->stringOption('app');
         $path = $this->stringOption('path');
 
-        if ($path !== null) {
-            return $this->resolveByPath($path, $appName);
-        }
-
-        if ($name !== null) {
-            return $this->resolveByName($name, $appName);
-        }
-
-        return $this->resolveByCwd();
-    }
-
-    /**
-     * @return array{Workspace, App, Node, bool}
-     *
-     * @throws RuntimeException
-     */
-    private function resolveByPath(string $path, ?string $appName): array
-    {
-        $app = $this->resolveApp($appName);
-
-        if (! $app instanceof App) {
-            throw new RuntimeException('App not found. Pass --app=<name> explicitly.');
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            throw new RuntimeException("Node not found for app '{$app->name}'.");
-        }
-
-        $workspaceName = basename($path);
-
-        $existing = Workspace::query()
-            ->with('app.node')
-            ->where('app_id', $app->id)
-            ->where('name', $workspaceName)
-            ->first();
-
-        if (! $this->pathAllowedForWorkspace($app, $path, $existing)) {
-            throw new RuntimeException("Path {$path} is outside the parent app workspace policy.");
-        }
-
-        if ($existing instanceof Workspace) {
-            $existing->update(['path' => $path]);
-            $existing->load(['app', 'app.node']);
-
-            return [$existing, $app, $node, false];
-        }
-
-        $workspace = Workspace::create([
-            'app_id' => $app->id,
-            'name' => $workspaceName,
-            'path' => $path,
-            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
-        ]);
-
-        $workspace->load('app.node');
-
-        return [$workspace, $app, $node, true];
-    }
-
-    private function pathAllowedForWorkspace(App $app, string $path, ?Workspace $workspace): bool
-    {
-        if ($workspace instanceof Workspace && $workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
-            return true;
-        }
-
-        $appPath = rtrim($app->path, '/');
-
-        return str_starts_with($path, "{$appPath}/.worktrees/");
-    }
-
-    /**
-     * @return array{Workspace, App, Node, bool}
-     *
-     * @throws RuntimeException
-     */
-    private function resolveByName(string $name, ?string $appName): array
-    {
-        $query = Workspace::query()
-            ->with(['app.node'])
-            ->where('name', $name);
-
-        if ($appName !== null) {
-            $query->whereHas('app', fn (Builder $q): Builder => $q->where('name', $appName));
-        }
-
-        $workspace = $query->first();
-
-        if (! $workspace instanceof Workspace) {
-            throw new RuntimeException("Workspace '{$name}' not found.");
-        }
-
-        $app = $workspace->app;
-
-        if (! $app instanceof App) {
-            throw new RuntimeException("App not found for workspace '{$name}'.");
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            throw new RuntimeException("Node not found for workspace '{$name}'.");
-        }
-
-        return [$workspace, $app, $node, false];
-    }
-
-    /**
-     * @return array{Workspace, App, Node, bool}
-     *
-     * @throws RuntimeException
-     */
-    private function resolveByCwd(): array
-    {
-        $cwd = realpath((string) getcwd()) ?: (string) getcwd();
-
-        $workspace = Workspace::query()
-            ->with('app.node')
-            ->get()
-            ->first(function (Workspace $w) use ($cwd): bool {
-                $workspacePath = realpath($w->path) ?: $w->path;
-
-                return $workspacePath === $cwd || str_starts_with($cwd, "{$workspacePath}/");
-            });
-
-        if ($workspace instanceof Workspace) {
-            $app = $workspace->app;
-
-            if (! $app instanceof App) {
-                throw new RuntimeException("App not found for workspace '{$workspace->name}'.");
-            }
-
-            $node = $app->node;
-
-            if (! $node instanceof Node) {
-                throw new RuntimeException("Node not found for workspace '{$workspace->name}'.");
-            }
-
-            return [$workspace, $app, $node, false];
-        }
-
-        throw new RuntimeException('Not inside a registered workspace. Pass --workspace=<name> or run from a workspace directory.');
-    }
-
-    private function resolveApp(?string $appName): ?App
-    {
-        if ($appName === null) {
-            return null;
-        }
-
-        return App::query()
-            ->with('node')
-            ->where('name', $appName)
-            ->first();
+        return app(WorkspaceSetupTargetResolver::class)->resolve($name, $appName, $path);
     }
 
     private function stringArgument(string $name): ?string

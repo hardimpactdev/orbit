@@ -15,10 +15,10 @@ class WorkspaceSetupGatewayStreamClient
     /**
      * @param  callable(string, array<string, mixed>): void  $onEvent
      */
-    public function run(?string $name, ?string $app, ?string $path, callable $onEvent): int|GatewayApiException
+    public function run(?string $name, ?string $app, ?string $path, ?string $callerCwd, callable $onEvent): int|GatewayApiException
     {
         return ($this->streams ?? app(GatewayStreamTransport::class))->events(
-            request: new SetupWorkspaceStreamRequest($name, $app, $path),
+            request: new SetupWorkspaceStreamRequest($name, $app, $path, $callerCwd),
             onEvent: $onEvent,
             unavailableMessage: 'Gateway connection is required to set up a workspace.',
         );

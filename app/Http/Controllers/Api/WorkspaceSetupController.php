@@ -9,10 +9,10 @@ use App\Actions\Workspaces\SetupWorkspaceProgress;
 use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
-use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
+use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -47,6 +47,7 @@ final class WorkspaceSetupController implements Loggable
             'name' => ['nullable', 'string'],
             'app' => ['nullable', 'string'],
             'path' => ['nullable', 'string', 'starts_with:/'],
+            'caller_cwd' => ['nullable', 'string', 'starts_with:/'],
         ]);
 
         if ($validator->fails()) {
@@ -61,9 +62,12 @@ final class WorkspaceSetupController implements Loggable
         $name = $validated['name'] ?? null;
         $appName = $validated['app'] ?? null;
         $path = $validated['path'] ?? null;
+        $callerCwd = $validated['caller_cwd'] ?? null;
 
         try {
-            [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace($name, $appName, $path);
+            [$workspace, $app, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve($name, $appName, $path, $callerCwd, $caller);
+        } catch (WorkspaceSetupResolutionFailed $e) {
+            return $this->error($e->errorCode, $e->getMessage(), $e->meta, 422);
         } catch (\RuntimeException $e) {
             $field = $this->resolveErrorField($e->getMessage());
             $code = $this->resolveErrorCode($e->getMessage(), $field);
@@ -133,6 +137,7 @@ final class WorkspaceSetupController implements Loggable
             'name' => ['nullable', 'string'],
             'app' => ['nullable', 'string'],
             'path' => ['nullable', 'string', 'starts_with:/'],
+            'caller_cwd' => ['nullable', 'string', 'starts_with:/'],
         ]);
 
         if ($validator->fails()) {
@@ -147,9 +152,12 @@ final class WorkspaceSetupController implements Loggable
         $name = $validated['name'] ?? null;
         $appName = $validated['app'] ?? null;
         $path = $validated['path'] ?? null;
+        $callerCwd = $validated['caller_cwd'] ?? null;
 
         try {
-            [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace($name, $appName, $path);
+            [$workspace, $app, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve($name, $appName, $path, $callerCwd, $caller);
+        } catch (WorkspaceSetupResolutionFailed $e) {
+            return $this->error($e->errorCode, $e->getMessage(), $e->meta, 422);
         } catch (\RuntimeException $e) {
             $field = $this->resolveErrorField($e->getMessage());
             $code = $this->resolveErrorCode($e->getMessage(), $field);
@@ -200,82 +208,6 @@ final class WorkspaceSetupController implements Loggable
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
-    /**
-     * @return array{Workspace, App, Node, bool}
-     *
-     * @throws \RuntimeException
-     */
-    private function resolveWorkspace(?string $name, ?string $appName, ?string $path): array
-    {
-        if ($path !== null) {
-            return $this->resolveByPath($path, $appName);
-        }
-
-        if ($name !== null) {
-            return $this->resolveByName($name, $appName);
-        }
-
-        throw new \RuntimeException('Workspace name or path is required.');
-    }
-
-    /**
-     * @return array{Workspace, App, Node, bool}
-     *
-     * @throws \RuntimeException
-     */
-    private function resolveByPath(string $path, ?string $appName): array
-    {
-        $app = $this->resolveApp($appName);
-
-        if (! $app instanceof App) {
-            throw new \RuntimeException('App not found. Pass --app=<name> explicitly.');
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            throw new \RuntimeException("Node not found for app '{$app->name}'.");
-        }
-
-        $workspaceName = basename($path);
-
-        $existing = Workspace::query()
-            ->with('app.node')
-            ->where('app_id', $app->id)
-            ->where('name', $workspaceName)
-            ->first();
-
-        if (! $this->pathAllowedForWorkspace($app, $path, $existing)) {
-            throw new \RuntimeException("Path {$path} is outside the parent app workspace policy.");
-        }
-
-        if ($existing instanceof Workspace) {
-            $existing->update(['path' => $path]);
-
-            return [$existing, $app, $node, false];
-        }
-
-        $workspace = Workspace::create([
-            'app_id' => $app->id,
-            'name' => $workspaceName,
-            'path' => $path,
-            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
-        ]);
-
-        return [$workspace, $app, $node, true];
-    }
-
-    private function pathAllowedForWorkspace(App $app, string $path, ?Workspace $workspace): bool
-    {
-        if ($workspace instanceof Workspace && $workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
-            return true;
-        }
-
-        $appPath = rtrim($app->path, '/');
-
-        return str_starts_with($path, "{$appPath}/.worktrees/");
-    }
-
     private function resolveErrorField(string $message): string
     {
         if (str_contains($message, 'App')) {
@@ -296,54 +228,6 @@ final class WorkspaceSetupController implements Loggable
         }
 
         return $field === 'app' ? 'validation_failed' : 'workspace.not_found';
-    }
-
-    /**
-     * @return array{Workspace, App, Node, bool}
-     *
-     * @throws \RuntimeException
-     */
-    private function resolveByName(string $name, ?string $appName): array
-    {
-        $query = Workspace::query()
-            ->with(['app.node'])
-            ->where('name', $name);
-
-        if ($appName !== null) {
-            $query->whereHas('app', fn ($q) => $q->where('name', $appName));
-        }
-
-        $workspace = $query->first();
-
-        if (! $workspace instanceof Workspace) {
-            throw new \RuntimeException("Workspace '{$name}' not found.");
-        }
-
-        $app = $workspace->app;
-
-        if (! $app instanceof App) {
-            throw new \RuntimeException("App not found for workspace '{$name}'.");
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            throw new \RuntimeException("Node not found for workspace '{$name}'.");
-        }
-
-        return [$workspace, $app, $node, false];
-    }
-
-    private function resolveApp(?string $appName): ?App
-    {
-        if ($appName === null) {
-            return null;
-        }
-
-        return App::query()
-            ->with('node')
-            ->where('name', $appName)
-            ->first();
     }
 
     private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse
