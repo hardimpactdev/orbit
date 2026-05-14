@@ -109,13 +109,12 @@ final class RemoteProgressRenderer
 
     private function progressStep(int $index, string $key, string $message): void
     {
+        $this->stopSpinnerProcess();
         $this->activeMessage = $message;
 
         if ($this->activeKey !== $key) {
-            $this->stopSpinnerProcess();
             $this->activeKey = $key;
             $this->frame = 0;
-            $this->startSpinnerProcess();
         }
 
         $step = $this->steps[$index];
@@ -125,6 +124,7 @@ final class RemoteProgressRenderer
             $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth, $message),
         );
         $this->frame++;
+        $this->startSpinnerProcess();
     }
 
     public function finish(string $footer, bool $success = true): void
