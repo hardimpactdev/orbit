@@ -6,8 +6,6 @@ namespace App\Console\Commands;
 
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Actions\Workspaces\SetupWorkspaceProgress;
-use App\Concerns\WithSpinner;
-use App\Concerns\WithStepTree;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -19,6 +17,7 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use App\Support\Cli\RemoteProgressRenderer;
+use App\Support\Cli\RemoteProgressReporter;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -33,9 +32,6 @@ use Throwable;
 #[Description('Converge a workspace to a ready-to-develop-in state')]
 class WorkspaceSetupCommand extends Command
 {
-    use WithSpinner;
-    use WithStepTree;
-
     public function handle(
         SetupWorkspace $setupWorkspace,
         SetupWorkspaceProgress $setupProgress,
@@ -62,6 +58,10 @@ class WorkspaceSetupCommand extends Command
 
     private function runLocally(SetupWorkspace $setupWorkspace, SetupWorkspaceProgress $setupProgress): int
     {
+        if (! $this->wantsJson()) {
+            return $this->runLocallyForHuman($setupProgress);
+        }
+
         try {
             [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace();
         } catch (WorkspaceSetupResolutionFailed $e) {
@@ -76,10 +76,6 @@ class WorkspaceSetupCommand extends Command
                 message: $e->getMessage(),
                 meta: $this->resolveErrorMeta($e->getMessage()),
             );
-        }
-
-        if (! $this->wantsJson()) {
-            return $this->runLocallyForHuman($setupProgress, $workspace, $app, $node, $isAdoption);
         }
 
         try {
@@ -100,18 +96,37 @@ class WorkspaceSetupCommand extends Command
 
     private function runLocallyForHuman(
         SetupWorkspaceProgress $setupProgress,
-        Workspace $workspace,
-        App $app,
-        Node $node,
-        bool $isAdoption,
     ): int {
+        $reporter = new RemoteProgressReporter(new RemoteProgressRenderer($this->output));
+        $this->renderResolutionTree($reporter);
+
+        try {
+            [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace();
+        } catch (WorkspaceSetupResolutionFailed $e) {
+            $reporter->stepFail('resolve_workspace_identity', $e->getMessage());
+            $reporter->finish('Failed to set up workspace.', false);
+
+            return $this->failCommand(
+                code: $e->errorCode,
+                message: $e->getMessage(),
+                meta: $e->meta,
+            );
+        } catch (RuntimeException $e) {
+            $reporter->stepFail('resolve_workspace_identity', $e->getMessage());
+            $reporter->finish('Failed to set up workspace.', false);
+
+            return $this->failCommand(
+                code: $this->resolveErrorCode($e->getMessage()),
+                message: $e->getMessage(),
+                meta: $this->resolveErrorMeta($e->getMessage()),
+            );
+        }
+
+        $reporter->stepDone('resolve_workspace_identity', $workspace->name);
+
         $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
-        $exitCode = $this->runStepTree(
-            $plan->title(),
-            $plan->steps(),
-            doneFooter: $plan->doneFooter(),
-            failFooter: $plan->failFooter(),
-        );
+        $exitCode = $plan->runForReporter($reporter);
+        $reporter->finish($exitCode === self::SUCCESS ? $plan->doneFooter() : $plan->failFooter(), $exitCode === self::SUCCESS);
 
         if ($exitCode !== self::SUCCESS) {
             $failure = $plan->failure();
@@ -184,12 +199,21 @@ class WorkspaceSetupCommand extends Command
         ?string $callerCwd,
     ): int {
         $renderer = new RemoteProgressRenderer($this->output);
+        $reporter = new RemoteProgressReporter($renderer);
         $completeData = [];
         $errorData = [];
         $footer = 'Done';
+        $resolved = false;
 
-        $result = $setupStream->run($name, $app, $path, $callerCwd, function (string $event, array $payload) use ($renderer, &$completeData, &$errorData, &$footer): void {
+        $this->renderResolutionTree($reporter);
+
+        $result = $setupStream->run($name, $app, $path, $callerCwd, function (string $event, array $payload) use ($renderer, $reporter, &$completeData, &$errorData, &$footer, &$resolved): void {
             if ($event === 'tree') {
+                if (! $resolved) {
+                    $reporter->stepDone('resolve_workspace_identity', 'ready');
+                    $resolved = true;
+                }
+
                 $title = is_string($payload['title'] ?? null) ? $payload['title'] : '';
                 $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
                 $renderer->tree($title, $steps);
@@ -227,6 +251,11 @@ class WorkspaceSetupCommand extends Command
         });
 
         if ($result instanceof GatewayApiException) {
+            if (! $resolved) {
+                $reporter->stepFail('resolve_workspace_identity', $result->getMessage());
+                $reporter->finish('Failed to set up workspace.', false);
+            }
+
             return $this->failCommand(
                 code: $result->errorCode() ?? 'gateway_unavailable',
                 message: $result->getMessage() !== ''
@@ -234,6 +263,12 @@ class WorkspaceSetupCommand extends Command
                     : 'Gateway connection is required to set up a workspace.',
                 meta: $result->errorMeta(),
             );
+        }
+
+        if (! $resolved && $errorData !== []) {
+            $message = is_string($errorData['message'] ?? null) ? $errorData['message'] : 'Workspace setup failed.';
+            $reporter->stepFail('resolve_workspace_identity', $message);
+            $resolved = true;
         }
 
         $renderer->finish($footer, $result === self::SUCCESS);
@@ -257,6 +292,18 @@ class WorkspaceSetupCommand extends Command
         }
 
         return $this->successCommand($resultData);
+    }
+
+    private function renderResolutionTree(RemoteProgressReporter $reporter): void
+    {
+        $reporter->tree('Setting Up Workspace', [
+            [
+                'key' => 'resolve_workspace_identity',
+                'label' => 'Resolve workspace identity',
+                'doneLabel' => 'Resolved workspace identity',
+            ],
+        ]);
+        $reporter->stepStart('resolve_workspace_identity');
     }
 
     /**

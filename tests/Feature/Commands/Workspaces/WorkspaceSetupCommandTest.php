@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Http\Gateway\Requests\Workspaces\SetupWorkspaceRequest;
 use App\Http\Gateway\WorkspaceSetupGatewayStreamClient;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -274,6 +276,42 @@ it('renders the documented progress tree and final tree state for human output',
         ->expectsOutputToContain('●  Checked workspace readiness')
         ->expectsOutputToContain("└  Workspace 'feature-tree' converged")
         ->expectsOutputToContain("Workspace 'feature-tree' is already converged on node 'app-1'. No changes were needed.")
+        ->assertSuccessful();
+});
+
+it('renders the active workspace setup step in the human progress tree', function (): void {
+    Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-steps',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-steps',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'composer install --no-interaction',
+        'timeout_seconds' => 1200,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 2,
+        'command' => 'npm ci',
+        'timeout_seconds' => 900,
+    ]);
+
+    app()->instance(RemoteShell::class, new WorkspaceSetupTestShell);
+
+    $this->artisan('workspace:setup', [
+        'name' => 'feature-steps',
+        '--app' => 'demo',
+    ])
+        ->expectsOutputToContain('Running setup step 1/2: composer install --no-interaction')
+        ->expectsOutputToContain('Running setup step 2/2: npm ci')
+        ->expectsOutputToContain('●  Ran workspace setup steps')
         ->assertSuccessful();
 });
 
