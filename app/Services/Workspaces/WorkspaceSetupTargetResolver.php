@@ -154,14 +154,19 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function pathOwnership(string $cwd): array
     {
-        $workspace = Workspace::query()
+        $workspaces = Workspace::query()
             ->with('app.node')
             ->get()
-            ->sortByDesc(fn (Workspace $workspace): int => strlen($this->normalizePath($workspace->path)))
-            ->first(fn (Workspace $workspace): bool => $this->pathMatches($this->normalizePath($workspace->path), $cwd));
+            ->sortByDesc(fn (Workspace $workspace): int => strlen($this->normalizePath($workspace->path)));
 
-        if ($workspace instanceof Workspace) {
-            return ['type' => 'workspace', 'workspace' => $workspace];
+        foreach ($workspaces as $workspace) {
+            if (! $this->pathMatches($this->normalizePath($workspace->path), $cwd)) {
+                continue;
+            }
+
+            if ($this->adapterConfirmsRegisteredWorkspace($workspace, $cwd)) {
+                return ['type' => 'workspace', 'workspace' => $workspace];
+            }
         }
 
         $app = App::query()
@@ -177,6 +182,48 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         return ['type' => 'unregistered'];
+    }
+
+    private function adapterConfirmsRegisteredWorkspace(Workspace $workspace, string $cwd): bool
+    {
+        if ($workspace->agent_ide === null || $workspace->agent_ide === 'none') {
+            return true;
+        }
+
+        $app = $workspace->app;
+
+        if (! $app instanceof App) {
+            return false;
+        }
+
+        try {
+            $resolution = $this->pathResolver->resolve($workspace->agent_ide, $app, $cwd);
+        } catch (Throwable $exception) {
+            throw new WorkspaceSetupResolutionFailed(
+                'workspace.agent_ide_path_resolution_failed',
+                "The '{$workspace->agent_ide}' adapter could not resolve the current directory to a managed workspace.",
+                [
+                    'adapter' => $workspace->agent_ide,
+                    'path' => $cwd,
+                    'reason' => $exception->getMessage() !== '' ? $exception->getMessage() : 'adapter_unreachable',
+                ],
+            );
+        }
+
+        if (! $resolution instanceof WorkspacePathResolution) {
+            return false;
+        }
+
+        if ($resolution->appSlug !== $app->name || $resolution->workspaceName !== $workspace->name) {
+            return false;
+        }
+
+        if ($this->normalizePath($resolution->path) !== $this->normalizePath($workspace->path)) {
+            return false;
+        }
+
+        return $workspace->agent_ide_workspace_id === null
+            || $workspace->agent_ide_workspace_id === $resolution->adapterWorkspaceId;
     }
 
     /**

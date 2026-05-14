@@ -78,6 +78,51 @@ it('uses a registered workspace path from cwd without probing adapters', functio
         ->and(WorkspaceSetupPathResolutionFakeResolver::$calls)->toBe([]);
 });
 
+it('ignores a stale adapter-owned registered workspace when the adapter resolves the path to another app', function (): void {
+    App::query()->whereIn('name', ['docs', 'api'])->update(['agent_ide_config' => ['adapter' => 'opencode']]);
+
+    Workspace::factory()->create([
+        'app_id' => App::query()->where('name', 'api')->value('id'),
+        'name' => 'stale-api-workspace',
+        'path' => '/tmp/orbit-stale-agent-workspace',
+        'agent_ide' => 'opencode',
+        'agent_ide_workspace_id' => 'stale-api-id',
+        'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+    ]);
+
+    WorkspaceSetupPathResolutionFakeResolver::$matches = [
+        'opencode:docs' => new WorkspacePathResolution(
+            workspaceName: 'feature-docs',
+            appSlug: 'docs',
+            path: '/tmp/orbit-stale-agent-workspace',
+            adapterWorkspaceId: 'fresh-docs-id',
+        ),
+    ];
+
+    $previousCwd = getcwd();
+    workspaceSetupPathResolutionEnsureDirectory('/tmp/orbit-stale-agent-workspace');
+    chdir('/tmp/orbit-stale-agent-workspace');
+
+    try {
+        $exitCode = Artisan::call('workspace:setup', ['--json' => true]);
+    } finally {
+        chdir((string) $previousCwd);
+    }
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $workspace = Workspace::query()->where('name', 'feature-docs')->first();
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['app'])->toBe('docs')
+        ->and($payload['success']['data']['workspace'])->toBe('feature-docs')
+        ->and($workspace)->not->toBeNull()
+        ->and($workspace->agent_ide_workspace_id)->toBe('fresh-docs-id')
+        ->and(WorkspaceSetupPathResolutionFakeResolver::$calls)->toContain(
+            ['adapter' => 'opencode', 'app' => 'api', 'path' => workspaceSetupPathResolutionRealPath('/tmp/orbit-stale-agent-workspace')],
+            ['adapter' => 'opencode', 'app' => 'docs', 'path' => workspaceSetupPathResolutionRealPath('/tmp/orbit-stale-agent-workspace')],
+        );
+});
+
 it('fails before side effects when cwd is an app root', function (): void {
     $previousCwd = getcwd();
     workspaceSetupPathResolutionEnsureDirectory('/tmp/orbit-app-root');
@@ -273,6 +318,8 @@ final class WorkspaceSetupPathResolutionFakeResolver implements AgentIdeWorkspac
             throw new RuntimeException(self::$failures[$adapter]);
         }
 
-        return self::$matches[$adapter] ?? null;
+        return self::$matches["{$adapter}:{$app->name}"]
+            ?? self::$matches[$adapter]
+            ?? null;
     }
 }

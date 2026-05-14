@@ -34,7 +34,10 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         }
 
         $result = $this->remoteShell->run($app->node, $this->openCodeScript(), [
-            'env' => ['ORBIT_WORKSPACE_PATH' => $absolutePath],
+            'env' => [
+                'ORBIT_WORKSPACE_PATH' => $absolutePath,
+                'ORBIT_APP_PATH' => $app->path,
+            ],
             'timeout' => 30,
         ]);
 
@@ -65,7 +68,10 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         }
 
         $result = $this->remoteShell->run($app->node, $this->polyscopeScript(), [
-            'env' => ['ORBIT_WORKSPACE_PATH' => $absolutePath],
+            'env' => [
+                'ORBIT_WORKSPACE_PATH' => $absolutePath,
+                'ORBIT_APP_PATH' => $app->path,
+            ],
             'timeout' => 30,
         ]);
 
@@ -93,18 +99,30 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
 python3 - <<'PY'
 import json, os, pathlib, sqlite3, sys
 path = os.environ.get("ORBIT_WORKSPACE_PATH", "").rstrip("/")
+app_path = os.environ.get("ORBIT_APP_PATH", "").rstrip("/")
 db = pathlib.Path.home() / ".local/share/opencode/opencode.db"
 if not path:
     print("path_missing", file=sys.stderr); sys.exit(2)
+if not app_path:
+    print("app_path_missing", file=sys.stderr); sys.exit(2)
 if not db.exists():
     print(json.dumps({"match": False})); sys.exit(0)
 conn = sqlite3.connect(db)
 try:
-    rows = conn.execute("select id, name, branch, directory from workspace").fetchall()
+    rows = conn.execute("""
+        select workspace.id, workspace.name, workspace.branch, workspace.directory, project.worktree
+        from workspace
+        left join project on project.id = workspace.project_id
+    """).fetchall()
 finally:
     conn.close()
-for row_id, name, branch, directory in rows:
-    if isinstance(directory, str) and path == directory.rstrip("/"):
+for row_id, name, branch, directory, project_path in rows:
+    if (
+        isinstance(directory, str)
+        and isinstance(project_path, str)
+        and path == directory.rstrip("/")
+        and app_path == project_path.rstrip("/")
+    ):
         print(json.dumps({
             "match": True,
             "workspace_name": branch or name,
@@ -123,20 +141,32 @@ SH;
 python3 - <<'PY'
 import json, os, pathlib, sqlite3, sys
 path = os.environ.get("ORBIT_WORKSPACE_PATH", "").rstrip("/")
+app_path = os.environ.get("ORBIT_APP_PATH", "").rstrip("/")
 db = pathlib.Path.home() / ".polyscope/polyscope.db"
 if not path:
     print("path_missing", file=sys.stderr); sys.exit(2)
+if not app_path:
+    print("app_path_missing", file=sys.stderr); sys.exit(2)
 if not db.exists():
     print(json.dumps({"match": False})); sys.exit(0)
 conn = sqlite3.connect(db)
 try:
-    rows = conn.execute("select id, branch, path from worktrees").fetchall()
+    rows = conn.execute("""
+        select worktrees.id, worktrees.branch, worktrees.path, repositories.path
+        from worktrees
+        left join repositories on repositories.id = worktrees.repo_id
+    """).fetchall()
 except sqlite3.Error:
-    rows = conn.execute("select id, branch, path from workspaces").fetchall()
+    rows = conn.execute("select id, branch, path, null from workspaces").fetchall()
 finally:
     conn.close()
-for row_id, branch, workspace_path in rows:
-    if isinstance(workspace_path, str) and path == workspace_path.rstrip("/"):
+for row_id, branch, workspace_path, repository_path in rows:
+    if (
+        isinstance(workspace_path, str)
+        and isinstance(repository_path, str)
+        and path == workspace_path.rstrip("/")
+        and app_path == repository_path.rstrip("/")
+    ):
         print(json.dumps({
             "match": True,
             "workspace_name": branch,
