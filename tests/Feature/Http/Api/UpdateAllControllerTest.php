@@ -3,9 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
@@ -169,6 +172,86 @@ it('updates app nodes in parallel after gateway checkout succeeds', function ():
     }
 });
 
+it('starts app node updates concurrently in the streamed gateway path without pcntl workers', function (): void {
+    Node::factory()->create([
+        'name' => 'beast',
+        'role' => 'app',
+        'host' => 'beast',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+    ]);
+    Node::factory()->create([
+        'name' => 'main1',
+        'role' => 'app',
+        'host' => 'main1',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-stream-async-');
+
+    if ($logPath === false) {
+        $this->fail('Could not create update stream timing log.');
+    }
+
+    try {
+        app()->instance(RemoteShell::class, new UpdateAllControllerAsyncOnlyRemoteShell($logPath));
+
+        $response = $this->call(
+            'POST',
+            '/api/update/all',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            ],
+        );
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+
+        expect($content)->toContain('event: complete');
+
+        $lines = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect($lines)->toBeArray();
+
+        $events = array_map(
+            fn (string $line): array => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+            $lines,
+        );
+
+        $pullStarts = array_values(array_filter(
+            $events,
+            fn (array $event): bool => ($event['script'] ?? null) === 'git pull --ff-only',
+        ));
+        $firstInstallIndex = array_find_key(
+            $events,
+            fn (array $event): bool => str_contains((string) ($event['script'] ?? ''), 'install --no-interaction'),
+        );
+
+        expect(array_column($pullStarts, 'node'))->toBe(['beast', 'main1']);
+        expect($firstInstallIndex)->not->toBeNull();
+
+        $mainPullIndex = array_find_key(
+            $events,
+            fn (array $event): bool => ($event['node'] ?? null) === 'main1'
+                && ($event['script'] ?? null) === 'git pull --ff-only',
+        );
+
+        expect($mainPullIndex)->not->toBeNull();
+        expect($mainPullIndex)->toBeLessThan($firstInstallIndex);
+    } finally {
+        @unlink($logPath);
+    }
+});
+
 it('excludes control nodes from remote updates', function (): void {
     Node::factory()->create([
         'name' => 'mini',
@@ -326,6 +409,35 @@ final readonly class UpdateAllControllerTimedRemoteShell implements RemoteShell
             stdout: '',
             stderr: '',
             durationMs: (int) (($endedAt - $startedAt) / 1_000_000),
+        );
+    }
+}
+
+final readonly class UpdateAllControllerAsyncOnlyRemoteShell implements RemoteShell, StartsRemoteShellProcesses
+{
+    public function __construct(
+        private string $logPath,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        throw new RuntimeException('Synchronous remote shell should not be used for streamed app-node updates.');
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        file_put_contents(
+            $this->logPath,
+            json_encode([
+                'node' => $node->name,
+                'script' => $script,
+            ], JSON_THROW_ON_ERROR).PHP_EOL,
+            FILE_APPEND | LOCK_EX,
+        );
+
+        return new FakeInvokedProcess(
+            $script,
+            Process::describe()->iterations($script === 'git pull --ff-only' ? 3 : 0)->exitCode(0),
         );
     }
 }

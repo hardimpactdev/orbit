@@ -6,21 +6,31 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
+use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\OrbitUpdater;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class UpdateAllController implements Loggable
 {
     private const int REMOTE_UPDATE_CONCURRENCY = 4;
+
+    private const array REMOTE_UPDATE_STAGES = [
+        'pulling_source',
+        'installing_dependencies',
+        'running_migrations',
+    ];
 
     private ?Node $activitySubject = null;
 
@@ -269,11 +279,210 @@ final class UpdateAllController implements Loggable
             return [];
         }
 
+        $remoteShell = app(RemoteShell::class);
+
+        if ($remoteShell instanceof StartsRemoteShellProcesses) {
+            return $this->updateRemoteTargetsWithProcesses($updater, $nodes, $reporter, $remoteShell);
+        }
+
         if (! $this->canRunRemoteUpdateWorkers()) {
             return $this->updateRemoteTargetsSequentially($updater, $nodes, $reporter);
         }
 
         return $this->updateRemoteTargetsConcurrently($updater, $nodes, $reporter);
+    }
+
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return list<array<string, mixed>>
+     */
+    private function updateRemoteTargetsWithProcesses(
+        OrbitUpdater $updater,
+        Collection $nodes,
+        ?ProgressReporter $reporter,
+        StartsRemoteShellProcesses $remoteShell,
+    ): array {
+        $nodeList = array_values($nodes->all());
+        $workers = [];
+        $updatesByIndex = [];
+        $nextIndex = 0;
+
+        while ($nextIndex < count($nodeList) || $workers !== []) {
+            while (count($workers) < self::REMOTE_UPDATE_CONCURRENCY && $nextIndex < count($nodeList)) {
+                $node = $nodeList[$nextIndex];
+                $worker = $this->startRemoteUpdateProcessWorker($updater, $remoteShell, $node, $nextIndex, 0, $reporter, $updatesByIndex);
+
+                if ($worker !== null) {
+                    $workers[$nextIndex] = $worker;
+                }
+
+                $nextIndex++;
+            }
+
+            foreach (array_keys($workers) as $index) {
+                /** @var array{node: Node, process: InvokedProcess, stage_index: int, started_at: int} $worker */
+                $worker = $workers[$index];
+                $process = $worker['process'];
+
+                try {
+                    if (method_exists($process, 'ensureNotTimedOut')) {
+                        $process->ensureNotTimedOut();
+                    }
+
+                    $running = $process->running();
+                } catch (ProcessTimedOutException $e) {
+                    $this->markRemoteProcessFailure($worker['node'], $index, $reporter, $updatesByIndex, $this->remoteProcessResultFromTimeout($e, $worker['started_at']));
+                    unset($workers[$index]);
+
+                    continue;
+                }
+
+                if ($running) {
+                    continue;
+                }
+
+                $result = $this->remoteProcessResult($process, $worker['started_at']);
+
+                if (! $result->successful()) {
+                    $this->markRemoteProcessFailure($worker['node'], $index, $reporter, $updatesByIndex, $result);
+                    unset($workers[$index]);
+
+                    continue;
+                }
+
+                $nextStageIndex = $worker['stage_index'] + 1;
+
+                if (! isset(self::REMOTE_UPDATE_STAGES[$nextStageIndex])) {
+                    $reporter?->stepDone($worker['node']->name, $this->stageMessage('done', $worker['node']->name));
+                    $updatesByIndex[$index] = [
+                        'target' => $worker['node']->name,
+                        'node' => $worker['node']->name,
+                        'role' => $worker['node']->role,
+                        'status' => 'completed',
+                    ];
+                    unset($workers[$index]);
+
+                    continue;
+                }
+
+                $replacement = $this->startRemoteUpdateProcessWorker(
+                    $updater,
+                    $remoteShell,
+                    $worker['node'],
+                    $index,
+                    $nextStageIndex,
+                    $reporter,
+                    $updatesByIndex,
+                );
+
+                if ($replacement === null) {
+                    unset($workers[$index]);
+
+                    continue;
+                }
+
+                $workers[$index] = $replacement;
+            }
+
+            if ($workers !== []) {
+                usleep(50_000);
+            }
+        }
+
+        ksort($updatesByIndex);
+
+        return array_values($updatesByIndex);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $updatesByIndex
+     * @return array{node: Node, process: InvokedProcess, stage_index: int, started_at: int}|null
+     */
+    private function startRemoteUpdateProcessWorker(
+        OrbitUpdater $updater,
+        StartsRemoteShellProcesses $remoteShell,
+        Node $node,
+        int $index,
+        int $stageIndex,
+        ?ProgressReporter $reporter,
+        array &$updatesByIndex,
+    ): ?array {
+        $stage = self::REMOTE_UPDATE_STAGES[$stageIndex];
+        $reporter?->stepProgress($node->name, $stage, $this->stageMessage($stage, $node->name));
+        $startedAt = hrtime(true);
+
+        try {
+            $process = $remoteShell->start($node, $updater->remoteStageScript($stage), [
+                'cwd' => $node->orbit_path,
+                'timeout' => $updater->remoteStageTimeout($stage),
+            ]);
+        } catch (\Throwable $e) {
+            $output = $e->getMessage() !== '' ? $e->getMessage() : 'Failed to start remote update process.';
+            $reporter?->stepFail($node->name, $output);
+            $updatesByIndex[$index] = [
+                'target' => $node->name,
+                'node' => $node->name,
+                'role' => $node->role,
+                'status' => 'failed',
+                'output' => $output,
+            ];
+
+            return null;
+        }
+
+        return [
+            'node' => $node,
+            'process' => $process,
+            'stage_index' => $stageIndex,
+            'started_at' => $startedAt,
+        ];
+    }
+
+    private function remoteProcessResult(InvokedProcess $process, int $startedAt): RemoteShellResult
+    {
+        try {
+            $result = $process->wait();
+        } catch (ProcessTimedOutException $e) {
+            return $this->remoteProcessResultFromTimeout($e, $startedAt);
+        }
+
+        return new RemoteShellResult(
+            exitCode: $result->exitCode() ?? 1,
+            stdout: $result->output(),
+            stderr: $result->errorOutput(),
+            durationMs: (int) ((hrtime(true) - $startedAt) / 1_000_000),
+        );
+    }
+
+    private function remoteProcessResultFromTimeout(ProcessTimedOutException $e, int $startedAt): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: $e->result->exitCode() ?? 1,
+            stdout: $e->result->output(),
+            stderr: $e->result->errorOutput(),
+            durationMs: (int) ((hrtime(true) - $startedAt) / 1_000_000),
+        );
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $updatesByIndex
+     */
+    private function markRemoteProcessFailure(
+        Node $node,
+        int $index,
+        ?ProgressReporter $reporter,
+        array &$updatesByIndex,
+        RemoteShellResult $result,
+    ): void {
+        $output = trim($result->errorOutput() ?: $result->output());
+        $reporter?->stepFail($node->name, $output !== '' ? $output : 'Failed');
+        $updatesByIndex[$index] = [
+            'target' => $node->name,
+            'node' => $node->name,
+            'role' => $node->role,
+            'status' => 'failed',
+            'output' => $output,
+        ];
     }
 
     private function canRunRemoteUpdateWorkers(): bool

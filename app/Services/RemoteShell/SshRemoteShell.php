@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services\RemoteShell;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
 
-final readonly class SshRemoteShell implements RemoteShell
+final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellProcesses
 {
     private const int DEFAULT_TIMEOUT = 120;
 
@@ -54,6 +56,29 @@ final readonly class SshRemoteShell implements RemoteShell
         }
 
         return $result;
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     env?: array<string, string>,
+     *     strict?: bool,
+     * }  $options
+     */
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        $pendingProcess = Process::timeout((int) ($options['timeout'] ?? self::DEFAULT_TIMEOUT));
+
+        if (array_key_exists('input', $options)) {
+            $pendingProcess = $pendingProcess->input((string) $options['input']);
+        }
+
+        return $pendingProcess->start(
+            $this->command($node, $this->composeScript($script, $options)),
+        );
     }
 
     /**

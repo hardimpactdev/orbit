@@ -184,6 +184,74 @@ it('streams gateway progress for control callers', function (): void {
         ->assertSuccessful();
 });
 
+it('updates the control-local checkout while the gateway update is still running', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    DB::table('nodes')->delete();
+    DB::table('nodes')->insert([
+        [
+            'name' => 'NMBP',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'orbit_path' => '/Users/nckrtl/orbit',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+
+    $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-local-gateway-');
+
+    if ($logPath === false) {
+        $this->fail('Could not create local and gateway timing log.');
+    }
+
+    try {
+        Process::fake(function ($process) use ($logPath) {
+            $command = is_array($process->command)
+                ? implode(' ', $process->command)
+                : (string) $process->command;
+
+            if ($command === 'git pull --ff-only') {
+                file_put_contents($logPath, json_encode(['event' => 'local_pull_started'], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND | LOCK_EX);
+            }
+
+            return Process::result(output: '', errorOutput: '', exitCode: 0);
+        });
+        Process::preventStrayProcesses();
+
+        app()->instance(UpdateAllGatewayStream::class, new UpdateAllHumanSlowGatewayStream($logPath));
+
+        $this->artisan('update:all')
+            ->expectsOutputToContain('local   Pulling source')
+            ->expectsOutputToContain('gateway Pulling source')
+            ->assertSuccessful();
+
+        $lines = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect($lines)->toBeArray();
+
+        $events = array_map(
+            fn (string $line): array => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+            $lines,
+        );
+
+        $localStartedAt = array_find_key($events, fn (array $event): bool => ($event['event'] ?? null) === 'local_pull_started');
+        $gatewayDoneAt = array_find_key($events, fn (array $event): bool => ($event['event'] ?? null) === 'gateway_done');
+
+        expect($localStartedAt)->not->toBeNull();
+        expect($gatewayDoneAt)->not->toBeNull();
+        expect($localStartedAt)->toBeLessThan($gatewayDoneAt);
+    } finally {
+        @unlink($logPath);
+    }
+});
+
 it('renders failed local checkout prose', function (): void {
     Process::fake([
         'git pull --ff-only' => Process::result(
@@ -275,12 +343,12 @@ it('excludes control nodes from human output', function (): void {
     expect(str_contains($output, 'mini'))->toBeFalse();
 });
 
-final class UpdateAllHumanRemoteShell implements RemoteShell
+final readonly class UpdateAllHumanRemoteShell implements RemoteShell
 {
     public function __construct(
-        private readonly int $exitCode = 0,
-        private readonly string $stderr = '',
-        private readonly int $delayMicroseconds = 0,
+        private int $exitCode = 0,
+        private string $stderr = '',
+        private int $delayMicroseconds = 0,
     ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
@@ -320,6 +388,61 @@ final class UpdateAllHumanGatewayStream implements UpdateAllGatewayStream
         $onEvent('step', ['key' => 'beast', 'status' => 'pulling_source', 'message' => 'Pulling source - beast']);
         $onEvent('step', ['key' => 'beast', 'status' => 'installing_dependencies', 'message' => 'Installing dependencies - beast']);
         $onEvent('step', ['key' => 'beast', 'status' => 'running_migrations', 'message' => 'Running migrations - beast']);
+        $onEvent('step', ['key' => 'beast', 'status' => 'done', 'message' => 'Done - beast']);
+        $onEvent('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'updates' => [
+                    [
+                        'target' => 'gateway',
+                        'node' => 'gateway',
+                        'role' => 'gateway',
+                        'status' => 'completed',
+                    ],
+                    [
+                        'target' => 'beast',
+                        'node' => 'beast',
+                        'role' => 'app',
+                        'status' => 'completed',
+                    ],
+                ],
+                'summary' => [
+                    'total' => 2,
+                    'completed' => 2,
+                    'failed' => 0,
+                ],
+            ],
+        ]);
+
+        return 0;
+    }
+}
+
+final readonly class UpdateAllHumanSlowGatewayStream implements UpdateAllGatewayStream
+{
+    public function __construct(
+        private string $logPath,
+    ) {}
+
+    public function run(callable $onEvent): int|GatewayApiException
+    {
+        $onEvent('tree', [
+            'title' => 'Updating Orbit nodes',
+            'steps' => [
+                ['key' => 'gateway', 'label' => 'Pulling source - gateway'],
+                ['key' => 'beast', 'label' => 'Pulling source - beast'],
+            ],
+        ]);
+
+        file_put_contents($this->logPath, json_encode(['event' => 'gateway_pull_started'], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND | LOCK_EX);
+        $onEvent('step', ['key' => 'gateway', 'status' => 'pulling_source', 'message' => 'Pulling source - gateway']);
+        usleep(400_000);
+        $onEvent('step', ['key' => 'gateway', 'status' => 'installing_dependencies', 'message' => 'Installing dependencies - gateway']);
+        $onEvent('step', ['key' => 'gateway', 'status' => 'running_migrations', 'message' => 'Running migrations - gateway']);
+        $onEvent('step', ['key' => 'gateway', 'status' => 'done', 'message' => 'Done - gateway']);
+        file_put_contents($this->logPath, json_encode(['event' => 'gateway_done'], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND | LOCK_EX);
+
+        $onEvent('step', ['key' => 'beast', 'status' => 'pulling_source', 'message' => 'Pulling source - beast']);
         $onEvent('step', ['key' => 'beast', 'status' => 'done', 'message' => 'Done - beast']);
         $onEvent('complete', [
             'exit_code' => 0,

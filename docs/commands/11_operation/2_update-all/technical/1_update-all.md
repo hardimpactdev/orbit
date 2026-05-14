@@ -32,27 +32,33 @@ options are optional.
 ## Input Resolution
 
 1. Select the output renderer.
-2. Update the caller's local Orbit checkout.
-3. Call the gateway to authorize the fleet update and resolve selected non-local managed Orbit installations from active gateway node configuration.
-4. Start the fleet update sequence that the gateway drives. Remote app-node
+2. Call the gateway to authorize the fleet update and resolve selected non-local
+   managed Orbit installations from active gateway node configuration.
+3. Start the fleet update sequence. In the control human renderer, the
+   caller-local checkout and gateway-local checkout may update simultaneously.
+   In the JSON renderer, the caller-local checkout is updated before the
+   non-streaming gateway request is submitted.
+4. After the gateway-local checkout succeeds, selected remote app-node
    installations are updated with bounded parallelism, up to four targets at a
-   time, after the gateway-local update succeeds.
+   time.
 
-No input-mode-specific contracts are required. The command has no required
-fields and does not prompt.
+The command has no required fields and does not prompt. Renderer-specific
+execution details are limited to the concurrency notes above.
 
 ## Behavior Contract
 
 ### Fleet Selection Rules
 
 - Include the caller's local Orbit checkout.
-- Include active non-local managed Orbit installations from gateway node configuration, subject to the role exclusion below.
-- **Exclude every node whose role is `control`, regardless of caller.** Control nodes are operator workstations that update locally through [`orbit update`](../../1_update/update.md) on each workstation.
-- Never select a control node as a remote update target of `update:all`, even when gateway configuration records reachability metadata for it.
-- Exclude inactive, removed, or unknown node records.
-- Exclude the caller-local installation from the gateway-selected installation list. The local checkout is updated once through the local target.
-- Exclude nodes whose Orbit installation path is not known to gateway configuration.
-- Exclude app nodes whose gateway-owned `RemoteShell` transport metadata is not known. The gateway must have enough information to reach and update an app node before that node is selected.
+- Include active non-local managed Orbit installations from gateway node
+  configuration when the gateway has both an Orbit installation path and enough
+  `RemoteShell` transport metadata to reach the node.
+- **Exclude every node whose role is `control`, regardless of caller.** Control
+  nodes are operator workstations that update locally through
+  [`orbit update`](../../1_update/update.md) on each workstation.
+- Exclude inactive, removed, unknown, or caller-local node records from the
+  gateway-selected installation list. The local checkout is updated once through
+  the local target.
 - Apply gateway-owned authorization before updating any installation.
 
 The expected target shape per calling peer role:
@@ -70,6 +76,9 @@ The expected target shape per calling peer role:
   Control nodes do not SSH directly to the gateway, app nodes, or other control
   nodes as part of the command contract. The gateway does not SSH to control
   nodes as part of the command contract.
+- For control callers using the human renderer, update the caller-local checkout
+  and gateway-local checkout simultaneously when the runtime supports concurrent
+  local and gateway work.
 - After the gateway-local update succeeds, selected remote app-node
   installations are updated in parallel, up to four targets at a time. Each
   individual target still runs `Pulling source`, `Installing dependencies`, and
@@ -80,12 +89,17 @@ The expected target shape per calling peer role:
 
 ### Partial Failure Rules
 
-- If every selected installation updates successfully, exit `0`.
-- If one or more installations fail after any side effects begin, exit `1` and
-  report both successful and failed target results.
-- A local checkout failure stops the command before remote update execution.
-- A remote target failure must not hide successful updates on earlier or later
-  targets, and must not cancel unrelated in-flight remote updates.
+- If every selected installation updates successfully, exit `0`; if one or more
+  installations fail after side effects begin, exit `1` and report both
+  successful and failed target results.
+- In the JSON renderer, when the checkout on the caller fails, stop before
+  submitting the gateway request.
+- In the human renderer, when the checkout on the caller fails, stop before
+  accepting the gateway result as success, but do not cancel work that is
+  already in flight on the gateway checkout.
+- When update of the gateway checkout fails, do not start app-node execution.
+  When an app node fails, do not hide successful app-node updates and do not
+  cancel unrelated in-flight app-node updates.
 
 ### Scope Boundaries
 

@@ -99,6 +99,25 @@ class OrbitUpdater
         return $this->runRemote($node, 'php artisan migrate --force', 60);
     }
 
+    public function remoteStageScript(string $stage): string
+    {
+        return match ($stage) {
+            'pulling_source' => 'git pull --ff-only',
+            'installing_dependencies' => $this->composerInstallCommand(),
+            'running_migrations' => 'php artisan migrate --force',
+            default => throw new \InvalidArgumentException("Unknown remote update stage [{$stage}]."),
+        };
+    }
+
+    public function remoteStageTimeout(string $stage): int
+    {
+        return match ($stage) {
+            'pulling_source', 'running_migrations' => 60,
+            'installing_dependencies' => 120,
+            default => throw new \InvalidArgumentException("Unknown remote update stage [{$stage}]."),
+        };
+    }
+
     public function updateCommand(): string
     {
         return 'git pull --ff-only && ('.$this->composerInstallCommand().') && php artisan migrate --force';
