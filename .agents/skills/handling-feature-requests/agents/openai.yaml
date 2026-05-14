@@ -1,0 +1,4 @@
+interface:
+  display_name: "Handling Feature Requests"
+  short_description: "Turn feature requests into Solo-delegated Orbit work."
+  default_prompt: "Use this skill to triage a feature request, align the Orbit product contract, then delegate documentation and implementation through Solo."

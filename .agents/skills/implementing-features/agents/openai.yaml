@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementing Features"
+  short_description: "Implement scoped Orbit feature work."
+  default_prompt: "Use this skill to implement a scoped Orbit feature after documentation is aligned, with focused tests and verification."

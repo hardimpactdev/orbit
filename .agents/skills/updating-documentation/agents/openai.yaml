@@ -1,0 +1,4 @@
+interface:
+  display_name: "Updating Documentation"
+  short_description: "Update Orbit docs against the product contract."
+  default_prompt: "Use this skill to update Orbit documentation, align product contracts, and report changed files plus unresolved decisions."
