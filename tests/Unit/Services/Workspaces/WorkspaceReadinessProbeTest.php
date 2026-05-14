@@ -41,6 +41,20 @@ it('returns the last unhealthy readiness result after all attempts fail', functi
         ->and($attempts)->toBe(2);
 });
 
+it('keeps default readiness retries within the setup probe budget', function (): void {
+    $probe = new WorkspaceReadinessProbe(retryDelayMilliseconds: 0);
+    $attempts = 0;
+
+    $result = $probe->probeWith(function () use (&$attempts): array {
+        $attempts++;
+
+        return ['reachable' => false, 'status' => '500'];
+    });
+
+    expect($result)->toBe(['reachable' => false, 'status' => '500'])
+        ->and($attempts)->toBe(10);
+});
+
 it('does not retry non-transient workspace configuration failures', function (): void {
     $probe = new WorkspaceReadinessProbe(maxAttempts: 3, retryDelayMilliseconds: 0);
     $attempts = 0;

@@ -13,7 +13,7 @@ use Throwable;
 final readonly class WorkspaceReadinessProbe
 {
     public function __construct(
-        private int $maxAttempts = 30,
+        private int $maxAttempts = 10,
         private int $retryDelayMilliseconds = 1_000,
     ) {}
 
