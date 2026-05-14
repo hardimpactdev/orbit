@@ -57,7 +57,8 @@ Human output shows a per-node progress tree. Each node row moves through
 `Pulling source`, `Installing dependencies`, `Running migrations`, and `Done`;
 the caller-local and gateway rows may progress together, then remote app-node
 rows may progress together. On full success, the final tree footer reports the
-total updated node count.
+total updated node count. Rows for selected targets whose update has not started
+yet show `Waiting`.
 
 JSON output reports all per-installation results. When any target fails, the
 command returns a JSON error envelope with successful and failed target results

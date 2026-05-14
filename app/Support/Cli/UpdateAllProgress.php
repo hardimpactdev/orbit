@@ -172,7 +172,7 @@ final class UpdateAllProgress
 
         $this->order[] = $key;
         $this->rows[$key] = [
-            'stage' => 'pulling_source',
+            'stage' => 'waiting',
             'state' => self::STATE_PENDING,
             'message' => '',
         ];
@@ -272,7 +272,7 @@ final class UpdateAllProgress
 
     private function maxLabelWidth(): int
     {
-        $stages = ['Pulling source', 'Installing dependencies', 'Running migrations', 'Done', 'Failed'];
+        $stages = ['Waiting', 'Pulling source', 'Installing dependencies', 'Running migrations', 'Done', 'Failed'];
 
         return $this->targetWidth + 1 + max(array_map(mb_strlen(...), $stages));
     }
@@ -285,6 +285,7 @@ final class UpdateAllProgress
     private function stageName(string $stage): string
     {
         return match ($stage) {
+            'waiting' => 'Waiting',
             'start', 'pulling_source' => 'Pulling source',
             'installing_dependencies' => 'Installing dependencies',
             'running_migrations' => 'Running migrations',

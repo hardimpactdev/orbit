@@ -79,9 +79,11 @@ it('renders the full decorated tree immediately and alternates active frames', f
     expect($exitCode)->toBe(0);
     expect($plainBuffer)->toContain('┌  Updating Orbit nodes');
     expect($plainBuffer)->toContain('local Pulling source');
+    expect($plainBuffer)->toContain('beast Waiting');
     expect($plainBuffer)->toContain('beast Pulling source');
     expect($buffer)->toContain("\e[36m○\e[39m");
     expect($buffer)->toContain("\e[36m◉\e[39m");
+    expect($buffer)->toContain("\e[38;5;242m○  beast Waiting");
     expect($buffer)->toContain("\e[97mbeast Pulling source");
     expect($buffer)->toContain("\e[97mlocal Done");
     expect($buffer)->not->toContain("\e[38;5;242mlocal Done");
