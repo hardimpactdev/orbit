@@ -10,6 +10,7 @@ use OrbitDocsLinter\Rules\AppNodeWriteDenialRule;
 use OrbitDocsLinter\Rules\AppPhpVersionContractRule;
 use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
 use OrbitDocsLinter\Rules\BulletComplexityRule;
+use OrbitDocsLinter\Rules\CanonicalBehaviorBoundaryRule;
 use OrbitDocsLinter\Rules\CanonicalTechnicalContractRule;
 use OrbitDocsLinter\Rules\CommandContractComplexityRule;
 use OrbitDocsLinter\Rules\CommandDirectoryStructureRule;
@@ -269,6 +270,7 @@ final class CommandDocsLintCli
             new MarkdownLinkIntegrityRule,
             new ConceptIndexRule,
             new NonStateDomainHandoffRule,
+            new CanonicalBehaviorBoundaryRule,
             new CanonicalTechnicalContractRule,
             new ActivityLoggingContractRule,
             new BehaviorContractStructureRule,

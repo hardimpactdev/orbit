@@ -65,10 +65,8 @@ identity is authorized to see.
    node. Filters combine with AND semantics.
 3. **Sort results.** Workspaces are sorted by owning node name (ascending,
    case-insensitive), then by parent app name (ascending, case-insensitive), then
-   by workspace name (ascending, case-insensitive). Both renderers use this single
-   ordering: the human renderer displays it as tables grouped by app within node,
-   and the JSON renderer emits the same ordering as a flat array under
-   `success.data.workspaces`.
+   by workspace name (ascending, case-insensitive). Every output renderer uses
+   this single ordering.
 4. **Render output.** Return the filtered workspace list through the selected
    output renderer.
 

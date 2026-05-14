@@ -53,8 +53,8 @@ This command follows the shared
    - If `consuming_node == serving_node`, fail before side effects with a policy
      violation carrying `error.meta.reason = self_grant`.
    - If the requested relationship violates any other node access policy rule,
-     fail before side effects with `error.meta.reason = unspecified` until that
-     rule is named in the JSON renderer's `error.meta.reason` enum.
+     fail before side effects with an unspecified denial reason until that rule
+     is named in the renderer-specific reason enum.
 6. Send the typed request to the gateway over HTTPS through WireGuard. The
    gateway authenticates the caller's WireGuard identity and authorizes the
    request through gateway-owned access policy before any side effects.

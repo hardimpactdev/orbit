@@ -66,7 +66,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   context. Orbit does not apply global deployment retention outside the step
   that declares it.
 - Enforces the step timeout stored on the deploy-step definition.
-- Captures stdout, stderr, exit code, and timing for every executed step.
+- Captures stdout, stderr, process status, and timing for every executed step.
 - Stores the rendered command on each deployment run step so deploy logs show
   the script that actually executed for that run.
 - Stops at the first failed step and does not execute later steps.
@@ -79,7 +79,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   control.
 - Detached runs return after the run is durable and execution has been handed
   off to the gateway.
-- Detached human and JSON output do not stream step output.
+- Detached runs do not stream step output after handing execution to the gateway.
 - The gateway updates deployment history and latest deployment status when the
   detached run finishes.
 

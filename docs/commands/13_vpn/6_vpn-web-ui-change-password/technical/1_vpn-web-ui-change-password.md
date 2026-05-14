@@ -48,8 +48,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Invalidate existing backend admin sessions when supported by the backend.
 - Update the Orbit-managed credential storage on the gateway so later VPN
   commands can authenticate with the new password.
-- Never print the new password in human output, JSON output, progress output,
-  logs, or error metadata.
+- Never emit the new password in command output, progress output, logs, or error
+  metadata.
 
 ### Non-Goals
 

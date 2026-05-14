@@ -34,16 +34,14 @@ options are optional.
 1. Select the output renderer.
 2. Call the gateway to authorize the fleet update and resolve selected non-local
    managed Orbit installations from active gateway node configuration.
-3. Start the fleet update sequence. In the control human renderer, the
-   caller-local checkout and gateway-local checkout may update simultaneously.
-   In the JSON renderer, the caller-local checkout is updated before the
-   non-streaming gateway request is submitted.
+3. Start the fleet update sequence through the selected output renderer's
+   execution contract.
 4. After the gateway-local checkout succeeds, selected remote app-node
    installations are updated with bounded parallelism, up to four targets at a
    time.
 
 The command has no required fields and does not prompt. Renderer-specific
-execution details are limited to the concurrency notes above.
+execution details live in the renderer contracts.
 
 ## Behavior Contract
 
@@ -76,9 +74,8 @@ The expected target shape per calling peer role:
   Control nodes do not SSH directly to the gateway, app nodes, or other control
   nodes as part of the command contract. The gateway does not SSH to control
   nodes as part of the command contract.
-- For control callers using the human renderer, update the caller-local checkout
-  and gateway-local checkout simultaneously when the runtime supports concurrent
-  local and gateway work.
+- Update the caller-local checkout and gateway-local checkout as independent
+  selected targets when both are selected.
 - After the gateway-local update succeeds, selected remote app-node
   installations are updated in parallel, up to four targets at a time. Each
   individual target still runs `Pulling source`, `Installing dependencies`, and
@@ -89,14 +86,10 @@ The expected target shape per calling peer role:
 
 ### Partial Failure Rules
 
-- If every selected installation updates successfully, exit `0`; if one or more
-  installations fail after side effects begin, exit `1` and report both
-  successful and failed target results.
-- In the JSON renderer, when the checkout on the caller fails, stop before
-  submitting the gateway request.
-- In the human renderer, when the checkout on the caller fails, stop before
-  accepting the gateway result as success, but do not cancel work that is
-  already in flight on the gateway checkout.
+- If every selected installation updates successfully, report a full fleet
+  success. If one or more installations fail after side effects begin, report
+  both successful and failed target results.
+- When the caller-local checkout fails, do not start app-node execution.
 - When update of the gateway checkout fails, do not start app-node execution.
   When an app node fails, do not hide successful app-node updates and do not
   cancel unrelated in-flight app-node updates.
@@ -122,7 +115,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Local update failed | The caller's local checkout update fails. | Failure |
-| Remote update failed | One or more selected remote installations fail to update. | Failure with partial target results |
+| Gateway update failed | The selected gateway checkout fails to update. | Failure with any completed target results; app-node targets are not started |
+| App-node update failed | One or more selected app-node installations fail to update. | Failure with partial target results |
+
+The shared [Exit Status](../../../README.md#exit-status) policy applies. Partial
+fleet failures are Orbit-handled command failures.
 
 ## Doctor Relationship
 

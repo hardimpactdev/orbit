@@ -35,7 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolves the selected app through gateway app configuration.
 - Fails before reading logs unless the selected app is production.
 - Resolves the run id against deployment history for the selected app.
-- Reads stored per-step stdout, stderr, exit code, and timing from gateway
+- Reads stored per-step stdout, stderr, process status, and timing from gateway
   deployment history.
 - Applies `--step` after the run is resolved.
 - Applies `--lines` to each captured stdout and stderr stream.

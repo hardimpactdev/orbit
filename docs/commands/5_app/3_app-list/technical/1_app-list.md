@@ -64,10 +64,8 @@ authenticated identity is authorized to see.
    If `--environment` is present, include only apps with that environment.
    Filters combine with AND semantics.
 3. **Sort results.** Apps are sorted by owning node name (ascending,
-   case-insensitive) and then by app name (ascending, case-insensitive). Both
-   renderers use this single ordering: the human renderer displays it as tables
-   grouped by node, and the JSON renderer emits the same ordering as a flat
-   array of list-item objects under `success.data.apps`.
+   case-insensitive) and then by app name (ascending, case-insensitive). Every
+   output renderer uses this single ordering.
 4. **Attach workspaces.** Each app list item includes the app's registered
    workspaces sorted by workspace name (ascending, case-insensitive).
    Workspaces are registry configuration rows; no live workspace probing is performed.

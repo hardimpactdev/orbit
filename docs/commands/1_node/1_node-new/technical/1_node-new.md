@@ -68,9 +68,8 @@ This command follows the shared
    [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
    described in [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md).
-6. Select the output renderer and begin the side-effect flow. The human
-   renderer owns progress output; the JSON renderer owns the final JSON
-   envelope.
+6. Select the output renderer and begin the side-effect flow. Renderer-specific
+   progress and payload details live in the renderer contracts.
 
 Field-local validation and path eligibility must run at the earliest point where
 the needed inputs are known. Interactive input mode should keep the user at the

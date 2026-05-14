@@ -62,9 +62,9 @@ or from the `latest_setup_run.run_id` field returned by
    stored by [`workspace:history`](../../6_workspace-history/workspace-history.md).
 3. **Per-step timing.** Each step carries its own `started_at`, `finished_at`,
    and `duration_ms`. Step timing is independent captured data, not a
-   projection of run-level timestamps. This lets the JSON renderer expose a
-   step timeline and lets human or future renderers surface per-step duration
-   without a contract change.
+   projection of run-level timestamps. The output payload preserves enough
+   timing detail for renderer contracts to present run and step duration without
+   a canonical contract change.
 4. **No lifecycle environment capture.** The lifecycle environment variables
    defined in
    [`6_workspace/README.md`](../../README.md#lifecycle-step-environment)

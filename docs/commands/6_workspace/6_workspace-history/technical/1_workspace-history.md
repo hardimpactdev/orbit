@@ -58,9 +58,7 @@ are not part of the initial contract.
    workspace from the gateway database, filtered by `--since`, `--until`, and
    `--limit` (after clamping). No host probing is performed.
 2. **Sort results.** Rows are sorted by `started_at` descending (newest first).
-   Both renderers use this single ordering: the human renderer displays it as a
-   table, and the JSON renderer emits the same ordering as a flat array under
-   `success.data.runs`.
+   Every output renderer uses this single ordering.
 3. **Apply limit cap.** If `--limit` exceeds `500`, clamp to `500` and set
    `success.meta.pagination.limit_capped` to `true`. Otherwise the field is
    `false`.

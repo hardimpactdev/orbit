@@ -44,7 +44,8 @@ When called with a schedule name, `schedule:run [name]` force-runs that one sche
 ### Run History Rules
 
 - Creates a durable run-history record for the one-off run.
-- Records started and finished timestamps, status, exit code, and captured output.
+- Records started and finished timestamps, status, process result, and captured
+  output.
 - Stores scheduled process output in run history whether the scheduled process succeeds or fails.
 
 ### Scope Boundaries
@@ -65,7 +66,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Run failed | The scheduled command or script exits non-zero. | `error.code=schedule.run_failed` |
 | Run history write failed | The gateway could not persist the run-history record. | `error.code=schedule.history_write_failed` |
 
-The command follows the shared exit status policy: scheduled process failures exit with Orbit status `1`; the scheduled process exit code is captured in the renderer data.
+The command follows the shared exit status policy. Scheduled process failure is
+an Orbit-handled command failure; the scheduled process result is captured in
+the renderer data.
 
 ## Doctor Relationship
 

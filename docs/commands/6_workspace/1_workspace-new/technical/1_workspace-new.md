@@ -144,11 +144,11 @@ register an existing path use
    `{code, family, message, next_command}` shape (codes drawn from the
    `workspace` family, primarily `workspace.path_missing`,
    `workspace.fpm_config_missing`, `workspace.fpm_config_mismatch`,
-   `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`,
-   plus `proxy` handoffs for workspace route drift). The command exits `0` and the
-   operator repairs drift via `doctor --fix --family=workspace --restore`. This
-   matches the `app:new`/`app:register` pattern: once configuration is durable,
-   apply drift is convergence work, not a hard failure.
+   `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`, plus
+   `proxy` handoffs for workspace route drift). The operator repairs drift via
+   `doctor --fix --family=workspace --restore`. This matches the
+   `app:new`/`app:register` pattern: once configuration is durable, apply drift
+   is convergence work, not a hard failure.
    Setup-time HTTP probe failures use the command-owned
    `workspace.http_probe_unhealthy` warning with `family: null`, matching
    `workspace:setup`.

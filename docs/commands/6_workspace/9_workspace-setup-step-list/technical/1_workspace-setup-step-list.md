@@ -61,8 +61,8 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
    Unknown apps fail with `error.code=workspace.app_not_found` before any
    read.
-3. **Select renderer.** Pick the JSON renderer if `--json` is present;
-   otherwise pick the human renderer.
+3. **Select renderer.** Use the shared invocation model to select the output
+   renderer.
 4. **Issue the registry read.** Query gateway-owned setup-step policy for
    the resolved `(app, phase=setup)` and pass the result to the renderer.
 
@@ -75,9 +75,9 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
 2. **Sort results.** Steps are sorted by `order` ascending. Setup steps
    already encode an authoritative ordering field; insertions performed by
    [`workspace-setup-step:add`](../../8_workspace-setup-step-add/workspace-setup-step-add.md)
-   mutate that field directly. Both renderers use this single ordering, so
-   callers reading either output form see the same steps in the same
-   relative order.
+   mutate that field directly. Every output renderer uses this single ordering,
+   so callers reading any output form see the same steps in the same relative
+   order.
 3. **Project step record shape.** Every returned record uses the shared
    step shape `{ id, app, phase, order, command, timeout_seconds }` already
    published by `workspace-setup-step:add`. `phase` is always `"setup"`.

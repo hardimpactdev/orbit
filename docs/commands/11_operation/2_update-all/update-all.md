@@ -31,8 +31,7 @@ orbit update:all --json
 `update:all` performs a gateway-authorized fleet update:
 
 1. Ask the gateway to authorize the fleet update. The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
-2. Update the caller-local checkout and gateway-local checkout. In human mode
-   from a control node, these rows may progress at the same time.
+2. Update the caller-local checkout and gateway-local checkout.
 3. After the gateway-local checkout succeeds, the gateway updates selected
    remote app-node installations in parallel, up to four targets at a time. The
    gateway is the only node that opens SSH connections to app nodes; the CLI
@@ -53,16 +52,12 @@ needs convergence verification.
 
 Run `orbit update:all` to see per-node progress and a final summary of updated and failed nodes.
 
-Human output shows a per-node progress tree. Each node row moves through
-`Pulling source`, `Installing dependencies`, `Running migrations`, and `Done`;
-the caller-local and gateway rows may progress together, then remote app-node
-rows may progress together. On full success, the final tree footer reports the
-total updated node count. Rows for selected targets whose update has not started
-yet show `Waiting`.
+Human output shows per-node progress and a final summary. Rows for selected
+targets whose update has not started yet show `Waiting`.
 
-JSON output reports all per-installation results. When any target fails, the
-command returns a JSON error envelope with successful and failed target results
-included as command-specific error data.
+Use `--json` for machine-readable output. See the
+[JSON renderer contract](technical/6.2_update-all_output-render_json.md) for
+the exact shape.
 
 ## Requirements
 

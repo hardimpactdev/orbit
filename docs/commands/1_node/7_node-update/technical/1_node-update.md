@@ -149,8 +149,7 @@ Input mode behavior is split out of the canonical command contract:
   `doctor --family=node`.
 - The selected output renderer reports the warning with the recovery path
   `doctor --family=node --restore`.
-- Exit code stays at `0`. See the JSON renderer contract for the exact warning
-  shape.
+- Renderer contracts own the exact warning shape.
 - Return the updated node name, the `changed` array, and any drift warnings.
 
 ### Scope Boundaries
@@ -204,7 +203,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
-under `success.meta.warnings[]` and exit code `0`. See the
+under `success.meta.warnings[]`. See the
 [JSON renderer contract](6.2_node-update_output-render_json.md#success-with-artifact-apply-warning).
 
 ## Doctor Relationship

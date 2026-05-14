@@ -62,8 +62,8 @@ read.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
    Unknown apps fail with `error.code=workspace.app_not_found` before any
    read.
-3. **Select renderer.** Pick the JSON renderer if `--json` is present;
-   otherwise pick the human renderer.
+3. **Select renderer.** Use the shared invocation model to select the output
+   renderer.
 4. **Issue the registry read.** Query gateway-owned teardown-step policy
    for the resolved `(app, phase=teardown)` and pass the result to the
    renderer.
@@ -78,9 +78,9 @@ read.
 2. **Sort results.** Steps are sorted by `order` ascending. Teardown steps
    already encode an authoritative ordering field; insertions performed by
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md)
-   mutate that field directly. Both renderers use this single ordering, so
-   callers reading either output form see the same steps in the same
-   relative order. The list is not reversed relative to setup: `order=1`
+   mutate that field directly. Every output renderer uses this single ordering,
+   so callers reading any output form see the same steps in the same relative
+   order. The list is not reversed relative to setup: `order=1`
    names the first teardown step that runs during
    [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), not
    a symmetric inverse of any setup ordering.

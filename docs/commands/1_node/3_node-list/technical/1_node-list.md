@@ -72,8 +72,8 @@ post-filter the result, or run separate scoped invocations.
 - If `--environment` is present, include only app nodes with the matching
   environment.
 - Filters combine with AND semantics.
-- Human output groups nodes by role. JSON output preserves the gateway's sort
-  order.
+- Preserve the gateway's sort order for every output renderer. Renderer
+  contracts own presentation shape.
 
 ### Doctor Summary Rules
 
