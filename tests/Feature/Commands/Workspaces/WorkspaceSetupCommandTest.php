@@ -197,8 +197,8 @@ it('streams progress for forwarded human setup calls', function (): void {
     ])
         ->expectsOutputToContain('┌  Setting Up Workspace')
         ->expectsOutputToContain('●  Applied and verified workspace registration')
-        ->expectsOutputToContain("└  Workspace 'feature-a' converged")
-        ->expectsOutputToContain("Workspace 'feature-a' is already converged on node 'app-1'. No changes were needed.")
+        ->expectsOutputToContain('└  Workspace ready and available at: https://feature-a.demo.beast')
+        ->doesntExpectOutputToContain("Workspace 'feature-a' is already converged on node 'app-1'. No changes were needed.")
         ->doesntExpectOutputToContain("\e[?25h")
         ->assertSuccessful();
 });
@@ -249,8 +249,9 @@ it('renders human output without json', function (): void {
         'name' => 'feature-a',
         '--app' => 'demo',
     ])
-        ->expectsOutputToContain("Workspace 'feature-a' is set up under app 'demo' on node 'app-1'.")
-        ->expectsOutputToContain('URL: https://feature-a.demo.beast')
+        ->expectsOutputToContain('└  Workspace ready and available at: https://feature-a.demo.beast')
+        ->doesntExpectOutputToContain("Workspace 'feature-a' is set up under app 'demo' on node 'app-1'.")
+        ->doesntExpectOutputToContain('URL: https://feature-a.demo.beast')
         ->assertSuccessful();
 });
 
@@ -274,8 +275,8 @@ it('renders the documented progress tree and final tree state for human output',
         ->expectsOutputToContain('●  Registered proxy routes')
         ->expectsOutputToContain('●  Installed PHP-FPM artifacts')
         ->expectsOutputToContain('●  Checked workspace readiness')
-        ->expectsOutputToContain("└  Workspace 'feature-tree' converged")
-        ->expectsOutputToContain("Workspace 'feature-tree' is already converged on node 'app-1'. No changes were needed.")
+        ->expectsOutputToContain('└  Workspace ready and available at: https://feature-tree.demo.beast')
+        ->doesntExpectOutputToContain("Workspace 'feature-tree' is already converged on node 'app-1'. No changes were needed.")
         ->assertSuccessful();
 });
 
@@ -363,7 +364,7 @@ final class WorkspaceSetupTestStreamClient extends WorkspaceSetupGatewayStreamCl
         $onEvent('complete', [
             'exit_code' => 0,
             'data' => [
-                'footer' => "Workspace 'feature-a' converged",
+                'footer' => 'Workspace ready and available at: https://feature-a.demo.beast',
                 'result' => [
                     'app' => 'demo',
                     'workspace' => 'feature-a',

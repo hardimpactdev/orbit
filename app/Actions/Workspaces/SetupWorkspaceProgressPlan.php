@@ -275,11 +275,7 @@ final class SetupWorkspaceProgressPlan
 
     public function doneFooter(): string
     {
-        return match ($this->action()) {
-            'adopted' => "Workspace '{$this->workspace->name}' adopted",
-            'converged' => "Workspace '{$this->workspace->name}' converged",
-            default => "Workspace '{$this->workspace->name}' set up",
-        };
+        return "Workspace ready and available at: {$this->workspace->url()}";
     }
 
     public function failFooter(): string

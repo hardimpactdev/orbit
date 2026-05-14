@@ -138,7 +138,7 @@ class WorkspaceSetupCommand extends Command
             return self::FAILURE;
         }
 
-        return $this->successCommand($plan->result());
+        return self::SUCCESS;
     }
 
     private function forwardSetup(WorkspaceSetupGatewayStreamClient $setupStream): int
@@ -291,7 +291,7 @@ class WorkspaceSetupCommand extends Command
             );
         }
 
-        return $this->successCommand($resultData);
+        return self::SUCCESS;
     }
 
     private function renderResolutionTree(RemoteProgressReporter $reporter): void
