@@ -51,8 +51,12 @@ control callers forward the request to the gateway over HTTPS through WireGuard.
 A configured control caller may revoke its own consuming→gateway grant. The
 interactive confirmation calls out that the machine will lose Orbit gateway
 access, and the JSON success payload sets `self_lockout=true`. Recovering
-gateway access afterwards requires another control or gateway caller to grant
-access back.
+gateway access afterwards requires running `node:grant <control> <gateway>`
+from the gateway itself.
+
+This control-API self-lockout case is distinct from gateway-local direct
+mutation. Gateway-local revokes are gateway-owned writes and do not report
+`self_lockout=true`.
 
 `node:revoke` does not:
 

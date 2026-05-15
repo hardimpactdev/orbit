@@ -54,6 +54,37 @@ function setupNodeAccessGrantNodes(): array
     return [$consumerId, $servingId];
 }
 
+function setupNodeAccessRevokeNodes(): array
+{
+    config(['orbit.is_gateway' => true]);
+
+    $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'environment' => null,
+        'wireguard_address' => '10.6.0.2',
+    ]));
+
+    $consumerId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
+        'name' => 'control-1',
+        'role' => 'control',
+        'environment' => null,
+        'wireguard_address' => '10.6.0.8',
+    ]));
+
+    $servingId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
+        'name' => 'app-1',
+        'wireguard_address' => '10.6.0.12',
+    ]));
+
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $consumerId,
+        'serving_node_id' => $gatewayId,
+    ]);
+
+    return [$gatewayId, $consumerId, $servingId];
+}
+
 describe('node access grant integration', function (): void {
     it('creates a grant through the gateway command path', function (): void {
         [$consumerId, $servingId] = setupNodeAccessGrantNodes();
@@ -132,5 +163,99 @@ describe('node access grant integration', function (): void {
             ->and($payload['error']['code'])->toBe('node.grant_policy_violation')
             ->and($payload['error']['meta']['reason'])->toBe('self_grant')
             ->and(DB::table('node_access')->count())->toBe(0);
+    });
+});
+
+describe('node access revoke integration', function (): void {
+    it('revokes an existing grant through the gateway API path', function (): void {
+        [, $consumerId, $servingId] = setupNodeAccessRevokeNodes();
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $consumerId,
+            'serving_node_id' => $servingId,
+        ]);
+
+        $response = \Pest\Laravel\call('POST', '/api/nodes/revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+
+        $response->assertOk()
+            ->assertExactJson([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'app-1',
+                        'action' => 'revoked',
+                        'already_absent' => false,
+                        'self_lockout' => false,
+                    ],
+                ],
+            ]);
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumerId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeFalse();
+    });
+
+    it('keeps repeated revokes idempotent with stable state', function (): void {
+        [, $consumerId, $servingId] = setupNodeAccessRevokeNodes();
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $consumerId,
+            'serving_node_id' => $servingId,
+        ]);
+
+        \Pest\Laravel\call('POST', '/api/nodes/revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], [], [], ['REMOTE_ADDR' => '10.6.0.8'])->assertOk();
+
+        $response = \Pest\Laravel\call('POST', '/api/nodes/revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'revoked')
+            ->assertJsonPath('success.data.already_absent', true)
+            ->assertJsonPath('success.data.self_lockout', false);
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumerId)
+            ->where('serving_node_id', $servingId)
+            ->count())->toBe(0);
+    });
+
+    it('reports self-lockout when a control caller revokes its own gateway grant', function (): void {
+        [$gatewayId, $consumerId] = setupNodeAccessRevokeNodes();
+
+        $response = \Pest\Laravel\call('POST', '/api/nodes/revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'gateway-1',
+            'force' => true,
+        ], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+
+        $response->assertOk()
+            ->assertExactJson([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'gateway-1',
+                        'action' => 'revoked',
+                        'already_absent' => false,
+                        'self_lockout' => true,
+                    ],
+                ],
+            ]);
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumerId)
+            ->where('serving_node_id', $gatewayId)
+            ->exists())->toBeFalse();
     });
 });

@@ -10,7 +10,9 @@ use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\RevokeNodeRequest;
+use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Http\Gateway\Responses\Nodes\NodeRevokeResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -98,6 +100,8 @@ class NodeRevokeCommand extends Command
             }
         }
 
+        $isSelfLockout = false;
+
         if (! $this->option('force')) {
             if (! $this->isInteractiveInput()) {
                 return $this->failCommand(
@@ -107,7 +111,25 @@ class NodeRevokeCommand extends Command
                 );
             }
 
-            $confirmMessage = $this->confirmationMessage($consumerName, $servingName, false);
+            try {
+                $isSelfLockout = $this->detectControlSelfLockout($consumerName, $servingName);
+            } catch (GatewayApiException $e) {
+                return $this->failCommand(
+                    code: $e->errorCode() ?? 'gateway_unavailable',
+                    message: $e->getMessage() !== ''
+                        ? $e->getMessage()
+                        : 'Gateway connection is required to revoke a grant.',
+                    meta: $e->errorMeta(),
+                );
+            } catch (Throwable) {
+                return $this->failCommand(
+                    code: 'gateway_unavailable',
+                    message: 'Gateway connection is required to revoke a grant.',
+                    meta: [],
+                );
+            }
+
+            $confirmMessage = $this->confirmationMessage($consumerName, $servingName, $isSelfLockout);
 
             try {
                 $confirmed = $this->promptConfirm($confirmMessage, default: false);
@@ -136,7 +158,7 @@ class NodeRevokeCommand extends Command
             };
 
             if (! $this->wantsJson()) {
-                $exitCode = $this->runNodeRevokeTree($consumerName, $servingName, false, false, $operation);
+                $exitCode = $this->runNodeRevokeTree($consumerName, $servingName, false, $isSelfLockout, $operation);
 
                 if ($exitCode !== self::SUCCESS || ! $dto instanceof NodeRevokeResponse) {
                     return self::FAILURE;
@@ -161,6 +183,41 @@ class NodeRevokeCommand extends Command
         }
 
         return $this->respondSuccess($dto->consumingNode, $dto->servingNode, $dto->alreadyAbsent, $dto->selfLockout);
+    }
+
+    /**
+     * @throws GatewayApiException
+     */
+    private function detectControlSelfLockout(string $consumerName, string $servingName): bool
+    {
+        $request = new ShowGatewayIdentityRequest;
+        $response = app(GatewayConnector::class)->send($request);
+
+        if ($response->clientError() || $response->serverError()) {
+            $exception = $request->getRequestException($response, null);
+
+            if ($exception instanceof GatewayApiException) {
+                throw $exception;
+            }
+
+            throw new GatewayApiException("Gateway request failed with HTTP status {$response->status()}");
+        }
+
+        /** @var GatewayIdentityResponse $identity */
+        $identity = $response->dto();
+
+        $selfName = is_string($identity->self['name'] ?? null) ? $identity->self['name'] : null;
+        $gatewayName = is_string($identity->gateway['name'] ?? null) ? $identity->gateway['name'] : null;
+
+        if ($selfName === null || $gatewayName === null) {
+            throw new GatewayApiException(
+                'Gateway identity response is missing node identity.',
+                'gateway_unavailable',
+                ['endpoint' => '/api/me'],
+            );
+        }
+
+        return $consumerName === $selfName && $servingName === $gatewayName;
     }
 
     private function respondSuccess(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout): int
