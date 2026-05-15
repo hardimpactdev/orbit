@@ -11,7 +11,8 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolPayloadMapper;
-use Illuminate\Database\Eloquent\Builder;
+use App\Services\Tools\ToolShowLiveInspectionFailed;
+use App\Services\Tools\ToolShowLiveInspector;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -78,11 +79,16 @@ final class ToolShowController implements Loggable
         }
 
         $this->activitySubject = $model;
+        $payload = $this->toolPayload($request, $model);
+
+        if ($payload instanceof JsonResponse) {
+            return $payload;
+        }
 
         return response()->json([
             'success' => [
                 'data' => [
-                    'tool' => $this->toolPayload($model),
+                    'tool' => $payload,
                 ],
             ],
         ]);
@@ -122,27 +128,34 @@ final class ToolShowController implements Loggable
             return $nodeFilter;
         }
 
-        $nodes = Node::query()
-            ->where('role', 'app')
-            ->where('status', 'active')
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
-            ->orderBy('name')
-            ->limit(2)
-            ->get();
-
-        if ($nodes->count() === 1) {
-            return $nodes->first();
-        }
-
-        return $this->validationFailed('node', '', 'A node or app filter is required when the visible tool target is ambiguous.');
+        return $this->validationFailed('target', '', 'A node or app filter is required.');
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed>|JsonResponse
      */
-    private function toolPayload(NodeTool $tool): array
+    private function toolPayload(Request $request, NodeTool $tool): array|JsonResponse
     {
-        return app(ToolPayloadMapper::class)->toArray($tool);
+        $payload = app(ToolPayloadMapper::class)->toArray($tool);
+
+        if (! filter_var($request->query('live'), FILTER_VALIDATE_BOOL)) {
+            return $payload;
+        }
+
+        try {
+            return [
+                ...$payload,
+                ...app(ToolShowLiveInspector::class)->inspect($tool),
+            ];
+        } catch (ToolShowLiveInspectionFailed $e) {
+            return response()->json([
+                'error' => [
+                    'code' => 'tool.remote_action_failed',
+                    'message' => "Tool '{$e->tool}' live inspection failed on node '{$e->node}'.",
+                    'meta' => $e->meta(),
+                ],
+            ], 502);
+        }
     }
 
     private function authorizationFailed(string $message): JsonResponse

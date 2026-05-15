@@ -10,10 +10,13 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ShowToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
+use App\Models\LocalNodeDefault;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
+use App\Services\Tools\ToolShowLiveInspectionFailed;
+use App\Services\Tools\ToolShowLiveInspector;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -30,7 +33,7 @@ class ToolShowCommand extends Command
 {
     use HandlesPromptCancellation;
 
-    public function handle(ToolCatalog $catalog, ToolRegistry $registry, ToolPayloadMapper $payloads): int
+    public function handle(ToolCatalog $catalog, ToolRegistry $registry, ToolPayloadMapper $payloads, ToolShowLiveInspector $liveInspector): int
     {
         $tool = $this->stringArgument('tool');
 
@@ -59,6 +62,7 @@ class ToolShowCommand extends Command
         }
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
+        $live = (bool) $this->option('live');
 
         if (! $catalog->supports($tool)) {
             return $this->failCommand(
@@ -71,8 +75,20 @@ class ToolShowCommand extends Command
             );
         }
 
+        $target = $this->resolveTargetOptions($node, $app);
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $target->code,
+                message: $target->message,
+                meta: $target->meta,
+            );
+        }
+
+        [$node, $app] = $target;
+
         $result = $this->isGatewayCaller()
-            ? $this->fetchLocalTool($registry, $payloads, $tool, $node, $app)
+            ? $this->fetchLocalTool($registry, $payloads, $liveInspector, $tool, $node, $app, $live)
             : $this->fetchGatewayTool($tool, $node, $app);
 
         if ($result instanceof GatewayApiException) {
@@ -103,17 +119,41 @@ class ToolShowCommand extends Command
     }
 
     /**
-     * @return array<string, mixed>|ToolRegistryFailure
+     * @return array<string, mixed>|ToolRegistryFailure|GatewayApiException
      */
-    private function fetchLocalTool(ToolRegistry $registry, ToolPayloadMapper $payloads, string $tool, ?string $node, ?string $app): array|ToolRegistryFailure
-    {
+    private function fetchLocalTool(
+        ToolRegistry $registry,
+        ToolPayloadMapper $payloads,
+        ToolShowLiveInspector $liveInspector,
+        string $tool,
+        ?string $node,
+        ?string $app,
+        bool $live,
+    ): array|ToolRegistryFailure|GatewayApiException {
         $model = $registry->show(tool: $tool, node: $node, app: $app);
 
         if ($model instanceof ToolRegistryFailure) {
             return $model;
         }
 
-        return $payloads->toArray($model);
+        $payload = $payloads->toArray($model);
+
+        if (! $live) {
+            return $payload;
+        }
+
+        try {
+            return [
+                ...$payload,
+                ...$liveInspector->inspect($model),
+            ];
+        } catch (ToolShowLiveInspectionFailed $e) {
+            return new GatewayApiException(
+                message: "Tool '{$e->tool}' live inspection failed on node '{$e->node}'.",
+                errorCode: 'tool.remote_action_failed',
+                errorMeta: $e->meta(),
+            );
+        }
     }
 
     /**
@@ -169,6 +209,28 @@ class ToolShowCommand extends Command
     }
 
     /**
+     * @return array{0: ?string, 1: ?string}|ToolRegistryFailure
+     */
+    private function resolveTargetOptions(?string $node, ?string $app): array|ToolRegistryFailure
+    {
+        if ($node !== null || $app !== null) {
+            return [$node, $app];
+        }
+
+        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
+
+        if (is_string($defaultNode) && trim($defaultNode) !== '') {
+            return [trim($defaultNode), null];
+        }
+
+        return ToolRegistryFailure::validation(
+            field: 'target',
+            value: '',
+            message: 'A node or app target is required. Provide --node, --app, or configure node:default.',
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $tool
      */
     private function renderHuman(array $tool): void
@@ -176,7 +238,12 @@ class ToolShowCommand extends Command
         $this->line("Tool: {$tool['name']}");
         $this->line("Node: {$tool['node']}");
         $this->line("Expected: {$tool['expected_state']}");
-        $this->line('Observed: '.($tool['observed_state'] ?? '(not observed)'));
+        if (($tool['observed_state'] ?? null) !== null) {
+            $this->line("Observed: {$tool['observed_state']}");
+        }
+        if (($tool['observed_version'] ?? null) !== null) {
+            $this->line("Observed version: {$tool['observed_version']}");
+        }
         $this->line('Version: '.($tool['version'] ?? '(unknown)'));
         $this->line('Managed: '.(($tool['managed'] ?? false) ? 'yes' : 'no'));
 

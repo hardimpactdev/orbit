@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
+use App\Services\Tools\ToolShowLiveInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -81,6 +84,52 @@ describe('tool command shared contract', function (): void {
             'credentials',
         ])
             ->and($tool->getFillable())->not->toContain('observed_state');
+    });
+
+    it('keeps the mapper registry-only with null observed state for tool show without live input', function (): void {
+        $node = new Node(['name' => 'app-contract-1']);
+        $tool = new NodeTool([
+            'name' => 'redis',
+            'expected_state' => 'running',
+            'expected_version' => '7.2',
+        ]);
+        $tool->setRelation('node', $node);
+
+        $payload = app(ToolPayloadMapper::class)->toArray($tool);
+
+        expect($payload['observed_state'])->toBeNull()
+            ->and($payload)->not->toHaveKey('observed_version');
+    });
+
+    it('preserves populated observed state as a gateway-owned live inspection overlay', function (): void {
+        $node = Node::factory()->create(['name' => 'app-contract-live', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'name' => 'redis',
+            'node_id' => $node->id,
+            'expected_state' => 'running',
+            'expected_version' => '7.2',
+        ]);
+
+        app()->instance(RemoteShell::class, new class implements RemoteShell
+        {
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "/usr/bin/redis-server\t7.2.4\trunning\n",
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        });
+
+        $payload = app(ToolPayloadMapper::class)->toArray($tool);
+        $live = app(ToolShowLiveInspector::class)->inspect($tool);
+
+        expect([...$payload, ...$live])->toMatchArray([
+            'observed_state' => 'running',
+            'observed_version' => '7.2.4',
+        ]);
     });
 
     it('filters registry lists to visible app nodes by node selector and app selector', function (): void {

@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Tool name from Orbit's tool catalog.` |
-| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
+| `node` | `--node` | `Required when no `--app`, local `node:default`, or interactive target selection resolves a target.` | `Never.` | `node:default if set.` | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `live` | `--live` | `Optional.` | `Never.` | `false` | `Request gateway live inspection.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
@@ -32,9 +32,18 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Tool configuration and apply rules
 
-- Resolves the target node.
+- Resolves the target node from `--node`, `--app`, local `node:default`, or a
+  documented interactive selection. Non-interactive mode (`--json` or a
+  non-TTY stdout) fails with `validation_failed` when none of those sources is
+  available.
 - Reads the selected tool row from gateway configuration.
-- Requests live state only when --live is present.
+- Requests live state only when `--live` is present. `--live` is the single
+  source of opt-in live state for this command; without it, no remote
+  shell/process inspection runs, JSON keeps `observed_state: null`, and human
+  output omits the observed/live section.
+- Performs live inspection through the gateway-owned tool-show live inspector.
+  Gateway-local CLI reads and forwarded gateway API reads both use this shared
+  boundary so `--live` and `live=1` cannot diverge.
 - Does not mutate gateway configuration or node artifacts.
 
 ### Scope Boundaries
@@ -77,4 +86,5 @@ tool registry reads.
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Tools/ToolShowCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php` | JSON renderer contract for live/non-live observed state, gateway request propagation, remote inspection failure, and gateway error preservation. |
 | `tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

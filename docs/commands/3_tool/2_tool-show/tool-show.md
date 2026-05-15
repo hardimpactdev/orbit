@@ -5,8 +5,8 @@
 Show one registered tool's configuration and optional live state.
 
 `tool:show` is the detail view for a tool on a target node. By default it reads
-gateway configuration only. Use `--live` when the operator needs the gateway to inspect
-current node reality.
+gateway configuration only. Use `--live` when the operator needs the gateway to
+inspect current node reality.
 
 ## Usage
 
@@ -28,11 +28,13 @@ orbit tool:show redis --node=app-1 --json
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app.
-- `--live`: Include live node status through the gateway.
+- `--live`: Include live node status through the gateway. Without this flag,
+  the command does not run remote shell/process inspection.
 - `--json`: Output JSON.
 
-Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node.
+Target context is required. Provide `--node`, `--app`, or configure local
+`node:default`; non-interactive use fails with `validation_failed` when no
+target source is available.
 
 ## What Happens
 
@@ -53,7 +55,7 @@ Use `--json` to get a machine-readable result; omit it for a detail view.
 
 Human output is a detail view with identity, target node, expected state,
 managed flag, version/config metadata, service endpoint metadata when declared,
-and live status when requested. Secret values are not rendered by
+and live status only when requested. Secret values are not rendered by
 `tool:show`; use `tool:credentials` for authorized credential reads.
 
 Use `--json` for machine-readable tool and live details. Service endpoint

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Tools\ShowToolRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -76,7 +77,33 @@ describe('tool:show command contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('node');
+            ->and($payload['error']['meta']['field'])->toBe('target');
+    });
+
+    it('requires an explicit target source in non-interactive JSON even when one app node is visible', function (): void {
+        createToolShowLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+
+        $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('target');
+    });
+
+    it('uses local node default as an explicit target source', function (): void {
+        createToolShowLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-default', 'role' => 'app']);
+        LocalNodeDefault::query()->create(['default_node_name' => 'app-default']);
+        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+
+        $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-default');
     });
 
     it('returns not found when the selected local node has no matching tool row', function (): void {

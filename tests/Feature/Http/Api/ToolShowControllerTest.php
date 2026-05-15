@@ -71,7 +71,7 @@ describe('ToolShowController', function (): void {
             ->assertJsonPath('success.data.tool.node', 'app-1');
     });
 
-    it('uses the only visible app node when no selector is provided', function (): void {
+    it('requires a selector even when exactly one app node is visible', function (): void {
         $caller = createToolShowCallerNode();
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
         grantToolShowAccess($caller, $node);
@@ -80,8 +80,9 @@ describe('ToolShowController', function (): void {
 
         $response = $this->call('GET', '/api/tools/caddy', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'caddy');
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'target');
     });
 
     it('requires a selector when more than one app node is visible', function (): void {
@@ -95,7 +96,7 @@ describe('ToolShowController', function (): void {
 
         $response->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'node');
+            ->assertJsonPath('error.meta.field', 'target');
     });
 
     it('returns not found when the selected node has no matching tool row', function (): void {
