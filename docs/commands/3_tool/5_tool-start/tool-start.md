@@ -18,18 +18,28 @@ orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]
 ```bash
 orbit tool:start redis --node=app-1
 orbit tool:start redis --app=docs
+orbit tool:start redis --app=docs.app-1
 orbit tool:start redis --node=app-1 --json
 ```
 
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
-- `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--node`: Target node.
+- `--app`: Resolve the target node from an app selector. Accepts an app slug,
+  app domain, or `<slug>.<node-tld>` selector.
 - `--json`: Output JSON.
 
-Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node.
+Target resolution uses this hierarchy:
+
+1. `--app`, resolving the app's owning node.
+2. `--node`.
+3. Local `node:default`.
+4. Self, using the gateway-known caller identity.
+
+When both `--app` and `--node` are present, the app's owning node must match
+the supplied node. Orbit does not select a node just because only one app node
+is visible.
 
 ## What Happens
 
@@ -47,7 +57,11 @@ Run this command to set a managed tool's expected state to `running` and start i
 
 Use `--json` to get a machine-readable result; omit it for a summary of the start action.
 
-Human output reports the start action and resulting intended state.
+Human output stays concise:
+
+```text
+Started <tool> on <node>.
+```
 
 Use `--json` for the machine-readable tool result.
 

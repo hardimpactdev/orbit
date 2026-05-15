@@ -71,11 +71,20 @@ final readonly class ToolRegistry
             $appNode = $this->resolveAppNode($app);
 
             if (! $appNode instanceof Node) {
-                return ToolRegistryFailure::validation('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name or domain.");
+                return ToolRegistryFailure::validation('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name, domain, or app.node-tld selector.");
             }
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
-                return ToolRegistryFailure::validation('app', $app, "Invalid value for --app: '{$app}'. App is not owned by the selected node.");
+                return ToolRegistryFailure::validation(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                    [
+                        'node' => $nodeFilter->name,
+                        'resolved_node' => $appNode->name,
+                        'reason' => 'target_mismatch',
+                    ],
+                );
             }
         }
 
@@ -96,18 +105,7 @@ final readonly class ToolRegistry
             return $targetNode;
         }
 
-        $nodes = Node::query()
-            ->where('role', 'app')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->limit(2)
-            ->get();
-
-        if ($nodes->count() === 1) {
-            return $nodes->first();
-        }
-
-        return ToolRegistryFailure::validation('node', '', 'A node or app filter is required when the visible tool target is ambiguous.');
+        return ToolRegistryFailure::validation('target', '', 'A node or app target is required. Provide --node, --app, or configure node:default.');
     }
 
     private function resolveNodeFilter(?string $node, ?string $app): ?Node
@@ -149,6 +147,23 @@ final readonly class ToolRegistry
                     ->orWhere('domain', $app);
             })
             ->first();
+
+        if (! $model instanceof App && str_contains($app, '.')) {
+            [$appName, $nodeTld] = explode('.', $app, 2);
+
+            if ($appName !== '' && $nodeTld !== '') {
+                $model = App::query()
+                    ->with('node')
+                    ->where('name', $appName)
+                    ->whereHas('node', function (Builder $query) use ($nodeTld): void {
+                        $query
+                            ->where('role', 'app')
+                            ->where('status', 'active')
+                            ->where('tld', $nodeTld);
+                    })
+                    ->first();
+            }
+        }
 
         if (! $model instanceof App || ! $model->node instanceof Node) {
             return null;

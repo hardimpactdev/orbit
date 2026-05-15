@@ -15,7 +15,10 @@ final readonly class ToolRegistryFailure
         public array $meta,
     ) {}
 
-    public static function validation(string $field, string $value, string $message): self
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public static function validation(string $field, string $value, string $message, array $meta = []): self
     {
         return new self(
             code: 'validation_failed',
@@ -23,6 +26,7 @@ final readonly class ToolRegistryFailure
             meta: [
                 'field' => $field,
                 'value' => $value,
+                ...$meta,
             ],
         );
     }

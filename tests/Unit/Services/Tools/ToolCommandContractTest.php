@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Tools\ToolPayloadMapper;
@@ -189,5 +190,86 @@ describe('tool command shared contract', function (): void {
             ->and($conflictingApp)->toBeInstanceOf(ToolRegistryFailure::class)
             ->and($conflictingApp->code)->toBe('validation_failed')
             ->and($conflictingApp->meta)->toMatchArray(['field' => 'app', 'value' => 'docs-contract']);
+    });
+
+    it('resolves shared tool targets by app slug domain combined selector and matching node rules', function (): void {
+        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'role' => 'app', 'status' => 'active', 'tld' => 'dev1']);
+        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'role' => 'app', 'status' => 'active', 'tld' => 'dev2']);
+
+        App::factory()->create([
+            'name' => 'docs-contract',
+            'domain' => 'docs-contract.example.test',
+            'node_id' => $firstNode->id,
+        ]);
+        App::factory()->create([
+            'name' => 'api-contract',
+            'node_id' => $secondNode->id,
+        ]);
+
+        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $secondNode->id]);
+
+        $registry = app(ToolRegistry::class);
+
+        $slugResult = $registry->show('redis', app: 'docs-contract');
+        $domainResult = $registry->show('redis', app: 'docs-contract.example.test');
+        $combinedResult = $registry->show('redis', app: 'docs-contract.dev1');
+        $matchingResult = $registry->show('redis', node: $firstNode->name, app: 'docs-contract');
+
+        expect($slugResult)->toBeInstanceOf(NodeTool::class)
+            ->and($slugResult->node?->name)->toBe($firstNode->name)
+            ->and($domainResult)->toBeInstanceOf(NodeTool::class)
+            ->and($domainResult->node?->name)->toBe($firstNode->name)
+            ->and($combinedResult)->toBeInstanceOf(NodeTool::class)
+            ->and($combinedResult->node?->name)->toBe($firstNode->name)
+            ->and($matchingResult)->toBeInstanceOf(NodeTool::class)
+            ->and($matchingResult->node?->name)->toBe($firstNode->name);
+
+        $mismatch = $registry->validateFilters(node: $secondNode->name, app: 'docs-contract');
+
+        expect($mismatch)->toBeInstanceOf(ToolRegistryFailure::class)
+            ->and($mismatch->code)->toBe('validation_failed')
+            ->and($mismatch->meta)->toMatchArray([
+                'field' => 'app',
+                'value' => 'docs-contract',
+                'node' => $secondNode->name,
+                'resolved_node' => $firstNode->name,
+            ]);
+    });
+
+    it('keeps the shared target hierarchy explicit before registry access', function (): void {
+        $node = Node::factory()->create(['name' => 'app-contract-default', 'role' => 'app', 'status' => 'active']);
+        LocalNodeDefault::query()->create(['default_node_name' => $node->name]);
+        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+
+        $registry = app(ToolRegistry::class);
+
+        expect($registry->show('redis', node: $node->name)->node?->name)->toBe($node->name)
+            ->and($registry->show('redis')->code)->toBe('validation_failed');
+    });
+
+    it('exposes the shared tool failure shape and allowed remote action metadata', function (): void {
+        $failure = ToolRegistryFailure::remoteActionFailed(
+            tool: 'caddy',
+            node: 'app-contract-a',
+            action: 'start',
+            exitCode: 7,
+            stderr: 'systemctl failed',
+        );
+
+        expect(array_keys(get_object_vars($failure)))->toBe([
+            'code',
+            'message',
+            'meta',
+        ])
+            ->and($failure->code)->toBe('tool.remote_action_failed')
+            ->and($failure->message)->toBe("Tool 'caddy' start failed on node 'app-contract-a'.")
+            ->and($failure->meta)->toBe([
+                'tool' => 'caddy',
+                'node' => 'app-contract-a',
+                'action' => 'start',
+                'exit_code' => 7,
+                'stderr' => 'systemctl failed',
+            ]);
     });
 });
