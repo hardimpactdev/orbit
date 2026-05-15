@@ -24,12 +24,14 @@ orbit tool:restart redis --node=app-1 --json
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
-- `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--node`: Target node. Defaults to local `node:default` when configured, then gateway-known self for non-gateway callers.
+- `--app`: Resolve the target node from an app slug, app domain, or `<slug>.<node-tld>` selector.
 - `--json`: Output JSON.
 
-Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node.
+Target resolution is ordered: explicit `--app` or `--node`, then local
+`node:default`, then gateway-known self for non-gateway callers. When both
+`--app` and `--node` are supplied, the app selector must resolve to the same
+node. Orbit never selects a target just because only one app node is visible.
 
 ## What Happens
 
@@ -39,7 +41,7 @@ Target context is required when neither `--node`, `--app`, nor local
 2. Verifies the tool is managed and has a restart path.
 3. Restarts the tool through its lifecycle backend on the target node.
 4. Preserves existing gateway configuration and expected version.
-5. Reports the resulting state.
+5. Reports the restart result.
 
 The command does not repair divergent configuration. Use
 [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) or `doctor --fix --family=tool --restore`
@@ -49,7 +51,14 @@ for configuration convergence.
 
 Use `--json` to get a machine-readable result; omit it for a summary of the restart action.
 
-Human output reports the restart action and resulting intended state.
+Human output stays concise:
+
+```text
+Restarted redis on app-1.
+```
+
+Use `tool:show`, `--json`, `doctor`, or `tool:logs` for detailed state,
+configuration, and runtime diagnostics.
 
 Use `--json` for the machine-readable tool result.
 

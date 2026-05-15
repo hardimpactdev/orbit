@@ -84,6 +84,35 @@ describe('tool:restart command contract', function (): void {
             ]);
     });
 
+    it('renders the documented human progress tree and concise success prose', function (): void {
+        createToolRestartLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new ToolRestartRecordingShell);
+
+        $exitCode = Artisan::call('tool:restart', ['tool' => 'caddy', '--node' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Restarting Tool')
+            ->and($output)->toContain('○  Resolve target')
+            ->and($output)->toContain('○  Read gateway tool configuration')
+            ->and($output)->toContain('○  Run command action')
+            ->and($output)->toContain('●  Resolved target')
+            ->and($output)->toContain('●  Read gateway tool configuration')
+            ->and($output)->toContain('●  Ran command action')
+            ->and($output)->toContain('└  Tool restarted')
+            ->and($output)->toContain('Restarted caddy on app-1.')
+            ->and($output)->not->toContain('expected_state')
+            ->and($output)->not->toContain('observed_state')
+            ->and($output)->not->toContain('managed')
+            ->and($output)->not->toContain('version');
+    });
+
     it('rejects tools without a restart path before changing intent', function (): void {
         createToolRestartLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
@@ -106,6 +135,54 @@ describe('tool:restart command contract', function (): void {
             ])
             ->and($tool->refresh()->expected_state)->toBe('running')
             ->and($shell->scripts)->toBe([]);
+    });
+
+    it('preserves gateway configuration and diagnostics when restart application fails', function (): void {
+        createToolRestartLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'expected_version' => '2.10.2',
+            'config' => ['endpoints' => [['name' => 'http', 'url' => 'https://example.test']]],
+        ]);
+        app()->instance(RemoteShell::class, new ToolRestartRecordingShell(exitCode: 7, stderr: 'systemctl restart caddy failed'));
+
+        $exitCode = Artisan::call('tool:restart', ['tool' => 'caddy', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('tool.remote_action_failed')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'exit_code' => 7,
+                'stderr' => 'systemctl restart caddy failed',
+            ])
+            ->and($tool->refresh()->expected_state)->toBe('running')
+            ->and($tool->expected_version)->toBe('2.10.2')
+            ->and($tool->config)->toBe(['endpoints' => [['name' => 'http', 'url' => 'https://example.test']]]);
+    });
+
+    it('shows remote action diagnostics and log and doctor recovery guidance in human mode', function (): void {
+        createToolRestartLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new ToolRestartRecordingShell(exitCode: 7, stderr: 'systemctl restart caddy failed'));
+
+        $exitCode = Artisan::call('tool:restart', ['tool' => 'caddy', '--node' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Tool 'caddy' restart failed on node 'app-1'.")
+            ->and($output)->toContain('Exit code: 7')
+            ->and($output)->toContain('systemctl restart caddy failed')
+            ->and($output)->toContain('orbit tool:logs caddy --node=app-1')
+            ->and($output)->toContain('orbit doctor --fix --family=tool --restore')
+            ->and($output)->toContain('Retry with orbit tool:restart caddy --node=app-1');
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
@@ -152,6 +229,11 @@ final class ToolRestartRecordingShell implements RemoteShell
      */
     public array $scripts = [];
 
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private readonly string $stderr = '',
+    ) {}
+
     /**
      * @param  array<string, mixed>  $options
      */
@@ -159,6 +241,6 @@ final class ToolRestartRecordingShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: '', stderr: $this->stderr, durationMs: 1);
     }
 }
