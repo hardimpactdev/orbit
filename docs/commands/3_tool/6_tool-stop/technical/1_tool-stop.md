@@ -23,9 +23,21 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered managed tool name.` |
-| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
+| `node` | `--node` | `Optional.` | `Never.` | `node:default` if set; otherwise gateway-known caller identity. | `Visible node slug.` |
+| `app` | `--app` | `Optional.` | `Never.` | `None.` | Visible app selector: app slug, app domain, or `<slug>.<node-tld>`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
+
+Target resolution happens before side effects in this order:
+
+1. `--app` resolves the owning app node. If `--node` is also present, it must
+   resolve to the same node.
+2. `--node` resolves the target directly.
+3. Local `node:default` is used when no explicit target is supplied.
+4. Gateway-known caller identity is used as self fallback when the caller has no
+   explicit/default target.
+
+The command must not select a target by cardinality, such as "the only visible
+app node."
 
 ## Behavior Contract
 
@@ -44,6 +56,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Renderer Contracts
 
+- [Interactive input mode](5.1_tool-stop_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_tool-stop_input-mode_non-interactive.md)
 - [Human renderer](6.1_tool-stop_output-render_human.md)
 - [JSON renderer](6.2_tool-stop_output-render_json.md)
 
@@ -54,7 +68,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
+| App/node target mismatch | `--app` resolves to a different node than `--node`. | `error.code=validation_failed`, `error.meta.reason=target_mismatch` |
+| Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed`, with `error.meta.exit_code` and `error.meta.stderr` when available. |
 
 ## Doctor Relationship
 
@@ -65,4 +80,5 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Tools/ToolStopCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+| `tests/Feature/Commands/Tools/ToolStopJsonRendererTest.php` | JSON envelope shape, canonical tool entity, renderer metadata, non-interactive target validation, and gateway error preservation. |
+| `tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared tool-family behavior such as canonical entity mapping, registry-only observed-state rules, registry target/filter behavior, and shared failure shape. |

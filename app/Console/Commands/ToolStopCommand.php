@@ -9,9 +9,14 @@ use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Tools\StopToolRequest;
+use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
+use App\Models\App;
+use App\Models\LocalNodeDefault;
+use App\Models\Node;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
@@ -19,6 +24,7 @@ use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 #[Signature('tool:stop
@@ -65,6 +71,39 @@ class ToolStopCommand extends Command
         }
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
+
+        if (! $catalog->supports($tool)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: "Invalid value for tool: '{$tool}'. Expected a registered tool name.",
+                meta: [
+                    'field' => 'tool',
+                    'value' => $tool,
+                ],
+            );
+        }
+
+        $target = $this->resolveTargetOptions($node, $app);
+
+        if ($target instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $target->errorCode() ?? 'gateway_unavailable',
+                message: $target->getMessage() !== ''
+                    ? $target->getMessage()
+                    : 'Gateway connection is required to resolve the caller identity.',
+                meta: $target->errorMeta(),
+            );
+        }
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $target->code,
+                message: $target->message,
+                meta: $this->commandFailureMeta($target),
+            );
+        }
+
+        [$node, $app] = $target;
 
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()
@@ -159,6 +198,214 @@ class ToolStopCommand extends Command
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
+    /**
+     * @return array{0: ?string, 1: ?string}|ToolRegistryFailure|GatewayApiException
+     */
+    private function resolveTargetOptions(?string $node, ?string $app): array|ToolRegistryFailure|GatewayApiException
+    {
+        if ($app !== null) {
+            if (! $this->isGatewayCaller()) {
+                return [$node, $app];
+            }
+
+            $appNode = $this->resolveAppNode($app);
+
+            if (! $appNode instanceof Node) {
+                return ToolRegistryFailure::validation('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name, domain, or app.node-tld selector.");
+            }
+
+            if ($node !== null) {
+                $nodeFilter = $this->resolveNode($node);
+
+                if (! $nodeFilter instanceof Node) {
+                    return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible app node name.");
+                }
+
+                if ($nodeFilter->id !== $appNode->id) {
+                    return ToolRegistryFailure::validation(
+                        'app',
+                        $app,
+                        "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                        [
+                            'node' => $nodeFilter->name,
+                            'resolved_node' => $appNode->name,
+                            'reason' => 'target_mismatch',
+                        ],
+                    );
+                }
+            }
+
+            return [$appNode->name, null];
+        }
+
+        if ($node !== null) {
+            if (! $this->isGatewayCaller()) {
+                return [$node, null];
+            }
+
+            $nodeFilter = $this->resolveNode($node);
+
+            if (! $nodeFilter instanceof Node) {
+                return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible app node name.");
+            }
+
+            return [$nodeFilter->name, null];
+        }
+
+        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
+
+        if (is_string($defaultNode) && trim($defaultNode) !== '') {
+            return [trim($defaultNode), null];
+        }
+
+        if (! $this->isGatewayCaller()) {
+            try {
+                return [$this->gatewayKnownSelfNodeName(), null];
+            } catch (GatewayApiException $e) {
+                return $e;
+            }
+        }
+
+        if ($this->isInteractiveInput()) {
+            $nodes = Node::query()
+                ->where('role', 'app')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->pluck('name', 'name')
+                ->all();
+
+            if ($nodes !== []) {
+                try {
+                    return [(string) $this->promptSelect('Target node', $nodes), null];
+                } catch (PromptAborted) {
+                    return ToolRegistryFailure::validation('target', '', 'Operation cancelled.');
+                }
+            }
+        }
+
+        return ToolRegistryFailure::validation(
+            'target',
+            '',
+            'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
+        );
+    }
+
+    private function resolveNode(?string $node): ?Node
+    {
+        if ($node === null) {
+            return null;
+        }
+
+        return Node::query()
+            ->where('name', $node)
+            ->where('role', 'app')
+            ->where('status', 'active')
+            ->first();
+    }
+
+    private function resolveAppNode(?string $app): ?Node
+    {
+        if ($app === null) {
+            return null;
+        }
+
+        $model = App::query()
+            ->with('node')
+            ->where(function (Builder $query) use ($app): void {
+                $query->where('name', $app)
+                    ->orWhere('domain', $app);
+            })
+            ->first();
+
+        if (! $model instanceof App && str_contains($app, '.')) {
+            [$appName, $nodeTld] = explode('.', $app, 2);
+
+            if ($appName !== '' && $nodeTld !== '') {
+                $model = App::query()
+                    ->with('node')
+                    ->where('name', $appName)
+                    ->whereHas('node', function (Builder $query) use ($nodeTld): void {
+                        $query
+                            ->where('role', 'app')
+                            ->where('status', 'active')
+                            ->where('tld', $nodeTld);
+                    })
+                    ->first();
+            }
+        }
+
+        if (! $model instanceof App || ! $model->node instanceof Node) {
+            return null;
+        }
+
+        if ($model->node->role !== 'app' || $model->node->status !== 'active') {
+            return null;
+        }
+
+        return $model->node;
+    }
+
+    /**
+     * @throws GatewayApiException
+     */
+    private function gatewayKnownSelfNodeName(): string
+    {
+        $request = new ShowGatewayIdentityRequest;
+
+        try {
+            $response = app(GatewayConnector::class)->send($request);
+        } catch (GatewayApiException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new GatewayApiException(
+                'Gateway connection is required to resolve the caller identity.',
+                'gateway_unavailable',
+                [],
+                $e,
+            );
+        }
+
+        if ($response->clientError() || $response->serverError()) {
+            $exception = $request->getRequestException($response, null);
+
+            if ($exception instanceof GatewayApiException) {
+                throw $exception;
+            }
+
+            throw new GatewayApiException(
+                "Gateway request failed with HTTP status {$response->status()}",
+                'gateway_unavailable',
+                ['endpoint' => '/api/me'],
+            );
+        }
+
+        /** @var GatewayIdentityResponse $identity */
+        $identity = $response->dto();
+        $name = is_string($identity->self['name'] ?? null) ? trim($identity->self['name']) : '';
+
+        if ($name === '') {
+            throw new GatewayApiException(
+                'Gateway identity response is missing node identity.',
+                'gateway_unavailable',
+                ['endpoint' => '/api/me'],
+            );
+        }
+
+        return $name;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function commandFailureMeta(ToolRegistryFailure $failure): array
+    {
+        if (($failure->meta['field'] ?? null) === 'target') {
+            return ['fields' => ['target']];
+        }
+
+        return $failure->meta;
+    }
+
     private function stringArgument(string $name): ?string
     {
         $value = $this->argument($name);
@@ -207,7 +454,42 @@ class ToolStopCommand extends Command
 
         $this->error($message);
 
+        if ($code === 'tool.remote_action_failed') {
+            $this->renderRemoteActionFailureGuidance($meta);
+        }
+
         return self::FAILURE;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function renderRemoteActionFailureGuidance(array $meta): void
+    {
+        $exitCode = $meta['exit_code'] ?? null;
+        $stderr = $meta['stderr'] ?? null;
+        $tool = is_string($meta['tool'] ?? null) ? $meta['tool'] : null;
+        $node = is_string($meta['node'] ?? null) ? $meta['node'] : null;
+
+        if (is_int($exitCode)) {
+            $this->line("Exit code: {$exitCode}");
+        }
+
+        if (is_string($stderr) && trim($stderr) !== '') {
+            $this->line('stderr: '.trim($stderr));
+        }
+
+        if ($tool !== null && app(ToolCatalog::class)->logCommand($tool, 50) !== null) {
+            $command = "orbit tool:logs {$tool}";
+
+            if ($node !== null && $node !== '') {
+                $command .= " --node={$node}";
+            }
+
+            $this->line("Inspect logs with {$command}.");
+        }
+
+        $this->line('Repair convergence with orbit doctor --family=tool --restore.');
     }
 
     private function wantsJson(): bool

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Tools\StopToolRequest;
+use App\Models\App;
 use App\Models\LocalGatewaySettings;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,6 +30,38 @@ function createToolStopLocalNode(string $role = 'gateway'): Node
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+}
+
+function createToolStopTarget(string $nodeName, ?string $tld = null): Node
+{
+    return Node::factory()->create([
+        'name' => $nodeName,
+        'role' => 'app',
+        'status' => 'active',
+        'tld' => $tld,
+    ]);
+}
+
+function createToolStopManagedTool(Node $node, string $tool = 'caddy'): NodeTool
+{
+    return NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => $tool,
+        'expected_state' => 'running',
+    ]);
+}
+
+function toolStopLastOutputLine(): string
+{
+    $lines = array_values(array_filter(
+        array_map(
+            fn (string $line): string => trim((string) preg_replace('/\e\[[\d;]*[A-Za-z]/', '', $line)),
+            explode(PHP_EOL, Artisan::output()),
+        ),
+        fn (string $line): bool => $line !== '',
+    ));
+
+    return (string) end($lines);
 }
 
 describe('tool:stop command contract', function (): void {
@@ -114,6 +149,224 @@ describe('tool:stop command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['tool']['expected_state'])->toBe('installed');
     });
+
+    it('resolves app slug selectors to the owning app node', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-slug-1');
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        createToolStopManagedTool($node);
+        $shell = new ToolStopRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--app' => 'docs', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-stop-slug-1')
+            ->and($shell->scripts)->toHaveCount(1);
+    });
+
+    it('resolves app domain selectors to the owning app node', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-domain-1');
+        App::factory()->create(['name' => 'docs', 'domain' => 'docs.example.com', 'node_id' => $node->id]);
+        createToolStopManagedTool($node);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--app' => 'docs.example.com', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-stop-domain-1');
+    });
+
+    it('resolves app slug plus node tld selectors to the owning app node', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-tld-1', 'dev1');
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        createToolStopManagedTool($node);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--app' => 'docs.dev1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-stop-tld-1');
+    });
+
+    it('allows app and node selectors when they resolve to the same node', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-match-1');
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        createToolStopManagedTool($node);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell);
+
+        $exitCode = Artisan::call('tool:stop', [
+            'tool' => 'caddy',
+            '--app' => 'docs',
+            '--node' => 'app-stop-match-1',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-stop-match-1');
+    });
+
+    it('rejects app and node selectors when they resolve to different nodes', function (): void {
+        createToolStopLocalNode('gateway');
+        $appNode = createToolStopTarget('app-stop-mismatch-1');
+        createToolStopTarget('app-stop-mismatch-2');
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        createToolStopManagedTool($appNode);
+        $shell = new ToolStopRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:stop', [
+            'tool' => 'caddy',
+            '--app' => 'docs',
+            '--node' => 'app-stop-mismatch-2',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta'])->toBe([
+                'field' => 'app',
+                'value' => 'docs',
+                'node' => 'app-stop-mismatch-2',
+                'resolved_node' => 'app-stop-mismatch-1',
+                'reason' => 'target_mismatch',
+            ])
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('uses node selectors directly', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-node-1');
+        createToolStopManagedTool($node);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--node' => 'app-stop-node-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-stop-node-1');
+    });
+
+    it('uses local node default when no explicit target is provided', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-default-1');
+        createToolStopManagedTool($node);
+        LocalNodeDefault::query()->create(['default_node_name' => 'app-stop-default-1']);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('app-stop-default-1');
+    });
+
+    it('uses gateway-known caller identity as self fallback when no explicit target or node default exists', function (): void {
+        config(['orbit.is_gateway' => false]);
+
+        createToolStopLocalNode('control');
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+
+        $mock = MockClient::global([
+            ShowGatewayIdentityRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'self' => [
+                            'name' => 'control-self',
+                            'role' => 'control',
+                        ],
+                    ],
+                ],
+            ], 200),
+            StopToolRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'tool' => [
+                            'name' => 'caddy',
+                            'node' => 'control-self',
+                            'expected_state' => 'installed',
+                            'observed_state' => null,
+                            'version' => null,
+                            'managed' => true,
+                            'endpoints' => [],
+                        ],
+                    ],
+                    'meta' => [],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['node'])->toBe('control-self');
+
+        $mock->assertSent(fn (StopToolRequest $request): bool => $request->body()->all() === [
+            'node' => 'control-self',
+        ]);
+    });
+
+    it('does not infer a target from one visible app node', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-only-visible-1');
+        createToolStopManagedTool($node);
+        $shell = new ToolStopRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('prints concise human success output without lifecycle metadata', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-stop-human-success-1');
+        createToolStopManagedTool($node);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell);
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--node' => 'app-stop-human-success-1']);
+
+        expect($exitCode)->toBe(0)
+            ->and(toolStopLastOutputLine())->toBe('Stopped caddy on app-stop-human-success-1.')
+            ->and(Artisan::output())->not->toContain('expected_state')
+            ->and(Artisan::output())->not->toContain('observed_state')
+            ->and(Artisan::output())->not->toContain('managed')
+            ->and(Artisan::output())->not->toContain('version');
+    });
+
+    it('prints remote action diagnostics and recovery guidance for human failures', function (): void {
+        createToolStopLocalNode('gateway');
+        $node = createToolStopTarget('app-failing-caddy');
+        createToolStopManagedTool($node);
+        app()->instance(RemoteShell::class, new ToolStopRecordingShell(exitCode: 23, stderr: 'unit refused to stop'));
+
+        $exitCode = Artisan::call('tool:stop', ['tool' => 'caddy', '--node' => 'app-failing-caddy']);
+
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Exit code: 23')
+            ->and($output)->toContain('stderr: unit refused to stop')
+            ->and($output)->toContain('orbit tool:logs caddy --node=app-failing-caddy')
+            ->and($output)->toContain('orbit doctor --family=tool --restore');
+    });
 });
 
 final class ToolStopRecordingShell implements RemoteShell
@@ -123,6 +376,11 @@ final class ToolStopRecordingShell implements RemoteShell
      */
     public array $scripts = [];
 
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private readonly string $stderr = '',
+    ) {}
+
     /**
      * @param  array<string, mixed>  $options
      */
@@ -130,6 +388,6 @@ final class ToolStopRecordingShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: '', stderr: $this->stderr, durationMs: 1);
     }
 }

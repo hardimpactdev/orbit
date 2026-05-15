@@ -25,12 +25,21 @@ orbit tool:stop redis --node=app-1 --json
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
-- `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--node`: Target node.
+- `--app`: Resolve the target node from an app selector. The selector may be
+  the app slug, app domain, or `<slug>.<node-tld>`.
 - `--json`: Output JSON.
 
-Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node.
+Target resolution uses this order:
+
+1. `--app`, optionally checked against `--node` when both are present.
+2. `--node`.
+3. Local `node:default`.
+4. Gateway-known caller identity when the caller has no explicit/default target.
+
+When `--app` and `--node` are both present, they must resolve to the same node
+or the command fails before side effects. Orbit does not infer the target merely
+because one app node is visible.
 
 ## What Happens
 
@@ -48,7 +57,14 @@ Run this command to set a managed tool's expected state to `installed` and stop 
 
 Use `--json` to get a machine-readable result; omit it for a summary of the stop action.
 
-Human output reports the stop action and resulting intended state.
+Human success output is concise:
+
+```text
+Stopped redis on app-1.
+```
+
+Use `tool:show`, JSON, `tool:logs`, or `doctor --family=tool` for detailed
+inspection.
 
 Use `--json` for the machine-readable tool result.
 
