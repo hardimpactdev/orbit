@@ -253,8 +253,8 @@ the process has a TTY.
 
 ### Destructive Confirmation
 
-Commands with `destructive` effects always require explicit destructive consent
-before side effects begin.
+Commands with `destructive` effects always require destructive consent before
+side effects begin.
 
 - `--dry-run` is not a universal destructive-command flag. A destructive command
   may define it only when it has a meaningful discovery or planning phase whose
@@ -262,13 +262,23 @@ before side effects begin.
   explicit named target should use confirmation/`--force` unless their contract
   documents a preview-specific reason.
 - Interactive input mode asks for confirmation unless `--force` is supplied.
-- `--force` is explicit destructive consent and skips the interactive
-  confirmation prompt.
-- Non-interactive input mode requires `--force` because prompts are
-  unavailable.
-- `--json` never implies destructive consent. A TTY command with `--json` still
-  uses non-interactive input mode, so destructive commands still require
-  `--force`.
+  The prompt is rendered after target and subject resolution and before any
+  side effect.
+- Non-JSON non-interactive input mode without `--force` fails before side
+  effects with `validation_failed`, `meta.field=force`, and
+  `meta.reason=destructive_consent_required`.
+- `--force` is explicit destructive consent in any mode and skips the
+  interactive confirmation prompt.
+- `--json` mode implies destructive consent. The JSON one-shot caller has
+  explicitly opted into automation, so requiring `--force --json` is redundant.
+  Ordinary input validation, target resolution, authorization, and existence
+  checks still apply.
+- `--json` does not change any other semantic: it does not create hidden target
+  fallbacks, skip validation, or bypass authorization.
+
+Progress trees for destructive commands still start after input resolution and
+destructive consent, before cleanup side effects. Pre-confirmation gateway reads
+for target or subject resolution are allowed.
 
 Interactive input mode re-prompts invalid input for the current field until the
 value is valid, the answer changes the path so the prompt is no longer needed,

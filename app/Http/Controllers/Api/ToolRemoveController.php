@@ -24,12 +24,22 @@ final class ToolRemoveController implements Loggable
 
     private ?Node $activitySubject = null;
 
+    private ?string $activityTool = null;
+
+    private ?string $activityNode = null;
+
+    private ?string $activityApp = null;
+
+    private ?string $activityConsentSource = null;
+
     public function __invoke(
         Request $request,
         string $tool,
         ToolRemover $remover,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
+        $this->activityTool = $tool;
+
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -45,9 +55,20 @@ final class ToolRemoveController implements Loggable
 
         if ($request->boolean('destructive_consent') !== true) {
             return $this->errorResponse(
-                code: 'destructive_consent_required',
-                message: 'Use --force to remove this tool.',
-                meta: ['field' => 'force'],
+                code: 'validation_failed',
+                message: 'Use --force or --json to remove this tool.',
+                meta: ['field' => 'force', 'reason' => 'destructive_consent_required'],
+                status: 422,
+            );
+        }
+
+        $this->activityConsentSource = $this->destructiveConsentSource($request);
+
+        if ($this->toolTargetString($request, 'node') === null && $this->toolTargetString($request, 'app') === null) {
+            return $this->errorResponse(
+                code: 'validation_failed',
+                message: 'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
+                meta: ['fields' => ['target']],
                 status: 422,
             );
         }
@@ -60,6 +81,8 @@ final class ToolRemoveController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+        $this->activityNode = $node;
+        $this->activityApp = $app;
         $operation = fn (): array|ToolRegistryFailure => $remover->remove($tool, node: $node, app: $app);
 
         if ($this->wantsEventStream($request)) {
@@ -97,7 +120,6 @@ final class ToolRemoveController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'destructive_consent_required' => 422,
             default => 400,
         };
 
@@ -155,7 +177,20 @@ final class ToolRemoveController implements Loggable
      */
     public function properties(): array
     {
-        return [];
+        return array_filter([
+            'tool' => $this->activityTool,
+            'node' => $this->activityNode,
+            'app' => $this->activityApp,
+            'destructive_consent' => $this->activityConsentSource !== null ? true : null,
+            'destructive_consent_source' => $this->activityConsentSource,
+        ], static fn (mixed $value): bool => $value !== null);
+    }
+
+    private function destructiveConsentSource(Request $request): string
+    {
+        $source = $request->input('destructive_consent_source');
+
+        return is_string($source) && trim($source) !== '' ? trim($source) : 'unspecified';
     }
 
     public function description(): ?string

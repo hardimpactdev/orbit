@@ -21,6 +21,7 @@ final class RemoveToolRequest extends GatewayRequest implements HasBody
         public readonly string $tool,
         public readonly ?string $app = null,
         public readonly ?string $node = null,
+        public readonly string $destructiveConsentSource = 'force',
     ) {}
 
     public function resolveEndpoint(): string
@@ -37,6 +38,7 @@ final class RemoveToolRequest extends GatewayRequest implements HasBody
             'app' => $this->app,
             'node' => $this->node,
             'destructive_consent' => true,
+            'destructive_consent_source' => $this->destructiveConsentSource,
         ], static fn (mixed $value): bool => $value !== null);
     }
 

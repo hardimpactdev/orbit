@@ -25,8 +25,9 @@ orbit node:remove [name] [--force] [--json]
 
 Destructive consent is always required before removal side effects start.
 Interactive input mode asks for confirmation unless `--force` is supplied.
-Non-interactive input mode requires `--force` because prompts are unavailable.
-`--json` never implies `--force`.
+Destructive consent follows the shared rule in
+[`docs/commands/README.md`](../../README.md#destructive-confirmation),
+including the current `--json` consent behavior.
 
 ## Examples
 
@@ -41,8 +42,7 @@ orbit node:remove app-1 --force --json
 - `name`: node name to remove. Must exist in gateway node configuration and must
   not be a gateway node.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
-  prompt. Required in non-interactive input mode. `--json` never implies
-  `--force`.
+  prompt. See the shared destructive confirmation rule for `--json` behavior.
 - `--json`: Output JSON.
 
 ## What Happens

@@ -19,7 +19,7 @@ orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
 ```bash
 orbit tool:remove redis --node=app-1
 orbit tool:remove redis --app=docs --force
-orbit tool:remove redis --node=app-1 --force --json
+orbit tool:remove redis --node=app-1 --json
 ```
 
 ## Arguments and options
@@ -27,12 +27,15 @@ orbit tool:remove redis --node=app-1 --force --json
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app.
-- `--force`: Confirm destructive removal in non-interactive mode or skip the
-  interactive confirmation prompt.
-- `--json`: Output JSON.
+- `--force`: Confirm destructive removal or skip the interactive confirmation
+  prompt.
+- `--json`: Output JSON and imply destructive consent for automation.
 
 Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node.
+`node:default` resolves a node. The command never guesses the only visible app
+node as the target. Non-interactive human use requires `--force`; JSON use does
+not require `--force` because `--json` is destructive consent. Interactive TTY
+use prompts for confirmation when `--force` is absent.
 
 ## What Happens
 
@@ -42,7 +45,8 @@ Run this command to remove Orbit-managed artifacts for a tool and delete its gat
 
 1. Resolves the target node and registered tool row.
 2. Verifies the tool supports managed removal.
-3. Requires destructive confirmation.
+3. Requires destructive consent from `--force`, `--json`, or an interactive
+   confirmation prompt.
 4. Removes managed node artifacts through the gateway.
 5. Removes tool-owned credential material and service endpoint configuration when the
    selected tool owns those artifacts.

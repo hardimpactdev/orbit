@@ -12,7 +12,10 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\RemoveToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
+use App\Models\LocalNodeDefault;
+use App\Models\Node;
 use App\Services\Tools\ToolCatalog;
+use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolRemover;
 use App\Support\Tools\ToolActionProgressRunner;
@@ -38,6 +41,7 @@ class ToolRemoveCommand extends Command
         ToolActionProgressRunner $progress,
         ToolActionGatewayStreamClient $stream,
         ToolCatalog $catalog,
+        ToolRegistry $registry,
     ): int {
         $tool = $this->stringArgument('tool');
 
@@ -68,13 +72,72 @@ class ToolRemoveCommand extends Command
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
 
-        if (! $this->option('force')) {
+        $target = $this->resolveTargetOptions($node, $app);
+
+        if ($target instanceof ToolRegistryFailure) {
             return $this->failCommand(
-                code: 'destructive_consent_required',
-                message: 'Use --force to remove this tool.',
-                meta: ['field' => 'force'],
+                code: $target->code,
+                message: $target->message,
+                meta: $this->commandFailureMeta($target),
             );
         }
+
+        [$node, $app] = $target;
+
+        $targetName = $node ?? (string) $app;
+
+        if ($this->isGatewayCaller()) {
+            if (! $catalog->supports($tool)) {
+                $failure = ToolRegistryFailure::unsupportedAction($tool, 'remove');
+
+                return $this->failCommand($failure->code, $failure->message, $failure->meta);
+            }
+
+            $model = $registry->show(tool: $tool, node: $node, app: $app);
+
+            if ($model instanceof ToolRegistryFailure) {
+                return $this->failCommand($model->code, $model->message, $model->meta);
+            }
+
+            if (! $catalog->hasCapability($tool, 'remove')) {
+                $failure = ToolRegistryFailure::unsupportedAction($tool, 'remove');
+
+                return $this->failCommand($failure->code, $failure->message, $failure->meta);
+            }
+
+            $model->loadMissing('node');
+            $targetName = $model->node instanceof Node ? $model->node->name : $targetName;
+        }
+
+        if (! $this->option('force') && ! $this->option('json')) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Use --force or --json to remove this tool.',
+                    meta: ['field' => 'force', 'reason' => 'destructive_consent_required'],
+                );
+            }
+
+            try {
+                $confirmed = $this->promptConfirm("Remove tool '{$tool}' from '{$targetName}'?", default: false);
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: ['field' => 'force', 'reason' => 'cancelled'],
+                );
+            }
+
+            if (! $confirmed) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: ['field' => 'force', 'reason' => 'cancelled'],
+                );
+            }
+        }
+
+        $destructiveConsentSource = $this->destructiveConsentSource();
 
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()
@@ -92,6 +155,7 @@ class ToolRemoveCommand extends Command
                     payload: [
                         'app' => $app,
                         'node' => $node,
+                        'destructive_consent_source' => $destructiveConsentSource,
                     ],
                     unavailableMessage: 'Gateway connection is required to remove tools.',
                     defaultFooter: 'Tool remove failed',
@@ -113,7 +177,12 @@ class ToolRemoveCommand extends Command
 
         $result = $this->isGatewayCaller()
             ? $remover->remove($tool, node: $node, app: $app)
-            : $this->removeViaGateway($tool, node: $node, app: $app);
+            : $this->removeViaGateway(
+                tool: $tool,
+                node: $node,
+                app: $app,
+                destructiveConsentSource: $destructiveConsentSource,
+            );
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(
@@ -139,11 +208,16 @@ class ToolRemoveCommand extends Command
     /**
      * @return array<string, mixed>|GatewayApiException
      */
-    private function removeViaGateway(string $tool, ?string $node, ?string $app): array|GatewayApiException
+    private function removeViaGateway(string $tool, ?string $node, ?string $app, string $destructiveConsentSource): array|GatewayApiException
     {
         try {
             $dto = app(GatewayConnector::class)
-                ->send(new RemoveToolRequest(tool: $tool, app: $app, node: $node))
+                ->send(new RemoveToolRequest(
+                    tool: $tool,
+                    app: $app,
+                    node: $node,
+                    destructiveConsentSource: $destructiveConsentSource,
+                ))
                 ->dto();
         } catch (GatewayApiException $e) {
             return $e;
@@ -181,6 +255,70 @@ class ToolRemoveCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string}|ToolRegistryFailure
+     */
+    private function resolveTargetOptions(?string $node, ?string $app): array|ToolRegistryFailure
+    {
+        if ($node !== null || $app !== null) {
+            return [$node, $app];
+        }
+
+        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
+
+        if (is_string($defaultNode) && trim($defaultNode) !== '') {
+            return [trim($defaultNode), null];
+        }
+
+        if ($this->isInteractiveInput()) {
+            $nodes = Node::query()
+                ->where('role', 'app')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->pluck('name', 'name')
+                ->all();
+
+            if ($nodes !== []) {
+                try {
+                    return [(string) $this->promptSelect('Target node', $nodes), null];
+                } catch (PromptAborted) {
+                    return ToolRegistryFailure::validation('target', '', 'Operation cancelled.');
+                }
+            }
+        }
+
+        return ToolRegistryFailure::validation(
+            'target',
+            '',
+            'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function commandFailureMeta(ToolRegistryFailure $failure): array
+    {
+        if (($failure->meta['field'] ?? null) === 'target') {
+            return ['fields' => ['target']];
+        }
+
+        return $failure->meta;
+    }
+
+    private function destructiveConsentSource(): string
+    {
+        if ($this->option('force')) {
+            return 'force';
+        }
+
+        if ($this->option('json')) {
+            return 'json';
+        }
+
+        return 'interactive_confirm';
     }
 
     /**
