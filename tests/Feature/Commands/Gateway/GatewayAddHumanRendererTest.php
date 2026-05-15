@@ -211,6 +211,26 @@ it('shows gateway unavailable prose', function (): void {
         ->assertFailed();
 });
 
+it('shows unsupported platform prose', function (): void {
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+        'https://10.6.0.2/api/me' => Http::response([
+            'data' => [
+                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+            ],
+        ]),
+    ]);
+
+    $this->fakeInstaller->throwUnsupported = true;
+
+    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
+        ->expectsOutputToContain('This platform does not support automatic gateway CA trust installation.')
+        ->assertFailed();
+});
+
 it('shows local config write failure prose', function (): void {
     // Ensure LocalGatewaySettings record exists before making DB read-only
     LocalGatewaySettings::current()->fill([

@@ -14,8 +14,9 @@
   active Orbit WireGuard network.
 - The gateway can expose its root CA or trust bundle through the Orbit network
   before this machine has local OS-level trust installed.
-- Only `control` callers may run `gateway:add`. The gateway rejects `gateway`
-  and `app` callers with `This command may only be run from a control node.`
+- Only `control` callers may run `gateway:add`. The local gateway context
+  rejects `gateway` callers with `This command may only be run from a control
+  node.`
 
 ## Signature
 
@@ -123,6 +124,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Invalid gateway IP | Supplied or derived value is not a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`. | Failure |
 | Identity unknown | `/api/me` returns 403; the local peer is not registered. | Failure |
 | Gateway API error | `/api/me` returns a successful HTTP response with an invalid identity payload. | Failure |
+| Unsupported platform | The caller platform cannot install gateway CA trust automatically. | Failure |
 | Local config write failure | Gateway is reachable but local settings or CA file cannot be written. | Failure |
 
 Already-configured convergence is success, not failure.
@@ -166,7 +168,7 @@ Required split contract tests:
 | `tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures, and caller-role denial rules. |
 | `tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, node-shaped verified references, `added` and `converged` success payloads, error codes, and enum values. |
 | `tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Authorization by caller role: gateway authorizes control callers and rejects `gateway` and `app` callers; CLI surfaces the gateway's rejection without client-side branching. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Authorization by caller role: control callers proceed through onboarding and gateway-local callers are rejected before input prompts or side effects. `gateway:add` has no local app-role rejection point because it has no authority-backed local app-role source. |
 | `tests/E2E/GatewayAddTest.php` | Real-node end-to-end control-node join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |
 
 Role-specific behavior and test mapping live in:

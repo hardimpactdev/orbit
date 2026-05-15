@@ -263,6 +263,31 @@ it('emits gateway_unavailable for unreachable ca endpoint', function (): void {
         ->and($output['error']['meta']['gateway_ip'])->toBe('10.6.0.2');
 });
 
+it('emits node.unsupported_platform for unsupported platform', function (): void {
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+        'https://10.6.0.2/api/me' => Http::response([
+            'data' => [
+                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+            ],
+        ]),
+    ]);
+
+    $this->fakeInstaller->throwUnsupported = true;
+
+    $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
+
+    expect($output['error']['code'])->toBe('node.unsupported_platform')
+        ->and($output['error']['message'])->toBe('This platform does not support automatic gateway CA trust installation.')
+        ->and($output['error']['meta'])->toBe([
+            'platform' => PHP_OS_FAMILY,
+            'reason' => 'unsupported_trust_store',
+        ]);
+});
+
 it('emits node.local_config_write_failed for metadata write failure', function (): void {
     // Ensure LocalGatewaySettings record exists before making DB read-only
     LocalGatewaySettings::current()->fill([

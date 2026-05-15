@@ -5,17 +5,19 @@
 This page describes caller-role behavior when `orbit gateway:add` is invoked from
 an app node.
 
-**Effects:** `none`. The gateway rejects the caller when its WireGuard peer
-identity resolves to an `app` node, before any local prompts or side effects.
+**Effects:** `read`, `write` until an authority-backed gateway check fails.
+`gateway:add` has no local app-role rejection point because this command has no
+authority-backed local app-role source.
 
 **Prerequisites:**
-- The gateway has identified the caller's WireGuard peer identity as an
-  `app` node and rejected the `gateway:add` request.
+- The app node already has gateway-managed endpoint and trust artifacts from
+  node bootstrap or repair.
 
 ## Behavior
 
-The gateway rejects app-node callers. The CLI surfaces the rejection before
-running any local prompts or side effects.
+The local CLI does not infer an app caller role for `gateway:add`. If an app node
+runs `gateway:add`, the command follows the normal local onboarding path until a
+gateway request reaches an authority-backed role or identity check.
 
 App nodes run the Orbit CLI as a stateless gateway client. Their gateway-client
 endpoint and trust artifacts are installed and repaired by the gateway through
@@ -30,17 +32,22 @@ onboarding flow.
 
 ## Failure Semantics
 
-Fail before prompts or side effects with:
+There is no app-role-specific pre-prompt failure for `gateway:add`. If an app
+node reaches an authority-backed gateway role check, that gateway response is
+surfaced by the selected renderer.
+
+Gateway-local denial still uses:
 
 ```
 This command may only be run from a control node.
 ```
 
 The JSON renderer returns the same message with `error.code:
-"caller_role_not_allowed"` and `error.meta.caller_role: "app"`.
+"caller_role_not_allowed"` and `error.meta.caller_role: "gateway"` when
+`ORBIT_IS_GATEWAY` marks the local process as gateway context.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | App caller denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-local denial before input resolution, prompts, local writes, forwarding, or side effects. No local app-role guessing is introduced for `gateway:add`. Renderer tests own human and JSON formatting. |

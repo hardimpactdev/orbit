@@ -5,9 +5,11 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Services\Trust\TrustStoreInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Saloon\Http\Faking\MockClient;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
@@ -86,4 +88,37 @@ it('defaults to control when no local node role is set', function (): void {
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
         ->assertSuccessful();
+});
+
+it('rejects gateway-local callers before input prompts or side effects', function (): void {
+    config(['orbit.is_gateway' => true]);
+
+    $fakeInstaller = new class implements TrustStoreInstaller
+    {
+        public int $trustCalls = 0;
+
+        public function isCaTrusted(string $rootCaPath, string $label): bool
+        {
+            return false;
+        }
+
+        public function trustCa(string $rootCaPath, string $label, ?Closure $log = null): void
+        {
+            $this->trustCalls++;
+        }
+    };
+
+    app()->instance(TrustStoreInstaller::class, $fakeInstaller);
+
+    Http::fake(fn () => throw new RuntimeException('gateway:add should reject before HTTP side effects'));
+
+    $output = new BufferedOutput;
+    $exitCode = Artisan::call('gateway:add', ['--json' => true], $output);
+    $payload = json_decode($output->fetch(), true);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
+        ->and($payload['error']['meta'])->toBe(['caller_role' => 'gateway'])
+        ->and($payload['error']['message'])->toBe('This command may only be run from a control node.')
+        ->and($fakeInstaller->trustCalls)->toBe(0);
 });
