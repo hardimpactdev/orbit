@@ -37,6 +37,7 @@ The forwarded request includes:
 - `node_update.name`;
 - `node_update.host` when present;
 - `node_update.environment` when present;
+- `node_update.tld` when present;
 - `node_update.public_ipv4` when present;
 - `node_update.public_ipv6` when present;
 - the selected output renderer;
@@ -47,6 +48,19 @@ the request through the node access policy it owns. Because `node:update`
 mutates fleet configuration that the gateway owns, the control-role caller must have
 access to the gateway node. Access to the target node alone does not authorize
 the update write.
+
+Forwarded payload example for a development app TLD update:
+
+```json
+{
+  "tld": "test"
+}
+```
+
+The control CLI does not resolve the target row locally. If a forwarded
+`node_update.tld` targets a gateway or control node, the gateway rejects the
+request before gateway-owned side effects with `node.field_role_incompatible`,
+`meta.field=tld`, and the target role in metadata.
 
 ## Self-Update
 
@@ -79,6 +93,8 @@ This control node is not authorized to update nodes.
   authorized to operate on the gateway node.
 - Fail before side effects when `node_update.name` is missing, invalid, or no
   supported field flags are provided in non-interactive mode.
+- Preserve gateway-owned `node.field_role_incompatible` errors for forwarded
+  `node_update.tld` requests against non-app targets.
 
 ## Test Mapping
 
@@ -86,4 +102,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded request payload, gateway-node access authorization, self-update detection through authenticated WireGuard identity, gateway-unavailable failure, authorization failure, and result rendering. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded request payload including `tld`, gateway-preserved TLD role rejection for non-app targets, gateway-node access authorization, self-update detection through authenticated WireGuard identity, gateway-unavailable failure, authorization failure, and result rendering. |

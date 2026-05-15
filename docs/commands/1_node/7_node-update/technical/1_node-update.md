@@ -23,7 +23,7 @@
 ## Signature
 
 ```bash
-orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 ## Input Contract
@@ -36,6 +36,7 @@ This command follows the shared
 | `name` | `[name]` | Caller role = `control` or `gateway`. | Never. | None. | Must match an existing active node record. |
 | `host` | `--host` | Optional. | Target node role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
 | `environment` | `--environment` | Optional. | Target node role ≠ `app`. | None. | One of `development`, `production`. |
+| `tld` | `--tld` | Optional. | Target node role ≠ `app`, or target effective environment ≠ `development`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. Effective environment is supplied `--environment` when present, otherwise the node's current environment. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target node role = `control`. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target node role = `control`. | None. | Operator-supplied public IPv6 metadata. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
@@ -54,6 +55,7 @@ metadata is valid only for gateway and app nodes. Concretely:
 | --- | --- | --- |
 | `--host` | `gateway`, `app` | Target node role = `control`. |
 | `--environment` | `app` | Target node role ≠ `app`. |
+| `--tld` | `app` with effective environment `development` | Target node role = `gateway`, target node role = `control`, or app target effective environment = `production`. |
 | `--public-ipv4` | `gateway`, `app` | Target node role = `control`. |
 | `--public-ipv6` | `gateway`, `app` | Target node role = `control`. |
 
@@ -63,6 +65,15 @@ bootstrap endpoint and no public ingress, so `--host`, `--public-ipv4`, and
 metadata is supported on `gateway` and `app` target nodes; the gateway
 endpoint used in WireGuard peer configs lives on a separate field and is not
 updated by `--public-ipv4` or `--public-ipv6`.
+
+`node:update --tld` updates development TLD metadata for app nodes only. The
+effective environment is the supplied `--environment` value when present,
+otherwise the node's current stored environment. A production app can receive
+`--tld` only in the same update that changes it to
+`--environment=development`; any update that leaves or makes the effective
+environment `production` fails with `node.field_role_incompatible`,
+`meta.field=tld`, and the target role in metadata. Gateway and control targets
+fail with the same error code and metadata shape.
 
 `node:update --host` also does not update the gateway endpoint used in
 WireGuard peer configs that have already been issued. During first-gateway
@@ -85,6 +96,7 @@ gateway-owned side effects.
 3. Resolve field flags.
    - Resolve `node_update.host` from `--host` when present.
    - Resolve `node_update.environment` from `--environment` when present.
+   - Resolve `node_update.tld` from `--tld` when present.
    - Resolve `node_update.public_ipv4` from `--public-ipv4` when present.
    - Resolve `node_update.public_ipv6` from `--public-ipv6` when present.
 4. Validate role-conditional field eligibility.
@@ -93,6 +105,11 @@ gateway-owned side effects.
    - If `--host`, `--public-ipv4`, or `--public-ipv6` is present and the target
      node role is `control`, fail before side effects with
      `node.field_role_incompatible`.
+   - If `--tld` is present and the target node role is not `app`, fail before
+     side effects with `node.field_role_incompatible` and `meta.field=tld`.
+   - If `--tld` is present and the app target's effective environment is not
+     `development`, fail before side effects with
+     `node.field_role_incompatible` and `meta.field=tld`.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
      the duplicated field name. Symfony last-wins is not accepted.
@@ -124,6 +141,8 @@ Input mode behavior is split out of the canonical command contract:
 - Check role-conditional field rules. If a field is supplied for an
   incompatible role, fail before side effects with
   `node.field_role_incompatible`.
+- Check TLD uniqueness before side effects. If another active node already owns
+  the supplied TLD, fail with `node.tld_in_use`.
 
 ### Configuration Delta Rules
 
@@ -131,6 +150,9 @@ Input mode behavior is split out of the canonical command contract:
 - Fields that match the current value are no-ops and do not appear in
   `changed`.
 - Update the node record with the new values for changed fields.
+- Changing `tld` updates the gateway-owned development TLD metadata for the app
+  node. Any wider convergence or repair after that metadata write belongs to
+  the node-family doctor path.
 
 ### Artifact Re-applying Rules
 
@@ -159,9 +181,6 @@ Input mode behavior is split out of the canonical command contract:
   outside `node:update` scope. There is no `--role` input flag and no future
   migration command is named yet; a future explicit role-migration contract
   will own that flow.
-- Change a development app node's TLD after creation. Node doctor may repair
-  drift back to the TLD already stored in gateway node configuration, but
-  intentional TLD migration requires a future explicit command contract.
 - Update operating system packages, Orbit installations, tools, or system
   services beyond the artifacts that the node owns and that are directly affected by the changed field.
 - Update app runtime policy, tool state, firewall policy, proxy routes,
@@ -199,7 +218,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | No field provided | Non-interactive mode and no supported field flags are provided. | Failure |
 | Duplicate field flag | The same field flag is supplied more than once in a single invocation. | Failure |
 | Node not found | No active node record matches `name`. | Failure |
-| Field role-incompatible | A field is supplied for a node role that does not support it (e.g. `--environment` for a non-app node, or `--host`/`--public-ipv4`/`--public-ipv6` for a control node). | Failure |
+| Field role-incompatible | A field is supplied for a node role or effective environment that does not support it (e.g. `--environment` for a non-app node, `--host`/`--public-ipv4`/`--public-ipv6` for a control node, or `--tld` for gateway/control/production-effective app targets). | Failure |
+| TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
@@ -234,8 +254,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, no-op success with empty `changed`, node-not-found failure, control-caller forwarding, app-node denial, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, control-caller forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, forwarded structured errors, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnAppNodeContractTest.php` | App-caller behavior: app-role callers forward through the CLI gateway client, receive gateway-owned `caller_role_not_allowed`, and are not locally pre-rejected. |
+| `tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD role and effective-environment rejection, production-to-development plus `--tld` success, duplicate TLD conflict, and invalid TLD syntax. |
 
 Input-mode-specific test mapping lives in:
 

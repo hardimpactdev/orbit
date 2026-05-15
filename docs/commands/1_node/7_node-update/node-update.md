@@ -12,12 +12,13 @@ refreshed automatically.
 ## Usage
 
 ```bash
-orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 Run without arguments from a control or gateway node in a TTY to let the
 interactive input mode prompt for the node name and which field to change.
-App-node callers are rejected before prompts.
+App-node callers are gateway clients; the gateway rejects them before
+gateway-owned side effects.
 
 In non-interactive input mode, at least one field flag must be provided;
 otherwise the command fails before side effects.
@@ -27,6 +28,7 @@ otherwise the command fails before side effects.
 ```bash
 orbit node:update app-1 --host=app-1.ssh.example.com
 orbit node:update app-1 --environment=production
+orbit node:update app-1 --environment=development --tld=test
 orbit node:update gateway-1 --public-ipv4=203.0.113.2
 orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 ```
@@ -41,6 +43,8 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   peer configs have been issued; `node:update --host` is later node metadata.
 - `--environment=<development|production>`: app-node environment. Only valid
   for `app` nodes.
+- `--tld=<tld>`: development TLD for development app nodes. Valid only when the
+  effective environment is `development`.
 - `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator. Valid for
   `gateway` and `app` nodes. Forbidden on `control` nodes.
 - `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator. Valid for
@@ -68,9 +72,11 @@ that are directly affected by the changed metadata.
 - Re-applies node-owned host artifacts when a changed setting has node-side
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
-- Does not change a development app node's TLD after creation. Doctor may
-  repair drift back to the TLD already stored in gateway node configuration,
-  but intentional TLD migration requires a future explicit command contract.
+- Changes a development app node's TLD when `--tld` is supplied. `--tld` is
+  valid only for app-node targets whose effective environment is `development`;
+  gateway targets, control targets, and production-effective app targets are
+  rejected before side effects. Broader drift repair after a TLD change belongs
+  to [`doctor --family=node --restore`](../node-doctor.md).
 - Does not change node role after creation. Role change is an identity
   migration outside `node:update` scope; a future explicit role-migration
   contract will own that flow.
@@ -97,7 +103,8 @@ for the envelope shape.
 
 - Must run on the gateway host or from a configured control node.
 - Control callers must be authorized to operate on the gateway node.
-- App-node callers are rejected before prompts or side effects.
+- App-node callers are gateway clients; the gateway rejects them before
+  gateway-owned side effects.
 - The target node must exist in gateway configuration.
 - At least one supported field must be provided in non-interactive input mode.
 

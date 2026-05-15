@@ -29,10 +29,17 @@ execution.
 1. Resolve `node_update.name`.
 2. Validate the node exists.
 3. Validate role-conditional field eligibility.
-4. Compute the configuration delta (which fields actually changed).
-5. Write the updated node record.
-6. Re-apply node-owned host artifacts for changed fields.
-7. Return the result.
+4. Validate `node_update.tld` when present: the target must be an app node whose
+   effective environment is `development`, and no other active node may already
+   own that TLD.
+5. Compute the configuration delta (which fields actually changed).
+6. Write the updated node record.
+7. Re-apply node-owned host artifacts for changed fields.
+8. Return the result.
+
+When the target is currently a production app, `--environment=development
+--tld=<tld>` is a valid single update because the effective environment is the
+supplied `development` value.
 
 ## Failure Semantics
 
@@ -42,6 +49,10 @@ execution.
 - Fail before side effects when a field is supplied for an incompatible node
   role (`--environment` on a non-app node, or `--host`, `--public-ipv4`, or
   `--public-ipv6` on a control node).
+- Fail before side effects when `--tld` is supplied for a gateway target,
+  control target, or app target whose effective environment is `production`.
+- Fail before side effects with `node.tld_in_use` when `--tld` matches another
+  active node's stored TLD.
 - Fail before side effects when the same field flag is supplied more than
   once in a single invocation.
 - Report artifact applying failures as structured warnings under
@@ -54,4 +65,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Gateway-local update, field validation, role-conditional field rules, no-op success, artifact re-applying reporting, and warning payload shape for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Gateway-local update, field validation, role-conditional field rules including `tld`, no-op success, artifact re-applying reporting, and warning payload shape for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Gateway-local non-interactive TLD success, production-effective app rejection, production-to-development plus TLD success, duplicate-TLD conflict, and invalid-TLD syntax. |
