@@ -22,7 +22,6 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
         public readonly ?string $app = null,
         public readonly ?string $node = null,
         public readonly string $status = 'installed',
-        public readonly ?string $version = null,
         public readonly array $toolConfig = [],
     ) {}
 
@@ -40,7 +39,6 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
             'app' => $this->app,
             'node' => $this->node,
             'status' => $this->status,
-            'version' => $this->version,
             'config' => $this->toolConfig === [] ? null : $this->toolConfig,
         ], static fn (mixed $value): bool => $value !== null);
     }

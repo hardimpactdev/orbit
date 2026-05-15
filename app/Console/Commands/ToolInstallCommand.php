@@ -12,6 +12,8 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\InstallToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolInstallResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
+use App\Models\LocalNodeDefault;
+use App\Models\Node;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
@@ -26,7 +28,6 @@ use Throwable;
     {--app= : Resolve target by app selector}
     {--node= : Resolve target by node}
     {--status=installed : Desired state after install (installed|running)}
-    {--expected-version= : Expected version constraint}
     {--json : Output JSON}')]
 #[Description('Install a managed tool')]
 class ToolInstallCommand extends Command
@@ -68,15 +69,30 @@ class ToolInstallCommand extends Command
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
         $status = (string) $this->option('status');
-        $version = $this->stringOption('expected-version');
 
         if (! in_array($status, ['installed', 'running'], true)) {
             return $this->failCommand(
-                code: 'invalid_status',
+                code: 'validation_failed',
                 message: "Invalid --status value '{$status}'. Valid values: installed, running.",
-                meta: ['field' => 'status'],
+                meta: [
+                    'field' => 'status',
+                    'value' => $status,
+                    'reason' => 'unsupported_value',
+                ],
             );
         }
+
+        $target = $this->resolveTargetOptions($node, $app);
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $target->code,
+                message: $target->message,
+                meta: $this->commandFailureMeta($target),
+            );
+        }
+
+        [$node, $app] = $target;
 
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()
@@ -89,7 +105,6 @@ class ToolInstallCommand extends Command
                         tool: $tool,
                         node: $node,
                         app: $app,
-                        expectedVersion: $version,
                         expectedState: $status,
                     ),
                 )
@@ -101,7 +116,6 @@ class ToolInstallCommand extends Command
                         'app' => $app,
                         'node' => $node,
                         'status' => $status,
-                        'version' => $version,
                         'config' => [],
                     ],
                     unavailableMessage: 'Gateway connection is required to install tools.',
@@ -127,10 +141,9 @@ class ToolInstallCommand extends Command
                 tool: $tool,
                 node: $node,
                 app: $app,
-                expectedVersion: $version,
                 expectedState: $status,
             )
-            : $this->installViaGateway($tool, node: $node, app: $app, status: $status, version: $version);
+            : $this->installViaGateway($tool, node: $node, app: $app, status: $status);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(
@@ -161,7 +174,6 @@ class ToolInstallCommand extends Command
         ?string $node,
         ?string $app,
         string $status,
-        ?string $version,
     ): array|GatewayApiException {
         try {
             $dto = app(GatewayConnector::class)
@@ -170,7 +182,6 @@ class ToolInstallCommand extends Command
                     app: $app,
                     node: $node,
                     status: $status,
-                    version: $version,
                     toolConfig: [],
                 ))
                 ->dto();
@@ -210,6 +221,57 @@ class ToolInstallCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string}|ToolRegistryFailure
+     */
+    private function resolveTargetOptions(?string $node, ?string $app): array|ToolRegistryFailure
+    {
+        if ($node !== null || $app !== null) {
+            return [$node, $app];
+        }
+
+        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
+
+        if (is_string($defaultNode) && trim($defaultNode) !== '') {
+            return [trim($defaultNode), null];
+        }
+
+        if ($this->isInteractiveInput()) {
+            $nodes = Node::query()
+                ->where('role', 'app')
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->pluck('name', 'name')
+                ->all();
+
+            if ($nodes !== []) {
+                try {
+                    return [(string) $this->promptSelect('Target node', $nodes), null];
+                } catch (PromptAborted) {
+                    return ToolRegistryFailure::validation('target', '', 'Operation cancelled.');
+                }
+            }
+        }
+
+        return ToolRegistryFailure::validation(
+            'target',
+            '',
+            'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function commandFailureMeta(ToolRegistryFailure $failure): array
+    {
+        if (($failure->meta['field'] ?? null) === 'target') {
+            return ['fields' => ['target']];
+        }
+
+        return $failure->meta;
     }
 
     /**

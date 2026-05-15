@@ -1,0 +1,117 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
+use App\Models\NodeTool;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+const TOOL_INSTALL_API_CALLER_WG_IP = '10.6.0.98';
+
+function createToolInstallApiCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'tool-install-api-caller',
+        'role' => 'control',
+        'host' => TOOL_INSTALL_API_CALLER_WG_IP,
+        'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
+    ], $overrides));
+}
+
+function grantToolInstallApiAccess(Node $caller, Node $appNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $appNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+describe('ToolInstallController', function (): void {
+    it('rejects invalid status before row writes or remote shell actions', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/redis/install', [
+            'node' => 'app-install-api-1',
+            'status' => 'foo',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'status')
+            ->assertJsonPath('error.meta.value', 'foo')
+            ->assertJsonPath('error.meta.reason', 'unsupported_value');
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('rejects direct API install-time version intent before side effects', function (array $payload): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/redis/install', [
+            'node' => 'app-install-api-1',
+            ...$payload,
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'unsupported_field');
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    })->with([
+        'version' => [['version' => '1.0.0']],
+        'expected_version' => [['expected_version' => '1.0.0']],
+        'expected-version' => [['expected-version' => '1.0.0']],
+    ]);
+
+    it('requires an explicit target selector even when exactly one app node is visible', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/redis/install', [], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.fields', ['target']);
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
+});
+
+final class ToolInstallApiRecordingShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

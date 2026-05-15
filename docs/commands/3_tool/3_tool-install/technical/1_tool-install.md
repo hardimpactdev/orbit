@@ -23,16 +23,23 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Supported tool name.` |
-| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
+| `node` | `--node` | When no `--app`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | `Expected lifecycle state: installed or running.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
+
+`version`, `expected_version`, and `expected-version` are not `tool:install`
+inputs. Version intent belongs to `tool:update --expected-version`, where the
+requested intent change is explicit after a tool is managed.
 
 ## Behavior Contract
 
 ### Tool configuration and apply rules
 
 - Verifies the tool supports managed installation on the target node.
+- Requires an explicit target source: `--node`, `--app`, local `node:default`,
+  or interactive target selection. Non-interactive mode without a target source
+  fails with `validation_failed`.
 - Writes or updates gateway tool configuration.
 - Generates managed credential material when the tool definition owns
   credentials.
@@ -64,6 +71,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
+| Unsupported status value | `--status` is not `installed` or `running`. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
+| Missing target source | Non-interactive input provides no `--node`, `--app`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
@@ -75,4 +84,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Tools/ToolInstallCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `tests/Feature/Commands/Tools/ToolInstallJsonRendererTest.php` | JSON envelope shape, unsupported status metadata, missing target metadata, gateway error pass-through, and `--expected-version` rejection. |
+| `tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway-side install validation for unsupported status, rejected install-time version intent, and required explicit target selectors. |
 | `tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

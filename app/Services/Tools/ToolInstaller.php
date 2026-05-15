@@ -24,7 +24,6 @@ final readonly class ToolInstaller
         string $tool,
         ?string $node = null,
         ?string $app = null,
-        ?string $expectedVersion = null,
         string $expectedState = 'installed',
         array $config = [],
     ): array|ToolRegistryFailure {
@@ -54,7 +53,7 @@ final readonly class ToolInstaller
                 'name' => $tool,
             ],
             [
-                'expected_version' => $expectedVersion,
+                'expected_version' => null,
                 'expected_state' => $expectedState,
                 'config' => $config === [] ? null : $config,
             ],
@@ -131,21 +130,10 @@ final readonly class ToolInstaller
             }
         }
 
-        $nodes = Node::query()
-            ->where('role', 'app')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->limit(2)
-            ->get();
-
-        if ($nodes->count() === 1) {
-            return $nodes->first();
-        }
-
         return ToolRegistryFailure::validation(
-            'node',
+            'target',
             '',
-            'A node or app filter is required when the visible tool target is ambiguous.',
+            'A node or app target is required.',
         );
     }
 }

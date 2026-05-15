@@ -25,13 +25,14 @@ orbit tool:install redis --node=app-1 --json
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
-- `--node`: Target node. Defaults to local `node:default` when configured.
+- `--node`: Target node.
 - `--app`: Resolve the target node from an app.
 - `--status`: Expected lifecycle state after install. Defaults to `installed`.
 - `--json`: Output JSON.
 
-Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node.
+Target context is required. Provide `--node`, `--app`, configure local
+`node:default`, or select a target interactively. `tool:install` does not use a
+silent single-node fallback.
 
 ## What Happens
 
@@ -50,8 +51,9 @@ Run this command to bootstrap a supported tool on the target node and record gat
 7. Starts the tool when the expected state is `running`.
 8. Reports the resulting expected state and command-owned apply outcome.
 
-If the tool is already managed and the operator wants to change its version,
-use [`tool:update`](../9_tool-update/tool-update.md).
+If the tool is already managed and the operator wants to change its version
+intent, use [`tool:update --expected-version`](../9_tool-update/tool-update.md).
+`tool:install` does not accept install-time version intent.
 
 ## Output
 

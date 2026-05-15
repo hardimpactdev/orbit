@@ -43,6 +43,12 @@ final class ToolInstallController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
+        $inputFailure = $this->validateInstallInput($request);
+
+        if ($inputFailure instanceof JsonResponse) {
+            return $inputFailure;
+        }
+
         $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
 
         if ($target instanceof JsonResponse) {
@@ -52,7 +58,6 @@ final class ToolInstallController implements Loggable
         $node = $target['node'];
         $app = $target['app'];
         $status = (string) $request->input('status', 'installed');
-        $version = $this->requestString($request, 'version');
         $toolConfig = $request->input('config', []);
 
         if (! is_array($toolConfig)) {
@@ -63,7 +68,6 @@ final class ToolInstallController implements Loggable
             tool: $tool,
             node: $node,
             app: $app,
-            expectedVersion: $version,
             expectedState: $status,
             config: $toolConfig,
         );
@@ -98,7 +102,57 @@ final class ToolInstallController implements Loggable
         ]);
     }
 
-    private function requestString(Request $request, string $key): ?string
+    private function validateInstallInput(Request $request): ?JsonResponse
+    {
+        $status = $request->input('status', 'installed');
+
+        if (! is_string($status) || ! in_array($status, ['installed', 'running'], true)) {
+            $statusValue = is_scalar($status) ? (string) $status : get_debug_type($status);
+
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => "Invalid status value '{$statusValue}'. Valid values: installed, running.",
+                    'meta' => [
+                        'field' => 'status',
+                        'value' => $statusValue,
+                        'reason' => 'unsupported_value',
+                    ],
+                ],
+            ], 422);
+        }
+
+        foreach (['version', 'expected_version', 'expected-version'] as $field) {
+            if ($request->exists($field)) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'validation_failed',
+                        'message' => 'Install-time version intent is not supported. Use tool:update --expected-version after install.',
+                        'meta' => [
+                            'field' => $field,
+                            'reason' => 'unsupported_field',
+                        ],
+                    ],
+                ], 422);
+            }
+        }
+
+        if ($this->requestTargetString($request, 'node') === null && $this->requestTargetString($request, 'app') === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'A node or app target is required.',
+                    'meta' => [
+                        'fields' => ['target'],
+                    ],
+                ],
+            ], 422);
+        }
+
+        return null;
+    }
+
+    private function requestTargetString(Request $request, string $key): ?string
     {
         $value = $request->input($key);
 

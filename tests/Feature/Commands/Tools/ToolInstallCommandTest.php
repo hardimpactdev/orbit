@@ -100,7 +100,13 @@ describe('tool:install command contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('invalid_status')
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta'])->toBe([
+                'field' => 'status',
+                'value' => 'invalid',
+                'reason' => 'unsupported_value',
+            ])
+            ->and(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     });
 
@@ -167,10 +173,9 @@ describe('tool:install command contract', function (): void {
             ->and($payload['success']['data']['tool']['name'])->toBe('redis');
     });
 
-    it('requires node or app when target is ambiguous', function (): void {
+    it('requires an explicit target source in non-interactive mode', function (): void {
         createToolInstallLocalNode('gateway');
         Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
-        Node::factory()->create(['name' => 'app-2', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -179,6 +184,8 @@ describe('tool:install command contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     });
 });
