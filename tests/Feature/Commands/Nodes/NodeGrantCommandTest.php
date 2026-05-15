@@ -204,6 +204,7 @@ describe('node:grant base contract', function (): void {
 });
 
 describe('node:grant control forwarding', function (): void {
+    // covered by Nodes/NodeGrantOnControlNodeContractTest.php
     it('forwards configured control-node grants to the gateway without local target rows', function (): void {
         config(['orbit.is_gateway' => false]);
 
@@ -245,6 +246,7 @@ describe('node:grant control forwarding', function (): void {
             ]);
     });
 
+    // covered by Nodes/NodeGrantOnControlNodeContractTest.php
     it('renders forwarded already-granted success with human output', function (): void {
         config(['orbit.is_gateway' => false]);
 
@@ -270,6 +272,7 @@ describe('node:grant control forwarding', function (): void {
         expect(Artisan::output())->toContain("'control-1' already has access to 'app-1'");
     });
 
+    // covered by Nodes/NodeGrantOnControlNodeContractTest.php
     it('preserves structured gateway errors when forwarding', function (array $error): void {
         config(['orbit.is_gateway' => false]);
 
