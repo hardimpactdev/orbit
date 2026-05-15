@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeRemoveCommand;
+use App\Models\Node;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -149,6 +151,53 @@ describe('node:remove human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain("Node 'control-1' removed");
         expect($output)->not->toContain('This machine no longer has Orbit gateway access.');
+    });
+
+    it('renders development DNS drift prose with recovery guidance', function (): void {
+        setupNodeRemoveGatewayCallerHuman();
+        DB::table('nodes')->insert(nodeRemoveHumanRow([
+            'tld' => 'test',
+        ]));
+
+        app()->instance(DevelopmentDnsMappingEnactor::class, new class extends DevelopmentDnsMappingEnactor
+        {
+            public function mappingFor(Node $node): ?array
+            {
+                if ($node->name === '') {
+                    return null;
+                }
+
+                return [
+                    'node' => 'app-1',
+                    'tld' => 'test',
+                    'domain' => '*.test',
+                    'target' => '10.6.0.7',
+                ];
+            }
+
+            public function remove(Node $node): array
+            {
+                return [
+                    'status' => 'failed',
+                    'changed' => false,
+                    'domain' => '*.test',
+                    'target' => '10.6.0.7',
+                    'path' => '/tmp/test.conf',
+                    'reason' => 'file delete error',
+                ];
+            }
+        });
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0);
+        expect($output)->toContain("Node 'app-1' removed")
+            ->and($output)->toContain('Drift detected: Development DNS: Development DNS mapping could not be removed: file delete error')
+            ->and($output)->toContain('Run: orbit doctor --fix --family=node --restore');
     });
 
     it('renders node-not-found prose error', function (): void {

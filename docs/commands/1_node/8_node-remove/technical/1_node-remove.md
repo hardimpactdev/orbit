@@ -192,7 +192,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/NodeRemoveCommandTest.php` | Command contract: node removal, grant cleanup, WireGuard peer teardown, warning payload shape for partial detach, DNS mapping cleanup, control-caller forwarding, self-removal, app-node denial, node-not-found as validation failure, gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
+| `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract: node removal, grant cleanup, WireGuard peer teardown, warning payload shape for partial detach, DNS mapping cleanup, control-caller forwarding, self-removal, app-node denial, node-not-found as validation failure, gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
+| `tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded control-node rendering paths. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
 | `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 

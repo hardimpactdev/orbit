@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Actions\Nodes\RemoveNode;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
@@ -13,9 +14,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
-use App\Models\NodeAccess;
-use App\Models\WireGuardPeer;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -124,23 +122,11 @@ class NodeRemoveCommand extends Command
             return $node;
         }
 
-        $grantsRemoved = 0;
-        $peerRemoved = false;
-        $operation = function () use ($node, &$grantsRemoved, &$peerRemoved): string {
-            $grantsRemoved = NodeAccess::query()
-                ->where('consumer_node_id', $node->id)
-                ->orWhere('serving_node_id', $node->id)
-                ->delete();
+        $dto = null;
+        $operation = function () use ($node, $isSelfRemoval, &$dto): string {
+            $dto = app(RemoveNode::class)->handle($node, $isSelfRemoval);
 
-            $peerRemoved = WireGuardPeer::query()
-                ->where('node_id', $node->id)
-                ->delete() > 0;
-
-            app(DevelopmentDnsMappingEnactor::class)->remove($node);
-
-            $node->delete();
-
-            return 'removed';
+            return $dto->warnings === [] ? 'removed' : 'removed with drift';
         };
 
         if (! $this->wantsJson()) {
@@ -153,31 +139,11 @@ class NodeRemoveCommand extends Command
             $operation();
         }
 
-        $data = [
-            'name' => $name,
-            'action' => 'removed',
-            'removed_self' => $isSelfRemoval,
-            'wireguard_peer_removed' => $peerRemoved,
-            'grants_removed' => $grantsRemoved,
-        ];
-
-        if ($this->wantsJson()) {
-            $this->line(json_encode([
-                'success' => [
-                    'data' => $data,
-                ],
-            ], JSON_THROW_ON_ERROR));
-
-            return self::SUCCESS;
+        if (! $dto instanceof NodeRemoveResponse) {
+            return self::FAILURE;
         }
 
-        $this->line("Node '{$name}' removed");
-
-        if ($isSelfRemoval) {
-            $this->line('  This machine no longer has Orbit gateway access.');
-        }
-
-        return self::SUCCESS;
+        return $this->respondSuccess($name, $dto);
     }
 
     private function forwardRemove(string $name, bool $isSelfRemoval): int
@@ -218,10 +184,10 @@ class NodeRemoveCommand extends Command
             );
         }
 
-        return $this->respondForwardedSuccess($name, $isSelfRemoval, $dto);
+        return $this->respondSuccess($name, $dto);
     }
 
-    private function respondForwardedSuccess(string $fallbackName, bool $fallbackIsSelfRemoval, NodeRemoveResponse $dto): int
+    private function respondSuccess(string $fallbackName, NodeRemoveResponse $dto): int
     {
         $responseData = [
             'name' => $dto->name !== '' ? $dto->name : $fallbackName,
@@ -232,10 +198,18 @@ class NodeRemoveCommand extends Command
         ];
 
         if ($this->wantsJson()) {
+            $success = [
+                'data' => $responseData,
+            ];
+
+            if ($dto->warnings !== []) {
+                $success['meta'] = [
+                    'warnings' => $dto->warnings,
+                ];
+            }
+
             $this->line(json_encode([
-                'success' => [
-                    'data' => $responseData,
-                ],
+                'success' => $success,
             ], JSON_THROW_ON_ERROR));
 
             return self::SUCCESS;
@@ -246,6 +220,8 @@ class NodeRemoveCommand extends Command
         if ($responseData['removed_self']) {
             $this->line('  This machine no longer has Orbit gateway access.');
         }
+
+        $this->renderWarnings($dto->warnings);
 
         return self::SUCCESS;
     }
@@ -350,5 +326,28 @@ class NodeRemoveCommand extends Command
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    /**
+     * @param  list<array<string, string>>  $warnings
+     */
+    private function renderWarnings(array $warnings): void
+    {
+        foreach ($warnings as $warning) {
+            $this->line('  Drift detected: '.$this->warningLabel((string) ($warning['code'] ?? '')).': '.(string) ($warning['message'] ?? 'Warning'));
+
+            if (isset($warning['next_command']) && is_string($warning['next_command'])) {
+                $this->line('  Run: orbit '.$warning['next_command']);
+            }
+        }
+    }
+
+    private function warningLabel(string $code): string
+    {
+        return match ($code) {
+            RemoveNode::DevelopmentDnsWarningCode => 'Development DNS',
+            'node.wireguard_peer_extra' => 'WireGuard',
+            default => 'Node',
+        };
     }
 }

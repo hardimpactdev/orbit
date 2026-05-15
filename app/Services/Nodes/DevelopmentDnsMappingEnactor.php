@@ -64,6 +64,7 @@ class DevelopmentDnsMappingEnactor
      *     domain?: string,
      *     target?: string,
      *     path?: string,
+     *     reason?: string,
      * }
      */
     public function remove(Node $node): array
@@ -89,7 +90,29 @@ class DevelopmentDnsMappingEnactor
             ];
         }
 
-        File::delete($path);
+        try {
+            $removed = File::delete($path);
+        } catch (\Throwable $exception) {
+            return [
+                'status' => 'failed',
+                'changed' => false,
+                'domain' => $mapping['domain'],
+                'target' => $mapping['target'],
+                'path' => $path,
+                'reason' => $exception->getMessage(),
+            ];
+        }
+
+        if (! $removed) {
+            return [
+                'status' => 'failed',
+                'changed' => false,
+                'domain' => $mapping['domain'],
+                'target' => $mapping['target'],
+                'path' => $path,
+                'reason' => 'file delete returned false',
+            ];
+        }
 
         return [
             'status' => 'removed',

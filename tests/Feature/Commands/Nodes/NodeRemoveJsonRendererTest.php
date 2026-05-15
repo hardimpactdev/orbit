@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeRemoveCommand;
+use App\Models\Node;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -83,6 +85,19 @@ function setupNodeRemoveGatewayCallerJson(): void
     ]));
 }
 
+/**
+ * @return array{code: string, message: string, family: string, next_command: string}
+ */
+function nodeRemoveJsonDnsWarning(): array
+{
+    return [
+        'code' => 'node.development_dns_mapping_mismatch',
+        'message' => 'Development DNS mapping could not be removed: file delete error',
+        'family' => 'node',
+        'next_command' => 'doctor --fix --family=node --restore',
+    ];
+}
+
 describe('node:remove JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns discriminated success envelope', function (): void {
         setupNodeRemoveGatewayCallerJson();
@@ -150,6 +165,53 @@ describe('node:remove JSON renderer contract', function (): void {
             ->and($payload['success']['data']['removed_self'])->toBeFalse()
             ->and($payload['success']['data']['name'])->toBe('control-1')
             ->and($payload['success']['data']['action'])->toBe('removed');
+    });
+
+    it('returns success meta warnings for development DNS cleanup drift', function (): void {
+        setupNodeRemoveGatewayCallerJson();
+        DB::table('nodes')->insert(nodeRemoveJsonRow([
+            'tld' => 'test',
+        ]));
+
+        app()->instance(DevelopmentDnsMappingEnactor::class, new class extends DevelopmentDnsMappingEnactor
+        {
+            public function mappingFor(Node $node): ?array
+            {
+                if ($node->name === '') {
+                    return null;
+                }
+
+                return [
+                    'node' => 'app-1',
+                    'tld' => 'test',
+                    'domain' => '*.test',
+                    'target' => '10.6.0.7',
+                ];
+            }
+
+            public function remove(Node $node): array
+            {
+                return [
+                    'status' => 'failed',
+                    'changed' => false,
+                    'domain' => '*.test',
+                    'target' => '10.6.0.7',
+                    'path' => '/tmp/test.conf',
+                    'reason' => 'file delete error',
+                ];
+            }
+        });
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['meta']['warnings'])->toBe([nodeRemoveJsonDnsWarning()]);
     });
 
     it('returns node.not_found error with correct metadata', function (): void {

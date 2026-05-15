@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Nodes\RemoveNode;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\RemoveNodeApiRequest;
 use App\Models\Node;
-use App\Models\NodeAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +24,8 @@ final class NodeRemoveController implements Loggable
     private int $activityGrantsRemoved = 0;
 
     private bool $activityWireGuardPeerRemoved = false;
+
+    public function __construct(private readonly RemoveNode $removeNode) {}
 
     public function __invoke(RemoveNodeApiRequest $request, string $name): JsonResponse
     {
@@ -94,29 +96,28 @@ final class NodeRemoveController implements Loggable
         $removedSelf = $caller->name === $node->name;
         $this->activityRemovedSelf = $removedSelf;
 
-        $grantsRemoved = DB::transaction(function () use ($node): int {
-            $grantsRemoved = NodeAccess::query()
-                ->where('consumer_node_id', $node->id)
-                ->orWhere('serving_node_id', $node->id)
-                ->delete();
+        $dto = $this->removeNode->handle($node, $removedSelf);
+        $this->activityGrantsRemoved = $dto->grantsRemoved;
+        $this->activityWireGuardPeerRemoved = $dto->wireguardPeerRemoved;
 
-            // WireGuard peer teardown and DNS cleanup remain documented bootstrap gaps.
-            $node->delete();
+        $success = [
+            'data' => [
+                'name' => $dto->name,
+                'action' => 'removed',
+                'removed_self' => $dto->removedSelf,
+                'wireguard_peer_removed' => $dto->wireguardPeerRemoved,
+                'grants_removed' => $dto->grantsRemoved,
+            ],
+        ];
 
-            return $grantsRemoved;
-        });
-        $this->activityGrantsRemoved = $grantsRemoved;
+        if ($dto->warnings !== []) {
+            $success['meta'] = [
+                'warnings' => $dto->warnings,
+            ];
+        }
 
         return response()->json([
-            'success' => [
-                'data' => [
-                    'name' => $name,
-                    'action' => 'removed',
-                    'removed_self' => $removedSelf,
-                    'wireguard_peer_removed' => false,
-                    'grants_removed' => $grantsRemoved,
-                ],
-            ],
+            'success' => $success,
         ]);
     }
 
