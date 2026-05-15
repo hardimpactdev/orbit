@@ -140,7 +140,6 @@ class ToolListCommand extends Command
             $rows[] = [
                 $tool['name'],
                 $tool['expected_state'],
-                $tool['observed_state'] ?? '(not observed)',
                 $tool['version'] ?? '(unknown)',
                 ($tool['managed'] ?? false) ? 'yes' : 'no',
             ];
@@ -155,7 +154,7 @@ class ToolListCommand extends Command
     private function renderNodeTable(string $node, array $rows): void
     {
         $this->line("Node: {$node}");
-        table(['Tool', 'Expected', 'Observed', 'Version', 'Managed'], $rows);
+        table(['Tool', 'Expected', 'Version', 'Managed'], $rows);
     }
 
     /**

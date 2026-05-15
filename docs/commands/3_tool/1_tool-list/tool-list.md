@@ -4,7 +4,7 @@
 
 List registered tool state from gateway configuration.
 
-`tool:list` shows the tools Orbit expects, manages, or observes on nodes in the
+`tool:list` shows the tools Orbit expects or manages on nodes in the
 fleet. It is an inventory and audit command. It does not probe nodes unless a
 future command contract adds an explicit live inspection option.
 
@@ -32,7 +32,7 @@ orbit tool:list --json
 
 ## What Happens
 
-Run this command to read the tools Orbit expects, manages, or observes on the selected nodes.
+Run this command to read the tools Orbit expects or manages on the selected nodes.
 
 `tool:list`:
 
