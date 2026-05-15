@@ -9,7 +9,11 @@
 **Prerequisites:**
 - The gateway authenticates the CLI and authorizes `node:agent-ide` only when
   the caller's gateway-known role is `control` or `gateway`. App-role callers
-  are rejected.
+  are rejected by the gateway before side effects.
+- The CLI does not perform a local app-role check or a separate `/api/me`
+  preflight. Local input validation or prompting may occur before the final
+  gateway write request unless another gateway request naturally returns the
+  role denial first.
 - Gateway callers can read and write gateway-owned node configuration.
 - Control callers have configured gateway access.
 - The target node exists in gateway node configuration.
@@ -56,7 +60,10 @@ This command follows the shared
      adapters fail at command time with `node.unsupported_adapter`.
 5. Send the typed request to the gateway over HTTPS through WireGuard. The
    gateway authenticates the caller and authorizes the write before any side
-   effects. Select the output renderer and render the result.
+   effects. Structured gateway failures are rendered with their original
+   `error.code`, `message`, and `meta`; only unstructured transport failures
+   become `gateway_unavailable`. Select the output renderer and render the
+   result.
 
 ## Input Mode Contracts
 
@@ -126,8 +133,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Caller role not allowed | The gateway resolves the caller as an app-role node. | Failure with `caller_role_not_allowed` |
+| Authorization failed | A control caller is not authorized to update node registry configuration. | Failure with `authorization_failed` |
 | Node not found | No active node record matches `name`. | Failure |
 | Unsupported adapter | The requested adapter is not supported. | Failure |
+| Gateway unavailable | The CLI cannot reach the gateway or receives an unstructured transport failure. | Failure with `gateway_unavailable` |
 
 No-op sets (already matching) are successful with `action: "converged"`, not
 failure.

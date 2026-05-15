@@ -33,23 +33,14 @@ class NodeAgentIdeCommand extends Command
 
     public function handle(NodeAgentIdeDefaults $defaults): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $isGateway = (bool) config('orbit.is_gateway', false);
 
-        if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to update node configuration.',
-                meta: [],
-            );
-        }
-
-        $name = $this->resolveName($callerRole);
+        $name = $this->resolveName();
 
         if ($name instanceof GatewayApiException) {
-            return $this->failCommand(
-                code: $name->errorCode() ?? 'gateway_unavailable',
-                message: $name->getMessage(),
-                meta: $name->errorMeta(),
+            return $this->failGatewayException(
+                exception: $name,
+                unavailableMessage: 'Gateway connection is required to update node configuration.',
             );
         }
 
@@ -62,14 +53,11 @@ class NodeAgentIdeCommand extends Command
         }
 
         try {
-            $agentIde = $this->resolveAgentIde($callerRole, $defaults);
+            $agentIde = $this->resolveAgentIde($isGateway, $defaults);
         } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== ''
-                    ? $e->getMessage()
-                    : 'Gateway connection is required to read agent IDE adapters.',
-                meta: $e->errorMeta(),
+            return $this->failGatewayException(
+                exception: $e,
+                unavailableMessage: 'Gateway connection is required to read agent IDE adapters.',
             );
         } catch (Throwable) {
             return $this->failCommand(
@@ -87,7 +75,15 @@ class NodeAgentIdeCommand extends Command
             );
         }
 
-        if ($callerRole === 'control') {
+        if (! $isGateway && ! $this->hasConfiguredGateway()) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update node configuration.',
+                meta: [],
+            );
+        }
+
+        if (! $isGateway) {
             return $this->forwardSet($name, $agentIde);
         }
 
@@ -115,7 +111,7 @@ class NodeAgentIdeCommand extends Command
         return $this->respondSuccess($defaults->set($node, $agentIde));
     }
 
-    private function resolveName(string $callerRole): string|GatewayApiException|null
+    private function resolveName(): string|GatewayApiException|null
     {
         $name = $this->stringArgument('name');
 
@@ -139,7 +135,7 @@ class NodeAgentIdeCommand extends Command
         }
     }
 
-    private function resolveAgentIde(string $callerRole, NodeAgentIdeDefaults $defaults): ?string
+    private function resolveAgentIde(bool $isGateway, NodeAgentIdeDefaults $defaults): ?string
     {
         $agentIde = $this->stringArgument('agent_ide');
 
@@ -150,7 +146,7 @@ class NodeAgentIdeCommand extends Command
         if ($this->isInteractiveInput()) {
             return select(
                 label: 'Agent IDE adapter',
-                options: $this->agentIdeChoices($callerRole, $defaults),
+                options: $this->agentIdeChoices($isGateway, $defaults),
                 required: true,
             );
         }
@@ -161,9 +157,9 @@ class NodeAgentIdeCommand extends Command
     /**
      * @return list<string>
      */
-    private function agentIdeChoices(string $callerRole, NodeAgentIdeDefaults $defaults): array
+    private function agentIdeChoices(bool $isGateway, NodeAgentIdeDefaults $defaults): array
     {
-        if ($callerRole !== 'control') {
+        if ($isGateway) {
             return $defaults->supportedAdapters();
         }
 
@@ -183,12 +179,9 @@ class NodeAgentIdeCommand extends Command
                 ->send(new SetNodeAgentIdeRequest($name, $agentIde))
                 ->dto();
         } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== ''
-                    ? $e->getMessage()
-                    : 'Gateway connection is required to update node configuration.',
-                meta: $e->errorMeta(),
+            return $this->failGatewayException(
+                exception: $e,
+                unavailableMessage: 'Gateway connection is required to update node configuration.',
             );
         } catch (Throwable) {
             return $this->failCommand(
@@ -203,6 +196,25 @@ class NodeAgentIdeCommand extends Command
             'agent_ide' => $dto->agentIde,
             'action' => $dto->action,
         ]);
+    }
+
+    private function failGatewayException(GatewayApiException $exception, string $unavailableMessage): int
+    {
+        $code = $exception->errorCode();
+
+        if ($code === null) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: $unavailableMessage,
+                meta: [],
+            );
+        }
+
+        return $this->failCommand(
+            code: $code,
+            message: $exception->getMessage() !== '' ? $exception->getMessage() : $unavailableMessage,
+            meta: $exception->errorMeta(),
+        );
     }
 
     private function stringArgument(string $name): ?string

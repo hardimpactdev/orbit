@@ -91,7 +91,10 @@ payload shape.
 
 - Must run on the gateway host or from a configured control node.
 - Control callers must be authorized to update node registry configuration.
-- App-node callers are rejected before prompts or side effects.
+- App callers are rejected by the gateway before side effects. Local input
+  validation or prompting may occur before the final gateway write request
+  unless another gateway request naturally returns the role denial first. The
+  CLI does not perform a local app-role check or a separate `/api/me` preflight.
 - The target node must exist in gateway configuration.
 - The adapter must be present in the gateway-owned adapter registry. Adapters
   shipped by installed Orbit extensions become valid only after the extension
