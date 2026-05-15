@@ -34,7 +34,7 @@ final class ToolLogsStreamController implements Loggable
             return $this->authorizationFailed('This node is not authorized to inspect tools.');
         }
 
-        $authorizedTarget = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+        $authorizedTarget = $this->authorizedToolTarget($request, $caller, $visibleNodeIds, allowOnlyVisibleFallback: false);
 
         if ($authorizedTarget instanceof JsonResponse) {
             return $authorizedTarget;
@@ -85,6 +85,7 @@ final class ToolLogsStreamController implements Loggable
             'tool.not_found' => 404,
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
+            'validation_failed' => 422,
             default => 400,
         };
 
@@ -92,9 +93,21 @@ final class ToolLogsStreamController implements Loggable
             'error' => [
                 'code' => $failure->code,
                 'message' => $failure->message,
-                'meta' => $failure->meta === [] ? (object) [] : $failure->meta,
+                'meta' => $this->failureMeta($failure),
             ],
         ], $status);
+    }
+
+    /**
+     * @return array<string, mixed>|object
+     */
+    private function failureMeta(ToolRegistryFailure $failure): array|object
+    {
+        if (($failure->meta['field'] ?? null) === 'target') {
+            return ['fields' => ['target']];
+        }
+
+        return $failure->meta === [] ? (object) [] : $failure->meta;
     }
 
     private function authorizationFailed(string $message): JsonResponse

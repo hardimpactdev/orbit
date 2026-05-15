@@ -9,9 +9,11 @@ use App\Contracts\ToolLogGatewayStream;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
+use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Http\Gateway\Responses\Tools\ToolLogsResponse;
-use App\Models\Node;
+use App\Models\LocalNodeDefault;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLogFollower;
 use App\Services\Tools\ToolLogReader;
@@ -41,14 +43,36 @@ class ToolLogsCommand extends Command
             return $input;
         }
 
+        $target = $this->resolveTargetOptions($input['node'], $input['app']);
+
+        if ($target instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $target->errorCode() ?? 'gateway_unavailable',
+                message: $target->getMessage() !== ''
+                    ? $target->getMessage()
+                    : 'Gateway connection is required to resolve the caller identity.',
+                meta: $target->errorMeta(),
+            );
+        }
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $target->code,
+                message: $target->message,
+                meta: $this->commandFailureMeta($target),
+            );
+        }
+
+        [$node, $app] = $target;
+
         $isGatewayCaller = $this->isGatewayCaller();
 
         if ($input['follow']) {
             $result = $isGatewayCaller
                 ? $follower->follow(
                     tool: $input['tool'],
-                    node: $input['node'],
-                    app: $input['app'],
+                    node: $node,
+                    app: $app,
                     lines: $input['lines'],
                     onOutput: function (string $output): void {
                         $this->writeStreamOutput($output);
@@ -56,8 +80,8 @@ class ToolLogsCommand extends Command
                 )
                 : $gatewayStream->follow(
                     tool: $input['tool'],
-                    node: $input['node'],
-                    app: $input['app'],
+                    node: $node,
+                    app: $app,
                     lines: $input['lines'],
                     onOutput: function (string $output): void {
                         $this->writeStreamOutput($output);
@@ -86,8 +110,8 @@ class ToolLogsCommand extends Command
         }
 
         $result = $isGatewayCaller
-            ? $logs->read($input['tool'], node: $input['node'], app: $input['app'], lines: $input['lines'])
-            : $this->logsViaGateway($input['tool'], node: $input['node'], app: $input['app'], lines: $input['lines']);
+            ? $logs->read($input['tool'], node: $node, app: $app, lines: $input['lines'])
+            : $this->logsViaGateway($input['tool'], node: $node, app: $app, lines: $input['lines']);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(
@@ -183,6 +207,89 @@ class ToolLogsCommand extends Command
     }
 
     /**
+     * @return array{0: ?string, 1: ?string}|ToolRegistryFailure|GatewayApiException
+     */
+    private function resolveTargetOptions(?string $node, ?string $app): array|ToolRegistryFailure|GatewayApiException
+    {
+        if ($app !== null) {
+            return [$node, $app];
+        }
+
+        if ($node !== null) {
+            return [$node, null];
+        }
+
+        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
+
+        if (is_string($defaultNode) && trim($defaultNode) !== '') {
+            return [trim($defaultNode), null];
+        }
+
+        if (! $this->isGatewayCaller()) {
+            try {
+                return [$this->gatewayKnownSelfNodeName(), null];
+            } catch (GatewayApiException $e) {
+                return $e;
+            }
+        }
+
+        return ToolRegistryFailure::validation(
+            'target',
+            '',
+            'A node or app target is required. Provide --node, --app, or configure node:default.',
+        );
+    }
+
+    /**
+     * @throws GatewayApiException
+     */
+    private function gatewayKnownSelfNodeName(): string
+    {
+        $request = new ShowGatewayIdentityRequest;
+
+        try {
+            $response = app(GatewayConnector::class)->send($request);
+        } catch (GatewayApiException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new GatewayApiException(
+                'Gateway connection is required to resolve the caller identity.',
+                'gateway_unavailable',
+                [],
+                $e,
+            );
+        }
+
+        if ($response->clientError() || $response->serverError()) {
+            $exception = $request->getRequestException($response, null);
+
+            if ($exception instanceof GatewayApiException) {
+                throw $exception;
+            }
+
+            throw new GatewayApiException(
+                "Gateway request failed with HTTP status {$response->status()}",
+                'gateway_unavailable',
+                ['endpoint' => '/api/me'],
+            );
+        }
+
+        /** @var GatewayIdentityResponse $identity */
+        $identity = $response->dto();
+        $name = is_string($identity->self['name'] ?? null) ? trim($identity->self['name']) : '';
+
+        if ($name === '') {
+            throw new GatewayApiException(
+                'Gateway identity response is missing node identity.',
+                'gateway_unavailable',
+                ['endpoint' => '/api/me'],
+            );
+        }
+
+        return $name;
+    }
+
+    /**
      * @param  array<string, mixed>  $logs
      */
     private function successPayload(array $logs): int
@@ -243,6 +350,18 @@ class ToolLogsCommand extends Command
             message: $message,
             meta: ['field' => $field],
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function commandFailureMeta(ToolRegistryFailure $failure): array
+    {
+        if (($failure->meta['field'] ?? null) === 'target') {
+            return ['fields' => ['target']];
+        }
+
+        return $failure->meta;
     }
 
     /**

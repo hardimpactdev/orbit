@@ -2,7 +2,7 @@
 
 [Back to Tool commands.](../README.md)
 
-Show or follow logs for a managed tool.
+Print or follow log lines for a managed tool.
 
 `tool:logs` reads log output for a registered tool that declares a log source.
 It streams through the gateway from the target node and does not mutate tool
@@ -26,15 +26,20 @@ orbit tool:logs redis --node=app-1 --json
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
-- `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--node`: Target app node. Defaults to local `node:default` when configured.
+- `--app`: Resolve the target node from an app slug, app domain, or
+  `<slug>.<node-tld>` selector such as `docs.dev1`.
 - `--lines`: Number of historical lines to show. Defaults to `100`.
 - `--follow`: Continue streaming new log lines.
 - `--json`: Output JSON for finite, non-follow reads.
 
-Target context is required when neither `--node`, `--app`, nor local
-`node:default` resolves a node. `--follow --json` is not a stable command
-contract unless a future streaming JSON frame contract is added.
+Target resolution prefers `--app`, then `--node`, then local `node:default`,
+then gateway-known self for non-gateway callers. `--app` and `--node` may be
+combined only when both resolve to the same app node. `tool:logs` does not use
+the only visible app node as an implicit target.
+
+`--follow --json` is forbidden until a future streaming JSON frame contract is
+added.
 
 ## What Happens
 
@@ -51,7 +56,7 @@ Run this command to read or stream log output for a registered tool that declare
 
 Use `--json` for finite reads as machine-readable output; use `--follow` to stream new lines.
 
-Human output prints log lines in the tool's log order. With `--follow`, output
+Human output prints log lines in source order. With `--follow`, output
 continues until the user stops the stream or the gateway stream fails.
 
 Use `--json` for finite machine-readable log lines with tool and node metadata.

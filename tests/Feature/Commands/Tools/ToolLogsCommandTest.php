@@ -6,7 +6,6 @@ use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
 use App\Contracts\ToolLogGatewayStream;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
@@ -64,6 +63,49 @@ describe('tool:logs command contract', function (): void {
             ->and($shell->scripts[0])->toContain('systemctl status');
     });
 
+    it('prints finite human output as source-ordered log lines without progress or tool-state metadata', function (): void {
+        createToolLogsLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'supervisor',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new ToolLogsRecordingShell(stdout: "first line\nsecond line\n"));
+
+        $exitCode = Artisan::call('tool:logs', ['tool' => 'supervisor', '--node' => 'app-1', '--lines' => '2']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('first line')
+            ->and($output)->toContain('second line')
+            ->and($output)->not->toContain('┌')
+            ->and($output)->not->toContain('Resolve target')
+            ->and($output)->not->toContain('Expected:')
+            ->and($output)->not->toContain('Managed:')
+            ->and($output)->not->toContain('Version:');
+    });
+
+    it('prints a finite human fallback when no log lines are returned', function (): void {
+        createToolLogsLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'supervisor',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new ToolLogsRecordingShell);
+
+        $exitCode = Artisan::call('tool:logs', ['tool' => 'supervisor', '--node' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('No log lines found.')
+            ->and($output)->not->toContain('┌')
+            ->and($output)->not->toContain('Expected:')
+            ->and($output)->not->toContain('Managed:');
+    });
+
     it('rejects tools without a log source before remote work', function (): void {
         createToolLogsLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
@@ -113,11 +155,12 @@ describe('tool:logs command contract', function (): void {
         $stream = new ToolLogsRecordingStream;
         app()->instance(RemoteShellStream::class, $stream);
 
-        $this->artisan('tool:logs supervisor --node=app-1 --lines=1 --follow')
-            ->expectsOutputToContain('followed line')
-            ->assertSuccessful();
+        $exitCode = Artisan::call('tool:logs', ['tool' => 'supervisor', '--node' => 'app-1', '--lines' => '1', '--follow' => true]);
+        $output = Artisan::output();
 
-        expect($shell->scripts)->toBe([])
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('followed line')
+            ->and($shell->scripts)->toBe([])
             ->and($stream->scripts)->toHaveCount(1)
             ->and($stream->scripts[0])->toContain('journalctl _SYSTEMD_UNIT=')
             ->and($stream->scripts[0])->toContain('SYSLOG_IDENTIFIER=')
@@ -165,18 +208,19 @@ describe('tool:logs command contract', function (): void {
         $stream = new ToolLogsRecordingGatewayStream;
         app()->instance(ToolLogGatewayStream::class, $stream);
 
-        $this->artisan('tool:logs supervisor --node=app-1 --lines=1 --follow')
-            ->expectsOutputToContain('forwarded followed line')
-            ->assertSuccessful();
+        $exitCode = Artisan::call('tool:logs', ['tool' => 'supervisor', '--node' => 'app-1', '--lines' => '1', '--follow' => true]);
+        $output = Artisan::output();
 
-        expect($stream->calls)->toBe([
-            [
-                'tool' => 'supervisor',
-                'node' => 'app-1',
-                'app' => null,
-                'lines' => 1,
-            ],
-        ]);
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('forwarded followed line')
+            ->and($stream->calls)->toBe([
+                [
+                    'tool' => 'supervisor',
+                    'node' => 'app-1',
+                    'app' => null,
+                    'lines' => 1,
+                ],
+            ]);
     });
 });
 
@@ -232,7 +276,7 @@ final class ToolLogsRecordingGatewayStream implements ToolLogGatewayStream
     /**
      * @param  callable(string): void  $onOutput
      */
-    public function follow(string $tool, ?string $node, ?string $app, int $lines, callable $onOutput): int|GatewayApiException
+    public function follow(string $tool, ?string $node, ?string $app, int $lines, callable $onOutput): int
     {
         $this->calls[] = [
             'tool' => $tool,

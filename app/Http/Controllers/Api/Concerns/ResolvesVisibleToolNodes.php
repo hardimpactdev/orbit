@@ -39,7 +39,7 @@ trait ResolvesVisibleToolNodes
      * @param  list<int>  $visibleNodeIds
      * @return array{node: ?string, app: ?string}|JsonResponse
      */
-    private function authorizedToolTarget(Request $request, Node $caller, array $visibleNodeIds): array|JsonResponse
+    private function authorizedToolTarget(Request $request, Node $caller, array $visibleNodeIds, bool $allowOnlyVisibleFallback = true): array|JsonResponse
     {
         $node = $this->toolTargetString($request, 'node');
         $app = $this->toolTargetString($request, 'app');
@@ -74,7 +74,7 @@ trait ResolvesVisibleToolNodes
             ];
         }
 
-        if ($caller->role !== 'gateway') {
+        if ($allowOnlyVisibleFallback && $caller->role !== 'gateway') {
             $nodes = Node::query()
                 ->whereIn('id', $visibleNodeIds)
                 ->where('role', 'app')
@@ -123,6 +123,24 @@ trait ResolvesVisibleToolNodes
                     ->orWhere('domain', $app);
             })
             ->first();
+
+        if (! $model instanceof App && str_contains($app, '.')) {
+            [$appName, $nodeTld] = explode('.', $app, 2);
+
+            if ($appName !== '' && $nodeTld !== '') {
+                $model = App::query()
+                    ->with('node')
+                    ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+                    ->where('name', $appName)
+                    ->whereHas('node', function (Builder $query) use ($nodeTld): void {
+                        $query
+                            ->where('role', 'app')
+                            ->where('status', 'active')
+                            ->where('tld', $nodeTld);
+                    })
+                    ->first();
+            }
+        }
 
         if (! $model instanceof App || ! $model->node instanceof Node) {
             return null;
@@ -178,6 +196,20 @@ trait ResolvesVisibleToolNodes
             ->where(function (Builder $query) use ($value): void {
                 $query->where('name', $value)
                     ->orWhere('domain', $value);
+
+                if (str_contains($value, '.')) {
+                    [$appName, $nodeTld] = explode('.', $value, 2);
+
+                    if ($appName !== '' && $nodeTld !== '') {
+                        $query->orWhere(function (Builder $query) use ($appName, $nodeTld): void {
+                            $query
+                                ->where('name', $appName)
+                                ->whereHas('node', function (Builder $query) use ($nodeTld): void {
+                                    $query->where('tld', $nodeTld);
+                                });
+                        });
+                    }
+                }
             })
             ->whereHas('node', function (Builder $query) use ($visibleNodeIds): void {
                 $query->where('role', 'app')
