@@ -155,8 +155,12 @@ it('shows already-trusted progress tree', function (): void {
     $this->artisan('gateway:trust')
         ->expectsOutputToContain('┌  Trust Gateway CA')
         ->expectsOutputToContain('○  Resolve configured gateway')
+        ->expectsOutputToContain('○  Fetch trust material')
         ->expectsOutputToContain('○  Check local trust')
-        ->expectsOutputToContain('Gateway CA already trusted')
+        ->expectsOutputToContain('○  Install local trust')
+        ->expectsOutputToContain('○  Store trust metadata')
+        ->expectsOutputToContain('Already trusted')
+        ->expectsOutputToContain('Gateway CA already trusted for https://10.6.0.2.')
         ->assertSuccessful();
 });
 

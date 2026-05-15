@@ -4,7 +4,7 @@
 
 **Owner:** `gateway`.
 
-**Effects:** `read`, `write`, `local-only`, `stream`.
+**Effects:** `read`, `write`, `local-only`.
 
 **Prerequisites:**
 - A configured local gateway endpoint exists.
@@ -33,8 +33,8 @@ This command follows the shared
 2. Resolve the configured local gateway endpoint.
    - If no gateway endpoint can be resolved, fail before network or
      trust-store side effects.
-   - If local settings cannot be read, fail before network or trust-store side
-     effects.
+   - If local gateway settings cannot be read, fail with
+     `node.local_config_read_failed` before network or trust-store side effects.
 3. Validate the configured gateway endpoint.
 4. Start the local trust repair sequence.
 
@@ -121,12 +121,34 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Gateway missing | No configured gateway exists. | Failure before network or trust-store side effects |
-| Local settings unreadable | Local gateway settings cannot be read. | Failure before network or trust-store side effects |
+| Local config read failed | Local gateway settings cannot be read from the local Orbit database. | Failure before network or trust-store side effects |
 | Gateway endpoint invalid | The configured gateway endpoint cannot be normalized to a gateway URL. | Failure before network or trust-store side effects |
 | Trust material invalid | The gateway response does not contain a valid PEM root CA certificate. | Failure before trust-store side effects |
 | Unsupported platform | The caller platform has no supported OS trust-store installer. | Failure before trust-store side effects |
 | Trust store failed | The OS trust store rejects the certificate or lacks required privileges. | Failure |
 | Local metadata failed | Trust-store installation succeeds but local trust metadata cannot be written. | Failure with trust-store side effect already applied |
+
+`validation_failed` remains reserved for settings that load successfully but are
+not usable:
+
+- `reason=missing`: no gateway endpoint is configured.
+- `reason=invalid`: the configured gateway endpoint cannot be normalized.
+
+`node.local_config_read_failed` is emitted only when the initial local gateway
+settings read fails. Its `error.meta.reason` values are:
+
+- `local_database_unavailable`: the local Orbit SQLite database path cannot be
+  opened or reached.
+- `local_database_locked`: another local process holds a SQLite lock.
+- `local_database_read_only`: the local Orbit database opened but cannot accept
+  the settings read/create operation because it is read-only.
+- `local_database_corrupt`: the database file is malformed, corrupt, or not a
+  SQLite database.
+- `settings_table_missing`: the `local_gateway_settings` table is absent; local
+  migrations have not been applied.
+
+Post-installation metadata write failures keep using
+`node.local_config_write_failed` with `reason=metadata_write_failed`.
 
 ## Doctor Relationship
 
@@ -162,6 +184,7 @@ Required split contract tests:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured endpoint resolution, missing gateway failure, root CA fetch, PEM validation, trust-store side effect, metadata persistence, idempotent already-trusted success, no gateway config writes, no `/api/me` verification, no public gateway override, and no public `--export` option. |
+| `tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php` | Local gateway settings read failures before network or trust-store side effects, including actionable `node.local_config_read_failed` reasons and human prose. |
 | `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
 | `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform, including local metadata persistence and idempotent convergence. |

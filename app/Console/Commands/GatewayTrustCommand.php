@@ -17,9 +17,11 @@ use App\Services\Trust\TrustStoreInstallReason;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\SQLiteDatabaseDoesNotExistException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
+use PDOException;
 use RuntimeException;
 
 #[Signature('gateway:trust
@@ -338,7 +340,17 @@ class GatewayTrustCommand extends Command implements Loggable
      */
     private function resolveGateway(): array
     {
-        $settings = LocalGatewaySettings::current();
+        try {
+            $settings = LocalGatewaySettings::current();
+        } catch (SQLiteDatabaseDoesNotExistException|PDOException $e) {
+            $reason = $this->classifyLocalConfigReadFailure($e);
+
+            return [
+                'code' => 'node.local_config_read_failed',
+                'message' => $this->localConfigReadFailureMessage($reason),
+                'meta' => ['field' => 'gateway', 'reason' => $reason],
+            ];
+        }
 
         if ($settings->gateway_url !== null && $settings->gateway_url !== '') {
             return $this->normalizeEndpoint((string) $settings->gateway_url, (string) ($settings->gateway_wg_ip ?? $settings->gateway_url));
@@ -385,6 +397,52 @@ class GatewayTrustCommand extends Command implements Loggable
         }
 
         return ['url' => $url, 'ip' => $ip];
+    }
+
+    private function classifyLocalConfigReadFailure(SQLiteDatabaseDoesNotExistException|PDOException $e): string
+    {
+        $message = strtolower($e->getMessage());
+
+        if ($e->getPrevious() !== null) {
+            $message .= ' '.strtolower($e->getPrevious()->getMessage());
+        }
+
+        if (str_contains($message, 'no such table')
+            && str_contains($message, 'local_gateway_settings')) {
+            return 'settings_table_missing';
+        }
+
+        if (str_contains($message, 'locked')
+            || str_contains($message, 'sqlite_busy')) {
+            return 'local_database_locked';
+        }
+
+        if (str_contains($message, 'readonly')
+            || str_contains($message, 'read-only')
+            || str_contains($message, 'attempt to write a readonly database')
+            || str_contains($message, 'readonly database')) {
+            return 'local_database_read_only';
+        }
+
+        if (str_contains($message, 'malformed')
+            || str_contains($message, 'not a database')
+            || str_contains($message, 'file is not a database')
+            || str_contains($message, 'database disk image is malformed')) {
+            return 'local_database_corrupt';
+        }
+
+        return 'local_database_unavailable';
+    }
+
+    private function localConfigReadFailureMessage(string $reason): string
+    {
+        return match ($reason) {
+            'local_database_locked' => 'Local Orbit database is locked. Another Orbit process may be writing; try again.',
+            'local_database_read_only' => 'Local Orbit database is read-only. Check the database file permissions.',
+            'local_database_corrupt' => 'Local Orbit database file is corrupt or unreadable.',
+            'settings_table_missing' => 'Local gateway settings table is missing. Run database migrations.',
+            default => 'Local Orbit database is unavailable. Check the database file path and permissions.',
+        };
     }
 
     private function persistPem(RootCaFetchResult $result): ?string
