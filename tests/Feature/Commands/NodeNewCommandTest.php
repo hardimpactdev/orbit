@@ -1432,7 +1432,9 @@ describe('node:new', function (): void {
                         'config' => "[Interface]\nPrivateKey = control-private-key\n",
                     ],
                     'next_steps' => [
-                        'Install the returned WireGuard configuration on control-2, then run `orbit gateway:add` from that control node.',
+                        'Install the WireGuard configuration on the control node.',
+                        'Join the Orbit WireGuard network.',
+                        'Run `orbit gateway:add` on the control node.',
                     ],
                 ],
             ],
@@ -1598,8 +1600,11 @@ describe('node:new', function (): void {
             ])
             ->and($payload['success']['data']['wireguard']['config'])->toContain('PrivateKey = control-private-key')
             ->and($payload['success']['data']['wireguard']['config'])->toContain('PublicKey = gateway-public-key')
+            // Duplicated by NodeNewJsonRendererTest; kept here as supplemental broad command coverage for this pass.
             ->and($payload['success']['data']['next_steps'])->toBe([
-                'Install the returned WireGuard configuration on control-2, then run `orbit gateway:add` from that control node.',
+                'Install the WireGuard configuration on the control node.',
+                'Join the Orbit WireGuard network.',
+                'Run `orbit gateway:add` on the control node.',
             ])
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')

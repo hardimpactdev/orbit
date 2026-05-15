@@ -287,9 +287,7 @@ class NodeNewCommand extends Command
             return $this->jsonSuccess($payload);
         }
 
-        $this->info("Gateway node {$name} already provisioned.");
-        $this->line("Endpoint: {$host}");
-        $this->line("Control node: {$controlName}");
+        $this->info('Gateway is already provisioned.');
 
         return self::SUCCESS;
     }
@@ -617,7 +615,9 @@ class NodeNewCommand extends Command
                 'config' => $wireguardConfig,
             ],
             'next_steps' => [
-                "Install the returned WireGuard configuration on {$name}, then run `orbit gateway:add` from that control node.",
+                'Install the WireGuard configuration on the control node.',
+                'Join the Orbit WireGuard network.',
+                'Run `orbit gateway:add` on the control node.',
             ],
         ];
 
