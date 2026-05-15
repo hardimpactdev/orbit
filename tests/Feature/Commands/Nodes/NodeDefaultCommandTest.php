@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -77,6 +78,24 @@ function nodeDefaultGatewayResponse(array $nodes): array
     ];
 }
 
+function nodeDefaultCommandIdentityEnvelope(): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'self' => [
+                    'name' => 'control-1',
+                    'role' => 'control',
+                ],
+                'gateway' => [
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                ],
+            ],
+        ],
+    ];
+}
+
 function expectNodeDefaultListRequest(ListNodesRequest $request): bool
 {
     return $request->role === 'app'
@@ -132,6 +151,18 @@ describe('node:default command contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed');
+    });
+
+    it('rejects empty string name', function (): void {
+        $exitCode = Artisan::call('node:default', [
+            'name' => '',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe('Node name cannot be empty.');
     });
 
     it('rejects node-not-found for set', function (): void {
@@ -209,6 +240,7 @@ describe('node:default command contract', function (): void {
         setupConfiguredControlNodeDefaultCaller();
 
         $mock = MockClient::global([
+            ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 [
                     'name' => 'remote-app',
@@ -245,6 +277,7 @@ describe('node:default command contract', function (): void {
         setupConfiguredControlNodeDefaultCaller();
 
         $mock = MockClient::global([
+            ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 [
                     'name' => 'remote-app-1',
@@ -265,7 +298,7 @@ describe('node:default command contract', function (): void {
 
         DataTablePrompt::fake([Key::DOWN, Key::ENTER]);
 
-        $this->artisan('node:default')
+        \Pest\Laravel\artisan('node:default')
             ->assertExitCode(0);
 
         expect(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app-2')

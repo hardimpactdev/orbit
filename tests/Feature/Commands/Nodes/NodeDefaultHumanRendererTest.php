@@ -3,10 +3,15 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeDefaultCommand;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
+use App\Models\LocalGatewaySettings;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -14,7 +19,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     config(['orbit.is_gateway' => false]);
+    MockClient::destroyGlobal();
 });
+
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -74,6 +82,41 @@ function invokeNodeDefaultFailCommandHuman(string $code, string $message, array 
     ];
 }
 
+/**
+ * @param  array<string, mixed>|string  $nodeListBody
+ */
+function fakeNodeDefaultHumanGateway(array|string $nodeListBody, int $nodeListStatus = 200): void
+{
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+
+    MockClient::global([
+        ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultHumanIdentityEnvelope(), 200),
+        ListNodesRequest::class => MockResponse::make($nodeListBody, $nodeListStatus),
+    ]);
+}
+
+function nodeDefaultHumanIdentityEnvelope(): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'self' => [
+                    'name' => 'control-1',
+                    'role' => 'control',
+                ],
+                'gateway' => [
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                ],
+            ],
+        ],
+    ];
+}
+
 describe('node:default human renderer contract', function (): void {
     it('selects human renderer when --json is absent', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
@@ -94,7 +137,7 @@ describe('node:default human renderer contract', function (): void {
     it('renders progress tree for set sub-action with tree characters', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
-        $this->artisan('node:default', ['name' => 'app-1'])
+        \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
             ->expectsOutputToContain('┌  Set Default Node')
             ->expectsOutputToContain('○  Load visible development app nodes')
             ->expectsOutputToContain('○  Store local default')
@@ -155,7 +198,7 @@ describe('node:default human renderer contract', function (): void {
             'updated_at' => now(),
         ]);
 
-        $this->artisan('node:default', ['--no-interaction' => true])
+        \Pest\Laravel\artisan('node:default', ['--no-interaction' => true])
             ->expectsOutputToContain('Default development app node: app-1')
             ->assertSuccessful();
     });
@@ -163,7 +206,7 @@ describe('node:default human renderer contract', function (): void {
     it('renders show empty-state prose when no default is set', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
-        $this->artisan('node:default', ['--no-interaction' => true])
+        \Pest\Laravel\artisan('node:default', ['--no-interaction' => true])
             ->expectsOutputToContain('No default development app node is set.')
             ->expectsOutputToContain('Run `orbit node:default <name>` to set one.')
             ->assertSuccessful();
@@ -172,7 +215,7 @@ describe('node:default human renderer contract', function (): void {
     it('renders set confirmation prose', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
-        $this->artisan('node:default', ['name' => 'app-1'])
+        \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
             ->expectsOutputToContain('Default development app node set to app-1')
             ->assertSuccessful();
     });
@@ -185,7 +228,7 @@ describe('node:default human renderer contract', function (): void {
             'updated_at' => now(),
         ]);
 
-        $this->artisan('node:default', ['--clear' => true])
+        \Pest\Laravel\artisan('node:default', ['--clear' => true])
             ->expectsOutputToContain('Default development app node cleared.')
             ->assertSuccessful();
     });
@@ -193,7 +236,7 @@ describe('node:default human renderer contract', function (): void {
     it('renders clear-no-default prose', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
-        $this->artisan('node:default', ['--clear' => true])
+        \Pest\Laravel\artisan('node:default', ['--clear' => true])
             ->expectsOutputToContain('No default development app node was set.')
             ->assertSuccessful();
     });
@@ -201,13 +244,14 @@ describe('node:default human renderer contract', function (): void {
     it('renders mutually exclusive input prose error', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
-        $this->artisan('node:default', ['name' => 'app-1', '--clear' => true])
+        \Pest\Laravel\artisan('node:default', ['name' => 'app-1', '--clear' => true])
             ->expectsOutputToContain('Cannot provide both a node name and --clear.')
+            ->doesntExpectOutputToContain('Provide only one node target.')
             ->assertFailed();
     });
 
     it('renders node-not-found prose error', function (): void {
-        $this->artisan('node:default', ['name' => 'missing'])
+        \Pest\Laravel\artisan('node:default', ['name' => 'missing'])
             ->expectsOutputToContain("Node 'missing' not found or not visible.")
             ->assertFailed();
     });
@@ -247,5 +291,45 @@ describe('node:default human renderer contract', function (): void {
 
         expect($result['exitCode'])->not->toBe(0);
         expect($result['output'])->toContain("This node is not authorized to operate on 'app-1'.");
+    });
+
+    it('renders gateway authorization failures without collapsing the message', function (): void {
+        fakeNodeDefaultHumanGateway([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => 'Peer identity unknown.',
+                'meta' => [],
+            ],
+        ], 403);
+
+        \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
+            ->expectsOutputToContain('Peer identity unknown.')
+            ->doesntExpectOutputToContain('Gateway connection is required to set a default node.')
+            ->assertExitCode(1);
+    });
+
+    it('renders gateway caller-role failures without collapsing the message', function (): void {
+        fakeNodeDefaultHumanGateway([
+            'error' => [
+                'code' => 'caller_role_not_allowed',
+                'message' => 'This command may only be run from a control node.',
+                'meta' => [
+                    'caller_role' => 'app',
+                ],
+            ],
+        ], 403);
+
+        \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
+            ->expectsOutputToContain('This command may only be run from a control node.')
+            ->doesntExpectOutputToContain('Gateway connection is required to set a default node.')
+            ->assertExitCode(1);
+    });
+
+    it('renders gateway_unavailable for gateway failures without a structured error code', function (): void {
+        fakeNodeDefaultHumanGateway('Service Unavailable', 503);
+
+        \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
+            ->expectsOutputToContain('Gateway connection is required to set a default node.')
+            ->assertExitCode(1);
     });
 });

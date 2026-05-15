@@ -7,11 +7,13 @@
 **Effects:** `read`, `write`.
 
 **Prerequisites:**
-- The gateway authenticates the CLI and authorizes `node:default`-backed
-  reads only for callers whose gateway-known role is `control`. Gateway and
-  app callers are rejected.
 - For the `choose` or `set` sub-action: the CLI caller can reach the Orbit
-  gateway, and the target node is a visible development app node.
+  gateway, passes the `/api/me` control-role preflight, and the target node is a
+  visible development app node. Gateway and app callers are rejected before
+  prompts or local default mutation.
+- For the `show` and `clear` sub-actions: no gateway reachability, `/api/me`
+  preflight, or role check is required; these paths read or write local CLI
+  configuration only.
 
 ## Signature
 
@@ -57,6 +59,8 @@ input:
    - For `show` and `clear`, no node target is resolved.
 3. Validate `node_default.name` immediately when the sub-action is `set` or
    `choose`.
+   - Configured non-gateway callers must pass a `/api/me` preflight with
+     `self.role=control` before prompts or local default writes.
    - Must resolve to a visible development app node.
    - Must not be a gateway or control node.
    - The caller must be authorized to see the target node.
@@ -72,6 +76,8 @@ input:
 ### Choose sub-action
 
 1. Query the gateway for visible development app nodes.
+   - Configured non-gateway callers first call `/api/me`; if `self.role` is not
+     `control`, the gateway rejects the command before any prompt is rendered.
 2. Present the authorized nodes as choices.
 3. Store the selected node as the local default development app node.
 4. Return the stored name and the `set` action. `choose` is an interactive
@@ -83,22 +89,27 @@ input:
 2. If a default is set, return the stored name.
 3. If no default is set, return the empty-state result without failure.
 
-No gateway call is required for the show sub-action when a default is stored
-locally. If no default is stored and the caller wants to discover a default
+No gateway call, `/api/me` preflight, or role check is required for the show
+sub-action. If no default is stored and the caller wants to discover a default
 interactively, that behavior belongs to the interactive input mode contract.
 
 ### Set sub-action
 
-1. Query the gateway for visible nodes.
-2. Validate that the resolved `name` matches a visible development app node.
-3. Validate that the caller is authorized to operate against that node.
-4. Store the name as the local default development app node.
-5. Return the stored name and the `set` action.
+1. For configured non-gateway callers, call `/api/me`; if `self.role` is not
+   `control`, reject before local default mutation.
+2. Query the gateway for visible nodes.
+3. Validate that the resolved `name` matches a visible development app node.
+4. Validate that the caller is authorized to operate against that node.
+5. Store the name as the local default development app node.
+6. Return the stored name and the `set` action.
 
 ### Clear sub-action
 
 1. Remove the locally stored default development app node, if any.
 2. Return the clear result, indicating whether a default was previously set.
+
+No gateway call, `/api/me` preflight, or role check is required for the clear
+sub-action.
 
 ### Scope Boundaries
 
@@ -124,8 +135,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
 | Not a development app node | `set` sub-action and the selected node matches a node that is not a development app node. | Failure |
 | Not authorized | `set` or `choose` sub-action and the caller is not authorized to see or operate on the selected node. | Failure |
+| Caller role not allowed | `set` or `choose` sub-action and `/api/me` reports a caller role other than `control`, or `ORBIT_IS_GATEWAY` identifies the gateway-local shortcut. | Failure |
 
-The `show` and `clear` sub-actions do not fail when no default is set. The
+The `show` and `clear` sub-actions do not perform caller-role checks and do not
+fail when no default is set. The
 `show` sub-action reports the empty state; the `clear` sub-action reports
 success with `was_set: false`. Missing target input is not a failure in
 interactive input mode because the `choose` sub-action prompts. Missing target
@@ -166,6 +179,9 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract: interactive choose from authorized development app-node choices, show with and without default in non-interactive mode, set with positional `name`, set with invalid/non-development node, clear with and without existing default, mutually exclusive input rejection, gateway-unavailable and authorization failures for choose/set, app-caller denial, gateway-caller denial, and local write guarantee (no gateway mutation, no grant creation). |
+| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Control-caller contract: show and clear local-only, `/api/me` preflight before configured choose/set, and gateway-local shortcut rejection. |
+| `tests/Feature/Commands/Nodes/NodeDefaultOnAppNodeContractTest.php` | App-caller contract: choose/set rejection before prompts, node listing, or local writes; show and clear local-only. |
+| `tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
 | `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
 | `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
 

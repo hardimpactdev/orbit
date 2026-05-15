@@ -3,10 +3,15 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeDefaultCommand;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
+use App\Models\LocalGatewaySettings;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -14,7 +19,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     config(['orbit.is_gateway' => false]);
+    MockClient::destroyGlobal();
 });
+
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -71,6 +79,41 @@ function invokeNodeDefaultFailCommand(bool $json, string $code, string $message,
     return [
         'exitCode' => $exitCode,
         'output' => $output->fetch(),
+    ];
+}
+
+/**
+ * @param  array<string, mixed>|string  $nodeListBody
+ */
+function fakeNodeDefaultJsonGateway(array|string $nodeListBody, int $nodeListStatus = 200): MockClient
+{
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+
+    return MockClient::global([
+        ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultJsonIdentityEnvelope(), 200),
+        ListNodesRequest::class => MockResponse::make($nodeListBody, $nodeListStatus),
+    ]);
+}
+
+function nodeDefaultJsonIdentityEnvelope(): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'self' => [
+                    'name' => 'control-1',
+                    'role' => 'control',
+                ],
+                'gateway' => [
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                ],
+            ],
+        ],
     ];
 }
 
@@ -243,8 +286,81 @@ describe('node:default JSON renderer contract', function (): void {
         $error = $payload['error'];
 
         expect($error['code'])->toBe('validation_failed')
-            ->and($error['message'])->toBe('Cannot provide both a node name and --clear.')
+            ->and($error['message'])->toBe('Provide only one node target.')
             ->and($error['meta'])->toBe(['fields' => ['name', 'clear']]);
+    });
+
+    it('preserves authorization_failed from gateway validation', function (): void {
+        fakeNodeDefaultJsonGateway([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => "This node is not authorized to operate on 'app-1'.",
+                'meta' => [
+                    'name' => 'app-1',
+                    'caller_role' => 'control',
+                ],
+            ],
+        ], 403);
+
+        $exitCode = Artisan::call('node:default', [
+            'name' => 'app-1',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error'])->toBe([
+                'code' => 'authorization_failed',
+                'message' => "This node is not authorized to operate on 'app-1'.",
+                'meta' => [
+                    'name' => 'app-1',
+                    'caller_role' => 'control',
+                ],
+            ]);
+    });
+
+    it('preserves caller_role_not_allowed from gateway validation', function (): void {
+        fakeNodeDefaultJsonGateway([
+            'error' => [
+                'code' => 'caller_role_not_allowed',
+                'message' => 'This command may only be run from a control node.',
+                'meta' => [
+                    'caller_role' => 'app',
+                ],
+            ],
+        ], 403);
+
+        $exitCode = Artisan::call('node:default', [
+            'name' => 'app-1',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error'])->toBe([
+                'code' => 'caller_role_not_allowed',
+                'message' => 'This command may only be run from a control node.',
+                'meta' => [
+                    'caller_role' => 'app',
+                ],
+            ]);
+    });
+
+    it('renders gateway_unavailable for gateway failures without a structured error code', function (): void {
+        fakeNodeDefaultJsonGateway('Service Unavailable', 503);
+
+        $exitCode = Artisan::call('node:default', [
+            'name' => 'app-1',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error'])->toBe([
+                'code' => 'gateway_unavailable',
+                'message' => 'Gateway connection is required to set a default node.',
+                'meta' => [],
+            ]);
     });
 
     it('returns node.not_found error with correct metadata', function (): void {

@@ -100,13 +100,14 @@ and payload shapes.
 
 ## Requirements
 
-- The local CLI has an active gateway configuration (for `set` sub-action;
-  interactive choice and direct set; `show` and `clear` may work with purely
-  local state).
+- The local CLI has an active gateway configuration for interactive `choose`
+  and direct `set`; `show` and `clear` work with purely local state.
 - Choosing or setting a default requires the CLI caller to reach the Orbit
-  gateway.
+  gateway and pass the `/api/me` control-role preflight before prompts or local
+  default mutation.
 - The target node must be a visible development app node.
-- App-node and gateway callers are rejected before prompts or side effects.
+- App-node and gateway callers are rejected before prompts or side effects for
+  `choose` and `set`; `show` and `clear` perform no role check.
 
 ## Related Commands
 
