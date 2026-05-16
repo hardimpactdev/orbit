@@ -89,8 +89,8 @@ flow, the initiating control node does not run `gateway:add`.
 `--host` is required for every gateway request, including later gateway
 convergence checks after a gateway already exists. During first-gateway
 bootstrap, the resolved `--host` value becomes the initial gateway endpoint used
-in generated WireGuard peer configs. This endpoint may be a DNS name, public IP,
-private IP, or any address reachable by the nodes that will join the fleet.
+in generated WireGuard peer configs. This endpoint must be an IP address or
+dotted DNS name reachable by the nodes that will join the fleet.
 
 If the requested gateway is already provisioned and active, and the supplied host is
 compatible with that gateway identity, Orbit converges idempotently without

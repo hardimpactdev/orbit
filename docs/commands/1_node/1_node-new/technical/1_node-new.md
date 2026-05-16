@@ -30,7 +30,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
 | `role` | `--role` | Always. | Never. | None. | One of `gateway`, `app`, `control`. |
-| `host` | `--host` | Requested role = `app` or `gateway`. | Requested role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. |
+| `host` | `--host` | Requested role = `app` or `gateway`. | Requested role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../ARCHITECTURE.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
 | `environment` | `--environment` | Requested role = `app`. | Requested role = `gateway` or `control`. | None. | One of `development`, `production`. |
 | `tld` | `--tld` | Requested role = `app` and `environment=development`. | Requested role = `gateway`, requested role = `control`, or requested role = `app` and `environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
@@ -107,8 +107,8 @@ Input mode behavior is split out of the canonical command contract:
   provisioned for the requested identity.
 - First-gateway bootstrap stores the resolved `node_new.host` as the initial
   gateway endpoint used in generated WireGuard peer configs. The endpoint is a
-  connectivity fact and may be DNS, public IP, private IP, or any address
-  reachable by nodes joining the fleet.
+  connectivity fact and must be an IP address or dotted DNS name reachable by
+  nodes joining the fleet.
 - First-gateway bootstrap mints and installs the initiating control-node
   identity using `node_new.control_name`. This is a separate node identity from
   the gateway node named by `node_new.name`.

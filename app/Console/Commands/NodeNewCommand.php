@@ -164,6 +164,10 @@ class NodeNewCommand extends Command
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
         }
 
+        if (! $this->isValidHost($host)) {
+            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
+        }
+
         $controlName = $this->resolveControlName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
@@ -345,6 +349,10 @@ class NodeNewCommand extends Command
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
         }
 
+        if (! $this->isValidHost($host)) {
+            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
+        }
+
         try {
             /** @var NodeCreateResponse $dto */
             $dto = app(GatewayConnector::class)
@@ -391,6 +399,10 @@ class NodeNewCommand extends Command
 
         if ($host === null) {
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
+        }
+
+        if (! $this->isValidHost($host)) {
+            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
         $gateway = Node::query()
@@ -1044,6 +1056,10 @@ class NodeNewCommand extends Command
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
         }
 
+        if (! $this->isValidHost($host)) {
+            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
+        }
+
         $controlName = $this->resolveControlName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
@@ -1680,7 +1696,11 @@ class NodeNewCommand extends Command
             return null;
         }
 
-        return trim(text(label: 'Host', required: true));
+        return trim(text(
+            label: 'Host',
+            required: true,
+            validate: fn (string $value): ?string => $this->validatePromptHost($value),
+        ));
     }
 
     private function resolveControlName(string $gatewayName): ?string
@@ -1775,6 +1795,17 @@ class NodeNewCommand extends Command
             : null;
     }
 
+    private function validatePromptHost(string $value): ?string
+    {
+        $host = trim($value);
+
+        if ($host === '') {
+            return 'Host is required.';
+        }
+
+        return $this->isValidHost($host) ? null : 'Host must be a valid IP address or dotted DNS name.';
+    }
+
     /**
      * @return array{host: string, environment: string, tld: ?string, sshUser: string}|int
      */
@@ -1802,6 +1833,10 @@ class NodeNewCommand extends Command
 
         if ($host === null) {
             return $this->validationFailed('host', 'Host is required for app nodes.');
+        }
+
+        if (! $this->isValidHost($host)) {
+            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
         $tld = $this->stringOption('tld');
@@ -1861,6 +1896,35 @@ class NodeNewCommand extends Command
     private function isValidTld(string $tld): bool
     {
         return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
+    }
+
+    private function isValidHost(string $host): bool
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return true;
+        }
+
+        if (! str_contains($host, '.')) {
+            return false;
+        }
+
+        if (strlen($host) > 253 || str_contains($host, '..')) {
+            return false;
+        }
+
+        $labels = explode('.', trim($host, '.'));
+
+        foreach ($labels as $label) {
+            if ($label === '' || strlen($label) > 63) {
+                return false;
+            }
+
+            if (! preg_match('/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/', $label)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function gatewayEndpoint(): ?string

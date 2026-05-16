@@ -155,6 +155,38 @@ describe('node:new interactive input mode', function (): void {
             ->assertSuccessful();
     });
 
+    it('rejects invalid host prompt input before later prompts or forwarding', function (): void {
+        config(['orbit.is_gateway' => false]);
+
+        setupNodeNewInteractiveControlCaller();
+        $gateway = fakeNodeNewGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'app-1',
+                        'role' => 'app',
+                        'environment' => 'production',
+                        'tld' => null,
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.20',
+                        'status' => 'complete',
+                    ],
+                    'next_steps' => [],
+                ],
+            ],
+        ]);
+
+        $this->artisan('node:new app-1 --role=app --environment=production')
+            ->expectsQuestion('Host', 'incorrect-host')
+            ->assertFailed();
+
+        $gateway->assertNothingSent();
+    });
+
     it('does not prompt when json forces non-interactive mode', function (): void {
         setupNodeNewInteractiveControlCaller();
 
