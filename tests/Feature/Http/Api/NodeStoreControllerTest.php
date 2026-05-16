@@ -37,6 +37,44 @@ function apiStoreNodeRow(array $overrides = []): array
 }
 
 describe('NodeStoreController', function (): void {
+    it('executes node creation in gateway context even when local config is stale', function (): void {
+        config(['orbit.is_gateway' => false]);
+
+        DB::table('nodes')->insert([
+            apiStoreNodeRow([
+                'name' => 'gateway',
+                'role' => 'gateway',
+            ]),
+            apiStoreNodeRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'host' => '10.6.0.3',
+                'wireguard_address' => '10.6.0.3',
+                'gateway_endpoint' => '10.6.0.2',
+                'user' => 'tester',
+                'orbit_path' => '/home/tester/orbit',
+            ]),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'gateway',
+                'role' => 'app',
+                'host' => '192.0.2.20',
+                'environment' => 'production',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.incompatible')
+            ->assertJsonPath('error.message', "Node 'gateway' already exists.");
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('provisions an app node for an authenticated control caller', function (): void {
         DB::table('nodes')->insert([
             apiStoreNodeRow(),

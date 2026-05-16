@@ -13,6 +13,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use JsonException;
 use RuntimeException;
 
@@ -108,6 +109,8 @@ class BootstrapGatewayLocalCommand extends Command
             ));
         }
 
+        $this->markGatewayEnvironment();
+
         $caService->ensureRootCa();
 
         if (! (bool) $this->option('skip-runtime-install')) {
@@ -117,6 +120,22 @@ class BootstrapGatewayLocalCommand extends Command
         $this->line($caService->rootCert());
 
         return self::SUCCESS;
+    }
+
+    private function markGatewayEnvironment(): void
+    {
+        $path = app()->environmentFilePath();
+        $contents = File::exists($path) ? File::get($path) : '';
+        $line = 'ORBIT_IS_GATEWAY=true';
+
+        if (preg_match('/^ORBIT_IS_GATEWAY=/m', $contents) === 1) {
+            $contents = (string) preg_replace('/^ORBIT_IS_GATEWAY=.*$/m', $line, $contents);
+        } else {
+            $contents = rtrim($contents)."\n{$line}\n";
+        }
+
+        File::put($path, $contents);
+        config(['orbit.is_gateway' => true]);
     }
 
     private function stringArgument(string $name): ?string

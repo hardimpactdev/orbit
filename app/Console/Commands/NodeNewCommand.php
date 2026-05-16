@@ -317,7 +317,7 @@ class NodeNewCommand extends Command
                     : 'Gateway API request failed.',
                 meta: $exception->errorMeta(),
             );
-        } catch (RuntimeException $exception) {
+        } catch (Throwable $exception) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway API request failed.',
@@ -365,7 +365,7 @@ class NodeNewCommand extends Command
                     : 'Gateway API request failed.',
                 meta: $exception->errorMeta(),
             );
-        } catch (RuntimeException $exception) {
+        } catch (Throwable $exception) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway API request failed.',
@@ -475,7 +475,7 @@ class NodeNewCommand extends Command
                     : 'Gateway API request failed.',
                 meta: $exception->errorMeta(),
             );
-        } catch (RuntimeException $exception) {
+        } catch (Throwable $exception) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway API request failed.',

@@ -17,6 +17,9 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-ca-test-'.uniqid();
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
+        $this->originalEnvironmentPath = app()->environmentPath();
+        app()->useEnvironmentPath($this->tempStorage);
+        File::put("{$this->tempStorage}/.env", "APP_NAME=Orbit\n");
 
         $this->gatewayApiRuntimeInstaller = new class extends GatewayApiRuntimeInstaller
         {
@@ -35,6 +38,10 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     afterEach(function (): void {
+        if (isset($this->originalEnvironmentPath)) {
+            app()->useEnvironmentPath($this->originalEnvironmentPath);
+        }
+
         if (isset($this->tempStorage) && is_dir($this->tempStorage)) {
             File::deleteDirectory($this->tempStorage);
         }
@@ -53,6 +60,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->value('role'))->toBe('gateway')
             ->and($output)->toContain('-----BEGIN CERTIFICATE-----')
             ->and($output)->toContain('-----END CERTIFICATE-----')
+            ->and(File::get(app()->environmentFilePath()))->toContain('ORBIT_IS_GATEWAY=true')
             ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2']);
     });
 

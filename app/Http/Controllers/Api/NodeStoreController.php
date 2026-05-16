@@ -39,12 +39,28 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--tld', $request, 'tld');
         $this->addStringOption($arguments, '--user', $request, 'user');
 
-        $exitCode = Artisan::call('node:new', $arguments);
+        $exitCode = $this->callNodeNewInGatewayContext($arguments);
 
         /** @var array<string, mixed> $payload */
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         return response()->json($payload, $exitCode === 0 ? 200 : 422);
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function callNodeNewInGatewayContext(array $arguments): int
+    {
+        $previousGatewayContext = config('orbit.is_gateway');
+
+        try {
+            config(['orbit.is_gateway' => true]);
+
+            return Artisan::call('node:new', $arguments);
+        } finally {
+            config(['orbit.is_gateway' => $previousGatewayContext]);
+        }
     }
 
     private function forbidden(): JsonResponse

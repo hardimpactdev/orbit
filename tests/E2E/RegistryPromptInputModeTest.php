@@ -79,19 +79,21 @@ PHP;
     );
 }
 
-function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanCommand, string $label): string
+function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanCommand, string $label, string $input = "\n"): string
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $transcript = '/tmp/orbit-registry-prompt-'.$label.'-'.strtolower(bin2hex(random_bytes(3))).'.log';
     $command = sprintf('cd %s && ORBIT_IS_GATEWAY=1 %s', $checkout, $artisanCommand);
     $transcriptArgument = escapeshellarg($transcript);
+    $inputArgument = escapeshellarg($input);
 
     $result = $topology->ssh(
         'gateway',
         sprintf(
-            'if ! command -v script >/dev/null 2>&1 || ! script --version >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then echo "__ORBIT_PTY_CAPTURE_UNAVAILABLE__"; exit 0; fi; rm -f %1$s; printf "\n" | timeout 20s script -q -e -c %2$s %1$s >/dev/null; code=$?; cat %1$s; rm -f %1$s; exit $code',
+            'if ! command -v script >/dev/null 2>&1 || ! script --version >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then echo "__ORBIT_PTY_CAPTURE_UNAVAILABLE__"; exit 0; fi; rm -f %1$s; printf %%s %3$s | timeout 20s script -q -e -c %2$s %1$s >/dev/null; code=$?; cat %1$s; rm -f %1$s; exit $code',
             $transcriptArgument,
             escapeshellarg($command),
+            $inputArgument,
         ),
         timeoutSeconds: 60,
     );
@@ -102,6 +104,32 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanC
 
     return $result->output();
 }
+
+it('renders node:new interactive prompts in a real terminal session', function (): void {
+    $topology = e2eTopology(E2ETopologyKind::ControlGateway);
+
+    try {
+        $topology->withCurrentCheckout(roles: ['gateway']);
+
+        $prompt = registryPromptE2ECapture(
+            $topology,
+            'php artisan node:new || true',
+            'node-new',
+            "gateway\napp\nproduction\n192.0.2.99\nroot\n",
+        );
+
+        expect($prompt)
+            ->toContain('Node name')
+            ->toContain('Node role')
+            ->toContain('App node environment')
+            ->toContain('Host')
+            ->toContain('SSH user')
+            ->toContain("Node 'gateway' already exists.")
+            ->not->toContain('SSH/bootstrap endpoint');
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-feature-control-gateway');
 
 it('renders finite registry prompts as data tables in a real terminal session', function (): void {
     $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev);

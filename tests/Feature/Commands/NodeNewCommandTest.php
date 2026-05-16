@@ -1262,6 +1262,43 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
+    it('renders gateway_unavailable when forwarded app-node creation cannot reach the gateway API', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-prod-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.20',
+            '--environment' => 'production',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('gateway_unavailable')
+            ->and($payload['error']['message'])->toBe('Gateway API request failed.')
+            ->and($payload['error']['meta']['requested_role'])->toBe('app');
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('forwards app-node creation when gateway add only stored local gateway settings', function (): void {
         DB::table('local_gateway_settings')->insert([
             'gateway_url' => 'https://10.6.0.2',
