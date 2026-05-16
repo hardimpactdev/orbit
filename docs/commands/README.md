@@ -264,7 +264,7 @@ side effects begin.
 - Interactive input mode asks for confirmation unless `--force` is supplied.
   The prompt is rendered after target and subject resolution and before any
   side effect.
-- Non-JSON non-interactive input mode without `--force` fails before side
+- Input mode that is neither JSON nor interactive, without `--force`, fails before side
   effects with `validation_failed`, `meta.field=force`, and
   `meta.reason=destructive_consent_required`.
 - `--force` is explicit destructive consent in any mode and skips the

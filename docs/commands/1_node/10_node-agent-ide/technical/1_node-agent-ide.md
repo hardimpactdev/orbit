@@ -133,11 +133,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | The gateway resolves the caller as an app-role node. | Failure with `caller_role_not_allowed` |
-| Authorization failed | A control caller is not authorized to update node registry configuration. | Failure with `authorization_failed` |
 | Node not found | No active node record matches `name`. | Failure |
 | Unsupported adapter | The requested adapter is not supported. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway or receives an unstructured transport failure. | Failure with `gateway_unavailable` |
 
 No-op sets (already matching) are successful with `action: "converged"`, not
 failure.

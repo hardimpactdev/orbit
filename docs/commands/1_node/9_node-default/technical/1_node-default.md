@@ -76,7 +76,7 @@ input:
 ### Choose sub-action
 
 1. Query the gateway for visible development app nodes.
-   - Configured non-gateway callers first call `/api/me`; if `self.role` is not
+   - Configured callers that are not gateways first call `/api/me`; if `self.role` is not
      `control`, the gateway rejects the command before any prompt is rendered.
 2. Present the authorized nodes as choices.
 3. Store the selected node as the local default development app node.
@@ -135,7 +135,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
 | Not a development app node | `set` sub-action and the selected node matches a node that is not a development app node. | Failure |
 | Not authorized | `set` or `choose` sub-action and the caller is not authorized to see or operate on the selected node. | Failure |
-| Caller role not allowed | `set` or `choose` sub-action and `/api/me` reports a caller role other than `control`, or `ORBIT_IS_GATEWAY` identifies the gateway-local shortcut. | Failure |
 
 The `show` and `clear` sub-actions do not perform caller-role checks and do not
 fail when no default is set. The

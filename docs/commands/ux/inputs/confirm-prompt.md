@@ -33,7 +33,7 @@ These rules govern all uses of `confirm` in Orbit commands.
 - In `--json` mode the prompt is not rendered. `--json` implies destructive
   consent for the JSON one-shot caller, while ordinary validation,
   authorization, and target requirements still apply.
-- Non-JSON non-interactive destructive commands without `--force` fail before
+- Destructive commands in input mode that is neither JSON nor interactive, without `--force`, fail before
   side effects with `validation_failed`, `meta.field=force`, and
   `meta.reason=destructive_consent_required`.
 - Declining or cancelling a destructive confirmation fails before side effects

@@ -71,7 +71,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 | Missing target source | No `--node`, `--app`, local `node:default`, or gateway-known self resolved a target. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Target mismatch | `--app` resolves to a different app node than `--node`. | `error.code=validation_failed`; `error.meta.reason=target_mismatch` |
-| Gateway unavailable | The caller cannot reach the gateway for finite reads, follow streams, or self resolution. | `error.code=gateway_unavailable` |
 
 ## Doctor Relationship
 

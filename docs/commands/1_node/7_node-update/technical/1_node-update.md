@@ -150,7 +150,7 @@ Input mode behavior is split out of the canonical command contract:
 - Fields that match the current value are no-ops and do not appear in
   `changed`.
 - Update the node record with the new values for changed fields.
-- Changing `tld` updates the gateway-owned development TLD metadata for the app
+- Changing `tld` updates the development TLD metadata that the gateway owns for the app
   node. Any wider convergence or repair after that metadata write belongs to
   the node-family doctor path.
 
@@ -218,8 +218,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | No field provided | Non-interactive mode and no supported field flags are provided. | Failure |
 | Duplicate field flag | The same field flag is supplied more than once in a single invocation. | Failure |
 | Node not found | No active node record matches `name`. | Failure |
-| Field role-incompatible | A field is supplied for a node role or effective environment that does not support it (e.g. `--environment` for a non-app node, `--host`/`--public-ipv4`/`--public-ipv6` for a control node, or `--tld` for gateway/control/production-effective app targets). | Failure |
+| Field role-incompatible | A field is supplied for a node role or effective environment that does not support it. | Failure |
 | TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
+
+Examples: `--environment` for a non-app node, host/public-IP fields for a control
+node, or `--tld` for gateway, control, or production-effective app targets.
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
@@ -255,7 +258,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, control-caller forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, forwarded structured errors, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Control-caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, structured errors, unconfigured caller failures, gateway-node access, and no SSH-to-gateway path. |
 | `tests/Feature/Commands/Nodes/NodeUpdateOnAppNodeContractTest.php` | App-caller behavior: app-role callers forward through the CLI gateway client, receive gateway-owned `caller_role_not_allowed`, and are not locally pre-rejected. |
 | `tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD role and effective-environment rejection, production-to-development plus `--tld` success, duplicate TLD conflict, and invalid TLD syntax. |
 

@@ -5,9 +5,9 @@
 This page describes caller-role behavior when `orbit gateway:add` is invoked from
 an app node.
 
-**Effects:** `read`, `write` until an authority-backed gateway check fails.
+**Effects:** `read`, `write` until a gateway check backed by authority fails.
 `gateway:add` has no local app-role rejection point because this command has no
-authority-backed local app-role source.
+local app-role source backed by authority.
 
 **Prerequisites:**
 - The app node already has gateway-managed endpoint and trust artifacts from
@@ -17,7 +17,7 @@ authority-backed local app-role source.
 
 The local CLI does not infer an app caller role for `gateway:add`. If an app node
 runs `gateway:add`, the command follows the normal local onboarding path until a
-gateway request reaches an authority-backed role or identity check.
+gateway request reaches a role or identity check backed by authority.
 
 App nodes run the Orbit CLI as a stateless gateway client. Their gateway-client
 endpoint and trust artifacts are installed and repaired by the gateway through
@@ -33,7 +33,7 @@ onboarding flow.
 ## Failure Semantics
 
 There is no app-role-specific pre-prompt failure for `gateway:add`. If an app
-node reaches an authority-backed gateway role check, that gateway response is
+node reaches a gateway role check backed by authority, that gateway response is
 surfaced by the selected renderer.
 
 Gateway-local denial still uses:

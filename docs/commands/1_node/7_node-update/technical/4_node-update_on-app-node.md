@@ -14,7 +14,7 @@ input, sends the request to the gateway over the VPN, and renders the gateway
 rejection. The CLI does not inspect local app-node role state or reject the
 command from a local node record.
 
-This applies equally to `--tld`: an app-role CLI caller forwards the update
+This applies equally to `--tld`: a CLI caller in the app role forwards the update
 payload to the gateway. The CLI does not locally pre-reject `node_update.tld`;
 the gateway returns the caller-role error before gateway-owned writes.
 
@@ -55,4 +55,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnAppNodeContractTest.php` | Primary owner for app-caller rejection: app-role callers forward update payloads including `tld`, are rejected by the gateway before gateway-owned writes, and preserve JSON and human `caller_role_not_allowed` output. Renderer tests own the general human and JSON formatting of that error. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnAppNodeContractTest.php` | App-caller rejection: app-role callers forward update payloads including `tld`, are rejected by the gateway before gateway-owned writes, and preserve JSON and human `caller_role_not_allowed` output. |
+
+Renderer tests own the general human and JSON formatting of that error.

@@ -67,7 +67,7 @@ no longer authorized to operate on the gateway node; recovery is to run
 Interactive input mode renders the self-lockout confirmation label. JSON output
 sets `success.data.self_lockout=true`; otherwise the field is `false`.
 
-This is a control-API authorization edge only. Gateway-local direct mutation is
+This is only an authorization edge in the control API. Gateway-local direct mutation is
 a gateway-owned write path and does not report `self_lockout=true`.
 
 ## Error Contract

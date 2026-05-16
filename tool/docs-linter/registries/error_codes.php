@@ -27,6 +27,7 @@ return [
             'not_found',
             'provisioning_incomplete',
             'ssh_unreachable',
+            'tld_in_use',
             'unsupported_adapter',
             'unsupported_platform',
         ],

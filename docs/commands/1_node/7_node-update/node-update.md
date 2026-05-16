@@ -73,7 +73,7 @@ that are directly affected by the changed metadata.
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
 - Changes a development app node's TLD when `--tld` is supplied. `--tld` is
-  valid only for app-node targets whose effective environment is `development`;
+  valid only for targets that are app nodes and whose effective environment is `development`;
   gateway targets, control targets, and production-effective app targets are
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
