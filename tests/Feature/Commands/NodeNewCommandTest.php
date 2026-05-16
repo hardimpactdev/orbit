@@ -11,6 +11,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\Factory;
 use Illuminate\Support\Facades\Artisan;
@@ -783,6 +784,60 @@ describe('node:new', function (): void {
             ->and($node)->not->toBeNull()
             ->and($node->environment)->toBe('production')
             ->and($node->tld)->toBeNull();
+    });
+
+    it('reports SSH authorization failures before app node installation', function (): void {
+        config(['orbit.is_gateway' => true]);
+
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake(function ($process): ProcessResult {
+            if (str_starts_with((string) $process->command, 'tar ')) {
+                return Process::result();
+            }
+
+            return Process::result(
+                errorOutput: 'root@178.105.116.104: Permission denied (publickey,password).',
+                exitCode: 255,
+            );
+        });
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'circle-k-main1',
+            '--role' => 'app',
+            '--host' => '178.105.116.104',
+            '--environment' => 'production',
+            '--user' => 'root',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('authorization_failed')
+            ->and($payload['error']['message'])->toBe('Gateway cannot SSH to root@178.105.116.104.')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'host' => '178.105.116.104',
+                'user' => 'root',
+                'step' => 'ssh_authorization',
+                'error' => 'root@178.105.116.104: Permission denied (publickey,password).',
+            ]);
+
+        expect(DB::table('nodes')->where('name', 'circle-k-main1')->exists())->toBeFalse();
     });
 
     it('adopts a compatible existing app node from proven live WireGuard peer reality', function (): void {

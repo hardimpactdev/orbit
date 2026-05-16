@@ -691,14 +691,11 @@ class NodeNewCommand extends Command
         $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
 
         if (! $installation->successful) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "App host '{$inputs['host']}' could not complete Orbit installation.",
-                meta: [
-                    'host' => $inputs['host'],
-                    'step' => 'install_orbit',
-                    'error' => trim($installation->errorOutput) ?: null,
-                ],
+            return $this->installerFailure(
+                role: 'app',
+                host: $inputs['host'],
+                sshUser: $inputs['sshUser'],
+                errorOutput: $installation->errorOutput,
             );
         }
 
@@ -1106,14 +1103,11 @@ class NodeNewCommand extends Command
         $installation = $installer->install($host, $sshUser, $runtimeUser);
 
         if (! $installation->successful) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' could not complete Orbit installation.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'install_orbit',
-                    'error' => trim($installation->errorOutput) ?: null,
-                ],
+            return $this->installerFailure(
+                role: 'gateway',
+                host: $host,
+                sshUser: $sshUser,
+                errorOutput: $installation->errorOutput,
             );
         }
 
@@ -1597,6 +1591,41 @@ class NodeNewCommand extends Command
             message: 'This platform does not support automatic gateway CA trust installation.',
             meta: ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
         );
+    }
+
+    private function installerFailure(string $role, string $host, string $sshUser, string $errorOutput): int
+    {
+        $error = trim($errorOutput);
+
+        if ($this->isSshAuthorizationFailure($error)) {
+            return $this->failCommand(
+                code: 'authorization_failed',
+                message: "Gateway cannot SSH to {$sshUser}@{$host}.",
+                meta: [
+                    'host' => $host,
+                    'user' => $sshUser,
+                    'step' => 'ssh_authorization',
+                    'error' => $error !== '' ? $error : null,
+                ],
+            );
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: ucfirst($role)." host '{$host}' could not complete Orbit installation.",
+            meta: [
+                'host' => $host,
+                'step' => 'install_orbit',
+                'error' => $error !== '' ? $error : null,
+            ],
+        );
+    }
+
+    private function isSshAuthorizationFailure(string $error): bool
+    {
+        return str_contains($error, 'Permission denied')
+            || str_contains($error, 'publickey')
+            || str_contains($error, 'Authentication failed');
     }
 
     private function gatewayUrl(string $host): string
