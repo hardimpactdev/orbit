@@ -1680,7 +1680,7 @@ class NodeNewCommand extends Command
             return null;
         }
 
-        return trim(text(label: 'SSH/bootstrap endpoint', required: true));
+        return trim(text(label: 'Host', required: true));
     }
 
     private function resolveControlName(string $gatewayName): ?string

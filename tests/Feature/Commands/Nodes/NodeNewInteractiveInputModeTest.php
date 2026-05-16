@@ -115,7 +115,7 @@ describe('node:new interactive input mode', function (): void {
             ->expectsQuestion('Node name', 'app-1')
             ->expectsChoice('Node role', 'app', ['gateway', 'app', 'control'])
             ->expectsChoice('App node environment', 'development', ['development', 'production'])
-            ->expectsQuestion('SSH/bootstrap endpoint', '192.0.2.20')
+            ->expectsQuestion('Host', '192.0.2.20')
             ->expectsQuestion('Development TLD', 'test')
             ->expectsQuestion('SSH user', 'deployer')
             ->expectsOutputToContain('Created app node app-1.')
@@ -149,7 +149,7 @@ describe('node:new interactive input mode', function (): void {
 
         $this->artisan('node:new app-1 --role=app')
             ->expectsChoice('App node environment', 'production', ['development', 'production'])
-            ->expectsQuestion('SSH/bootstrap endpoint', '192.0.2.20')
+            ->expectsQuestion('Host', '192.0.2.20')
             ->expectsQuestion('SSH user', 'root')
             ->expectsOutputToContain('Created app node app-1.')
             ->assertSuccessful();
