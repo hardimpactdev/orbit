@@ -1308,6 +1308,7 @@ describe('node:new', function (): void {
             && $request->body()->all() === [
                 'name' => 'app-dev-1',
                 'role' => 'app',
+                'roles' => ['app'],
                 'host' => '192.0.2.20',
                 'environment' => 'development',
                 'tld' => 'test',
@@ -1412,6 +1413,7 @@ describe('node:new', function (): void {
             && $request->body()->all() === [
                 'name' => 'app-dev-1',
                 'role' => 'app',
+                'roles' => ['app'],
                 'host' => '192.0.2.20',
                 'environment' => 'development',
                 'tld' => 'test',
@@ -1480,6 +1482,7 @@ describe('node:new', function (): void {
             && $request->body()->all() === [
                 'name' => 'app-adopt-1',
                 'role' => 'app',
+                'roles' => ['app'],
                 'host' => '192.0.2.30',
                 'environment' => 'development',
                 'tld' => 'test',
@@ -1552,6 +1555,7 @@ describe('node:new', function (): void {
             && $request->body()->all() === [
                 'name' => 'control-2',
                 'role' => 'control',
+                'roles' => ['control'],
                 'host' => null,
                 'environment' => null,
                 'tld' => null,
@@ -1619,6 +1623,7 @@ describe('node:new', function (): void {
             && $request->body()->all() === [
                 'name' => 'gateway-1',
                 'role' => 'gateway',
+                'roles' => ['gateway'],
                 'host' => '203.0.113.2',
                 'environment' => null,
                 'tld' => null,

@@ -20,6 +20,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
     public function __construct(
         public readonly string $name,
         public readonly string $role,
+        public readonly array $roles,
         public readonly ?string $host,
         public readonly ?string $environment,
         public readonly ?string $tld,
@@ -39,6 +40,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         return [
             'name' => $this->name,
             'role' => $this->role,
+            'roles' => $this->roles,
             'host' => $this->host,
             'environment' => $this->environment,
             'tld' => $this->tld,

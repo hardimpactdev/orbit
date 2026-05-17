@@ -28,6 +28,7 @@ it('resolves to POST /api/nodes with node creation body', function (): void {
     $request = new CreateNodeRequest(
         name: 'app-1',
         role: 'app',
+        roles: ['app-development'],
         host: '192.0.2.20',
         environment: 'development',
         tld: 'test',
@@ -39,6 +40,7 @@ it('resolves to POST /api/nodes with node creation body', function (): void {
     expect($request->body()->all())->toBe([
         'name' => 'app-1',
         'role' => 'app',
+        'roles' => ['app-development'],
         'host' => '192.0.2.20',
         'environment' => 'development',
         'tld' => 'test',
@@ -63,7 +65,7 @@ it('returns a NodeCreateResponse DTO with gateway data', function (): void {
     $connector = new GatewayConnector;
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new CreateNodeRequest('app-1', 'app', '192.0.2.20', 'development', 'test', 'orbit'))->dto();
+    $dto = $connector->send(new CreateNodeRequest('app-1', 'app', ['app-development'], '192.0.2.20', 'development', 'test', 'orbit'))->dto();
 
     expect($dto)->toBeInstanceOf(NodeCreateResponse::class);
     expect($dto->data)->toBe([

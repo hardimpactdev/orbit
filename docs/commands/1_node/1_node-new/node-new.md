@@ -2,7 +2,8 @@
 
 [Back to Nodes commands.](../README.md)
 
-Register a new gateway, app, or control node in the Orbit fleet.
+Register a new node identity in the Orbit fleet and optionally assign its
+initial hosted roles.
 
 Use `node:new` when adding capacity to the fleet. Gateway and app nodes are
 provisioned over SSH when needed. Control nodes are enrolled by the gateway so
@@ -16,7 +17,7 @@ initiating control node and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
+orbit node:new [name] [--role=<hosted-role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
 orbit node:new
 ```
 
@@ -28,9 +29,9 @@ to authenticate against.
 ## Examples
 
 ```bash
-orbit node:new control-1 --role=control
-orbit node:new app-1 --role=app --host=app-1.ssh.example.com --environment=development --tld=test
-orbit node:new app-2 --role=app --host=203.0.113.20 --environment=production
+orbit node:new client-1
+orbit node:new dev-1 --role=app-development --host=app-1.ssh.example.com --tld=test
+orbit node:new web-1 --role=app-production --role=database --host=203.0.113.20
 orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=control-1
 ```
 
@@ -38,47 +39,60 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
 
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
-- `--role`: required node role: `gateway`, `app`, or `control`.
-- `--host`: required for gateway and app nodes. SSH/bootstrap endpoint for
-  gateway or app node provisioning. This is never the canonical node address.
+- `--role`: repeatable initial hosted role assignment. Supported hosted roles:
+  `app-development`, `app-production`, and `database`. No hosted role means a
+  joined client/control identity. `gateway` remains an internal bootstrap path.
+- `--host`: required for gateway bootstrap and for any initial hosted role that
+  provisions a host. This is the SSH/bootstrap endpoint and never the canonical
+  node address.
 - `--control-name`: initiating control-node name for first-gateway bootstrap
   (a control node with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
-- `--environment`: app-node environment: `development` or `production`.
-- `--tld`: TLD for the node, without a leading dot. For development app nodes,
-  this is the suffix future apps and workspaces on that node use. For gateway
-  nodes, this is the TLD under which the gateway resolves over its own
-  WG-served DNS (defaults to `gateway`).
+- `--environment`: legacy compatibility input only. `--role=app
+  --environment=development` maps to `--role=app-development`; `--role=app
+  --environment=production` maps to `--role=app-production`.
+- `--tld`: required for `app-development`. Development TLD for the node,
+  without a leading dot.
 - `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
   steady-state `nodes.user` after the gateway-managed SSH user is set up.
 - `--json`: Output JSON.
 
-## Node Roles
+## Hosted Roles
 
-**Control node**
+**Client / control identity**
 
-Creates a gateway-owned WireGuard identity and active control-node record. The
-command returns the WireGuard configuration for the operator to install on that
-control machine before running `gateway:add`.
+Creates a joined node identity with no hosted roles by default. This is the new
+baseline meaning of `node:new <name>` with no `--role` values.
 
-Control-node enrollment does not SSH to or configure the control machine.
+Legacy `--role=control` is accepted for one compatibility cycle and maps to the
+same no-hosted-role identity. Human output warns when a legacy mapping is used.
 
-**App node**
+**`app-development`**
 
-Registers an app runtime node. If the target host is not already provisioned,
-the gateway provisions it over SSH, installs the Orbit runtime, joins it to the
-WireGuard network, and verifies basic readiness.
+Provisions a host-capable node identity and creates an active hosted role
+assignment with settings that include `tld`.
 
-App nodes are not enrolled through a detached WireGuard config. `node:new
---role=app` requires a resolved SSH/bootstrap endpoint so the gateway can
-complete the app-node bootstrap.
+Requires `--host` and non-empty `--tld`.
 
-Development app nodes also store a node TLD. Future apps and workspaces created
-on that node use that TLD for their route domains, and the gateway creates the
-development DNS mapping for the TLD to the app node's WireGuard address.
+**`app-production`**
 
-**Gateway node**
+Provisions a host-capable node identity and creates an active hosted role
+assignment with no extra settings.
+
+Requires `--host`.
+
+**`database`**
+
+Creates an active hosted role assignment for database responsibilities. It may
+be combined with `app-development` or `app-production` on the same provisioned
+host.
+
+`app-development` and `app-production` are mutually exclusive. Gateway conflicts
+with every hosted role and is not command-assignable through the public hosted
+role flow.
+
+**Gateway bootstrap**
 
 Bootstraps or adopts the gateway node that owns fleet configuration, WireGuard
 identity, gateway APIs, and node access policy.
@@ -110,8 +124,8 @@ in generated WireGuard peer configs *and* is passed to wg-easy as `WG_HOST`,
 so it must be an IP address or dotted DNS name reachable by the nodes that will
 join the fleet.
 
-`--tld` defaults to `gateway` on `--role=gateway`. The gateway is reachable
-over WG as `<gateway-name>.<gateway-tld>` once the substrate is up.
+Gateway bootstrap internally creates exactly one `gateway` hosted-role
+assignment. Public hosted-role assignment does not accept `gateway`.
 
 If the requested gateway is already provisioned and active, and the supplied host is
 compatible with that gateway identity, Orbit converges idempotently without
@@ -122,10 +136,14 @@ and requires a future explicit reset contract.
 
 ## What Happens
 
-`node:new` writes the node record in the gateway registry, creates or verifies
-the node identity, and performs only the bootstrap needed for that role.
-Development app-node bootstrap includes the node TLD and the gateway development
-DNS mapping for that TLD.
+`node:new` writes the node identity first, then creates each requested initial
+hosted role assignment. Development app bootstrap includes the node TLD and the
+gateway development DNS mapping for that TLD.
+
+If initial hosted-role validation fails, the command stops before provisioning
+or writing the node identity. If an initial hosted role is persisted but its
+first convergence fails, the command fails and leaves that role assignment in
+`error` for later doctor recovery.
 
 `node:new` does not detect, infer, or store public IPv4/IPv6 metadata. The
 provided `--host` is treated as the operator-supplied SSH/bootstrap endpoint;

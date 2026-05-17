@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
-it('requires the canonical name and role inputs', function (): void {
+it('requires the canonical name input and treats missing role as a client-identity request', function (): void {
     config(['orbit.is_gateway' => false]);
 
     $missingNameExitCode = Artisan::call('node:new', ['--json' => true]);
@@ -22,5 +22,5 @@ it('requires the canonical name and role inputs', function (): void {
     expect($missingNameExitCode)->toBe(1)
         ->and($missingNamePayload['error']['message'])->toBe('Node name is required.')
         ->and($missingRoleExitCode)->toBe(1)
-        ->and($missingRolePayload['error']['message'])->toBe('Node role is required.');
+        ->and($missingRolePayload['error']['message'])->toBe('Gateway connection is required before creating app or control nodes.');
 });

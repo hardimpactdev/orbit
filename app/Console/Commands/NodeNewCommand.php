@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Data\Nodes\NodeIdentityArtifact;
 use App\Enums\AdoptAction;
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
@@ -13,11 +15,13 @@ use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeIdentityArtifactProbe;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Trust\TrustStoreInstaller;
@@ -40,7 +44,7 @@ use function Laravel\Prompts\text;
 
 #[Signature('node:new
     {name? : Registry name for the node}
-    {--role= : Node role: gateway, control, or app}
+    {--role=* : Initial hosted role. Repeatable: app-development, app-production, database. Gateway bootstrap uses gateway internally.}
     {--host= : SSH/bootstrap endpoint for gateway or app nodes}
     {--control-name= : Initiating control-node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
@@ -57,6 +61,7 @@ class NodeNewCommand extends Command
     public function handle(
         OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
+        NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         PlatformDetector $platformDetector,
         WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
@@ -65,6 +70,7 @@ class NodeNewCommand extends Command
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $name = $this->resolveName();
+        $requestedRoles = $this->resolveRequestedRoles();
         $role = $this->resolveRole();
 
         if ($name === null) {
@@ -75,15 +81,48 @@ class NodeNewCommand extends Command
             return $this->validationFailed('name', 'Node name must be a valid node name.');
         }
 
-        if ($role === null) {
-            return $this->validationFailed('role', 'Node role is required.');
-        }
-
-        if (! in_array($role, ['gateway', 'app', 'control'], true)) {
-            return $this->validationFailed('role', 'Node role must be one of gateway, app, or control.');
+        if (is_int($requestedRoles)) {
+            return $requestedRoles;
         }
 
         $gatewayConfigured = $this->gatewayConfigured();
+
+        if ($requestedRoles['gateway']) {
+            $role = 'gateway';
+        }
+
+        if ($requestedRoles['hosted'] !== []) {
+            $inputs = $this->resolveHostedRoleInputs($requestedRoles['hosted']);
+
+            if (is_int($inputs)) {
+                return $inputs;
+            }
+
+            if (! $gatewayConfigured) {
+                return $this->failCommand(
+                    code: 'gateway_unavailable',
+                    message: 'Gateway connection is required before creating app or control nodes.',
+                    meta: ['requested_role' => $requestedRoles['hosted'][0]],
+                );
+            }
+
+            if ($callerRole === 'control') {
+                return $this->forwardHostedRoleNodeCreation($name, $requestedRoles['hosted'], $inputs);
+            }
+
+            return $this->provisionHostedRoleNode(
+                installer: $installer,
+                registryWriter: $registryWriter,
+                roleAssignmentService: $nodeRoleAssignmentService,
+                name: $name,
+                roles: $requestedRoles['hosted'],
+                inputs: $inputs,
+            );
+        }
+
+        if ($role === null) {
+            $role = 'control';
+        }
 
         if ($role === 'app') {
             $inputs = $this->resolveAppInputs();
@@ -299,6 +338,200 @@ class NodeNewCommand extends Command
     /**
      * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
      */
+    private function forwardHostedRoleNodeCreation(string $name, array $roles, array $inputs): int
+    {
+        try {
+            /** @var NodeCreateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new CreateNodeRequest(
+                    name: $name,
+                    role: $this->firstRole($roles),
+                    roles: $roles,
+                    host: $inputs['host'],
+                    environment: $this->legacyEnvironmentForRoles($roles),
+                    tld: $inputs['tld'],
+                    user: $inputs['sshUser'],
+                ))
+                ->dto();
+        } catch (GatewayApiException $exception) {
+            return $this->failCommand(
+                code: $exception->errorCode() ?? 'gateway_unavailable',
+                message: $exception->getMessage() !== ''
+                    ? $exception->getMessage()
+                    : 'Gateway API request failed.',
+                meta: $exception->errorMeta(),
+            );
+        } catch (Throwable $exception) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway API request failed.',
+                meta: [
+                    'requested_role' => $this->firstRole($roles),
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($dto->data);
+        }
+
+        $this->info("Created node {$name}.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: string}  $inputs
+     */
+    private function provisionHostedRoleNode(
+        OrbitHostInstaller $installer,
+        NodeRegistryWriter $registryWriter,
+        NodeRoleAssignmentService $roleAssignmentService,
+        string $name,
+        array $roles,
+        array $inputs,
+    ): int {
+        $existing = Node::query()->where('name', $name)->first();
+
+        if ($existing instanceof Node && $existing->status === 'active') {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Node '{$name}' already exists.",
+                meta: ['name' => $name],
+            );
+        }
+
+        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Development TLD '{$inputs['tld']}' is already assigned to another node.",
+                meta: [
+                    'field' => 'tld',
+                    'value' => $inputs['tld'],
+                ],
+            );
+        }
+
+        $runtimeUser = self::DEFAULT_RUNTIME_USER;
+        $wireguardAddress = $this->nextWireguardAddress();
+        $gatewayEndpoint = $this->gatewayEndpoint();
+
+        $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
+
+        if (! $installation->successful) {
+            return $this->installerFailure(
+                role: 'app',
+                host: $inputs['host'],
+                sshUser: $inputs['sshUser'],
+                errorOutput: $installation->errorOutput,
+            );
+        }
+
+        $sshAuthorization = $this->authorizeRuntimeSshUser(
+            host: $inputs['host'],
+            sshUser: $inputs['sshUser'],
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($sshAuthorization)) {
+            return $sshAuthorization;
+        }
+
+        $node = $registryWriter->writeNodeIdentity(
+            name: $name,
+            legacyRole: in_array(NodeRoleName::AppDevelopment->value, $roles, true) || in_array(NodeRoleName::AppProduction->value, $roles, true)
+                ? 'app'
+                : 'control',
+            environment: $this->legacyEnvironmentForRoles($roles),
+            tld: $inputs['tld'],
+            platform: 'ubuntu',
+            host: $inputs['host'],
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $gatewayEndpoint,
+            user: $runtimeUser,
+            orbitPath: "/home/{$runtimeUser}/orbit",
+        );
+
+        $failedAssignment = null;
+
+        foreach ($roles as $role) {
+            $assignment = $roleAssignmentService->add($node, $role, $this->settingsForRole($role, $inputs['tld']));
+
+            if ($assignment->status === NodeRoleStatus::Error->value) {
+                $failedAssignment = $assignment;
+
+                break;
+            }
+        }
+
+        if ($failedAssignment instanceof NodeRoleAssignment) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Node '{$name}' created but hosted role '{$failedAssignment->role}' failed to converge.",
+                meta: [
+                    'node' => $name,
+                    'role' => $failedAssignment->role,
+                    'status' => $failedAssignment->status,
+                    'settings' => $failedAssignment->settings ?? [],
+                    'last_error' => $failedAssignment->last_error,
+                ],
+            );
+        }
+
+        $payload = [
+            'result' => [
+                'action' => 'created',
+            ],
+            'node' => [
+                'name' => $name,
+                'role' => $node->role,
+                'environment' => $node->environment,
+                'tld' => $node->tld,
+                'platform' => $node->platform,
+                'addresses' => [
+                    'wireguard' => $wireguardAddress,
+                ],
+                'status' => 'active',
+            ],
+            'roles' => $node->fresh()->roleAssignments->map(fn ($assignment): array => [
+                'role' => $assignment->role,
+                'status' => $assignment->status,
+                'settings' => $assignment->settings ?? [],
+                'last_error' => $assignment->last_error,
+            ])->values()->all(),
+            'provisioning' => [
+                'transport' => 'ssh',
+                'host' => $inputs['host'],
+                'status' => 'complete',
+            ],
+            'next_steps' => [],
+        ];
+
+        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true)) {
+            $payload['development_tld'] = [
+                'tld' => $inputs['tld'],
+                'gateway_dns' => [
+                    'domain' => "*.{$inputs['tld']}",
+                    'target' => $wireguardAddress,
+                    'status' => 'configured',
+                ],
+            ];
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info("Created node {$name}.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     */
     private function forwardAppNodeCreation(string $name, array $inputs): int
     {
         try {
@@ -307,6 +540,7 @@ class NodeNewCommand extends Command
                 ->send(new CreateNodeRequest(
                     name: $name,
                     role: 'app',
+                    roles: ['app'],
                     host: $inputs['host'],
                     environment: $inputs['environment'],
                     tld: $inputs['tld'],
@@ -359,6 +593,7 @@ class NodeNewCommand extends Command
                 ->send(new CreateNodeRequest(
                     name: $name,
                     role: 'gateway',
+                    roles: ['gateway'],
                     host: $host,
                     environment: null,
                     tld: null,
@@ -473,6 +708,7 @@ class NodeNewCommand extends Command
                 ->send(new CreateNodeRequest(
                     name: $name,
                     role: 'control',
+                    roles: ['control'],
                     host: null,
                     environment: null,
                     tld: null,
@@ -1261,7 +1497,7 @@ class NodeNewCommand extends Command
         }
 
         DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $trustPath, $caSha256): void {
-            Node::query()->updateOrCreate(
+            $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
                     'role' => 'gateway',
@@ -1274,6 +1510,16 @@ class NodeNewCommand extends Command
                     'user' => $runtimeUser,
                     'orbit_path' => "/home/{$runtimeUser}/orbit",
                     'status' => 'active',
+                ],
+            );
+
+            $gateway->roleAssignments()->firstOrCreate(
+                ['role' => NodeRoleName::Gateway->value],
+                [
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => [],
+                    'last_error' => null,
+                    'converged_at' => now(),
                 ],
             );
 
@@ -1703,7 +1949,8 @@ class NodeNewCommand extends Command
 
     private function resolveRole(): ?string
     {
-        $role = $this->stringOption('role');
+        $roles = $this->roleOptions();
+        $role = $roles[0] ?? null;
 
         if ($role !== null) {
             return $role;
@@ -1718,6 +1965,94 @@ class NodeNewCommand extends Command
             options: ['gateway', 'app', 'control'],
             required: true,
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function roleOptions(): array
+    {
+        $value = $this->option('role');
+
+        if (is_string($value) && $value !== '') {
+            return [$value];
+        }
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, fn ($role): bool => is_string($role) && $role !== ''));
+    }
+
+    /**
+     * @return array{gateway: bool, hosted: list<string>}|int
+     */
+    private function resolveRequestedRoles(): array|int
+    {
+        $roles = $this->roleOptions();
+
+        if ($roles === []) {
+            return ['gateway' => false, 'hosted' => []];
+        }
+
+        if ($roles === ['control']) {
+            if (! $this->wantsJson()) {
+                $this->warn('The legacy control role now maps to a client identity with no hosted roles.');
+            }
+
+            return ['gateway' => false, 'hosted' => []];
+        }
+
+        if ($roles === ['gateway']) {
+            return ['gateway' => true, 'hosted' => []];
+        }
+
+        if ($roles === ['app']) {
+            $environment = $this->stringOption('environment');
+
+            if ($environment === null) {
+                return $this->validationFailed('environment', 'Environment is required for legacy app role mapping.');
+            }
+
+            if (! in_array($environment, ['development', 'production'], true)) {
+                return $this->validationFailed('environment', 'Environment must be one of development or production.');
+            }
+
+            if (! $this->wantsJson()) {
+                $this->warn('The legacy app role now maps to a hosted app role.');
+            }
+
+            return [
+                'gateway' => false,
+                'hosted' => [$environment === 'development' ? NodeRoleName::AppDevelopment->value : NodeRoleName::AppProduction->value],
+            ];
+        }
+
+        $canonicalRoles = [
+            NodeRoleName::AppDevelopment->value,
+            NodeRoleName::AppProduction->value,
+            NodeRoleName::Database->value,
+        ];
+
+        foreach ($roles as $role) {
+            if (! in_array($role, $canonicalRoles, true)) {
+                return $this->validationFailed('role', 'Node role must be one of gateway, control, app-development, app-production, database, or legacy app.');
+            }
+        }
+
+        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true) && in_array(NodeRoleName::AppProduction->value, $roles, true)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Hosted roles app-development and app-production cannot be combined.',
+                meta: [
+                    'field' => 'role',
+                    'conflicts' => [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
+                ],
+            );
+        }
+
+        return ['gateway' => false, 'hosted' => array_values(array_unique($roles))];
     }
 
     private function resolveHost(string $role): ?string
@@ -1911,6 +2246,86 @@ class NodeNewCommand extends Command
             'tld' => $tld,
             'sshUser' => $this->resolveSshUser(),
         ];
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array{host: string, environment: ?string, tld: ?string, sshUser: string}|int
+     */
+    private function resolveHostedRoleInputs(array $roles): array|int
+    {
+        $needsHost = array_intersect($roles, [
+            NodeRoleName::AppDevelopment->value,
+            NodeRoleName::AppProduction->value,
+            NodeRoleName::Database->value,
+        ]) !== [];
+
+        $host = $needsHost ? $this->resolveHost('app') : null;
+
+        if ($needsHost && $host === null) {
+            return $this->validationFailed('host', 'Host is required for hosted app and database roles.');
+        }
+
+        if ($host !== null && ! $this->isValidHost($host)) {
+            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
+        }
+
+        $tld = $this->stringOption('tld');
+
+        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true)) {
+            if ($tld === null) {
+                return $this->validationFailed('tld', 'Development app nodes require a TLD.');
+            }
+
+            if (! $this->isValidTld($tld)) {
+                return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
+            }
+        } elseif ($tld !== null) {
+            return $this->validationFailed('tld', 'Only app-development uses a development TLD.');
+        }
+
+        return [
+            'host' => $host ?? '',
+            'environment' => $this->legacyEnvironmentForRoles($roles),
+            'tld' => $tld,
+            'sshUser' => $this->resolveSshUser(),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function legacyEnvironmentForRoles(array $roles): ?string
+    {
+        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true)) {
+            return 'development';
+        }
+
+        if (in_array(NodeRoleName::AppProduction->value, $roles, true)) {
+            return 'production';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function firstRole(array $roles): string
+    {
+        return $roles[0] ?? 'control';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function settingsForRole(string $role, ?string $tld): array
+    {
+        if ($role === NodeRoleName::AppDevelopment->value) {
+            return ['tld' => $tld];
+        }
+
+        return [];
     }
 
     private function defaultControlName(): ?string

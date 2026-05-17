@@ -33,7 +33,7 @@ final readonly class NodeStoreController implements Loggable
             '--json' => true,
         ];
 
-        $this->addStringOption($arguments, '--role', $request, 'role');
+        $this->addRoleOption($arguments, $request);
         $this->addStringOption($arguments, '--host', $request, 'host');
         $this->addStringOption($arguments, '--environment', $request, 'environment');
         $this->addStringOption($arguments, '--tld', $request, 'tld');
@@ -88,6 +88,30 @@ final readonly class NodeStoreController implements Loggable
         $arguments[$option] = $value;
     }
 
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function addRoleOption(array &$arguments, Request $request): void
+    {
+        $roles = $request->input('roles');
+
+        if (is_array($roles)) {
+            $resolvedRoles = array_values(array_filter($roles, fn ($role): bool => is_string($role) && $role !== ''));
+
+            if ($resolvedRoles !== []) {
+                $arguments['--role'] = $resolvedRoles;
+
+                return;
+            }
+        }
+
+        $role = $this->optionalString($request, 'role');
+
+        if ($role !== null) {
+            $arguments['--role'] = [$role];
+        }
+    }
+
     private function optionalString(Request $request, string $key): ?string
     {
         $value = $request->input($key);
@@ -139,6 +163,7 @@ final readonly class NodeStoreController implements Loggable
         return [
             'name' => $this->requestString('name'),
             'role' => $this->requestString('role'),
+            'roles' => request('roles'),
             'environment' => $this->requestString('environment'),
             'tld' => $this->requestString('tld'),
         ];

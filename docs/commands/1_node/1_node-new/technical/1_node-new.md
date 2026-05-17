@@ -18,7 +18,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
+orbit node:new [name] [--role=<hosted-role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
 ```
 
 ## Input Contract
@@ -29,30 +29,34 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `role` | `--role` | Always. | Never. | None. | One of `gateway`, `app`, `control`. |
-| `host` | `--host` | Requested role = `app` or `gateway`. | Requested role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable hosted roles. Accepted canonical values: `app-development`, `app-production`, `database`. Legacy compatibility values: `control`, `app`, `gateway`. `gateway` remains a bootstrap path, not a public hosted-role assignment. |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-development`, or `app-production`. | Joined client/control identity with no hosted roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../ARCHITECTURE.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
-| `environment` | `--environment` | Requested role = `app`. | Requested role = `gateway` or `control`. | None. | One of `development`, `production`. |
-| `tld` | `--tld` | Requested role = `app` and `environment=development`. | Requested role = `gateway`, requested role = `control`, or requested role = `app` and `environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
-| `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Requested role = `control`. | `root`. | Bootstrap SSH user. The gateway stores it as the steady-state `nodes.user` after provisioning sets up the gateway-managed SSH user. |
+| `environment` | `--environment` | Only when legacy `--role=app` is used. | Canonical hosted-role input, gateway bootstrap, and joined client/control identity. | None. | Legacy compatibility mapper: `development` => `app-development`; `production` => `app-production`. |
+| `tld` | `--tld` | `app-development`, or legacy `--role=app --environment=development`. | Joined client/control identity, gateway bootstrap, `database`, `app-production`, or legacy `--role=app --environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
+| `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Joined client/control identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
 1. Resolve `node_new.name` from `[name]`. Validate it immediately.
-2. Resolve `node_new.role` from `--role`. Validate it before resolving role-specific fields.
-3. Resolve role-specific inputs.
-   - For `app`, resolve `node_new.environment`, `node_new.host`, and
+2. Resolve all `node_new.role` values from repeatable `--role`.
+3. Normalize the requested role set before side effects.
+   - No `--role` values means a joined client/control identity with no hosted
+     roles.
+   - Legacy `control` maps to no hosted roles.
+   - Legacy `app` requires `--environment`; it maps to `app-development` or
+     `app-production`.
+   - Gateway bootstrap/convergence remains the special `gateway` path.
+4. Resolve role-specific inputs.
+   - For `app-development`, resolve `node_new.host`, `node_new.tld`, and
      `node_new.user`.
-   - If `node_new.environment` is `development`, also resolve `node_new.tld`.
-   - If `node_new.environment` is `production`, do not ask for `node_new.tld`.
-   - For `gateway`, resolve `node_new.host` always.
-   - For first-gateway bootstrap, also resolve `node_new.control_name`.
-   - For `gateway`, resolve `node_new.user` when SSH bootstrap or adoption
-     is used.
-   - For `control`, do not ask for host, control name, environment, TLD, or
-     SSH user.
-4. Validate required, forbidden, and path-eligibility rules as soon as the
+   - For `app-production`, resolve `node_new.host` and `node_new.user`.
+   - For `database`, no extra input is required unless another requested role
+     requires provisioning.
+   - For `gateway`, resolve `node_new.host` always, plus
+     `node_new.control_name` for first-gateway bootstrap.
+5. Validate required, forbidden, and path-eligibility rules as soon as the
    fields needed for each rule are known.
    - Field-local validation runs when the field is supplied or submitted.
    - Path eligibility runs immediately when the requested path can be
@@ -61,14 +65,14 @@ This command follows the shared
      current corrective prompt when the user can safely choose a different path.
      Otherwise they stop the command before asking for later inputs that cannot
      affect the blocker.
-5. Send the typed request to the gateway. The gateway authenticates the
+6. Send the typed request to the gateway. The gateway authenticates the
    presented WireGuard identity and applies the authorization rules described
    in [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md),
    [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md), or
    [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
    described in [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md).
-6. Select the output renderer and begin the side-effect flow. Renderer-specific
+7. Select the output renderer and begin the side-effect flow. Renderer-specific
    progress and payload details live in the renderer contracts.
 
 Field-local validation and path eligibility must run at the earliest point where
@@ -92,14 +96,13 @@ Input mode behavior is split out of the canonical command contract:
 - If the requested node exists with incompatible role, host, environment, or
   identity, fail before destructive changes.
 
-### Control Node Enrollment
+### Joined Client Identity
 
-- Create the gateway registry row with `role=control`, mint a WireGuard peer,
-  and return the interface config.
-- The WireGuard peer address returned for the control node must match `nodes.wg_ip`.
-  A generic `vpn-client:new` peer without a matching active control-node row is
-  ignored by gateway API authorization for Orbit CLI calls protected by
-  WireGuard identity.
+- `node:new <name>` with no hosted roles creates the base node identity only.
+- The legacy shadow node role column stays conservative:
+  `control` for joined client identities with no active hosted roles,
+  `app` while legacy compatibility fields are still needed for initial app-role
+  creation, and `gateway` for gateway bootstrap/convergence identities.
 
 ### Gateway bootstrap and convergence
 
@@ -112,6 +115,8 @@ Input mode behavior is split out of the canonical command contract:
 - First-gateway bootstrap mints and installs the initiating control-node
   identity using `node_new.control_name`. This is a separate node identity from
   the gateway node named by `node_new.name`.
+- First-gateway bootstrap also creates exactly one internal `gateway`
+  assignment. It must not duplicate that assignment during later convergence.
 - Gateway `--host` is required during first bootstrap and later convergence
   checks. If the requested gateway is already provisioned and active, and the
   supplied host is compatible with that gateway identity, converge idempotently
@@ -121,20 +126,22 @@ Input mode behavior is split out of the canonical command contract:
   it from `node:new`; report the drift or incomplete provisioning and point to
   `doctor --family=node --restore`.
 
-### App Node Provisioning
+### Hosted Role Provisioning
 
-- App nodes are always gateway-provisioned or gateway-adopted over SSH.
-  `node:new --role=app` does not mint a detached WireGuard config for manual
-  app-node installation.
-- Provision the target host over SSH only when the host has not already been
-  provisioned for the requested identity.
-- For development app nodes, persist `nodes.tld`, configure the app node's local
-  TLD default, and create the development DNS mapping that the gateway owns so
-  `*.tld` resolves to the app node's WireGuard IP.
-- Future development apps created on that app node use the node TLD for app and
-  workspace route domains.
-- Production app nodes do not use a development TLD; they rely on production
-  domain workflows.
+- Provision host-capable identities over SSH before initial hosted-role
+  assignments are created.
+- Validate conflicts before side effects where possible. For example,
+  `app-development` plus `app-production` must fail before node creation or
+  provisioning.
+- Create the node identity first, then add each requested hosted role.
+- `app-development` assignments store `settings.tld`.
+- `app-production` and `database` assignments use empty settings.
+- `database` may be combined with `app-development` or `app-production` on the
+  same provisioned host.
+- If an initial hosted role is persisted with `status=error` because its first
+  convergence failed, `node:new` fails and returns the role status and
+  `last_error` in failure metadata. The persisted assignment remains available
+  for later doctor recovery.
 
 ### Shared Provisioning Details
 

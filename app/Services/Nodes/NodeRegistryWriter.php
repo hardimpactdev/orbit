@@ -13,6 +13,35 @@ final class NodeRegistryWriter
         private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
+    public function writeNodeIdentity(
+        string $name,
+        string $legacyRole,
+        ?string $environment,
+        ?string $tld,
+        string $platform,
+        string $host,
+        string $wireguardAddress,
+        ?string $gatewayEndpoint,
+        string $user,
+        string $orbitPath,
+    ): Node {
+        return Node::query()->updateOrCreate(
+            ['name' => $name],
+            [
+                'role' => $legacyRole,
+                'environment' => $environment,
+                'tld' => $tld,
+                'platform' => $platform,
+                'host' => $host,
+                'wireguard_address' => $wireguardAddress,
+                'gateway_endpoint' => $gatewayEndpoint,
+                'user' => $user,
+                'orbit_path' => $orbitPath,
+                'status' => 'active',
+            ],
+        );
+    }
+
     public function writeAppNode(
         string $name,
         string $environment,
@@ -23,20 +52,17 @@ final class NodeRegistryWriter
         string $sshUser,
         string $user,
     ): Node {
-        $node = Node::query()->updateOrCreate(
-            ['name' => $name],
-            [
-                'role' => 'app',
-                'environment' => $environment,
-                'tld' => $tld,
-                'platform' => 'unknown',
-                'host' => $host,
-                'wireguard_address' => $wireguardAddress,
-                'gateway_endpoint' => $gatewayEndpoint,
-                'user' => $user,
-                'orbit_path' => "/home/{$user}/orbit",
-                'status' => 'active',
-            ],
+        $node = $this->writeNodeIdentity(
+            name: $name,
+            legacyRole: 'app',
+            environment: $environment,
+            tld: $tld,
+            platform: 'unknown',
+            host: $host,
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $gatewayEndpoint,
+            user: $user,
+            orbitPath: "/home/{$user}/orbit",
         );
 
         if (config('orbit.is_gateway') === true) {
