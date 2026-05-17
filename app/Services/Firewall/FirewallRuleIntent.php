@@ -128,7 +128,7 @@ class FirewallRuleIntent
             ->where(function (Builder $query): void {
                 $query
                     ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             })
             ->first();
 
@@ -146,7 +146,7 @@ class FirewallRuleIntent
 
     private function authorizeTargetNode(Node $node, ?Node $caller): void
     {
-        if (! $caller instanceof Node || $caller->role === 'gateway') {
+        if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return;
         }
 

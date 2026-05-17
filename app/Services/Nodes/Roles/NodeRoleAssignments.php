@@ -34,12 +34,34 @@ class NodeRoleAssignments
         ];
     }
 
+    /**
+     * @return list<string>
+     */
+    public function gatewayOrAppHostRoles(): array
+    {
+        return [
+            NodeRoleName::Gateway->value,
+            ...$this->appHostRoles(),
+        ];
+    }
+
     public function nodeHasActiveRole(Node $node, string $role): bool
     {
         return $node->roleAssignments()
             ->where('role', $role)
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();
+    }
+
+    public function nodeHasActiveGatewayRole(Node $node): bool
+    {
+        return $this->nodeHasActiveRole($node, NodeRoleName::Gateway->value);
+    }
+
+    public function nodeIsGateway(Node $node): bool
+    {
+        return $node->role === NodeRoleName::Gateway->value
+            || $this->nodeHasActiveGatewayRole($node);
     }
 
     public function nodeHasActiveAppHostRole(Node $node): bool
@@ -50,6 +72,18 @@ class NodeRoleAssignments
     public function nodeHasActiveToolHostRole(Node $node): bool
     {
         return $this->nodeHasAnyActiveRole($node, $this->toolHostRoles());
+    }
+
+    public function nodeCanServeGatewayOrAppHostWorkloads(Node $node): bool
+    {
+        return $this->nodeIsGateway($node)
+            || $this->nodeHasActiveAppHostRole($node);
+    }
+
+    public function nodeCanHostManagedTools(Node $node): bool
+    {
+        return $this->nodeIsGateway($node)
+            || $this->nodeHasActiveToolHostRole($node);
     }
 
     /**
@@ -91,6 +125,14 @@ class NodeRoleAssignments
     public function activeToolHostNodeIds(): array
     {
         return $this->activeNodeIdsForRoles($this->toolHostRoles());
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeGatewayOrAppHostNodeIds(): array
+    {
+        return $this->activeNodeIdsForRoles($this->gatewayOrAppHostRoles());
     }
 
     /**

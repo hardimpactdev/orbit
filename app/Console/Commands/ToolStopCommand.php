@@ -219,7 +219,7 @@ class ToolStopCommand extends Command
                 $nodeFilter = $this->resolveNode($node);
 
                 if (! $nodeFilter instanceof Node) {
-                    return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible app node name.");
+                    return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
                 }
 
                 if ($nodeFilter->id !== $appNode->id) {
@@ -247,7 +247,7 @@ class ToolStopCommand extends Command
             $nodeFilter = $this->resolveNode($node);
 
             if (! $nodeFilter instanceof Node) {
-                return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible app node name.");
+                return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
             }
 
             return [$nodeFilter->name, null];

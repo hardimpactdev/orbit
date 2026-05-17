@@ -35,7 +35,7 @@ function grantToolShowAccess(Node $caller, Node $appNode): void
 describe('ToolShowController', function (): void {
     it('returns tool registry details by tool and node', function (): void {
         $caller = createToolShowCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantToolShowAccess($caller, $node);
 
         NodeTool::factory()->create([
@@ -58,7 +58,7 @@ describe('ToolShowController', function (): void {
 
     it('resolves the target node from an app selector', function (): void {
         $caller = createToolShowCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantToolShowAccess($caller, $node);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
@@ -73,7 +73,7 @@ describe('ToolShowController', function (): void {
 
     it('requires a selector even when exactly one app node is visible', function (): void {
         $caller = createToolShowCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantToolShowAccess($caller, $node);
 
         NodeTool::factory()->create(['name' => 'caddy', 'node_id' => $node->id]);
@@ -87,8 +87,8 @@ describe('ToolShowController', function (): void {
 
     it('requires a selector when more than one app node is visible', function (): void {
         $caller = createToolShowCallerNode();
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
         grantToolShowAccess($caller, $firstNode);
         grantToolShowAccess($caller, $secondNode);
 
@@ -101,7 +101,7 @@ describe('ToolShowController', function (): void {
 
     it('returns not found when the selected node has no matching tool row', function (): void {
         $caller = createToolShowCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantToolShowAccess($caller, $node);
 
         $response = $this->call('GET', '/api/tools/redis?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);

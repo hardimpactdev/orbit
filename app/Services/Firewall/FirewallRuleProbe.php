@@ -229,8 +229,7 @@ final readonly class FirewallRuleProbe
 
     private function canOwnFirewallRules(Node $node): bool
     {
-        return $node->role === 'gateway'
-            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
+        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     /**

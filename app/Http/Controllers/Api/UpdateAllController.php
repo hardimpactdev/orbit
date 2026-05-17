@@ -799,7 +799,11 @@ final class UpdateAllController implements Loggable
     private function localGatewayTarget(): array
     {
         $node = Node::query()
-            ->where('role', 'gateway')
+            ->where(function ($query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
+            })
             ->where('status', 'active')
             ->first();
 

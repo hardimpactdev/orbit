@@ -40,7 +40,7 @@ Target resolution follows this hierarchy:
 3. Local `node:default`, when configured.
 4. Gateway-known caller identity for non-gateway callers.
 
-`tool:logs` must not fall back to the only visible app node. Non-interactive
+`tool:logs` must not fall back to the only visible tool node. Non-interactive
 input without an explicit selector, local `node:default`, or gateway-known self
 fails with `validation_failed` and `error.meta.fields=["target"]`.
 

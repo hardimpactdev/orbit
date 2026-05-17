@@ -516,7 +516,7 @@ final readonly class NodesProbe
             return [];
         }
 
-        if ($node->role === 'gateway') {
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return [];
         }
 
@@ -578,7 +578,7 @@ final readonly class NodesProbe
      */
     private function checkPlatformReality(Node $node): array
     {
-        if (! (bool) config('orbit.is_gateway', false) || $node->role !== 'gateway') {
+        if (! (bool) config('orbit.is_gateway', false) || ! app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return [];
         }
 
@@ -912,7 +912,7 @@ final readonly class NodesProbe
 
         if (
             $node->status === 'active'
-            && $node->role === 'app'
+            && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
             && is_string($node->wireguard_address)
             && $node->wireguard_address !== ''
             && ! $peer instanceof WireGuardPeer
@@ -957,7 +957,7 @@ final readonly class NodesProbe
 
         if (
             $node->status !== 'active'
-            && $node->role !== 'gateway'
+            && ! app(NodeRoleAssignments::class)->nodeIsGateway($node)
             && $peer instanceof WireGuardPeer
             && is_string($peer->public_key)
             && $peer->public_key !== ''
@@ -980,7 +980,7 @@ final readonly class NodesProbe
 
         if (
             $node->status === 'active'
-            && $node->role !== 'gateway'
+            && ! app(NodeRoleAssignments::class)->nodeIsGateway($node)
             && is_string($node->wireguard_address)
             && $node->wireguard_address !== ''
             && $peer instanceof WireGuardPeer
@@ -997,7 +997,7 @@ final readonly class NodesProbe
             }
         }
 
-        if ($node->role === 'app' && $node->status === 'active') {
+        if ($node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
             try {
                 $runtimeBackend = $this->runtimeBackendProbe()->check($node);
 
@@ -1015,7 +1015,7 @@ final readonly class NodesProbe
             }
         }
 
-        if ((bool) config('orbit.is_gateway', false) && $node->role === 'gateway') {
+        if ((bool) config('orbit.is_gateway', false) && app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             try {
                 $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
             } catch (Throwable) {

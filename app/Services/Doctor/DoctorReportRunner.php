@@ -87,7 +87,7 @@ final readonly class DoctorReportRunner
      */
     public function categoriesForNode(Node $node): array
     {
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Gateway->value) || $node->role === 'gateway') {
+        if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
             return self::GATEWAY_CATEGORIES;
         }
 
@@ -457,9 +457,7 @@ final readonly class DoctorReportRunner
 
     private function canServeGatewayOrAppHost(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Gateway->value)
-            || $node->role === 'gateway'
-            || $this->nodeRoleAssignments->nodeHasActiveAppHostRole($node);
+        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     /**
@@ -1047,8 +1045,12 @@ final readonly class DoctorReportRunner
 
         if ($schedule->scope === 'orbit') {
             $node = Node::query()
-                ->where('role', 'gateway')
                 ->where('status', 'active')
+                ->where(function ($query): void {
+                    $query
+                        ->where('role', 'gateway')
+                        ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
+                })
                 ->first();
 
             return $node instanceof Node ? $node->name : null;

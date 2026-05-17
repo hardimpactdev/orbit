@@ -119,7 +119,7 @@ final class ProfileController implements Loggable
         $baseQuery = AppModel::query()
             ->with('node')
             ->when(
-                $caller->role !== 'gateway',
+                ! app(NodeRoleAssignments::class)->nodeIsGateway($caller),
                 fn (Builder $query): Builder => $query->whereIn('node_id', $this->visibleAppNodeIds($caller)),
             )
             ->when(

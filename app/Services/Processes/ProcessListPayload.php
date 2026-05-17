@@ -27,7 +27,7 @@ class ProcessListPayload
     {
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
-        if ($caller instanceof Node && $caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if ($caller instanceof Node && ! $this->nodeRoleAssignments->nodeIsGateway($caller) && $visibleNodeIds === []) {
             throw new GatewayApiException('This node is not authorized to read process intent.', 'authorization_failed', [
                 'caller_role' => $caller->role,
             ]);
@@ -132,7 +132,7 @@ class ProcessListPayload
             ->with('app')
             ->where('name', $workspaceName)
             ->when($appName !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $appName)))
-            ->when($caller instanceof Node && $caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? [])))
+            ->when($caller instanceof Node && ! $this->nodeRoleAssignments->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? [])))
             ->get();
 
         if ($matches->isEmpty()) {
@@ -161,7 +161,7 @@ class ProcessListPayload
     {
         return App::query()
             ->with('processes')
-            ->when($caller instanceof Node && $caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? []));
+            ->when($caller instanceof Node && ! $this->nodeRoleAssignments->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? []));
     }
 
     /**
@@ -169,7 +169,7 @@ class ProcessListPayload
      */
     private function visibleAppNodeIds(?Node $caller): ?array
     {
-        if (! $caller instanceof Node || $caller->role === 'gateway') {
+        if (! $caller instanceof Node || $this->nodeRoleAssignments->nodeIsGateway($caller)) {
             return null;
         }
 

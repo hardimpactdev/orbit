@@ -17,6 +17,7 @@ use App\Models\Node;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -101,7 +102,7 @@ class DoctorCommand extends Command implements Loggable
                 );
             }
 
-            $target = Node::query()->where('role', 'gateway')->where('status', 'active')->first();
+            $target = $this->localNode();
         }
 
         if ($target instanceof Node) {
@@ -426,7 +427,14 @@ class DoctorCommand extends Command implements Loggable
 
     private function localNode(): ?Node
     {
-        return Node::query()->where('role', 'gateway')->where('status', 'active')->first();
+        return Node::query()
+            ->where('status', 'active')
+            ->where(function ($query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
+            })
+            ->first();
     }
 
     private function resolveTargetNode(): ?Node
@@ -453,9 +461,7 @@ class DoctorCommand extends Command implements Loggable
             }
         }
 
-        return $this->localNode()
-            ?? Node::query()->where('role', 'gateway')->where('status', 'active')->first()
-            ?? Node::query()->first();
+        return $this->localNode() ?? Node::query()->first();
     }
 
     private function shouldUseLocalDefaultNode(): bool

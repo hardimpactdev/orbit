@@ -39,7 +39,7 @@ Target resolution uses this order:
 
 When `--app` and `--node` are both present, they must resolve to the same node
 or the command fails before side effects. Orbit does not infer the target merely
-because one app node is visible.
+because one tool node is visible.
 
 ## What Happens
 

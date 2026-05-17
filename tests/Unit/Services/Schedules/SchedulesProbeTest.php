@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
@@ -22,6 +24,20 @@ uses(RefreshDatabase::class);
 function scheduleProbeIssue(array $drift, string $key): mixed
 {
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
+}
+
+function createSchedulesProbeGatewayAssignmentNode(): Node
+{
+    $node = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
 }
 
 describe('SchedulesProbe', function (): void {
@@ -58,8 +74,21 @@ describe('SchedulesProbe', function (): void {
         expect(scheduleProbeIssue($drift, 'schedule.target_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
+    it('accepts active gateway role assignments as schedule targets', function (): void {
+        $node = createSchedulesProbeGatewayAssignmentNode();
+        $schedule = Schedule::factory()->forNode($node)->create();
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(exitCode: 1)));
+
+        $drift = $probe->diff($schedule, new ProbeSnapshot([
+            $schedule->schedule_key => ['runtime_available' => false],
+        ]));
+
+        expect(scheduleProbeIssue($drift, 'schedule.target_invalid'))->toBeNull()
+            ->and(scheduleProbeIssue($drift, 'schedule.runtime_backend_unavailable')?->kind)->toBe(DriftKind::Missing);
+    });
+
     it('short-circuits scheduler checks when runtime backend is unavailable', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(exitCode: 1)));
@@ -72,7 +101,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects missing scheduler supervisor program', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(stdout: "missing\n")));
@@ -83,7 +112,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects stopped scheduler supervisor program', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(stdout: "stopped\n")));
@@ -94,7 +123,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects stale heartbeat and registry sync state', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
@@ -111,7 +140,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects stuck schedule locks', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
@@ -133,7 +162,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects missing run history hook material', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
@@ -153,7 +182,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects divergent run history hook material', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
@@ -173,7 +202,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('accepts matching run history hook material', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([

@@ -126,7 +126,7 @@ final readonly class ToolInstaller
 
             $resolved = Node::query()
                 ->where('name', $node)
-                ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
+                ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
                 ->where('status', 'active')
                 ->first();
 

@@ -7,6 +7,7 @@ namespace App\Services\Proxy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -130,7 +131,7 @@ class ProxyRouteQuery
      */
     private function visibleNodeIds(?Node $caller): array
     {
-        if (! $caller instanceof Node || $caller->role === 'gateway') {
+        if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return Node::query()->pluck('id')->all();
         }
 

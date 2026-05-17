@@ -319,7 +319,7 @@ class ScheduleAddCommand extends Command
             ->where(function (Builder $query): void {
                 $query
                     ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             })
             ->first();
 

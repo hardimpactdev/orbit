@@ -31,7 +31,7 @@ orbit tool:restart redis --node=app-1 --json
 Target resolution is ordered: explicit `--app` or `--node`, then local
 `node:default`, then gateway-known self for non-gateway callers. When both
 `--app` and `--node` are supplied, the app selector must resolve to the same
-node. Orbit never selects a target just because only one app node is visible.
+node. Orbit never selects a target just because only one tool node is visible.
 
 ## What Happens
 

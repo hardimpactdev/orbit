@@ -36,7 +36,7 @@ orbit tool:logs redis --node=app-1 --json
 Target resolution prefers `--app`, then `--node`, then local `node:default`,
 then gateway-known self for non-gateway callers. `--app` and `--node` may be
 combined only when both resolve to the same app node. `tool:logs` does not use
-the only visible app node as an implicit target.
+the only visible tool node as an implicit target.
 
 `--follow --json` is forbidden until a future streaming JSON frame contract is
 added.

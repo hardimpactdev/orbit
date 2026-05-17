@@ -140,7 +140,7 @@ final class ScheduleStoreController implements Loggable
             ->where(function (Builder $query): void {
                 $query
                     ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             })
             ->first();
 
@@ -151,7 +151,7 @@ final class ScheduleStoreController implements Loggable
 
     private function callerCanManageTarget(Node $caller, App|Node $target): bool
     {
-        if ($caller->role === 'gateway') {
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return true;
         }
 

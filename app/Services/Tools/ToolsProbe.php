@@ -169,8 +169,7 @@ final readonly class ToolsProbe
 
     private function isToolNode(Node $node): bool
     {
-        return $node->role === 'gateway'
-            || app(NodeRoleAssignments::class)->nodeHasActiveToolHostRole($node);
+        return app(NodeRoleAssignments::class)->nodeCanHostManagedTools($node);
     }
 
     /**

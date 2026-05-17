@@ -22,7 +22,7 @@ class SchedulePayload
 
         $visibleNodeIds = $this->visibleNodeIds($caller);
 
-        if ($caller instanceof Node && $caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
             throw new GatewayApiException('This node is not authorized to read schedule intent.', 'authorization_failed', [
                 'caller_role' => $caller->role,
             ]);
@@ -72,7 +72,7 @@ class SchedulePayload
 
         $visibleNodeIds = $this->visibleNodeIds($caller);
 
-        if ($caller instanceof Node && $caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
             throw new GatewayApiException('This node is not authorized to read schedule intent.', 'authorization_failed', [
                 'caller_role' => $caller->role,
             ]);
@@ -116,7 +116,7 @@ class SchedulePayload
     {
         return Schedule::query()
             ->with(['app.node.schedulerState', 'node.schedulerState', 'latestRun'])
-            ->when($caller instanceof Node && $caller->role !== 'gateway', fn (Builder $query): Builder => $query->where(function (Builder $query) use ($visibleNodeIds): void {
+            ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->where(function (Builder $query) use ($visibleNodeIds): void {
                 $query
                     ->whereIn('node_id', $visibleNodeIds ?? [])
                     ->orWhereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? []));
@@ -128,7 +128,7 @@ class SchedulePayload
      */
     private function visibleNodeIds(?Node $caller): ?array
     {
-        if (! $caller instanceof Node || $caller->role === 'gateway') {
+        if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return null;
         }
 
@@ -138,7 +138,7 @@ class SchedulePayload
             ->where(function ($query): void {
                 $query
                     ->where('nodes.role', 'gateway')
-                    ->orWhereIn('nodes.id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+                    ->orWhereIn('nodes.id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             })
             ->where('nodes.status', 'active')
             ->pluck('nodes.id')

@@ -35,8 +35,8 @@ function grantToolListAccess(Node $caller, Node $appNode): void
 describe('ToolListController', function (): void {
     it('lists visible tools sorted by owning node then tool name', function (): void {
         $caller = createToolListCallerNode();
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = createTestAppHostNode(['name' => 'z-node', 'role' => 'app']);
+        $aNode = createTestAppHostNode(['name' => 'a-node', 'role' => 'app']);
         grantToolListAccess($caller, $zNode);
         grantToolListAccess($caller, $aNode);
 
@@ -58,8 +58,8 @@ describe('ToolListController', function (): void {
 
     it('filters tools by owning node', function (): void {
         $caller = createToolListCallerNode();
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
         grantToolListAccess($caller, $firstNode);
         grantToolListAccess($caller, $secondNode);
 
@@ -75,7 +75,7 @@ describe('ToolListController', function (): void {
 
     it('filters tools by app owning node', function (): void {
         $caller = createToolListCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantToolListAccess($caller, $node);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
@@ -90,8 +90,8 @@ describe('ToolListController', function (): void {
 
     it('omits hidden tools from the result', function (): void {
         $caller = createToolListCallerNode();
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app']);
         grantToolListAccess($caller, $visibleNode);
 
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $visibleNode->id]);
@@ -106,8 +106,8 @@ describe('ToolListController', function (): void {
 
     it('lets gateway callers read all active app-node tool records', function (): void {
         createToolListCallerNode(['role' => 'gateway']);
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
         $controlNode = Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
 
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
@@ -122,7 +122,7 @@ describe('ToolListController', function (): void {
 
     it('returns the canonical tool entity shape', function (): void {
         createToolListCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         NodeTool::factory()->create([
             'name' => 'redis',

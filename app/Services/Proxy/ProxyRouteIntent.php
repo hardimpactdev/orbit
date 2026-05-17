@@ -138,13 +138,12 @@ class ProxyRouteIntent
 
     private function canServeProxyRoutes(Node $node): bool
     {
-        return $node->role === 'gateway'
-            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
+        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     private function authorizeServingNode(Node $node, ?Node $caller): void
     {
-        if (! $caller instanceof Node || $caller->role === 'gateway') {
+        if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return;
         }
 

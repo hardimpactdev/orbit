@@ -25,7 +25,7 @@ class FirewallRuleQuery
         $node = $node !== null && trim($node) !== '' ? trim($node) : null;
         $visibleNodeIds = $this->visibleNodeIds($caller);
 
-        if ($caller instanceof Node && $caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
             throw new GatewayApiException(
                 message: 'This node is not authorized to read the firewall rule registry.',
                 errorCode: 'authorization_failed',
@@ -39,7 +39,7 @@ class FirewallRuleQuery
         $firewallRules = FirewallRule::query()
             ->with('node')
             ->whereHas('node', fn (Builder $query): Builder => $this->eligibleNodeQuery($query))
-            ->when($caller instanceof Node && $caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->when($nodeId !== null, fn (Builder $query): Builder => $query->where('node_id', $nodeId))
             ->get();
 
@@ -77,7 +77,7 @@ class FirewallRuleQuery
             ->where('name', $node)
             ->where(fn (Builder $query): Builder => $this->eligibleNodeQuery($query));
 
-        if ($caller instanceof Node && $caller->role !== 'gateway') {
+        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             $query->whereIn('id', $visibleNodeIds);
         }
 
@@ -105,7 +105,7 @@ class FirewallRuleQuery
             ->where(function (Builder $query): void {
                 $query
                     ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             });
     }
 
@@ -114,7 +114,7 @@ class FirewallRuleQuery
      */
     private function visibleNodeIds(?Node $caller): array
     {
-        if (! $caller instanceof Node || $caller->role === 'gateway') {
+        if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return Node::query()
                 ->where(fn (Builder $query): Builder => $this->eligibleNodeQuery($query))
                 ->pluck('id')
@@ -129,7 +129,7 @@ class FirewallRuleQuery
             ->where(function ($query): void {
                 $query
                     ->where('nodes.role', 'gateway')
-                    ->orWhereIn('nodes.id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+                    ->orWhereIn('nodes.id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             })
             ->pluck('nodes.id')
             ->all();

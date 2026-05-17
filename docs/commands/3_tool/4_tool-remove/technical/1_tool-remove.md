@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 At least one target source is required: explicit `--node`, explicit `--app`,
 local `node:default`, or interactive target selection. `tool:remove` must not
-fall back to the only visible app node in non-interactive mode.
+fall back to the only visible tool node in non-interactive mode.
 
 ## Input Mode Contracts
 

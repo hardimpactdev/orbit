@@ -336,8 +336,7 @@ BASH;
 
     private function canServeProxyRoutes(Node $node): bool
     {
-        return $node->role === 'gateway'
-            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
+        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     /**

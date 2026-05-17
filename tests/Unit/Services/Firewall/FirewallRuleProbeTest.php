@@ -42,6 +42,25 @@ function createFirewallRuleProbeAppHostNode(array $attributes = []): Node
     return $node;
 }
 
+function createFirewallRuleProbeGatewayAssignmentNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'control',
+        'status' => 'active',
+        'platform' => 'ubuntu',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
+}
+
 describe('FirewallRuleProbe interface', function (): void {
     it('has key and label', function (): void {
         $probe = new FirewallRuleProbe;
@@ -180,6 +199,15 @@ describe('firewall registry probe foundation', function (): void {
     it('passes complete firewall rules on active Ubuntu app nodes', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
+
+        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+
+        expect($drift)->toBe([]);
+    });
+
+    it('passes complete firewall rules on active gateway role assignments', function (): void {
+        $node = createFirewallRuleProbeGatewayAssignmentNode();
+        $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'public-https', 'port' => '443']);
 
         $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
 

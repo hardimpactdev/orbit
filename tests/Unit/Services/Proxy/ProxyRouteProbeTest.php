@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteProbe;
@@ -21,6 +22,20 @@ uses(RefreshDatabase::class);
 function proxyProbeIssue(array $drift, string $key): mixed
 {
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
+}
+
+function createProxyProbeGatewayAssignmentNode(): Node
+{
+    $node = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
 }
 
 describe('ProxyRouteProbe interface', function (): void {
@@ -40,7 +55,22 @@ describe('ProxyRouteProbe interface', function (): void {
 
 describe('proxy registry probe foundation', function (): void {
     it('passes complete custom proxy routes on active app nodes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect($drift)->toBe([]);
+    });
+
+    it('passes complete custom proxy routes on active gateway role assignments', function (): void {
+        $node = createProxyProbeGatewayAssignmentNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -55,7 +85,7 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('detects incomplete route records', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $id = DB::table('proxy_routes')->insertGetId([
             'node_id' => $node->id,
             'domain' => 'broken.test',
@@ -74,7 +104,7 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('requires app owners to resolve', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => null,
@@ -89,7 +119,7 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('requires workspace owners to resolve', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -124,7 +154,7 @@ describe('proxy registry probe foundation', function (): void {
     ]);
 
     it('detects custom route conflicts with app domains', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.test']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -144,7 +174,7 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('accepts resolved app and workspace owners', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
 
@@ -171,7 +201,7 @@ describe('proxy registry probe foundation', function (): void {
 
 describe('proxy backend and TLS reality', function (): void {
     it('introspects backend route and TLS material for the selected route', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -196,7 +226,7 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects missing backend route reality', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -214,7 +244,7 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects backend route hash mismatch', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -238,7 +268,7 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects missing Orbit-managed TLS material', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -260,7 +290,7 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects mismatched Orbit-managed TLS paths', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -284,7 +314,7 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('skips TLS drift for externally managed routes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -311,7 +341,7 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('skips TLS drift for internal TLS app and workspace routes', function (string $ownerType, string $kind): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
         $route = ProxyRoute::factory()->create([
@@ -352,7 +382,7 @@ describe('proxy backend and TLS reality', function (): void {
 
 describe('proxy node-level introspection', function (): void {
     it('introspects all caddy sites on a node', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell(
             "vite.docs.test\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
             ."api.docs.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/api.docs.test.crt\t/etc/orbit/certs/api.docs.test.key\t1\t1\n",
@@ -380,7 +410,7 @@ describe('proxy node-level introspection', function (): void {
     });
 
     it('returns empty snapshot when no caddy sites exist', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell('');
 
         $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
@@ -389,7 +419,7 @@ describe('proxy node-level introspection', function (): void {
     });
 
     it('ignores malformed lines in node scan output', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell(
             "vite.docs.test\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
             ."malformed-line-without-tabs\n"
@@ -405,7 +435,7 @@ describe('proxy node-level introspection', function (): void {
 
 describe('proxy node-level diff', function (): void {
     it('reports route_missing for db routes not on node', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -418,7 +448,7 @@ describe('proxy node-level diff', function (): void {
     });
 
     it('reports route_extra for node routes not in db', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $snapshot = new ProbeSnapshot([
             'extra.test' => [
                 'route_exists' => true,
@@ -436,7 +466,7 @@ describe('proxy node-level diff', function (): void {
     });
 
     it('reports both missing and extra routes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'db-only.test',
@@ -463,7 +493,7 @@ describe('proxy node-level diff', function (): void {
 
 describe('proxy adoption snapshot', function (): void {
     it('returns vhost bodies for adoption', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode();
         $body = "vite.docs.test {\n    reverse_proxy localhost:8080\n}\n";
         $bodyB64 = base64_encode($body);
         $shell = new ProxyProbeRecordingRemoteShell(

@@ -43,7 +43,7 @@ final readonly class ToolListController implements Loggable
             $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds);
 
             if (! $nodeFilter instanceof Node) {
-                return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible app node name.");
+                return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
             }
         }
 

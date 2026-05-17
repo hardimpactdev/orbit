@@ -187,8 +187,7 @@ final readonly class SchedulesProbe
 
     private function canRunSchedules(Node $node): bool
     {
-        return $node->role === 'gateway'
-            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
+        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     /**
@@ -403,8 +402,12 @@ final readonly class SchedulesProbe
 
         if ($schedule->scope === 'orbit') {
             $node = Node::query()
-                ->where('role', 'gateway')
                 ->where('status', 'active')
+                ->where(function ($query): void {
+                    $query
+                        ->where('role', 'gateway')
+                        ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
+                })
                 ->first();
 
             return $node instanceof Node ? $node : null;

@@ -19,7 +19,7 @@ trait ResolvesVisibleToolNodes
      */
     private function visibleToolNodeIds(Node $caller, bool $allowAnyActiveNode = false): array
     {
-        if ($caller->role === 'gateway') {
+        if ($this->nodeRoleAssignments()->nodeIsGateway($caller)) {
             $query = Node::query()
                 ->where('status', 'active');
 
@@ -86,7 +86,7 @@ trait ResolvesVisibleToolNodes
             ];
         }
 
-        if ($allowOnlyVisibleFallback && $caller->role !== 'gateway') {
+        if ($allowOnlyVisibleFallback && ! $this->nodeRoleAssignments()->nodeIsGateway($caller)) {
             $nodes = Node::query()
                 ->whereIn('id', $visibleNodeIds)
                 ->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds())
@@ -117,10 +117,10 @@ trait ResolvesVisibleToolNodes
         $query = Node::query()
             ->where('name', $node)
             ->where('status', 'active')
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds));
+            ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds));
 
         if (! $allowAnyActiveNode) {
-            $query->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds());
+            $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
         }
 
         return $query->first();
@@ -133,7 +133,7 @@ trait ResolvesVisibleToolNodes
     {
         $model = App::query()
             ->with('node')
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->where(function (Builder $query) use ($app): void {
                 $query->where('name', $app)
                     ->orWhere('domain', $app);
@@ -146,7 +146,7 @@ trait ResolvesVisibleToolNodes
             if ($appName !== '' && $nodeTld !== '') {
                 $model = App::query()
                     ->with('node')
-                    ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+                    ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
                     ->where('name', $appName)
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
                         $query
@@ -186,14 +186,14 @@ trait ResolvesVisibleToolNodes
         array $visibleNodeIds,
         bool $allowAnyActiveNode = false,
     ): JsonResponse {
-        if ($caller->role !== 'gateway' && $this->toolTargetExists($field, $value, $visibleNodeIds, $allowAnyActiveNode)) {
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $this->toolTargetExists($field, $value, $visibleNodeIds, $allowAnyActiveNode)) {
             return $this->toolTargetAuthorizationFailed("This node is not authorized to manage tools for the selected {$field}.", [
                 $field => $value,
             ]);
         }
 
         $expected = $field === 'node'
-            ? ($allowAnyActiveNode ? 'Expected a visible node name.' : 'Expected a visible app node name.')
+            ? ($allowAnyActiveNode ? 'Expected a visible node name.' : 'Expected a visible tool node name.')
             : 'Expected a visible app name or domain.';
 
         return $this->toolTargetValidationFailed($field, $value, "Invalid value for --{$field}: '{$value}'. {$expected}");

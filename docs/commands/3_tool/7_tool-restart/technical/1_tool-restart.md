@@ -49,7 +49,7 @@ This command resolves input in this order, before lifecycle execution begins:
    missing target fails with `validation_failed` and `meta.fields=["target"]`.
 
 Validation completes before restart, stop, or start commands run. The command
-must not use a cardinality fallback such as selecting the only visible app node.
+must not use a cardinality fallback such as selecting the only visible tool node.
 
 ## Input Mode Contracts
 

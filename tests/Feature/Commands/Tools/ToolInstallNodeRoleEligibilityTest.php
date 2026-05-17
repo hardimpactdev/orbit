@@ -61,6 +61,21 @@ describe('tool:install node role eligibility', function (): void {
             ->and($shell->scripts)->toHaveCount(1);
     });
 
+    it('prompts database role nodes as interactive install targets', function (): void {
+        createToolInstallRoleLocalNode('gateway');
+        $node = createToolInstallRoleTargetNode('db-1', ['role' => 'control']);
+        assignToolInstallRole($node, 'database');
+        $shell = new ToolInstallNodeRoleRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $this->artisan('tool:install', ['tool' => 'postgres'])
+            ->expectsChoice('Target node', 'db-1', ['db-1', 'db-1'])
+            ->assertSuccessful();
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue()
+            ->and($shell->scripts)->toHaveCount(1);
+    });
+
     it('rejects mysql on a node without an active database role', function (): void {
         createToolInstallRoleLocalNode('gateway');
         $node = createToolInstallRoleTargetNode('web-1');

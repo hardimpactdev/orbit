@@ -68,7 +68,7 @@ final readonly class ToolRegistry
             $nodeFilter = $this->resolveNode($node);
 
             if (! $nodeFilter instanceof Node) {
-                return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible app node name.");
+                return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
             }
         }
 

@@ -241,7 +241,7 @@ class ToolInstallCommand extends Command
 
         if ($this->isInteractiveInput()) {
             $nodes = Node::query()
-                ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
+                ->whereIn('id', app(NodeRoleAssignments::class)->activeToolHostNodeIds())
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->pluck('name', 'name')
