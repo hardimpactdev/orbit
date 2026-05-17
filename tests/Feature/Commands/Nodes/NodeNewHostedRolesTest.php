@@ -170,6 +170,77 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test']);
 });
 
+it('adopts a compatible existing app node for canonical app-development', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'dev-adopt-1',
+        'role' => 'app',
+        'environment' => 'development',
+        'tld' => 'test',
+        'platform' => 'ubuntu_24-04',
+        'host' => '192.0.2.30',
+        'wireguard_address' => '10.6.0.8',
+        'gateway_endpoint' => '10.6.0.2',
+        'user' => 'orbit',
+        'orbit_path' => '/home/orbit/orbit',
+        'status' => 'decommissioned',
+    ]);
+
+    WireGuardPeer::query()->create([
+        'node_id' => $node->id,
+        'public_key' => 'app-public-key',
+        'private_key' => 'app-private-key',
+        'allowed_ips' => '10.6.0.8/32',
+    ]);
+
+    Process::fake(function ($process) {
+        $command = (string) $process->command;
+
+        if ($command === 'sudo wg show wg-orbit allowed-ips') {
+            return Process::result(output: "app-public-key\t10.6.0.9/32\n");
+        }
+
+        if ($command === 'docker exec orbit-dns kill -HUP 1') {
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'dev-adopt-1',
+        '--role' => ['app-development'],
+        '--host' => '192.0.2.30',
+        '--tld' => 'test',
+        '--user' => 'provisioner',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['result']['action'])->toBe('adopted');
+    expect($payload['success']['data']['node'])->toMatchArray([
+        'name' => 'dev-adopt-1',
+        'role' => 'app',
+        'environment' => 'development',
+        'tld' => 'test',
+        'addresses' => [
+            'wireguard' => '10.6.0.9',
+            'gateway_endpoint' => '10.6.0.2',
+        ],
+        'status' => 'active',
+    ]);
+    expect($this->fakeInstaller->calls)->toBe(0);
+    expect($node->fresh()->status)->toBe('active');
+    expect($node->fresh()->wireguard_address)->toBe('10.6.0.9');
+    expect($node->fresh()->roleAssignments)->toHaveCount(1);
+    expect($node->fresh()->roleAssignments->first()?->role)->toBe('app-development');
+    expect($node->fresh()->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value);
+
+    Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+});
+
 it('creates compatible app-production and database hosted roles', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'web-1',
@@ -186,6 +257,72 @@ it('creates compatible app-production and database hosted roles', function (): v
     expect($exitCode)->toBe(0)
         ->and($roles->pluck('role')->all())->toBe(['app-production', 'database'])
         ->and($roles->pluck('status')->unique()->all())->toBe([NodeRoleStatus::Active->value]);
+});
+
+it('adopts a compatible existing app node for canonical app-production plus database', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'web-adopt-1',
+        'role' => 'app',
+        'environment' => 'production',
+        'tld' => null,
+        'platform' => 'ubuntu_24-04',
+        'host' => '192.0.2.31',
+        'wireguard_address' => '10.6.0.10',
+        'gateway_endpoint' => '10.6.0.2',
+        'user' => 'orbit',
+        'orbit_path' => '/home/orbit/orbit',
+        'status' => 'decommissioned',
+    ]);
+
+    WireGuardPeer::query()->create([
+        'node_id' => $node->id,
+        'public_key' => 'web-public-key',
+        'private_key' => 'web-private-key',
+        'allowed_ips' => '10.6.0.10/32',
+    ]);
+
+    Process::fake(function ($process) {
+        $command = (string) $process->command;
+
+        if ($command === 'sudo wg show wg-orbit allowed-ips') {
+            return Process::result(output: "web-public-key\t10.6.0.11/32\n");
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'web-adopt-1',
+        '--role' => ['app-production', 'database'],
+        '--host' => '192.0.2.31',
+        '--user' => 'provisioner',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $roles = $node->fresh()->roleAssignments->sortBy('role')->values();
+
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['result']['action'])->toBe('adopted');
+    expect($payload['success']['data']['node'])->toMatchArray([
+        'name' => 'web-adopt-1',
+        'role' => 'app',
+        'environment' => 'production',
+        'tld' => null,
+        'addresses' => [
+            'wireguard' => '10.6.0.11',
+            'gateway_endpoint' => '10.6.0.2',
+        ],
+        'status' => 'active',
+    ]);
+    expect($this->fakeInstaller->calls)->toBe(0);
+    expect($node->fresh()->status)->toBe('active');
+    expect($node->fresh()->wireguard_address)->toBe('10.6.0.11');
+    expect($roles->pluck('role')->all())->toBe(['app-production', 'database']);
+    expect($roles->pluck('status')->unique()->all())->toBe([NodeRoleStatus::Active->value]);
+
+    Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
 });
 
 it('creates a database hosted role without requiring host input', function (): void {

@@ -132,19 +132,24 @@ drift belong to the `firewall_rule` family after the node exists.
 For canonical `--role=app-development`, `--role=app-production`, compatible
 repeated app-role sets that also include `database`, and legacy `--role=app`:
 
-1. Resolve `node_new.name`, `node_new.environment`, `node_new.host`, and
-   `node_new.user`.
-2. When `node_new.environment` is `development`, resolve `node_new.tld`.
-3. Verify the target host is reachable over SSH.
-4. Verify the target host platform is supported for the app role.
-5. Install or converge the Orbit runtime.
-6. Mint or verify WireGuard identity.
-7. Register node configuration, including `nodes.tld` for development app nodes.
-8. Configure the app node's local TLD default for development app nodes.
-9. Use the internal DNS applier for the node family to create or converge
+1. Resolve `node_new.name`, `node_new.host`, and `node_new.user`.
+2. For canonical app-hosting roles, derive the internal app environment from
+   the requested hosted role set:
+   - `app-development` maps to internal environment `development`;
+   - `app-production` maps to internal environment `production`.
+3. For legacy `--role=app`, resolve `node_new.environment` from input.
+4. When the derived or legacy environment is `development`, resolve
+   `node_new.tld`.
+5. Verify the target host is reachable over SSH.
+6. Verify the target host platform is supported for the app role.
+7. Install or converge the Orbit runtime.
+8. Mint or verify WireGuard identity.
+9. Register node configuration, including `nodes.tld` for development app nodes.
+10. Configure the app node's local TLD default for development app nodes.
+11. Use the internal DNS applier for the node family to create or converge
    the development DNS mapping that the gateway owns for `*.{node_new.tld}` to the app node's WireGuard
    address.
-10. Verify node readiness.
+12. Verify node readiness.
 
 The development DNS configuration model that the gateway owns is derived from the
 active development app-node row, not from a public DNS command record. The

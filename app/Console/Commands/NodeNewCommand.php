@@ -110,6 +110,23 @@ class NodeNewCommand extends Command
                 return $this->forwardHostedRoleNodeCreation($name, $requestedRoles['hosted'], $inputs);
             }
 
+            if ($this->containsAppHostingRole($requestedRoles['hosted'])) {
+                return $this->provisionAppNode(
+                    installer: $installer,
+                    registryWriter: $registryWriter,
+                    nodesProbe: $nodesProbe,
+                    roleAssignmentService: $nodeRoleAssignmentService,
+                    name: $name,
+                    inputs: [
+                        'host' => $inputs['host'],
+                        'environment' => $inputs['environment'] ?? 'production',
+                        'tld' => $inputs['tld'],
+                        'sshUser' => $inputs['sshUser'] ?? 'root',
+                    ],
+                    initialHostedRoles: $requestedRoles['hosted'],
+                );
+            }
+
             return $this->provisionHostedRoleNode(
                 installer: $installer,
                 registryWriter: $registryWriter,
@@ -401,7 +418,6 @@ class NodeNewCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
     /**
      * @param  list<string>  $roles
      * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string}  $inputs
@@ -2379,6 +2395,17 @@ class NodeNewCommand extends Command
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function containsAppHostingRole(array $roles): bool
+    {
+        return array_intersect($roles, [
+            NodeRoleName::AppDevelopment->value,
+            NodeRoleName::AppProduction->value,
+        ]) !== [];
     }
 
     /**
