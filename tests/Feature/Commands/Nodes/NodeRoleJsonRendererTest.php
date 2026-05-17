@@ -144,6 +144,9 @@ describe('node role json renderer', function (): void {
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect(array_keys($payload))->toBe(['error'])
-            ->and($payload)->not->toHaveKey('success');
+            ->and($payload)->not->toHaveKey('success')
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and($payload['error']['message'])->toBe('The app-development role requires --tld.');
     });
 });
