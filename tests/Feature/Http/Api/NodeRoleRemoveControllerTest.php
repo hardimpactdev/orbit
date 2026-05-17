@@ -276,6 +276,47 @@ describe('NodeRoleRemoveController', function (): void {
         expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
+    it('rejects purge data without force before removing role state', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        $gatewayId = createNodeRoleRemoveGateway();
+        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+
+        NodeTool::query()->create([
+            'node_id' => $node->id,
+            'name' => 'postgres',
+            'expected_state' => 'running',
+            'installed_version' => null,
+            'settings' => [],
+            'status' => 'running',
+        ]);
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
+            'purge_data' => true,
+        ], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', 'The purge-data option requires --force.')
+            ->assertJsonPath('error.meta.field', 'purge_data');
+
+        expect($node->roleAssignments()->where('role', 'database')->exists())->toBeTrue()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())
+            ->toBeTrue();
+    });
+
     it('purges role dependents only when purge data is requested with force', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         $gatewayId = createNodeRoleRemoveGateway();
