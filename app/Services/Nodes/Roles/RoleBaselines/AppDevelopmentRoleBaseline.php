@@ -19,8 +19,8 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
     {
         $tld = $assignment->settings['tld'] ?? null;
 
-        if (! is_string($tld) || trim($tld) === '') {
-            throw new RuntimeException('The app-development role requires a non-empty tld setting.');
+        if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
+            throw new RuntimeException('The app-development role requires a valid tld setting.');
         }
 
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
@@ -36,7 +36,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
     {
         $tld = $assignment->settings['tld'] ?? null;
 
-        if (! is_string($tld) || trim($tld) === '') {
+        if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
             return;
         }
 
@@ -49,5 +49,10 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $reason = $result['reason'] ?? 'Failed to remove development DNS mapping.';
 
         throw new RuntimeException(is_string($reason) ? $reason : 'Failed to remove development DNS mapping.');
+    }
+
+    private function isValidTld(string $tld): bool
+    {
+        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
     }
 }

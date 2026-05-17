@@ -3,7 +3,14 @@
 declare(strict_types=1);
 
 use App\Models\App;
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 
@@ -134,5 +141,48 @@ describe('node role:remove', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['purged_data'])->toBeTrue();
+    });
+
+    it('returns an error when local role removal cleanup fails', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'client-1',
+            'role' => 'control',
+            'environment' => null,
+        ]);
+        $assignment = assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
+        {
+            public function __construct()
+            {
+                parent::__construct(
+                    app(GatewayRoleBaseline::class),
+                    app(AppDevelopmentRoleBaseline::class),
+                    app(AppProductionRoleBaseline::class),
+                    app(DatabaseRoleBaseline::class),
+                );
+            }
+
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+            {
+                throw new RuntimeException('Cleanup failed.');
+            }
+        });
+
+        $exitCode = Artisan::call('node role:remove', [
+            'node' => 'client-1',
+            'role' => 'app-development',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node_role.remove_failed')
+            ->and($payload['error']['meta']['last_error'])->toBe('Cleanup failed.')
+            ->and($assignment->fresh()->status)->toBe('error')
+            ->and($assignment->fresh()->last_error)->toBe('Cleanup failed.');
     });
 });

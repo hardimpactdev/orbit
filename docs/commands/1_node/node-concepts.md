@@ -147,8 +147,8 @@ hosted nodes.
   gateway owns this mapping.
 - **Development DNS configuration model:** Derived from the active
   `app-development` role assignment. A mapping exists only when that assignment
-  is active, its `tld` setting is non-empty, and the node row has a non-empty
-  WireGuard address.
+  is active, its `tld` setting is a single lowercase DNS label without a leading
+  dot, and the node row has a non-empty WireGuard address.
   The canonical domain is `*.{tld}` and the canonical target is the
   node's WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that

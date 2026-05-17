@@ -238,6 +238,10 @@ class DevelopmentDnsMappingEnactor
             return null;
         }
 
+        if (! $this->isValidTld($tld)) {
+            return null;
+        }
+
         if (! is_string($node->wireguard_address) || trim($node->wireguard_address) === '') {
             return null;
         }
@@ -272,5 +276,10 @@ class DevelopmentDnsMappingEnactor
     private function configPath(string $tld): string
     {
         return $this->configDir()."/{$tld}.conf";
+    }
+
+    private function isValidTld(string $tld): bool
+    {
+        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
     }
 }

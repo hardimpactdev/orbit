@@ -223,6 +223,33 @@ describe('GET /api/me', function (): void {
         expect($response->getContent())->toContain('"settings":{}');
     });
 
+    it('resolves the gateway from an active gateway role assignment', function (): void {
+        DB::table('nodes')->insert(meNodeRow());
+
+        $gateway = Node::factory()->create([
+            'name' => 'gateway-1',
+            'role' => 'control',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.gateway.name', 'gateway-1')
+            ->assertJsonPath('success.data.gateway.roles.0.role', 'gateway');
+    });
+
     it('does not include legacy id field', function (): void {
         DB::table('nodes')->insert(meNodeRow());
         DB::table('nodes')->insert(meNodeRow([

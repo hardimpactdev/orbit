@@ -9,6 +9,8 @@ use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\GrantNodeApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +27,9 @@ final readonly class NodeGrantController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if ($caller->role === 'app') {
+        $callerIsGateway = app(NodeRoleAssignments::class)->nodeIsGateway($caller);
+
+        if (! $callerIsGateway && $caller->role === 'app') {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
@@ -34,7 +38,7 @@ final readonly class NodeGrantController implements Loggable
             );
         }
 
-        if ($caller->role === 'control') {
+        if (! $callerIsGateway && $caller->role === 'control') {
             $authorization = $this->authorizeControlCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
@@ -42,7 +46,7 @@ final readonly class NodeGrantController implements Loggable
             }
         }
 
-        if (! in_array($caller->role, ['control', 'gateway'], true)) {
+        if (! $callerIsGateway && $caller->role !== 'control') {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
@@ -98,9 +102,15 @@ final readonly class NodeGrantController implements Loggable
 
     private function authorizeControlCaller(Node $caller): ?JsonResponse
     {
+        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
+
         $gateway = Node::query()
-            ->where('role', 'gateway')
             ->where('status', 'active')
+            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', $gatewayNodeIds);
+            })
             ->orderBy('name')
             ->first();
 

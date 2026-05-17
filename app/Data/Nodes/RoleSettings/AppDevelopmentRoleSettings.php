@@ -8,12 +8,17 @@ use InvalidArgumentException;
 
 final readonly class AppDevelopmentRoleSettings implements NodeRoleSettings
 {
-    public function __construct(
-        public string $tld,
-    ) {
-        if (trim($this->tld) === '') {
-            throw new InvalidArgumentException('The app-development role requires a non-empty tld setting.');
+    public string $tld;
+
+    public function __construct(string $tld)
+    {
+        $tld = trim($tld);
+
+        if (! $this->isValidTld($tld)) {
+            throw new InvalidArgumentException('The app-development role requires a valid tld setting.');
         }
+
+        $this->tld = $tld;
     }
 
     /**
@@ -24,7 +29,7 @@ final readonly class AppDevelopmentRoleSettings implements NodeRoleSettings
         $tld = $settings['tld'] ?? null;
 
         if (! is_string($tld)) {
-            throw new InvalidArgumentException('The app-development role requires a non-empty tld setting.');
+            throw new InvalidArgumentException('The app-development role requires a valid tld setting.');
         }
 
         return new self($tld);
@@ -34,5 +39,10 @@ final readonly class AppDevelopmentRoleSettings implements NodeRoleSettings
     public function toArray(): array
     {
         return ['tld' => $this->tld];
+    }
+
+    private function isValidTld(string $tld): bool
+    {
+        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
     }
 }

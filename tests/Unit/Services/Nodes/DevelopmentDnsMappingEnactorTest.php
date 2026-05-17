@@ -94,6 +94,19 @@ it('uses the app-development role settings as the development dns tld', function
     expect(File::exists("{$this->configDir}/legacy.conf"))->toBeFalse();
 });
 
+it('does not materialize path-like development tlds', function (): void {
+    $node = developmentDnsMappingNode();
+    $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
+
+    $result = $enactor->convergeDevelopmentRole($node, '../../orbit');
+
+    expect($result)->toMatchArray([
+        'status' => 'not_applicable',
+        'changed' => false,
+    ]);
+    expect(File::isDirectory($this->configDir))->toBeFalse();
+});
+
 /**
  * @param  array<string, mixed>  $overrides
  */

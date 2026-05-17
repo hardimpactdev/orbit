@@ -190,6 +190,35 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
+    it('rejects path-like app-development tld settings on add', function (): void {
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'app-development',
+            'settings' => ['tld' => '../../orbit'],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', 'The app-development role requires a valid tld setting.')
+            ->assertJsonMissingPath('success');
+    });
+
+    it('rejects path-like app-development tld settings on update', function (): void {
+        $targetId = (int) DB::table('nodes')
+            ->where('name', 'target-1')
+            ->value('id');
+
+        assignNodeRoleApiRole($targetId, 'app-development', ['tld' => 'test']);
+
+        $response = patchNodeRoleApiJson('/api/nodes/target-1/roles/app-development', [
+            'settings' => ['tld' => '../../orbit'],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', 'The app-development role requires a valid tld setting.')
+            ->assertJsonMissingPath('success');
+    });
+
     it('returns the orbit error envelope for invalid force on remove', function (): void {
         $response = deleteNodeRoleApiJson('/api/nodes/target-1/roles/database', [
             'force' => 'invalid',

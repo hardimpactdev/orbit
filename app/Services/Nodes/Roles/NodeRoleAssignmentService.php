@@ -134,7 +134,7 @@ class NodeRoleAssignmentService
                     'last_error' => $throwable->getMessage(),
                 ]);
 
-            return;
+            throw $throwable;
         }
     }
 

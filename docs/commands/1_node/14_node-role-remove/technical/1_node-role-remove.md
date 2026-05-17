@@ -41,6 +41,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Removal without `--force` blocks when dependents exist and returns `node_role.remove_blocked`.
 - `--force` removes Orbit-owned dependents while preserving user data.
 - `--force --purge-data` requests purge cleanup.
+- If cleanup fails after removal starts, the role assignment remains in `error`
+  with the cleanup error recorded and the command returns `node_role.remove_failed`.
 
 ### Caller Path Rules
 
@@ -66,6 +68,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Remove blocked | Dependents exist and `--force` is absent. | Failure |
+| Remove failed | Cleanup fails after removal starts. | Failure; assignment remains errored for doctor repair. |
 | Node not found | No active node matches `node`. | Failure |
 
 ## Doctor Relationship

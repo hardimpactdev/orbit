@@ -14,9 +14,11 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 #[Signature('node:remove
@@ -64,7 +66,7 @@ class NodeRemoveCommand extends Command
         $name = (string) $name;
 
         $isSelfRemoval = (bool) config('orbit.is_gateway', false)
-            && Node::query()->where('name', $name)->where('role', 'gateway')->exists();
+            && $this->gatewayNodeExists($name);
 
         if (! $this->option('force')) {
             if (! $this->isInteractiveInput()) {
@@ -101,7 +103,7 @@ class NodeRemoveCommand extends Command
             return $node;
         }
 
-        if ($node->role === 'gateway') {
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return $this->failCommand(
                 code: 'node.gateway_removal_denied',
                 message: 'The gateway node cannot be removed with this command.',
@@ -280,6 +282,19 @@ class NodeRemoveCommand extends Command
             doneFooter: "Node `{$name}` removed",
             failFooter: "Failed to remove node `{$name}`",
         );
+    }
+
+    private function gatewayNodeExists(string $name): bool
+    {
+        return Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
+            })
+            ->exists();
     }
 
     private function confirmationMessage(string $name, bool $isSelfRemoval): string

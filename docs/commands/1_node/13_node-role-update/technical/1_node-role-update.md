@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
 | `role` | `[role]` | Always. | Never. | None. | `gateway` is rejected. |
-| `tld` | `--tld` | Required for `app-development`. | Forbidden for roles that do not support it. | None. | Must be non-empty when required. |
+| `tld` | `--tld` | Required for `app-development`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
 ## Behavior Contract

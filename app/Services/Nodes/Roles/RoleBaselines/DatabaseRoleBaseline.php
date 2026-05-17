@@ -6,6 +6,7 @@ namespace App\Services\Nodes\Roles\RoleBaselines;
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
 use RuntimeException;
 
@@ -15,11 +16,12 @@ class DatabaseRoleBaseline implements RoleBaseline
 
     public function __construct(
         private readonly ?ToolCatalog $toolCatalog = null,
+        private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
     {
-        if ($node->role === 'gateway') {
+        if ($this->nodeRoleAssignments()->nodeIsGateway($node)) {
             throw new RuntimeException('The database role cannot be assigned to a gateway node.');
         }
 
@@ -38,5 +40,10 @@ class DatabaseRoleBaseline implements RoleBaseline
     protected function toolCatalog(): ToolCatalog
     {
         return $this->toolCatalog ?? app(ToolCatalog::class);
+    }
+
+    private function nodeRoleAssignments(): NodeRoleAssignments
+    {
+        return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 }

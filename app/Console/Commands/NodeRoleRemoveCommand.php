@@ -118,6 +118,12 @@ class NodeRoleRemoveCommand extends Command
                 return $this->respondSuccess($nodeName, $role, $purgeData);
             } catch (InvalidArgumentException $exception) {
                 return $this->failCommand('validation_failed', $exception->getMessage(), ['role' => $role]);
+            } catch (Throwable $exception) {
+                return $this->failCommand(
+                    'node_role.remove_failed',
+                    "Role '{$role}' could not be removed.",
+                    ['role' => $role, 'last_error' => $exception->getMessage()],
+                );
             }
         }
 

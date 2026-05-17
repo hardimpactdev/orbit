@@ -76,7 +76,14 @@ describe('node role registry', function (): void {
         expect(fn () => (new NodeRoleRegistry)
             ->definition('app-development')
             ->settingsFromArray(['tld' => '']))
-            ->toThrow(InvalidArgumentException::class, 'The app-development role requires a non-empty tld setting.');
+            ->toThrow(InvalidArgumentException::class, 'The app-development role requires a valid tld setting.');
+    });
+
+    it('rejects path-like app development tld settings', function (): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('app-development')
+            ->settingsFromArray(['tld' => '../../orbit']))
+            ->toThrow(InvalidArgumentException::class, 'The app-development role requires a valid tld setting.');
     });
 
     it('rejects settings for roles without settings', function (string $role): void {

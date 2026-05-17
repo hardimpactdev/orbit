@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -239,6 +240,34 @@ describe('node:remove base contract', function (): void {
             ->and($payload['error']['code'])->toBe('node.gateway_removal_denied')
             ->and($payload['error']['meta']['role'])->toBe('gateway');
         expect(DB::table('nodes')->where('name', 'gateway-2')->exists())->toBeTrue();
+    });
+
+    it('rejects removal for nodes with an assigned gateway role before side effects', function (): void {
+        config(['orbit.is_gateway' => true]);
+
+        $gateway = Node::query()->create(nodeRemoveRow([
+            'name' => 'gateway-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'gateway-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node.gateway_removal_denied')
+            ->and(DB::table('nodes')->where('name', 'gateway-1')->exists())->toBeTrue();
     });
 
     it('rejects unconfigured control-node callers with gateway_unavailable', function (): void {

@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use stdClass;
@@ -18,9 +20,17 @@ final readonly class MeController
         $self = $request->user();
         $self->loadMissing('roleAssignments');
 
+        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
+
         $gateway = Node::query()
             ->with('roleAssignments')
-            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', $gatewayNodeIds);
+            })
+            ->orderBy('name')
             ->first();
 
         return response()->json([
@@ -42,7 +52,8 @@ final readonly class MeController
             'name' => $node->name,
             'role' => $node->role,
             'status' => $node->status ?? 'active',
-            'environment' => $node->role === 'app' ? $node->environment : null,
+            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node)
+                ?? ($node->role === 'app' ? $node->environment : null),
             'platform' => $node->platform ?? 'unknown',
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,

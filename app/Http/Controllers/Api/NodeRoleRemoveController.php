@@ -15,6 +15,7 @@ use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
+use Throwable;
 
 final class NodeRoleRemoveController implements Loggable
 {
@@ -87,6 +88,15 @@ final class NodeRoleRemoveController implements Loggable
             $this->service->remove($node, $role, $request->force(), $request->purgeData());
         } catch (InvalidArgumentException $exception) {
             return $this->error('validation_failed', $exception->getMessage(), ['role' => $role], 422);
+        } catch (Throwable $exception) {
+            $this->activityAction = 'node.role.remove_failed';
+
+            return $this->error(
+                'node_role.remove_failed',
+                "Role '{$role}' could not be removed.",
+                ['role' => $role, 'last_error' => $exception->getMessage()],
+                500,
+            );
         }
 
         return response()->json([

@@ -188,7 +188,7 @@ class NodeRoleAssignments
     public function conflicting(Node $node, NodeRoleDefinition $definition): Collection
     {
         return $node->roleAssignments()
-            ->whereIn('status', ['active', 'pending', 'error'])
+            ->where('status', NodeRoleStatus::Active->value)
             ->whereIn('role', $definition->conflictsWith)
             ->orderBy('role')
             ->get();

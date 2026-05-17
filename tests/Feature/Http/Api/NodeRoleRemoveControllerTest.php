@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -137,5 +142,56 @@ describe('NodeRoleRemoveController', function (): void {
         expect($entry->subject_type)->toBe(Node::class);
         expect($entry->subject_id)->toBe($node->id);
         expect($entry->properties->get('dependents'))->toBe(['1 development app record']);
+    });
+
+    it('returns an error when role removal cleanup fails', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        $gatewayId = createNodeRoleRemoveGateway();
+        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+        ]));
+
+        $assignment = NodeRoleAssignment::query()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+            'last_error' => null,
+            'converged_at' => now(),
+        ]);
+
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
+        {
+            public function __construct()
+            {
+                parent::__construct(
+                    app(GatewayRoleBaseline::class),
+                    app(AppDevelopmentRoleBaseline::class),
+                    app(AppProductionRoleBaseline::class),
+                    app(DatabaseRoleBaseline::class),
+                );
+            }
+
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+            {
+                throw new RuntimeException('Cleanup failed.');
+            }
+        });
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [
+            'force' => true,
+        ], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertStatus(500)
+            ->assertJsonPath('error.code', 'node_role.remove_failed')
+            ->assertJsonPath('error.meta.last_error', 'Cleanup failed.');
+
+        expect($assignment->fresh()->status)->toBe('error')
+            ->and($assignment->fresh()->last_error)->toBe('Cleanup failed.');
     });
 });

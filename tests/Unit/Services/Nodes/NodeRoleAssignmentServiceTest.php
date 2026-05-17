@@ -93,6 +93,31 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'app-production' conflicts with active role 'app-development'.");
     });
 
+    it('ignores non-active assignments during conflict checks', function (string $status): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => $status,
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-production', []);
+
+        expect($assignment->status)
+            ->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->role)
+            ->toBe('app-production');
+    })->with([
+        NodeRoleStatus::Pending->value,
+        NodeRoleStatus::Error->value,
+        NodeRoleStatus::Removing->value,
+    ]);
+
     it('marks role as error when convergence fails', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
@@ -141,6 +166,37 @@ describe('node role assignment service', function (): void {
             ->toBeNull();
     });
 
+    it('rejects production and database baselines for nodes with an assigned gateway role', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'host' => 'gateway.example.com',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $productionAssignment = NodeRoleAssignment::factory()->make([
+            'node_id' => $node->id,
+            'role' => 'app-production',
+            'status' => NodeRoleStatus::Pending->value,
+        ]);
+        $databaseAssignment = NodeRoleAssignment::factory()->make([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => NodeRoleStatus::Pending->value,
+        ]);
+
+        expect(fn () => app(AppProductionRoleBaseline::class)->converge($node, $productionAssignment))
+            ->toThrow(RuntimeException::class, 'The app-production role cannot be assigned to a gateway node.');
+
+        expect(fn () => app(DatabaseRoleBaseline::class)->converge($node, $databaseAssignment))
+            ->toThrow(RuntimeException::class, 'The database role cannot be assigned to a gateway node.');
+    });
+
     it('updates an existing role and re-activates it after convergence succeeds', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu_24-04',
@@ -152,15 +208,15 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-development',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'old.test'],
+            'settings' => ['tld' => 'old'],
         ]);
 
-        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-development', ['tld' => 'new.test']);
+        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-development', ['tld' => 'new']);
 
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Active->value)
             ->and($assignment->settings)
-            ->toBe(['tld' => 'new.test'])
+            ->toBe(['tld' => 'new'])
             ->and($assignment->last_error)
             ->toBeNull()
             ->and($assignment->converged_at)
@@ -368,7 +424,8 @@ describe('node role assignment service', function (): void {
             }
         });
 
-        app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true);
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true))
+            ->toThrow(RuntimeException::class, 'Cleanup failed.');
 
         expect($assignment->fresh()->status)
             ->toBe(NodeRoleStatus::Error->value)
