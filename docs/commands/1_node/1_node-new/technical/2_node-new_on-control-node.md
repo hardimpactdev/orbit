@@ -26,11 +26,12 @@ bootstrap path where the gateway does not exist yet.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
 are known. For example, a control caller with no configured gateway and a
-resolved requested role other than `gateway` shows a validation message at the
-role prompt so the operator can choose `gateway` or cancel, before prompting for
-app-node host, environment, TLD, or any later input. Non-interactive input mode
-fails before side effects for the same blocker. All path eligibility must
-complete before side effects begin.
+resolved explicit requested role other than `gateway` fails before side effects,
+before prompting for app-node host, environment, TLD, or any later input.
+Omitted `--role` does not show a role prompt; it follows the joined/client
+no-hosted-role path and only succeeds when a gateway is already configured.
+Non-interactive input mode fails at the same early eligibility point for the
+same blocker. All path eligibility must complete before side effects begin.
 
 ## Allowed Paths
 
