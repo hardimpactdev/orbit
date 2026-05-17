@@ -7,6 +7,9 @@ use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
+use function Pest\Laravel\call;
+use function Pest\Laravel\getJson;
+
 uses(RefreshDatabase::class);
 
 /**
@@ -30,7 +33,7 @@ function meNodeRow(array $overrides = []): array
 
 describe('GET /api/me', function (): void {
     it('returns 403 for unknown peer', function (): void {
-        $response = $this->getJson('/api/me');
+        $response = getJson('/api/me');
 
         $response->assertForbidden()
             ->assertExactJson([
@@ -51,7 +54,7 @@ describe('GET /api/me', function (): void {
             'platform' => 'ubuntu_24-04',
         ]));
 
-        $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
         $response->assertOk()
             ->assertExactJson([
@@ -61,6 +64,7 @@ describe('GET /api/me', function (): void {
                             'name' => 'peer-1',
                             'role' => 'control',
                             'status' => 'active',
+                            'environment' => null,
                             'platform' => 'macos_15-4',
                             'roles' => [],
                             'addresses' => [
@@ -71,6 +75,7 @@ describe('GET /api/me', function (): void {
                             'name' => 'gateway-1',
                             'role' => 'gateway',
                             'status' => 'active',
+                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [],
                             'addresses' => [
@@ -90,7 +95,7 @@ describe('GET /api/me', function (): void {
             'platform' => 'ubuntu_24-04',
         ]));
 
-        $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.2']);
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.2']);
 
         $response->assertOk()
             ->assertExactJson([
@@ -100,6 +105,7 @@ describe('GET /api/me', function (): void {
                             'name' => 'gateway-1',
                             'role' => 'gateway',
                             'status' => 'active',
+                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [],
                             'addresses' => [
@@ -110,6 +116,7 @@ describe('GET /api/me', function (): void {
                             'name' => 'gateway-1',
                             'role' => 'gateway',
                             'status' => 'active',
+                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [],
                             'addresses' => [
@@ -132,11 +139,32 @@ describe('GET /api/me', function (): void {
             'platform' => 'ubuntu_24-04',
         ]));
 
-        $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
         $response->assertOk()
             ->assertJsonPath('success.data.self.platform', 'unknown')
             ->assertJsonPath('success.data.self.status', 'active');
+    });
+
+    it('serializes legacy environment for app nodes and null for non-app nodes', function (): void {
+        DB::table('nodes')->insert(meNodeRow([
+            'name' => 'app-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'wireguard_address' => '10.6.0.9',
+        ]));
+        DB::table('nodes')->insert(meNodeRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.2',
+        ]));
+
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.self.environment', 'development')
+            ->assertJsonPath('success.data.gateway.environment', null);
     });
 
     it('serializes composable roles for self and gateway', function (): void {
@@ -174,7 +202,7 @@ describe('GET /api/me', function (): void {
             'settings' => [],
         ]);
 
-        $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
         $response->assertOk()
             ->assertJsonPath('success.data.self.roles', [
@@ -201,7 +229,7 @@ describe('GET /api/me', function (): void {
             'wireguard_address' => '10.6.0.2',
         ]));
 
-        $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
         $response->assertOk();
 
@@ -222,9 +250,17 @@ describe('GET /api/me', function (): void {
             'wireguard_address' => '10.6.0.2',
         ]));
 
-        $response = $this
-            ->withHeaders(['X-Orbit-Client' => 'scheduler'])
-            ->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
+        $response = call(
+            'GET',
+            '/api/me',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => '10.6.0.9',
+                'HTTP_X_ORBIT_CLIENT' => 'scheduler',
+            ],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.self.name', 'app-1')
@@ -238,9 +274,17 @@ describe('GET /api/me', function (): void {
             'wireguard_address' => '10.6.0.2',
         ]));
 
-        $response = $this
-            ->withHeaders(['X-Orbit-Client' => 'scheduler'])
-            ->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.99']);
+        $response = call(
+            'GET',
+            '/api/me',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => '10.6.0.99',
+                'HTTP_X_ORBIT_CLIENT' => 'scheduler',
+            ],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
