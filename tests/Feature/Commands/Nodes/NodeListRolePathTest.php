@@ -82,6 +82,13 @@ describe('node:list role paths', function (): void {
                                 'environment' => null,
                                 'platform' => 'ubuntu_24-04',
                                 'status' => 'active',
+                                'roles' => [
+                                    [
+                                        'role' => 'gateway',
+                                        'status' => 'active',
+                                        'settings' => [],
+                                    ],
+                                ],
                             ],
                         ],
                     ],
@@ -94,7 +101,14 @@ describe('node:list role paths', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['nodes'])->toHaveCount(1)
-            ->and($payload['success']['data']['nodes'][0]['name'])->toBe('gateway-1');
+            ->and($payload['success']['data']['nodes'][0]['name'])->toBe('gateway-1')
+            ->and($payload['success']['data']['nodes'][0]['roles'])->toBe([
+                [
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'settings' => [],
+                ],
+            ]);
     });
 
     it('handles gateway forwarding error for control caller', function (): void {

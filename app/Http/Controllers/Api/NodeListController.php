@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -85,6 +86,7 @@ final readonly class NodeListController implements Loggable
     private function fetchNodeModels(?string $role, ?string $environment): Collection
     {
         $query = Node::query()
+            ->with('roleAssignments')
             ->orderBy('role')
             ->orderBy('name');
 
@@ -112,6 +114,11 @@ final readonly class NodeListController implements Loggable
             'environment' => $node->role === 'app' ? $node->environment : null,
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
+            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
+                'role' => $assignment->role,
+                'status' => $assignment->status,
+                'settings' => $assignment->settings ?? [],
+            ])->all(),
         ])->all();
     }
 

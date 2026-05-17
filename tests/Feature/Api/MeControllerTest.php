@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -60,6 +62,7 @@ describe('GET /api/me', function (): void {
                             'role' => 'control',
                             'status' => 'active',
                             'platform' => 'macos_15-4',
+                            'roles' => [],
                             'addresses' => [
                                 'wireguard' => '10.6.0.8',
                             ],
@@ -69,6 +72,7 @@ describe('GET /api/me', function (): void {
                             'role' => 'gateway',
                             'status' => 'active',
                             'platform' => 'ubuntu_24-04',
+                            'roles' => [],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -97,6 +101,7 @@ describe('GET /api/me', function (): void {
                             'role' => 'gateway',
                             'status' => 'active',
                             'platform' => 'ubuntu_24-04',
+                            'roles' => [],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -106,6 +111,7 @@ describe('GET /api/me', function (): void {
                             'role' => 'gateway',
                             'status' => 'active',
                             'platform' => 'ubuntu_24-04',
+                            'roles' => [],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -131,6 +137,60 @@ describe('GET /api/me', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.self.platform', 'unknown')
             ->assertJsonPath('success.data.self.status', 'active');
+    });
+
+    it('serializes composable roles for self and gateway', function (): void {
+        $self = Node::factory()->create([
+            'name' => 'peer-1',
+            'role' => 'control',
+            'host' => '10.6.0.8',
+            'wireguard_address' => '10.6.0.8',
+            'orbit_path' => '/Users/nckrtl/orbit',
+            'status' => 'active',
+            'platform' => 'macos_15-4',
+        ]);
+
+        $gateway = Node::factory()->create([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $self->id,
+            'role' => 'database',
+            'status' => 'error',
+            'settings' => [],
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+
+        $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.self.roles', [
+                [
+                    'role' => 'database',
+                    'status' => 'error',
+                    'settings' => [],
+                ],
+            ])
+            ->assertJsonPath('success.data.gateway.roles', [
+                [
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'settings' => [],
+                ],
+            ]);
     });
 
     it('does not include legacy id field', function (): void {

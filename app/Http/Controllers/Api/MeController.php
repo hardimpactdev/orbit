@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,8 +15,10 @@ final readonly class MeController
     {
         /** @var Node $self */
         $self = $request->user();
+        $self->loadMissing('roleAssignments');
 
         $gateway = Node::query()
+            ->with('roleAssignments')
             ->where('role', 'gateway')
             ->first();
 
@@ -39,6 +42,11 @@ final readonly class MeController
             'role' => $node->role,
             'status' => $node->status ?? 'active',
             'platform' => $node->platform ?? 'unknown',
+            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
+                'role' => $assignment->role,
+                'status' => $assignment->status,
+                'settings' => $assignment->settings ?? [],
+            ])->all(),
             'addresses' => [
                 'wireguard' => $node->wireguard_address,
             ],

@@ -11,6 +11,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeShowResponse;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -82,6 +83,7 @@ class NodeShowCommand extends Command
         }
 
         $node = Node::query()
+            ->with('roleAssignments')
             ->where('name', $name)
             ->where('status', 'active')
             ->first();
@@ -162,6 +164,7 @@ class NodeShowCommand extends Command
             'status' => $nodeData['status'] ?? 'active',
             'environment' => $nodeData['environment'] ?? null,
             'platform' => $nodeData['platform'] ?? 'unknown',
+            'roles' => is_array($nodeData['roles'] ?? null) ? $nodeData['roles'] : [],
             'addresses' => [
                 'wireguard' => $nodeData['wireguard_address']
                     ?? ($nodeData['addresses']['wireguard'] ?? ($nodeData['host'] ?? '')),
@@ -181,6 +184,7 @@ class NodeShowCommand extends Command
      *     status: string,
      *     environment: string|null,
      *     platform: string,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
@@ -194,6 +198,11 @@ class NodeShowCommand extends Command
             'status' => $node->status,
             'environment' => $node->role === 'app' ? $node->environment : null,
             'platform' => $node->platform ?? 'unknown',
+            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
+                'role' => $assignment->role,
+                'status' => $assignment->status,
+                'settings' => $assignment->settings ?? [],
+            ])->all(),
             'addresses' => [
                 'wireguard' => $node->wireguard_address ?? $node->host,
             ],
@@ -212,6 +221,7 @@ class NodeShowCommand extends Command
      *     status: string,
      *     environment: string|null,
      *     platform: string,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
@@ -221,6 +231,12 @@ class NodeShowCommand extends Command
     {
         $this->line("Node: {$node['name']}");
         $this->line("Role: {$node['role']}");
+
+        $rolesLabel = $this->humanRolesLabel($node['roles']);
+
+        if ($rolesLabel !== null) {
+            $this->line("Roles: {$rolesLabel}");
+        }
 
         if ($node['environment'] !== null) {
             $this->line("Environment: {$node['environment']}");
@@ -258,6 +274,29 @@ class NodeShowCommand extends Command
             'adapter' => null,
             'source' => 'default',
         ];
+    }
+
+    private function humanRolesLabel(mixed $roles): ?string
+    {
+        if (! is_array($roles) || $roles === []) {
+            return null;
+        }
+
+        $labels = [];
+
+        foreach ($roles as $role) {
+            if (! is_array($role) || ! is_string($role['role'] ?? null) || $role['role'] === '') {
+                continue;
+            }
+
+            $status = is_string($role['status'] ?? null) ? $role['status'] : 'active';
+
+            $labels[] = $status === 'active'
+                ? $role['role']
+                : "{$role['role']} ({$status})";
+        }
+
+        return $labels === [] ? null : implode(', ', $labels);
     }
 
     /**

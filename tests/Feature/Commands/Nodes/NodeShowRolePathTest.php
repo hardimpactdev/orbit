@@ -83,6 +83,13 @@ describe('node:show role paths', function (): void {
                             'status' => 'active',
                             'environment' => null,
                             'platform' => 'ubuntu_24-04',
+                            'roles' => [
+                                [
+                                    'role' => 'gateway',
+                                    'status' => 'active',
+                                    'settings' => [],
+                                ],
+                            ],
                             'wireguard_address' => '10.6.0.2',
                             'addresses' => ['wireguard' => '10.6.0.2'],
                             'agent_ide' => ['adapter' => null, 'source' => 'default'],
@@ -97,7 +104,14 @@ describe('node:show role paths', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['name'])->toBe('gateway-1');
+            ->and($payload['success']['data']['node']['name'])->toBe('gateway-1')
+            ->and($payload['success']['data']['node']['roles'])->toBe([
+                [
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'settings' => [],
+                ],
+            ]);
     });
 
     it('forwards real grant data from gateway for control caller', function (): void {

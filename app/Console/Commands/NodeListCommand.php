@@ -9,6 +9,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Http\Gateway\Responses\Nodes\NodeListResponse;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -152,6 +153,7 @@ class NodeListCommand extends Command
     private function fetchLocalNodeModels(?string $role, ?string $environment): Collection
     {
         $query = Node::query()
+            ->with('roleAssignments')
             ->orderBy('role')
             ->orderBy('name');
 
@@ -177,6 +179,11 @@ class NodeListCommand extends Command
             'environment' => $node->role === 'app' ? $node->environment : null,
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
+            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
+                'role' => $assignment->role,
+                'status' => $assignment->status,
+                'settings' => $assignment->settings ?? [],
+            ])->all(),
         ];
     }
 
@@ -196,7 +203,7 @@ class NodeListCommand extends Command
         table(
             headers: ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
             rows: array_map(fn (array $node): array => [
-                $node['role'],
+                $this->humanRolesLabel($node),
                 $node['name'],
                 $node['environment'] ?? '—',
                 $node['platform'],
@@ -249,6 +256,34 @@ class NodeListCommand extends Command
         }
 
         $this->line('  Run `orbit doctor --fix --family=node --restore` to repair.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function humanRolesLabel(array $node): string
+    {
+        $roles = $node['roles'] ?? null;
+
+        if (! is_array($roles) || $roles === []) {
+            return (string) $node['role'];
+        }
+
+        $labels = [];
+
+        foreach ($roles as $role) {
+            if (! is_array($role) || ! is_string($role['role'] ?? null) || $role['role'] === '') {
+                continue;
+            }
+
+            $status = is_string($role['status'] ?? null) ? $role['status'] : 'active';
+
+            $labels[] = $status === 'active'
+                ? $role['role']
+                : "{$role['role']} ({$status})";
+        }
+
+        return $labels === [] ? (string) $node['role'] : implode(', ', $labels);
     }
 
     /**

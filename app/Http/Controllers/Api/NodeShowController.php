@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,7 @@ final class NodeShowController implements Loggable
     public function __invoke(string $name): JsonResponse
     {
         $node = Node::query()
+            ->with('roleAssignments')
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->first();
 
@@ -44,6 +46,11 @@ final class NodeShowController implements Loggable
                         'status' => $node->status,
                         'environment' => $node->role === 'app' ? $node->environment : null,
                         'platform' => $node->platform ?? 'unknown',
+                        'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
+                            'role' => $assignment->role,
+                            'status' => $assignment->status,
+                            'settings' => $assignment->settings ?? [],
+                        ])->all(),
                         'addresses' => [
                             'wireguard' => $node->wireguard_address ?? $node->host,
                         ],

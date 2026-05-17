@@ -129,6 +129,7 @@ describe('node:list JSON renderer contract', function (): void {
             'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
+            'roles' => [],
         ])
             ->and($indexed['gateway-1'])->toBe([
                 'name' => 'gateway-1',
@@ -136,6 +137,7 @@ describe('node:list JSON renderer contract', function (): void {
                 'environment' => null,
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
+                'roles' => [],
             ]);
     });
 
