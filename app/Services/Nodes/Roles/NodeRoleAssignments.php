@@ -71,8 +71,9 @@ class NodeRoleAssignments
 
     public function nodeIsGateway(Node $node): bool
     {
-        return $node->role === NodeRoleName::Gateway->value
-            || $this->nodeHasActiveGatewayRole($node);
+        return $node->status === 'active'
+            && ($node->role === NodeRoleName::Gateway->value
+                || $this->nodeHasActiveGatewayRole($node));
     }
 
     public function nodeHasActiveAppHostRole(Node $node): bool

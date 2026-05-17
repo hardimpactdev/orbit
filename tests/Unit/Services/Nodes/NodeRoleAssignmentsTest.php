@@ -62,4 +62,29 @@ describe('node role assignments', function (): void {
             ->and($assignments->activeAppHostEnvironment($productionNode))->toBe('production')
             ->and($assignments->activeAppHostEnvironment($legacyAppOnlyNode))->toBeNull();
     });
+
+    it('only treats active nodes as gateways', function (): void {
+        $activeLegacyGateway = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $inactiveLegacyGateway = Node::factory()->create(['role' => 'gateway', 'status' => 'provisioning']);
+        $activeAssignedGateway = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+        $inactiveAssignedGateway = Node::factory()->create(['role' => 'control', 'status' => 'provisioning']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $activeAssignedGateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $inactiveAssignedGateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        $assignments = app(NodeRoleAssignments::class);
+
+        expect($assignments->nodeIsGateway($activeLegacyGateway))->toBeTrue()
+            ->and($assignments->nodeIsGateway($inactiveLegacyGateway))->toBeFalse()
+            ->and($assignments->nodeIsGateway($activeAssignedGateway))->toBeTrue()
+            ->and($assignments->nodeIsGateway($inactiveAssignedGateway))->toBeFalse();
+    });
 });

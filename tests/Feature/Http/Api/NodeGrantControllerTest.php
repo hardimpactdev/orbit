@@ -360,6 +360,48 @@ describe('NodeGrantController', function (): void {
             ->exists())->toBeTrue();
     });
 
+    it('authorizes control callers through any active gateway they can access', function (): void {
+        $callerId = createGrantCallerNode();
+        DB::table('nodes')->insert(apiGrantNodeRow([
+            'name' => 'aaa-gateway',
+            'role' => 'gateway',
+            'host' => '10.6.0.2',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.2',
+        ]));
+        $authorizedGatewayId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'zzz-gateway',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.3',
+        ]));
+        assignApiGrantGatewayRole($authorizedGatewayId);
+        grantGatewayManagementAccess($callerId, $authorizedGatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeTrue();
+    });
+
     it('rejects missing consuming node input', function (): void {
         $callerId = createGrantCallerNode();
         $gatewayId = createGrantGatewayNode();

@@ -12,8 +12,8 @@ use App\Models\NodeAccess;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
 final readonly class NodeGrantController implements Loggable
 {
@@ -102,17 +102,19 @@ final readonly class NodeGrantController implements Loggable
 
     private function authorizeControlCaller(Node $caller): ?JsonResponse
     {
-        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
-
-        $gateway = Node::query()
-            ->where('status', 'active')
-            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+        if ($this->gatewayQuery()
+            ->whereExists(function (QueryBuilder $query) use ($caller): void {
                 $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', $gatewayNodeIds);
+                    ->selectRaw('1')
+                    ->from('node_access')
+                    ->whereColumn('node_access.serving_node_id', 'nodes.id')
+                    ->where('node_access.consumer_node_id', $caller->id);
             })
-            ->orderBy('name')
-            ->first();
+            ->exists()) {
+            return null;
+        }
+
+        $gateway = $this->gatewayQuery()->orderBy('name')->first();
 
         if (! $gateway instanceof Node) {
             return $this->authorizationFailed(
@@ -124,15 +126,6 @@ final readonly class NodeGrantController implements Loggable
             );
         }
 
-        $hasGatewayAccess = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->exists();
-
-        if ($hasGatewayAccess) {
-            return null;
-        }
-
         return $this->authorizationFailed(
             message: 'This control node is not authorized to grant node access.',
             meta: [
@@ -140,6 +133,19 @@ final readonly class NodeGrantController implements Loggable
                 'caller_role' => 'control',
             ],
         );
+    }
+
+    private function gatewayQuery(): Builder
+    {
+        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
+
+        return Node::query()
+            ->where('status', 'active')
+            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', $gatewayNodeIds);
+            });
     }
 
     private function resolveNode(string $name, string $field): Node|JsonResponse
