@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,10 @@ final class AppRegisterController implements Loggable
 {
     private ?App $activitySubject = null;
 
+    public function __construct(
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function __invoke(Request $request): JsonResponse
     {
         /** @var mixed $caller */
@@ -27,13 +32,21 @@ final class AppRegisterController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
+
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
+            return $this->error(
+                'caller_role_not_allowed',
+                'This command may only be run from a control or gateway node.',
+                ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
+                403,
+            );
         }
 
         $targetNode = $this->targetNode($request);
 
-        if ($targetNode instanceof Node && ! $this->callerCanRegisterOnNode($caller, $targetNode)) {
+        if ($targetNode instanceof Node && ! $this->callerCanRegisterOnNode($caller, $targetNode, $callerIsGateway)) {
             return $this->error('authorization_failed', "This node is not authorized to register apps on '{$targetNode->name}'.", ['node' => $targetNode->name], 403);
         }
 
@@ -82,9 +95,9 @@ final class AppRegisterController implements Loggable
             ?->node;
     }
 
-    private function callerCanRegisterOnNode(Node $caller, Node $node): bool
+    private function callerCanRegisterOnNode(Node $caller, Node $node, bool $callerIsGateway): bool
     {
-        if ($caller->role === 'gateway') {
+        if ($callerIsGateway) {
             return true;
         }
 

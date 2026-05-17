@@ -102,9 +102,10 @@ Node doctor treats role assignment status as gateway desired-state metadata:
 | `error` | The last synchronous convergence attempt failed. `doctor --family=node --restore` retries convergence after blockers are addressed. |
 | `removing` | Cleanup is in progress or failed. The role is not eligible for new resources, and doctor can reevaluate cleanup blockers on a later restore. |
 
-Eligibility checks only use active assignments. Compatibility checks ignore
-assignments that are not active, but doctor still reports non-active assignments
-that block the selected node's desired state.
+Eligibility checks only use active assignments. Compatibility checks treat
+assignments in `active`, `pending`, or `error` as unresolved conflicts and
+ignore assignments already in `removing`. Doctor still reports non-active
+assignments that block the selected node's desired state.
 
 ## Role Removal
 

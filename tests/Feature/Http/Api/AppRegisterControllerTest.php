@@ -7,6 +7,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -110,6 +111,42 @@ describe('AppRegisterController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect(App::query()->count())->toBe(0)
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('rejects database-only hosted callers even when they can access the target app node', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'role' => 'app',
+            'status' => 'active',
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps/register', [
+            'name' => 'docs',
+            'node' => 'app-1',
+            'path' => '/home/orbit/apps/docs',
+        ], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
 
         expect(App::query()->count())->toBe(0)
             ->and($remoteShell->scripts)->toBe([]);
