@@ -57,6 +57,22 @@ it('reports missing role assignment when a legacy app node has no compatible ass
         ->and($roleDrift[0]->kind)->toBe(DriftKind::Missing);
 });
 
+it('reports missing role assignment when a legacy database node has no compatible assignment', function (): void {
+    $node = Node::factory()->create([
+        'role' => 'database',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '',
+        'wireguard_address' => '10.6.0.6',
+    ]);
+
+    $roleDrift = roleDriftEntries($node);
+
+    expect($roleDrift)->toHaveCount(1)
+        ->and($roleDrift[0]->key)->toBe('node.role_assignment_missing')
+        ->and($roleDrift[0]->kind)->toBe(DriftKind::Missing);
+});
+
 it('reports invalid role assignments with unknown roles', function (): void {
     $node = Node::factory()->create([
         'role' => 'control',
@@ -244,6 +260,32 @@ it('does not require legacy environment when active role assignments provide the
         'address=/.test/10.6.0.5',
         '',
     ]));
+
+    $drift = $this->probe->diff($node->fresh()->load('roleAssignments'), new ProbeSnapshot([]));
+    $recordIncomplete = array_values(array_filter(
+        $drift,
+        fn (DriftEntry $entry): bool => $entry->key === 'node.record_incomplete',
+    ));
+
+    expect($recordIncomplete)->toBeEmpty();
+});
+
+it('does not require host for database-only nodes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database',
+        'role' => 'database',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '',
+        'wireguard_address' => '10.6.0.6',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'database',
+        'status' => NodeRoleStatus::Active->value,
+        'settings' => [],
+    ]);
 
     $drift = $this->probe->diff($node->fresh()->load('roleAssignments'), new ProbeSnapshot([]));
     $recordIncomplete = array_values(array_filter(

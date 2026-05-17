@@ -222,6 +222,20 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
 
+    it('rejects database callers before mutation', function (): void {
+        createUpdateCallerNode('database');
+        DB::table('nodes')->insert(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.message', 'This command may only be run from a control or gateway node.')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
+    });
+
     it('rejects control callers without gateway access', function (): void {
         createUpdateCallerNode();
         createUpdateGatewayNode();

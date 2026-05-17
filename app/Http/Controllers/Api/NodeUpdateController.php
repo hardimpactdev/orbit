@@ -37,11 +37,11 @@ final class NodeUpdateController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if ($caller->role === 'app') {
+        if (! in_array($caller->role, ['control', 'gateway'], true)) {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
+                meta: ['caller_role' => $caller->role],
                 status: 403,
             );
         }

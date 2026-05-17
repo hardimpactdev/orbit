@@ -95,8 +95,7 @@ final readonly class NodesProbe
             || $node->platform === ''
             || ! is_string($node->wireguard_address)
             || $node->wireguard_address === ''
-            || ! is_string($node->host)
-            || $node->host === ''
+            || $this->nodeIsMissingRequiredHost($node)
         ) {
             return [
                 new DriftEntry(
@@ -109,6 +108,26 @@ final readonly class NodesProbe
         }
 
         return [];
+    }
+
+    private function nodeIsMissingRequiredHost(Node $node): bool
+    {
+        if (! $this->nodeRequiresHost($node)) {
+            return false;
+        }
+
+        return ! is_string($node->host) || $node->host === '';
+    }
+
+    private function nodeRequiresHost(Node $node): bool
+    {
+        if (in_array($node->role, ['gateway', 'app'], true)) {
+            return true;
+        }
+
+        return $node->hasActiveRole(NodeRoleName::Gateway->value)
+            || $node->hasActiveRole(NodeRoleName::AppDevelopment->value)
+            || $node->hasActiveRole(NodeRoleName::AppProduction->value);
     }
 
     /**
@@ -237,6 +256,7 @@ final readonly class NodesProbe
                 'production' => [NodeRoleName::AppProduction->value],
                 default => [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
             },
+            'database' => [NodeRoleName::Database->value],
             default => [],
         };
 
