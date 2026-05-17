@@ -46,7 +46,7 @@ class NodeRoleDependencyInspector
         return [];
     }
 
-    public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+    public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
     {
         if (array_key_exists($assignment->role, self::AppRoleEnvironments)) {
             $this->removeAppRoleDependents($node, $assignment->role);

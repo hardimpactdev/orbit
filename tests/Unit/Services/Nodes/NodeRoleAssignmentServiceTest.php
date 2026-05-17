@@ -10,6 +10,10 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -93,6 +97,16 @@ describe('node role assignment service', function (): void {
 
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
+            public function __construct()
+            {
+                parent::__construct(
+                    app(GatewayRoleBaseline::class),
+                    app(AppDevelopmentRoleBaseline::class),
+                    app(AppProductionRoleBaseline::class),
+                    app(DatabaseRoleBaseline::class),
+                );
+            }
+
             public function converge(Node $node, NodeRoleAssignment $assignment): void
             {
                 throw new RuntimeException('Docker is missing.');
@@ -283,27 +297,50 @@ describe('node role assignment service', function (): void {
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
 
-    it('leaves a removing assignment in error when cleanup fails', function (): void {
+    it('leaves the assignment in error and keeps dependents intact when removal cleanup fails', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $assignment = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'database',
+            'role' => 'app-development',
             'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'test'],
+        ]);
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'environment' => 'development',
+        ]);
+        ProxyRoute::factory()->forApp($app)->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.test',
         ]);
 
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
+            public function __construct()
+            {
+                parent::__construct(
+                    app(GatewayRoleBaseline::class),
+                    app(AppDevelopmentRoleBaseline::class),
+                    app(AppProductionRoleBaseline::class),
+                    app(DatabaseRoleBaseline::class),
+                );
+            }
+
             public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
             {
                 throw new RuntimeException('Cleanup failed.');
             }
         });
 
-        app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
+        app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true);
 
         expect($assignment->fresh()->status)
             ->toBe(NodeRoleStatus::Error->value)
             ->and($assignment->fresh()->last_error)
-            ->toBe('Cleanup failed.');
+            ->toBe('Cleanup failed.')
+            ->and(App::query()->whereKey($app->id)->exists())
+            ->toBeTrue()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
+            ->toBeTrue();
     });
 });

@@ -12,9 +12,17 @@ use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RoleBaseline;
+use InvalidArgumentException;
 
 class NodeRoleBaselineConverger
 {
+    public function __construct(
+        private readonly GatewayRoleBaseline $gatewayRoleBaseline,
+        private readonly AppDevelopmentRoleBaseline $appDevelopmentRoleBaseline,
+        private readonly AppProductionRoleBaseline $appProductionRoleBaseline,
+        private readonly DatabaseRoleBaseline $databaseRoleBaseline,
+    ) {}
+
     public function converge(Node $node, NodeRoleAssignment $assignment): void
     {
         $this->baseline($assignment->role)->converge($node, $assignment);
@@ -28,11 +36,11 @@ class NodeRoleBaselineConverger
     protected function baseline(string $role): RoleBaseline
     {
         return match ($role) {
-            NodeRoleName::Gateway->value => new GatewayRoleBaseline,
-            NodeRoleName::AppDevelopment->value => new AppDevelopmentRoleBaseline,
-            NodeRoleName::AppProduction->value => new AppProductionRoleBaseline,
-            NodeRoleName::Database->value => new DatabaseRoleBaseline,
-            default => new GatewayRoleBaseline,
+            NodeRoleName::Gateway->value => $this->gatewayRoleBaseline,
+            NodeRoleName::AppDevelopment->value => $this->appDevelopmentRoleBaseline,
+            NodeRoleName::AppProduction->value => $this->appProductionRoleBaseline,
+            NodeRoleName::Database->value => $this->databaseRoleBaseline,
+            default => throw new InvalidArgumentException("Unsupported node role baseline [{$role}]."),
         };
     }
 }

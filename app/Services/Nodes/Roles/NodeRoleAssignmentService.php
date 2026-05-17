@@ -7,16 +7,17 @@ namespace App\Services\Nodes\Roles;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
 
 class NodeRoleAssignmentService
 {
     public function __construct(
-        private readonly NodeRoleRegistry $registry = new NodeRoleRegistry,
-        private readonly NodeRoleAssignments $assignments = new NodeRoleAssignments,
-        private readonly NodeRoleBaselineConverger $converger = new NodeRoleBaselineConverger,
-        private readonly NodeRoleDependencyInspector $dependencyInspector = new NodeRoleDependencyInspector,
+        private readonly NodeRoleRegistry $registry,
+        private readonly NodeRoleAssignments $assignments,
+        private readonly NodeRoleBaselineConverger $converger,
+        private readonly NodeRoleDependencyInspector $dependencyInspector,
     ) {}
 
     /**
@@ -77,13 +78,13 @@ class NodeRoleAssignmentService
 
     public function remove(Node $node, string $role, bool $force = false, bool $purgeData = false): void
     {
-        $this->registry->definition($role);
+        $definition = $this->registry->definition($role);
 
         if ($purgeData && ! $force) {
             throw new InvalidArgumentException('The purgeData option requires force.');
         }
 
-        if ($role === 'gateway') {
+        if (! $definition->assignableByCommand) {
             throw new InvalidArgumentException("Role '{$role}' cannot be removed through this service.");
         }
 
@@ -99,23 +100,31 @@ class NodeRoleAssignmentService
             throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
         }
 
-        $assignment->forceFill([
-            'status' => NodeRoleStatus::Removing->value,
-            'last_error' => null,
-        ])->save();
-
         try {
-            if ($dependents !== []) {
-                $this->dependencyInspector->removeOrbitOwnedDependents($node, $assignment, $purgeData);
-            }
+            DB::transaction(function () use ($node, $assignment, $dependents, $purgeData): void {
+                $transactionAssignment = NodeRoleAssignment::query()
+                    ->lockForUpdate()
+                    ->findOrFail($assignment->id);
 
-            $this->converger->remove($node, $assignment, $purgeData);
-            $assignment->delete();
+                $transactionAssignment->forceFill([
+                    'status' => NodeRoleStatus::Removing->value,
+                    'last_error' => null,
+                ])->save();
+
+                if ($dependents !== []) {
+                    $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
+                }
+
+                $this->converger->remove($node, $transactionAssignment, $purgeData);
+                $transactionAssignment->delete();
+            });
         } catch (Throwable $throwable) {
-            $assignment->forceFill([
-                'status' => NodeRoleStatus::Error->value,
-                'last_error' => $throwable->getMessage(),
-            ])->save();
+            NodeRoleAssignment::query()
+                ->whereKey($assignment->id)
+                ->update([
+                    'status' => NodeRoleStatus::Error->value,
+                    'last_error' => $throwable->getMessage(),
+                ]);
 
             return;
         }
