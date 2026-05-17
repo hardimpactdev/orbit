@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Apps\RegisterAppRequest;
 use App\Models\App;
@@ -15,8 +16,13 @@ use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
@@ -28,9 +34,8 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
         'role' => 'gateway',
     ]);
 
-    $targetNode = Node::factory()->create([
+    $targetNode = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -87,9 +92,8 @@ it('converges an already registered app without changing repository metadata', f
         'role' => 'gateway',
     ]);
 
-    $targetNode = Node::factory()->create([
+    $targetNode = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -128,12 +132,11 @@ it('reports production domain activation as a retryable proxy warning', function
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'environment' => 'production',
         'status' => 'active',
-    ]);
+    ], 'app-production');
 
     app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -168,12 +171,11 @@ it('renders production activation warnings in human output', function (): void {
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'environment' => 'production',
         'status' => 'active',
-    ]);
+    ], 'app-production');
 
     app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -195,9 +197,8 @@ it('rejects unmanaged registration without a path before remote work', function 
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -224,9 +225,8 @@ it('rejects path collisions before registry writes', function (): void {
         'role' => 'gateway',
     ]);
 
-    $targetNode = Node::factory()->create([
+    $targetNode = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -377,9 +377,8 @@ it('renders the documented human progress tree and adopted success line', functi
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -412,9 +411,8 @@ it('prompts for missing interactive input before adopting an app path', function
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);

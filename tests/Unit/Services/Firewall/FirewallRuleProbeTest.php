@@ -9,6 +9,7 @@ use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,25 @@ uses(RefreshDatabase::class);
 function firewallProbeIssue(array $drift, string $key): mixed
 {
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
+}
+
+function createFirewallRuleProbeAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'app',
+        'status' => 'active',
+        'platform' => 'ubuntu',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
 }
 
 describe('FirewallRuleProbe interface', function (): void {
@@ -39,7 +59,7 @@ describe('FirewallRuleProbe interface', function (): void {
 
 describe('firewall backend UFW reality', function (): void {
     it('introspects UFW rules from the target node', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
 Status: active
@@ -64,7 +84,7 @@ UFW);
     });
 
     it('detects missing backend rules after UFW inspection', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
@@ -85,7 +105,7 @@ UFW);
     });
 
     it('detects backend rule shape mismatches', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
@@ -110,7 +130,7 @@ UFW);
     });
 
     it('passes when backend rule shape matches gateway intent', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
@@ -158,7 +178,7 @@ final class FirewallProbeRecordingRemoteShell implements RemoteShell
 
 describe('firewall registry probe foundation', function (): void {
     it('passes complete firewall rules on active Ubuntu app nodes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
@@ -167,7 +187,7 @@ describe('firewall registry probe foundation', function (): void {
     });
 
     it('detects incomplete firewall rule records', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $id = DB::table('firewall_rules')->insertGetId([
             'node_id' => $node->id,
             'name' => 'broken',
@@ -202,7 +222,7 @@ describe('firewall registry probe foundation', function (): void {
     ]);
 
     it('detects baseline policy boundary conflicts', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'public-ssh',
@@ -222,7 +242,7 @@ describe('firewall registry probe foundation', function (): void {
 
 describe('firewall adopt handlers', function (): void {
     it('adopts observed backend rules not in the registry', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
 Status: active
 
@@ -249,7 +269,7 @@ UFW);
     });
 
     it('skips baseline bootstrap rules during adoption', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
 Status: active
 
@@ -265,7 +285,7 @@ UFW);
     });
 
     it('skips rules already present in the registry', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
@@ -287,7 +307,7 @@ UFW);
     });
 
     it('reports conflict when name collides with different identity', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'incoming-allow-5173-tcp',
@@ -310,7 +330,7 @@ UFW);
     });
 
     it('derives name from orbit: prefix comment', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleProbeAppHostNode();
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
 Status: active
 

@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
@@ -34,9 +35,27 @@ function createScheduleRemoveLocalNode(string $role = 'gateway'): Node
     ]);
 }
 
+function createScheduleRemoveAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'app',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
+}
+
 it('removes an app scoped schedule on the gateway and retains run history', function (): void {
     createScheduleRemoveLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
@@ -81,7 +100,7 @@ it('requires destructive consent before removing schedules', function (): void {
 
 it('prompts with a schedule data table when the name is missing', function (): void {
     createScheduleRemoveLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
@@ -114,7 +133,7 @@ it('returns not found before side effects', function (): void {
 
 it('removes gateway intent and reports scheduler unreachable when pickup cannot be confirmed', function (): void {
     createScheduleRemoveLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -170,7 +189,7 @@ it('forwards non-gateway schedule removes through the typed gateway request', fu
 
 it('renders human progress and success prose', function (): void {
     createScheduleRemoveLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
@@ -200,7 +219,7 @@ it('exposes schedule remove over the authenticated gateway API', function (): vo
         'role' => 'control',
         'wireguard_address' => '10.6.0.60',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -237,7 +256,7 @@ it('requires destructive consent on the authenticated schedule remove API', func
         'role' => 'control',
         'wireguard_address' => '10.6.0.60',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $node->id,

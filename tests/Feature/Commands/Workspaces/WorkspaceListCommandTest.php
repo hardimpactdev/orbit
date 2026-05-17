@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Workspaces\ListWorkspacesRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -32,6 +33,16 @@ function createWorkspaceListLocalNode(string $role = 'gateway'): Node
     ]);
 }
 
+function assignWorkspaceListAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
+}
+
 describe('workspace:list base contract', function (): void {
     it('lists workspaces sorted by node then app then workspace for gateway callers', function (): void {
         createWorkspaceListLocalNode('gateway');
@@ -55,8 +66,10 @@ describe('workspace:list base contract', function (): void {
 
     it('filters by app and node', function (): void {
         createWorkspaceListLocalNode('gateway');
-        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'app']);
-        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'app']);
+        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'control']);
+        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'control']);
+        assignWorkspaceListAppHostRole($devNode);
+        assignWorkspaceListAppHostRole($prodNode, 'app-production', []);
         $docs = App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id]);
         $site = App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id]);
 
@@ -73,6 +86,22 @@ describe('workspace:list base contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['workspaces'])->toHaveCount(1)
             ->and($payload['success']['data']['workspaces'][0]['name'])->toBe('site-feature');
+    });
+
+    it('rejects legacy app-only node filters without an active app host role', function (): void {
+        createWorkspaceListLocalNode('gateway');
+        Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app']);
+
+        $exitCode = Artisan::call('workspace:list', [
+            '--json' => true,
+            '--node' => 'legacy-app-only',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('node')
+            ->and($payload['error']['meta']['value'])->toBe('legacy-app-only');
     });
 
     it('rejects invalid scalar filters before gateway calls', function (): void {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Apps\UpdateAppRootRequest;
 use App\Models\App;
@@ -14,8 +15,13 @@ use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
@@ -27,9 +33,8 @@ it('updates app root intent and re-enacts runtime artifacts from a gateway calle
         'role' => 'gateway',
     ]);
 
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -77,9 +82,8 @@ it('reports converged no-op when root intent is unchanged', function (): void {
         'role' => 'gateway',
     ]);
 
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -116,9 +120,8 @@ it('rejects roots that resolve outside the app path', function (): void {
         'role' => 'gateway',
     ]);
 
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -272,9 +275,8 @@ it('prompts for missing human input and renders the progress tree', function ():
         'role' => 'gateway',
     ]);
 
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -313,9 +315,8 @@ it('renders converged human output when root intent is unchanged', function (): 
         'role' => 'gateway',
     ]);
 
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);

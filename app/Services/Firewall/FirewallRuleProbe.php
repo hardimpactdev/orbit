@@ -12,6 +12,7 @@ use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class FirewallRuleProbe
 {
@@ -206,7 +207,7 @@ final readonly class FirewallRuleProbe
             ];
         }
 
-        if ($rule->node->status !== 'active' || $rule->node->platform !== 'ubuntu' || ! in_array($rule->node->role, ['gateway', 'app'], true)) {
+        if ($rule->node->status !== 'active' || $rule->node->platform !== 'ubuntu' || ! $this->canOwnFirewallRules($rule->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -224,6 +225,12 @@ final readonly class FirewallRuleProbe
         }
 
         return [];
+    }
+
+    private function canOwnFirewallRules(Node $node): bool
+    {
+        return $node->role === 'gateway'
+            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
     }
 
     /**

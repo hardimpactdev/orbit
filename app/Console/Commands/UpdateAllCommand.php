@@ -14,6 +14,7 @@ use App\Http\Gateway\Requests\Operations\UpdateAllRequest;
 use App\Http\Gateway\Responses\Operations\UpdateAllResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\OrbitUpdater;
 use App\Support\Cli\UpdateAllProgress;
 use Illuminate\Console\Attributes\Description;
@@ -417,7 +418,7 @@ class UpdateAllCommand extends Command implements Loggable
     {
         $nodes = Node::query()
             ->where('status', 'active')
-            ->where('role', 'app')
+            ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
             ->orderBy('name')
             ->get();
 

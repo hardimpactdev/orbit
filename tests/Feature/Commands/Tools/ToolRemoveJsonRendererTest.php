@@ -44,7 +44,7 @@ function configureToolRemoveJsonControlGateway(): void
 describe('tool:remove JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the documented tool entity', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -72,7 +72,7 @@ describe('tool:remove JSON renderer', function (): void {
 
     it('renders missing destructive consent as validation_failed for non-json non-interactive mode', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -91,7 +91,7 @@ describe('tool:remove JSON renderer', function (): void {
 
     it('renders missing target as validation_failed with target fields metadata', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -115,7 +115,7 @@ describe('tool:remove JSON renderer', function (): void {
 
     it('proceeds without force because json implies destructive consent', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',

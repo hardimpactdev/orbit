@@ -14,6 +14,7 @@ use App\Http\Gateway\Responses\Tools\ToolShowResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
@@ -274,7 +275,7 @@ class ToolRemoveCommand extends Command
 
         if ($this->isInteractiveInput()) {
             $nodes = Node::query()
-                ->where('role', 'app')
+                ->whereIn('id', app(NodeRoleAssignments::class)->activeToolHostNodeIds())
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->pluck('name', 'name')

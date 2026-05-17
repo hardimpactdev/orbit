@@ -14,6 +14,7 @@ use App\Http\Gateway\Responses\Tools\ToolInstallResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
@@ -240,7 +241,7 @@ class ToolInstallCommand extends Command
 
         if ($this->isInteractiveInput()) {
             $nodes = Node::query()
-                ->where('role', 'app')
+                ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->pluck('name', 'name')

@@ -6,11 +6,13 @@ Verify gateway configuration against observed node reality for one node at a tim
 
 `doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`. The global command owns scope resolution, mode selection, authorization, result handling, and output selection. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
 
-The categories rendered for a run are derived from the target node's role:
+The categories rendered for a run are derived from the target node's active
+role assignments. The legacy node role field is only a compatibility shadow
+and does not by itself grant hosted-family probes:
 
-- `control` target: `Node`.
-- `gateway` target: `Node`.
-- `app` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
+- joined client or gateway target: `Node`.
+- `database` target: `Node`, `Tools`.
+- `app-development` or `app-production` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`.
 
 A separate `DNS/TLD` row (control/app targets) and `DNS` row (gateway target)
@@ -53,7 +55,7 @@ orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --jso
 
 ## What Happens
 
-`doctor` resolves a single-node scope, asks the gateway to authorize that scope and run the matching family probes for the target node's role, and reports the final diagnostic. The CLI is a thin gateway client; the gateway identifies the calling WireGuard peer and applies authorization. Without `--self` or `--node`, the target defaults to the calling peer's node as the gateway identifies it.
+`doctor` resolves a single-node scope, asks the gateway to authorize that scope and run the matching family probes for the target node's active roles, and reports the final diagnostic. The CLI is a thin gateway client; the gateway identifies the calling WireGuard peer and applies authorization. Without `--self` or `--node`, the target defaults to the calling peer's node as the gateway identifies it.
 
 The command supports four modes. Verify mode (no flag) compares only and does not mutate gateway configuration or node reality. Interactive mode (`--fix`) walks each finding and prompts for restore, adopt, skip, or details. Restore mode (`--restore`) bulk-applies gateway configuration to node reality for all supported findings. Adopt mode (`--adopt`) records compatible observed node reality into gateway configuration in bulk.
 
@@ -65,7 +67,7 @@ The gateway authorizes verify-mode runs for app-node peers. It denies `--fix`, `
 
 Human output renders a framed check-up panel for the single target node.
 While the command is running, the panel shows each category in the target's
-role-derived set and its current state. The final result uses the same
+active-role set and its current state. The final result uses the same
 category rows, marks healthy categories as `OK`, renders issue tables inline
 below the category that owns them, and ends with a summary line. Healthy
 output must still say what was checked. In `--fix` modes (interactive,

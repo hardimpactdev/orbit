@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -23,10 +24,21 @@ function grantFirewallRuleQueryAccess(Node $caller, Node $servingNode): void
     ]);
 }
 
+function assignFirewallRuleQueryAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
+}
+
 describe('FirewallRuleQuery', function (): void {
     it('normalizes firewall rule entities and sorts them by node then name', function (): void {
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app', 'platform' => 'ubuntu']);
+        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'control', 'platform' => 'ubuntu']);
         $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'gateway', 'platform' => 'ubuntu']);
+        assignFirewallRuleQueryAppHostRole($zNode);
 
         FirewallRule::factory()->create([
             'node_id' => $zNode->id,
@@ -67,8 +79,10 @@ describe('FirewallRuleQuery', function (): void {
 
     it('filters by visible eligible node and rejects unsupported node scopes', function (): void {
         $caller = Node::factory()->create(['role' => 'app', 'platform' => 'ubuntu']);
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app', 'platform' => 'ubuntu']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app', 'platform' => 'ubuntu']);
+        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'control', 'platform' => 'ubuntu']);
+        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'control', 'platform' => 'ubuntu']);
+        assignFirewallRuleQueryAppHostRole($visibleNode, 'app-production', []);
+        assignFirewallRuleQueryAppHostRole($hiddenNode);
         grantFirewallRuleQueryAccess($caller, $visibleNode);
 
         FirewallRule::factory()->create(['node_id' => $visibleNode->id, 'name' => 'visible']);
@@ -84,15 +98,18 @@ describe('FirewallRuleQuery', function (): void {
     })->throws(GatewayApiException::class, 'The selected node is not a firewall target.');
 
     it('omits rules for inactive unsupported or role-incompatible nodes', function (): void {
-        $eligibleNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $eligibleNode = Node::factory()->create(['name' => 'app-1', 'role' => 'control', 'platform' => 'ubuntu']);
         $controlNode = Node::factory()->create(['name' => 'control-1', 'role' => 'control', 'platform' => 'ubuntu']);
         $macNode = Node::factory()->create(['name' => 'mac-1', 'role' => 'app', 'platform' => 'macos']);
         $inactiveNode = Node::factory()->create(['name' => 'inactive-1', 'role' => 'app', 'platform' => 'ubuntu', 'status' => 'inactive']);
+        $legacyAppOnlyNode = Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app', 'platform' => 'ubuntu']);
+        assignFirewallRuleQueryAppHostRole($eligibleNode);
 
         FirewallRule::factory()->create(['node_id' => $eligibleNode->id, 'name' => 'visible']);
         FirewallRule::factory()->create(['node_id' => $controlNode->id, 'name' => 'control']);
         FirewallRule::factory()->create(['node_id' => $macNode->id, 'name' => 'mac']);
         FirewallRule::factory()->create(['node_id' => $inactiveNode->id, 'name' => 'inactive']);
+        FirewallRule::factory()->create(['node_id' => $legacyAppOnlyNode->id, 'name' => 'legacy']);
 
         $result = app(FirewallRuleQuery::class)->list();
 

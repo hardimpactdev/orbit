@@ -11,12 +11,14 @@ use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 
 final readonly class PhpRuntimeManager
 {
     public function __construct(
         private PhpRuntimeCatalog $catalog,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     public function view(?string $app = null, ?string $workspace = null, ?string $node = null, bool $live = false): PhpRuntimeOperation
@@ -455,20 +457,15 @@ final readonly class PhpRuntimeManager
         $defaultName = LocalNodeDefault::query()->value('default_node_name');
 
         if (is_string($defaultName) && $defaultName !== '') {
-            return $this->resolveNode($defaultName);
-        }
+            $defaultNode = $this->resolveNode($defaultName);
 
-        $localNode = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
-
-        if ($localNode instanceof Node && $localNode->role === 'app') {
-            return $localNode;
+            return $defaultNode instanceof Node && $this->nodeRoleAssignments->nodeHasActiveAppHostRole($defaultNode)
+                ? $defaultNode
+                : null;
         }
 
         $nodes = Node::query()
-            ->where('role', 'app')
+            ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
             ->where('status', 'active')
             ->limit(2)
             ->get();

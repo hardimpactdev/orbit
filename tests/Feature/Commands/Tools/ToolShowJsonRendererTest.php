@@ -44,7 +44,7 @@ function configureToolShowJsonControlGateway(): void
 
 function createToolShowJsonTool(string $nodeName = 'app-json-show-1'): NodeTool
 {
-    $node = Node::factory()->create(['name' => $nodeName, 'role' => 'app', 'status' => 'active']);
+    $node = createTestAppHostNode(['name' => $nodeName, 'role' => 'app', 'status' => 'active']);
 
     return NodeTool::factory()->create([
         'name' => 'redis',

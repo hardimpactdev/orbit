@@ -34,7 +34,7 @@ function createToolShowLocalNode(string $role = 'gateway'): Node
 describe('tool:show command contract', function (): void {
     it('shows a local gateway tool by node', function (): void {
         createToolShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         NodeTool::factory()->create([
             'name' => 'redis',
@@ -54,7 +54,7 @@ describe('tool:show command contract', function (): void {
 
     it('resolves the local target node from an app selector', function (): void {
         createToolShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
@@ -69,8 +69,8 @@ describe('tool:show command contract', function (): void {
 
     it('requires a target selector when the local gateway target is ambiguous', function (): void {
         createToolShowLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -82,7 +82,7 @@ describe('tool:show command contract', function (): void {
 
     it('requires an explicit target source in non-interactive JSON even when one app node is visible', function (): void {
         createToolShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
@@ -95,7 +95,7 @@ describe('tool:show command contract', function (): void {
 
     it('uses local node default as an explicit target source', function (): void {
         createToolShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-default', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-default', 'role' => 'app']);
         LocalNodeDefault::query()->create(['default_node_name' => 'app-default']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
@@ -108,7 +108,7 @@ describe('tool:show command contract', function (): void {
 
     it('returns not found when the selected local node has no matching tool row', function (): void {
         createToolShowLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -204,7 +204,7 @@ describe('tool:show command contract', function (): void {
         Process::preventStrayProcesses();
 
         createToolShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
         $toolCount = DB::table('node_tools')->count();

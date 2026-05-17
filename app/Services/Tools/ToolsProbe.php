@@ -10,6 +10,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class ToolsProbe
 {
@@ -147,7 +148,7 @@ final readonly class ToolsProbe
             ];
         }
 
-        if ($tool->node->status !== 'active' || ! in_array($tool->node->role, ['gateway', 'app'], true)) {
+        if ($tool->node->status !== 'active' || ! $this->isToolNode($tool->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -164,6 +165,12 @@ final readonly class ToolsProbe
         }
 
         return [];
+    }
+
+    private function isToolNode(Node $node): bool
+    {
+        return $node->role === 'gateway'
+            || app(NodeRoleAssignments::class)->nodeHasActiveToolHostRole($node);
     }
 
     /**

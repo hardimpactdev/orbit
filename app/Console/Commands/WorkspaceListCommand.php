@@ -11,6 +11,7 @@ use App\Http\Gateway\Responses\Workspaces\WorkspaceListResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -93,7 +94,7 @@ class WorkspaceListCommand extends Command
             ]);
         }
 
-        if ($node !== null && ! Node::query()->where('name', $node)->where('role', 'app')->exists()) {
+        if ($node !== null && ! Node::query()->where('name', $node)->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())->exists()) {
             throw new GatewayApiException("Unknown node: '{$node}'.", 'validation_failed', [
                 'field' => 'node',
                 'value' => $node,

@@ -105,7 +105,7 @@ class DoctorCommand extends Command implements Loggable
         }
 
         if ($target instanceof Node) {
-            $this->activityFamilies = $families === [] ? $runner->categoriesForRole((string) $target->role) : $families;
+            $this->activityFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
 
             $failure = $validator->validate($families, $runner, $target);
 
@@ -113,7 +113,7 @@ class DoctorCommand extends Command implements Loggable
                 return $this->failCommand($failure->code, $failure->message, $failure->meta);
             }
 
-            $renderedFamilies = $families === [] ? $runner->categoriesForRole((string) $target->role) : $families;
+            $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
 
             if (! $this->wantsJson()) {
                 $this->renderDoctoringPanel($target, $renderedFamilies);

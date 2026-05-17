@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class ToolInstaller
 {
@@ -15,6 +16,7 @@ final readonly class ToolInstaller
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
         private RemoteShell $remoteShell,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     /**
@@ -124,7 +126,7 @@ final readonly class ToolInstaller
 
             $resolved = Node::query()
                 ->where('name', $node)
-                ->where('role', 'app')
+                ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
                 ->where('status', 'active')
                 ->first();
 

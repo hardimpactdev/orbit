@@ -7,6 +7,7 @@ use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,6 +31,16 @@ function createScheduleReadLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
+    ]);
+}
+
+function assignScheduleReadAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
     ]);
 }
 
@@ -137,7 +148,8 @@ it('exposes schedule reads over the authenticated gateway API', function (): voi
         'role' => 'control',
         'wireguard_address' => '10.6.0.40',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'control']);
+    assignScheduleReadAppHostRole($node);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $node->id,
@@ -167,6 +179,31 @@ it('exposes schedule reads over the authenticated gateway API', function (): voi
     expect($entries[1]->event)->toBe('api:GET /schedules/{name}');
     expect($entries[1]->subject_type)->toBe(Schedule::class);
     expect($entries[1]->properties->get('name'))->toBe('laravel-scheduler');
+});
+
+it('hides legacy app-only schedule nodes from non-gateway schedule reads', function (): void {
+    $caller = Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'wireguard_address' => '10.6.0.42',
+    ]);
+    $node = Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app']);
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $node->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+        'schedule_key' => 'app:docs:laravel-scheduler',
+    ]);
+
+    $response = $this->call('GET', '/api/schedules', ['app' => 'docs'], [], [], ['REMOTE_ADDR' => '10.6.0.42']);
+
+    $response->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed');
 });
 
 it('rejects schedule API reads from unauthorized callers', function (): void {

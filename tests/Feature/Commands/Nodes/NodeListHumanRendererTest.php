@@ -230,16 +230,16 @@ describe('node:list human renderer contract', function (): void {
     });
 
     it('renders healthy doctor summary when --doctor finds no issues', function (): void {
-        DB::table('nodes')->insert(nodeListHumanRow(['name' => 'healthy-app']));
+        $node = createTestAppHostNode(nodeListHumanRow(['name' => 'healthy-app']));
         DB::table('wireguard_peers')->insert([
-            'node_id' => DB::table('nodes')->where('name', 'healthy-app')->value('id'),
+            'node_id' => $node->id,
             'public_key' => 'healthy-public-key',
             'private_key' => 'healthy-private-key',
             'allowed_ips' => '10.6.0.7/32',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        app(DevelopmentDnsMappingEnactor::class)->converge(Node::query()->where('name', 'healthy-app')->firstOrFail());
+        app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,
@@ -253,10 +253,12 @@ describe('node:list human renderer contract', function (): void {
     });
 
     it('renders doctor issue summary without failing the list command', function (): void {
-        DB::table('nodes')->insert(nodeListHumanRow([
+        createTestAppHostNode(nodeListHumanRow([
             'name' => 'incomplete-app',
+            'environment' => 'production',
+            'tld' => null,
             'wireguard_address' => null,
-        ]));
+        ]), 'app-production');
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,

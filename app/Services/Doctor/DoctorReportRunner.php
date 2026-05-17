@@ -6,6 +6,7 @@ namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -18,6 +19,7 @@ use App\Services\Apps\AppsProbe;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -39,6 +41,8 @@ final readonly class DoctorReportRunner
 
     private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
 
+    private const array DATABASE_CATEGORIES = ['node', 'tool'];
+
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
@@ -54,6 +58,7 @@ final readonly class DoctorReportRunner
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
         private WorkspacesFixer $workspacesFixer,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     /**
@@ -75,6 +80,26 @@ final readonly class DoctorReportRunner
             'app' => self::APP_CATEGORIES,
             default => [],
         };
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function categoriesForNode(Node $node): array
+    {
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Gateway->value) || $node->role === 'gateway') {
+            return self::GATEWAY_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveAppHostRole($node)) {
+            return self::APP_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
+            return self::DATABASE_CATEGORIES;
+        }
+
+        return self::CONTROL_CATEGORIES;
     }
 
     /**
@@ -109,7 +134,7 @@ final readonly class DoctorReportRunner
      */
     public function probe(Node $node, array $families = []): array
     {
-        $roleCategories = $this->categoriesForRole($node->role ?? '');
+        $roleCategories = $this->categoriesForNode($node);
         $selectedFamilies = $families === [] ? $roleCategories : array_values(array_intersect($families, $roleCategories));
         $issues = [];
 
@@ -163,7 +188,7 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            if ($node->status === 'active' && in_array($node->role, ['gateway', 'app'], true)) {
+            if ($node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
                 $snapshot = $this->proxyRouteProbe->introspectNode($node);
                 $dbDomains = ProxyRoute::query()->where('node_id', $node->id)->pluck('domain')->all();
 
@@ -393,7 +418,7 @@ final readonly class DoctorReportRunner
     {
         $actions = [];
 
-        if (in_array('proxy', $families, true) && $node->status === 'active' && in_array($node->role, ['gateway', 'app'], true)) {
+        if (in_array('proxy', $families, true) && $node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
             $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
 
             foreach ($this->proxyRouteAdopter->adopt($node, $snapshot) as $result) {
@@ -410,7 +435,7 @@ final readonly class DoctorReportRunner
             }
         }
 
-        if (in_array('firewall_rule', $families, true) && $node->status === 'active' && $node->platform === 'ubuntu' && in_array($node->role, ['gateway', 'app'], true)) {
+        if (in_array('firewall_rule', $families, true) && $node->status === 'active' && $node->platform === 'ubuntu' && $this->canServeGatewayOrAppHost($node)) {
             $snapshot = $this->firewallRuleProbe->introspectNode($node);
 
             foreach ($this->firewallRuleProbe->adopt($node, $snapshot) as $result) {
@@ -428,6 +453,13 @@ final readonly class DoctorReportRunner
         }
 
         return $actions;
+    }
+
+    private function canServeGatewayOrAppHost(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Gateway->value)
+            || $node->role === 'gateway'
+            || $this->nodeRoleAssignments->nodeHasActiveAppHostRole($node);
     }
 
     /**

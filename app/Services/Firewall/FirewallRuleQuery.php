@@ -7,6 +7,7 @@ namespace App\Services\Firewall;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -101,7 +102,11 @@ class FirewallRuleQuery
         return $query
             ->where('status', 'active')
             ->where('platform', 'ubuntu')
-            ->whereIn('role', ['gateway', 'app']);
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+            });
     }
 
     /**
@@ -121,7 +126,11 @@ class FirewallRuleQuery
             ->where('node_access.consumer_node_id', $caller->id)
             ->where('nodes.status', 'active')
             ->where('nodes.platform', 'ubuntu')
-            ->whereIn('nodes.role', ['gateway', 'app'])
+            ->where(function ($query): void {
+                $query
+                    ->where('nodes.role', 'gateway')
+                    ->orWhereIn('nodes.id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+            })
             ->pluck('nodes.id')
             ->all();
     }

@@ -10,6 +10,7 @@ use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -35,7 +36,7 @@ function createToolStartLocalNode(string $role = 'gateway'): Node
 describe('tool:start command contract', function (): void {
     it('updates gateway intent and starts the managed tool on the selected node', function (): void {
         createToolStartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -60,7 +61,7 @@ describe('tool:start command contract', function (): void {
 
     it('renders the documented human progress tree', function (): void {
         createToolStartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -85,7 +86,7 @@ describe('tool:start command contract', function (): void {
 
     it('rejects tools without a start action before changing intent', function (): void {
         createToolStartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
@@ -350,10 +351,16 @@ function createToolStartTargetWithApp(string $nodeName, string $appName, ?string
 {
     $node = Node::factory()->create([
         'name' => $nodeName,
-        'role' => 'app',
+        'role' => 'control',
         'status' => 'active',
         'tld' => $tld,
     ]);
+
+    assignToolStartAppHostRole(
+        $node,
+        $domain === null ? 'app-development' : 'app-production',
+        $domain === null ? ['tld' => $tld ?? 'test'] : [],
+    );
 
     App::factory()->create([
         'name' => $appName,
@@ -368,6 +375,16 @@ function createToolStartTargetWithApp(string $nodeName, string $appName, ?string
     ]);
 
     return $node;
+}
+
+function assignToolStartAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 /**

@@ -41,7 +41,23 @@ beforeEach(function (): void {
             'updated_at' => now(),
         ],
     ]);
+
+    assignUpdateAllHumanAppHostRole('beast');
 });
+
+function assignUpdateAllHumanAppHostRole(string $nodeName, string $role = 'app-development'): void
+{
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', $nodeName)->value('id'),
+        'role' => $role,
+        'status' => 'active',
+        'settings' => json_encode($role === 'app-development' ? ['tld' => 'test'] : [], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
 
 it('renders progress tree shape', function (): void {
     Process::fake([
@@ -121,6 +137,7 @@ it('aligns update stages by the longest node name', function (): void {
             'updated_at' => now(),
         ],
     ]);
+    assignUpdateAllHumanAppHostRole('workspace-alpha', 'app-production');
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),

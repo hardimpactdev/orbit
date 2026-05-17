@@ -38,6 +38,13 @@ function nodeDefaultControlContractRow(array $overrides = []): array
         'status' => 'active',
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
+        'roles' => [
+            [
+                'role' => 'app-development',
+                'status' => 'active',
+                'settings' => ['tld' => 'test'],
+            ],
+        ],
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);

@@ -11,6 +11,7 @@ use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\OrbitUpdater;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -146,7 +147,7 @@ final class UpdateAllController implements Loggable
     {
         $nodes = Node::query()
             ->where('status', 'active')
-            ->where('role', 'app')
+            ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
             ->orderBy('name')
             ->get();
 

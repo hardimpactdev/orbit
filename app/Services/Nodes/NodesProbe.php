@@ -18,6 +18,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDefinition;
 use App\Services\Nodes\Roles\NodeRoleRegistry;
@@ -617,7 +618,7 @@ final readonly class NodesProbe
      */
     private function checkSshReachability(Node $node): array
     {
-        if ($node->role !== 'app' || $node->status !== 'active') {
+        if ($node->status !== 'active' || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
             return [];
         }
 
@@ -671,7 +672,7 @@ final readonly class NodesProbe
      */
     private function checkAppRuntime(Node $node): array
     {
-        if ($node->role !== 'app' || $node->status !== 'active') {
+        if ($node->status !== 'active' || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
             return [];
         }
 

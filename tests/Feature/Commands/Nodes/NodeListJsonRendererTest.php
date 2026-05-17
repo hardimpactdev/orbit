@@ -298,10 +298,12 @@ describe('node:list JSON renderer contract', function (): void {
     });
 
     it('attaches doctor meta when --doctor is present and issues are found', function (): void {
-        DB::table('nodes')->insert(nodeListJsonRow([
+        createTestAppHostNode(nodeListJsonRow([
             'name' => 'incomplete-app',
+            'environment' => 'production',
+            'tld' => null,
             'wireguard_address' => null,
-        ]));
+        ]), 'app-production');
 
         $exitCode = Artisan::call('node:list', [
             '--json' => true,
@@ -326,16 +328,16 @@ describe('node:list JSON renderer contract', function (): void {
     });
 
     it('attaches healthy doctor meta without failures when --doctor finds no issues', function (): void {
-        DB::table('nodes')->insert(nodeListJsonRow(['name' => 'healthy-app']));
+        $node = createTestAppHostNode(nodeListJsonRow(['name' => 'healthy-app']));
         DB::table('wireguard_peers')->insert([
-            'node_id' => DB::table('nodes')->where('name', 'healthy-app')->value('id'),
+            'node_id' => $node->id,
             'public_key' => 'healthy-public-key',
             'private_key' => 'healthy-private-key',
             'allowed_ips' => '10.6.0.7/32',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        app(DevelopmentDnsMappingEnactor::class)->converge(Node::query()->where('name', 'healthy-app')->firstOrFail());
+        app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
         $exitCode = Artisan::call('node:list', [
             '--json' => true,

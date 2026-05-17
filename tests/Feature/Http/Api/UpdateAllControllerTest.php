@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\FakeInvokedProcess;
@@ -14,6 +15,24 @@ use Illuminate\Support\Facades\Process;
 uses(RefreshDatabase::class);
 
 const UPDATE_ALL_CALLER_WG_IP = '10.6.0.99';
+
+function createUpdateAllAppHostNode(array $attributes, string $role = 'app-development'): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'control',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+    ]);
+
+    return $node;
+}
 
 beforeEach(function (): void {
     Node::factory()->create([
@@ -66,13 +85,11 @@ it('returns local_update_failed when git pull fails', function (): void {
     $response->assertJsonPath('error.meta.failed_step', 'local_checkout');
 });
 
-it('includes app nodes in updates and uses RemoteShell', function (): void {
-    Node::factory()->create([
+it('includes active app host nodes in updates and uses RemoteShell', function (): void {
+    createUpdateAllAppHostNode([
         'name' => 'beast',
-        'role' => 'app',
         'host' => 'beast',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
     ]);
 
     Process::fake([
@@ -114,20 +131,16 @@ it('includes app nodes in updates and uses RemoteShell', function (): void {
 });
 
 it('updates app nodes in parallel after gateway checkout succeeds', function (): void {
-    Node::factory()->create([
+    createUpdateAllAppHostNode([
         'name' => 'beast',
-        'role' => 'app',
         'host' => 'beast',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
     ]);
-    Node::factory()->create([
+    createUpdateAllAppHostNode([
         'name' => 'sidecar',
-        'role' => 'app',
         'host' => 'sidecar',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
-    ]);
+    ], 'app-production');
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -173,20 +186,16 @@ it('updates app nodes in parallel after gateway checkout succeeds', function ():
 });
 
 it('starts app node updates concurrently in the streamed gateway path without pcntl workers', function (): void {
-    Node::factory()->create([
+    createUpdateAllAppHostNode([
         'name' => 'beast',
-        'role' => 'app',
         'host' => 'beast',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
     ]);
-    Node::factory()->create([
+    createUpdateAllAppHostNode([
         'name' => 'main1',
-        'role' => 'app',
         'host' => 'main1',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
-    ]);
+    ], 'app-production');
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -260,6 +269,13 @@ it('excludes control nodes from remote updates', function (): void {
         'orbit_path' => '/Users/nckrtl/orbit',
         'status' => 'active',
     ]);
+    Node::factory()->create([
+        'name' => 'legacy-app-only',
+        'role' => 'app',
+        'host' => 'legacy-app-only',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+    ]);
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -277,13 +293,11 @@ it('excludes control nodes from remote updates', function (): void {
     expect($shell->nodes)->toHaveCount(0);
 });
 
-it('reports remote_update_failed when an app node fails', function (): void {
-    Node::factory()->create([
+it('reports remote_update_failed when an app host node fails', function (): void {
+    createUpdateAllAppHostNode([
         'name' => 'beast',
-        'role' => 'app',
         'host' => 'beast',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
     ]);
 
     Process::fake([
@@ -311,12 +325,10 @@ it('rejects unauthenticated requests', function (): void {
 });
 
 it('streams progress events for gateway-owned update targets', function (): void {
-    Node::factory()->create([
+    createUpdateAllAppHostNode([
         'name' => 'beast',
-        'role' => 'app',
         'host' => 'beast',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
     ]);
 
     Process::fake([

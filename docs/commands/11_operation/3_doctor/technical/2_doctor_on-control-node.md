@@ -25,24 +25,25 @@ Control peers do not probe fleet reality directly. The CLI is a client of the ga
 `doctor` always targets one node per run. When the calling peer is identified as a control peer, the default target is that peer's identified node (equivalent to `--self`). An operator may target a different node with `--node=<other>`; multi-node scopes are not supported.
 
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
-- Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's role to derive the rendered category set.
+- Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's active roles to derive the rendered category set.
 - Reject `--self` combined with `--node` before forwarding.
 - The CLI does not infer gateway-local or app-local defaults.
 - App and workspace filters are forwarded only when explicit options are present.
 
-## Category set by target role
+## Category Set by Target Roles
 
-The rendered category set is derived from the *target* node's role, not the
-calling peer's role. The CLI forwards the request, the gateway authorizes
+The rendered category set is derived from the *target* node's active roles, not
+the calling peer's role. The CLI forwards the request, the gateway authorizes
 and probes, and the renderer shows only categories that apply to the target.
 
-| Target role | Categories |
+| Target role assignment state | Categories |
 | --- | --- |
-| `control` (default or `--self`) | `Node` |
-| `gateway` (via `--node=<gateway>`) | `Node` |
-| `app` (via `--node=<app-node>`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| joined client with no active hosted role (default or `--self`) | `Node` |
+| active `gateway` role (via `--node=<gateway>`) | `Node` |
+| active `database` role only | `Node`, `Tools` |
+| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
-A narrow `--family` filter intersects with the target role's set; families
+A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
@@ -98,5 +99,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target role, `--family` rejection for families outside the target role's set, and `--node=<other>` target-role scoping for app-family probes. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, `--family` rejection for families outside the target active-role set, and `--node=<other>` role-assignment scoping for app-family probes. |
 | `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Control-peer forwarding through the typed gateway request, mutually exclusive flag rejection, unsupported family rejection, app-node write-mode denial, verify request shape, and rendered panel structure. |

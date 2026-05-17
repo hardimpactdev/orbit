@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
 
@@ -164,7 +165,7 @@ final readonly class SchedulesProbe
             ];
         }
 
-        if ($node->status !== 'active' || ! in_array($node->role, ['gateway', 'app'], true)) {
+        if ($node->status !== 'active' || ! $this->canRunSchedules($node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -182,6 +183,12 @@ final readonly class SchedulesProbe
         }
 
         return [];
+    }
+
+    private function canRunSchedules(Node $node): bool
+    {
+        return $node->role === 'gateway'
+            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
     }
 
     /**

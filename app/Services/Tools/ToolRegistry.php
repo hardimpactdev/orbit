@@ -7,11 +7,16 @@ namespace App\Services\Tools;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ToolRegistry
 {
+    public function __construct(
+        private NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     /**
      * @return Collection<int, NodeTool>
      */
@@ -21,7 +26,7 @@ final readonly class ToolRegistry
 
         return NodeTool::query()
             ->with('node')
-            ->whereHas('node', fn (Builder $query): Builder => $this->visibleAppNodeQuery($query))
+            ->whereHas('node', fn (Builder $query): Builder => $this->visibleToolNodeQuery($query))
             ->when($targetNode instanceof Node, fn (Builder $query): Builder => $query->where('node_id', $targetNode->id))
             ->get()
             ->sort(fn (NodeTool $first, NodeTool $second): int => [
@@ -129,7 +134,7 @@ final readonly class ToolRegistry
 
         return Node::query()
             ->where('name', $node)
-            ->where('role', 'app')
+            ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
             ->where('status', 'active')
             ->first();
     }
@@ -157,7 +162,7 @@ final readonly class ToolRegistry
                     ->where('name', $appName)
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
                         $query
-                            ->where('role', 'app')
+                            ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
                             ->where('status', 'active')
                             ->where('tld', $nodeTld);
                     })
@@ -169,17 +174,17 @@ final readonly class ToolRegistry
             return null;
         }
 
-        if ($model->node->role !== 'app' || $model->node->status !== 'active') {
+        if ($model->node->status !== 'active' || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($model->node)) {
             return null;
         }
 
         return $model->node;
     }
 
-    private function visibleAppNodeQuery(Builder $query): Builder
+    private function visibleToolNodeQuery(Builder $query): Builder
     {
         return $query
-            ->where('role', 'app')
+            ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
             ->where('status', 'active');
     }
 }

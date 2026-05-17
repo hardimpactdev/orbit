@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\LocalNodeDefault;
@@ -10,8 +11,13 @@ use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Key;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
 
 it('prompts for missing name and target app node', function (): void {
     Node::factory()->create([
@@ -19,9 +25,8 @@ it('prompts for missing name and target app node', function (): void {
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -45,17 +50,15 @@ it('preselects the local default app node when prompting for the target node', f
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'environment' => 'development',
         'tld' => 'test',
         'status' => 'active',
     ]);
 
-    $defaultNode = Node::factory()->create([
+    $defaultNode = createTestAppHostNode([
         'name' => 'app-2',
-        'role' => 'app',
         'environment' => 'development',
         'tld' => 'test',
         'status' => 'active',
@@ -84,9 +87,8 @@ it('validates prompted app name availability before asking for repository input'
         'role' => 'gateway',
     ]);
 
-    $targetNode = Node::factory()->create([
+    $targetNode = createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -114,9 +116,8 @@ it('prompts for an optional repository and canonicalizes github shorthand', func
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 

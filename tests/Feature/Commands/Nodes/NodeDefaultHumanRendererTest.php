@@ -119,7 +119,7 @@ function nodeDefaultHumanIdentityEnvelope(): array
 
 describe('node:default human renderer contract', function (): void {
     it('selects human renderer when --json is absent', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'app-1',
             'created_at' => now(),
@@ -135,7 +135,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders progress tree for set sub-action with tree characters', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
 
         \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
             ->expectsOutputToContain('┌  Set Default Node')
@@ -146,7 +146,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('does not render trailing period on set tree footer', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
 
         $exitCode = Artisan::call('node:default', ['name' => 'app-1']);
         $output = Artisan::output();
@@ -157,7 +157,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('does not render progress tree for show sub-action', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'app-1',
             'created_at' => now(),
@@ -174,7 +174,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('does not render progress tree for clear sub-action', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'app-1',
             'created_at' => now(),
@@ -191,7 +191,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders show success prose with default', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'app-1',
             'created_at' => now(),
@@ -204,7 +204,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders show empty-state prose when no default is set', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
 
         \Pest\Laravel\artisan('node:default', ['--no-interaction' => true])
             ->expectsOutputToContain('No default development app node is set.')
@@ -213,7 +213,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders set confirmation prose', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
 
         \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
             ->expectsOutputToContain('Default development app node set to app-1')
@@ -221,7 +221,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders clear-with-default prose', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'app-1',
             'created_at' => now(),
@@ -234,7 +234,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders clear-no-default prose', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
 
         \Pest\Laravel\artisan('node:default', ['--clear' => true])
             ->expectsOutputToContain('No default development app node was set.')
@@ -242,7 +242,7 @@ describe('node:default human renderer contract', function (): void {
     });
 
     it('renders mutually exclusive input prose error', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow());
+        createTestAppHostNode(nodeDefaultHumanRow());
 
         \Pest\Laravel\artisan('node:default', ['name' => 'app-1', '--clear' => true])
             ->expectsOutputToContain('Cannot provide both a node name and --clear.')

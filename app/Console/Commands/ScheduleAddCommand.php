@@ -16,9 +16,11 @@ use App\Http\Gateway\Responses\Schedules\ScheduleAddResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Nodes\CallerRoleResolver;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 use function Laravel\Prompts\select;
@@ -311,7 +313,15 @@ class ScheduleAddCommand extends Command
                 : $this->failValidation('app', "App '{$app}' not found.", ['value' => $app]);
         }
 
-        $target = Node::query()->with('schedulerState')->where('name', $node)->whereIn('role', ['gateway', 'app'])->first();
+        $target = Node::query()
+            ->with('schedulerState')
+            ->where('name', $node)
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+            })
+            ->first();
 
         return $target instanceof Node
             ? $target

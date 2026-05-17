@@ -44,7 +44,7 @@ function configureToolRestartJsonControlGateway(): void
 describe('tool:restart JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the canonical tool entity', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -97,7 +97,7 @@ describe('tool:restart JSON renderer', function (): void {
 
     it('renders invalid tool names as validation_failed before side effects', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolRestartJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -120,7 +120,7 @@ describe('tool:restart JSON renderer', function (): void {
 
     it('requires a target source in non-interactive JSON mode before side effects', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
         $shell = new ToolRestartJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -183,7 +183,7 @@ describe('tool:restart JSON renderer', function (): void {
 
     it('preserves remote action exit code and stderr meta from local lifecycle failures', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
         app()->instance(RemoteShell::class, new ToolRestartJsonRecordingShell(exitCode: 7, stderr: 'systemctl restart caddy failed'));
 

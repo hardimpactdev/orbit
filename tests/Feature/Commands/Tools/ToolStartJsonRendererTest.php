@@ -43,7 +43,7 @@ function configureToolStartJsonControlGateway(): void
 
 function createToolStartJsonTool(string $nodeName = 'app-json-start-1', string $tool = 'caddy'): NodeTool
 {
-    $node = Node::factory()->create(['name' => $nodeName, 'role' => 'app', 'status' => 'active']);
+    $node = createTestAppHostNode(['name' => $nodeName, 'role' => 'app', 'status' => 'active']);
 
     return NodeTool::factory()->create([
         'name' => $tool,
@@ -104,7 +104,7 @@ describe('tool:start JSON renderer', function (): void {
 
     it('renders invalid tool names as validation failures before side effects', function (): void {
         createToolStartJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-start-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-start-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolStartJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 

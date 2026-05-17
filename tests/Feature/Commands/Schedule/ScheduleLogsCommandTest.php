@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Schedules\ShowScheduleLogsRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,9 +33,27 @@ function createScheduleLogsLocalNode(string $role = 'gateway'): Node
     ]);
 }
 
+function createScheduleLogsAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'app',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
+}
+
 it('reads the latest schedule run logs with independent line limiting', function (): void {
     createScheduleLogsLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleLogsAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -71,7 +90,7 @@ it('reads the latest schedule run logs with independent line limiting', function
 
 it('reads a selected schedule run id', function (): void {
     createScheduleLogsLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = createScheduleLogsAppHostNode();
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -104,7 +123,7 @@ it('reads a selected schedule run id', function (): void {
 
 it('returns run not found for missing run history', function (): void {
     createScheduleLogsLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = createScheduleLogsAppHostNode();
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -179,7 +198,7 @@ it('exposes schedule logs over the authenticated gateway API without external pr
         'role' => 'control',
         'wireguard_address' => '10.6.0.80',
     ]);
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = createScheduleLogsAppHostNode();
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $node->id,

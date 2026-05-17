@@ -45,7 +45,7 @@ function configureToolInstallJsonControlGateway(): void
 describe('tool:install JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the documented tool entity', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
         app()->instance(RemoteShell::class, new ToolInstallJsonRecordingShell);
 
         $exitCode = Artisan::call('tool:install', [
@@ -76,7 +76,7 @@ describe('tool:install JSON renderer', function (): void {
 
     it('renders unsupported status as validation_failed before side effects', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -101,7 +101,7 @@ describe('tool:install JSON renderer', function (): void {
 
     it('rejects expected-version as an unknown option before side effects', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -118,7 +118,7 @@ describe('tool:install JSON renderer', function (): void {
 
     it('requires a target source in non-interactive JSON mode before side effects', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 

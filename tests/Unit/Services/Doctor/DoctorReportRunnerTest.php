@@ -19,9 +19,28 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+function createDoctorRunnerAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
+}
+
 describe('DoctorReportRunner', function (): void {
     it('restores workspace PHP-FPM pool mismatches from gateway intent', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createDoctorRunnerAppHostNode();
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
@@ -62,7 +81,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('suppresses resolved issues when a supported restore completes', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createDoctorRunnerAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         Schedule::factory()->forApp($app)->create();
         $shell = new DoctorReportRunnerRemoteShell([
@@ -94,7 +113,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('installs missing tools through restore mode family dispatch', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createDoctorRunnerAppHostNode();
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
@@ -123,7 +142,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('suppresses resolved tool version issues when a safe update restore completes', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createDoctorRunnerAppHostNode();
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'composer',
@@ -156,7 +175,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('keeps the issue visible and records a failed action when a restore throws', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createDoctorRunnerAppHostNode();
         $app = App::factory()->create(['node_id' => $node->id]);
         Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
@@ -213,6 +232,10 @@ describe('DoctorReportRunner', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);
 
@@ -252,6 +275,10 @@ describe('DoctorReportRunner', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);
 

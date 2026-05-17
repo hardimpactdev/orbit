@@ -32,7 +32,7 @@ function createToolRestartLocalNode(string $role = 'gateway'): Node
 describe('tool:restart command contract', function (): void {
     it('restarts the managed tool without changing gateway intent', function (): void {
         createToolRestartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -59,7 +59,7 @@ describe('tool:restart command contract', function (): void {
 
     it('falls back to stop then start when no native restart command exists', function (): void {
         createToolRestartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
@@ -86,7 +86,7 @@ describe('tool:restart command contract', function (): void {
 
     it('renders the documented human progress tree and concise success prose', function (): void {
         createToolRestartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -115,7 +115,7 @@ describe('tool:restart command contract', function (): void {
 
     it('rejects tools without a restart path before changing intent', function (): void {
         createToolRestartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
@@ -139,7 +139,7 @@ describe('tool:restart command contract', function (): void {
 
     it('preserves gateway configuration and diagnostics when restart application fails', function (): void {
         createToolRestartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -165,7 +165,7 @@ describe('tool:restart command contract', function (): void {
 
     it('shows remote action diagnostics and log and doctor recovery guidance in human mode', function (): void {
         createToolRestartLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',

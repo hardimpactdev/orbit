@@ -11,6 +11,7 @@ use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class WorkspacesProbe
 {
@@ -253,8 +254,8 @@ BASH;
 
         if (
             ! $workspace->app->node instanceof Node
-            || $workspace->app->node->role !== 'app'
             || $workspace->app->node->status !== 'active'
+            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($workspace->app->node)
         ) {
             return [
                 new DriftEntry(

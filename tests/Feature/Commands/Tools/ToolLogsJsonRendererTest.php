@@ -31,7 +31,7 @@ function createToolLogsJsonLocalNode(string $role = 'gateway'): Node
 
 function createToolLogsJsonManagedTool(string $nodeName = 'app-json-1', string $tool = 'supervisor'): Node
 {
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => $nodeName,
         'role' => 'app',
         'status' => 'active',

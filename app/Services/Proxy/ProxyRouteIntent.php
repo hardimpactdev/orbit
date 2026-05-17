@@ -7,6 +7,7 @@ namespace App\Services\Proxy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Facades\DB;
 
 class ProxyRouteIntent
@@ -123,7 +124,7 @@ class ProxyRouteIntent
             ->where('status', 'active')
             ->first();
 
-        if (! $node instanceof Node || ! in_array($node->role, ['app', 'gateway'], true)) {
+        if (! $node instanceof Node || ! $this->canServeProxyRoutes($node)) {
             throw new GatewayApiException("Unknown node: '{$nodeName}'.", 'validation_failed', [
                 'field' => 'node',
                 'value' => $nodeName,
@@ -133,6 +134,12 @@ class ProxyRouteIntent
         $this->authorizeServingNode($node, $caller);
 
         return $node;
+    }
+
+    private function canServeProxyRoutes(Node $node): bool
+    {
+        return $node->role === 'gateway'
+            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
     }
 
     private function authorizeServingNode(Node $node, ?Node $caller): void

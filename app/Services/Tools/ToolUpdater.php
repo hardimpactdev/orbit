@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class ToolUpdater
 {
@@ -15,6 +16,7 @@ final readonly class ToolUpdater
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
         private RemoteShell $remoteShell,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     /**
@@ -87,7 +89,7 @@ final readonly class ToolUpdater
         if ($node !== null) {
             $nodeModel = Node::query()
                 ->where('name', $node)
-                ->where('role', 'app')
+                ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
                 ->where('status', 'active')
                 ->first();
 

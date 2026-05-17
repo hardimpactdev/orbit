@@ -30,7 +30,7 @@ function createToolCredentialsLocalNode(string $role = 'gateway'): Node
 describe('tool:credentials command contract', function (): void {
     it('reads stored credentials for a credential-bearing tool', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -63,7 +63,7 @@ describe('tool:credentials command contract', function (): void {
 
     it('reads stored credentials for opencode-server', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -98,7 +98,7 @@ describe('tool:credentials command contract', function (): void {
 
     it('rejects tools without credential support', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -118,7 +118,7 @@ describe('tool:credentials command contract', function (): void {
 
     it('rejects polyscope-server credential requests', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'polyscope-server',
@@ -138,7 +138,7 @@ describe('tool:credentials command contract', function (): void {
 
     it('fails when no credentials are stored', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',

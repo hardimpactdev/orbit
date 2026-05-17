@@ -33,7 +33,7 @@ function createToolUpdateLocalNode(string $role = 'gateway'): Node
 describe('tool:update command contract', function (): void {
     it('updates a managed tool on a node', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -59,7 +59,7 @@ describe('tool:update command contract', function (): void {
 
     it('updates polyscope-server through its standalone updater', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'polyscope-server',
@@ -83,7 +83,7 @@ describe('tool:update command contract', function (): void {
 
     it('updates opencode-server through its native upgrade command', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -108,7 +108,7 @@ describe('tool:update command contract', function (): void {
 
     it('rejects tools without an update action', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
@@ -131,7 +131,7 @@ describe('tool:update command contract', function (): void {
 
     it('updates expected version when specified', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -151,7 +151,7 @@ describe('tool:update command contract', function (): void {
 
     it('keeps requested version intent when remote update fails', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -203,7 +203,7 @@ describe('tool:update command contract', function (): void {
 
     it('bulk updates skip tools without a latest supported version', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',

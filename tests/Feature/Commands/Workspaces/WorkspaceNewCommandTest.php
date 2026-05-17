@@ -53,6 +53,17 @@ beforeEach(function (): void {
         ],
     ]);
 
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', 'app-1')->value('id'),
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => json_encode(['tld' => 'beast'], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     DB::table('apps')->insert([
         [
             'name' => 'demo',

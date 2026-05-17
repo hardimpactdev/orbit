@@ -17,6 +17,7 @@ use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\App;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
@@ -375,7 +376,7 @@ class ToolRestartCommand extends Command
 
         if ($this->isInteractiveInput()) {
             $nodes = Node::query()
-                ->where('role', 'app')
+                ->whereIn('id', app(NodeRoleAssignments::class)->activeToolHostNodeIds())
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->pluck('name', 'name')
@@ -416,7 +417,7 @@ class ToolRestartCommand extends Command
                     ->where('name', $appName)
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
                         $query
-                            ->where('role', 'app')
+                            ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
                             ->where('status', 'active')
                             ->where('tld', $nodeTld);
                     })
@@ -428,7 +429,7 @@ class ToolRestartCommand extends Command
             return null;
         }
 
-        if ($model->node->role !== 'app' || $model->node->status !== 'active') {
+        if ($model->node->status !== 'active' || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($model->node)) {
             return null;
         }
 

@@ -32,7 +32,7 @@ function createToolInstallLocalNode(string $role = 'gateway'): Node
 describe('tool:install command contract', function (): void {
     it('installs a managed tool on a node', function (): void {
         createToolInstallLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -54,7 +54,7 @@ describe('tool:install command contract', function (): void {
 
     it('renders the documented human progress tree', function (): void {
         createToolInstallLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         app()->instance(RemoteShell::class, new ToolInstallRecordingShell);
 
         $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1']);
@@ -74,7 +74,7 @@ describe('tool:install command contract', function (): void {
 
     it('rejects tools without an install action', function (): void {
         createToolInstallLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -92,7 +92,7 @@ describe('tool:install command contract', function (): void {
 
     it('rejects invalid status values', function (): void {
         createToolInstallLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -112,7 +112,7 @@ describe('tool:install command contract', function (): void {
 
     it('generates and stores credentials for credential-bearing tools', function (): void {
         createToolInstallLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallCredentialRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -175,7 +175,7 @@ describe('tool:install command contract', function (): void {
 
     it('requires an explicit target source in non-interactive mode', function (): void {
         createToolInstallLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 

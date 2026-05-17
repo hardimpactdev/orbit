@@ -32,7 +32,7 @@ function createToolReloadLocalNode(string $role = 'gateway'): Node
 describe('tool:reload command contract', function (): void {
     it('reloads a managed tool without changing gateway intent', function (): void {
         createToolReloadLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
@@ -59,7 +59,7 @@ describe('tool:reload command contract', function (): void {
 
     it('rejects tools without a reload action before remote work', function (): void {
         createToolReloadLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
@@ -96,7 +96,7 @@ describe('tool:reload command contract', function (): void {
 
     it('prompts for a reload-capable tool when omitted in interactive mode', function (): void {
         createToolReloadLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',

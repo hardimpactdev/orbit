@@ -34,7 +34,7 @@ function createToolLogsTargetLocalNode(string $role = 'gateway'): Node
 
 function createToolLogsTarget(string $nodeName, ?string $tld = null): Node
 {
-    return Node::factory()->create([
+    return createTestAppHostNode([
         'name' => $nodeName,
         'role' => 'app',
         'status' => 'active',

@@ -27,7 +27,7 @@ function createToolCredentialsInteractiveLocalNode(string $role = 'gateway'): No
 describe('tool:credentials interactive input mode', function (): void {
     it('prompts for tool name when omitted in interactive mode', function (): void {
         createToolCredentialsInteractiveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,
@@ -42,7 +42,7 @@ describe('tool:credentials interactive input mode', function (): void {
 
     it('does not prompt when tool argument is supplied', function (): void {
         createToolCredentialsInteractiveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,

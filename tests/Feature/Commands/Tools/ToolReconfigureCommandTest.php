@@ -32,7 +32,7 @@ function createToolReconfigureLocalNode(string $role = 'gateway'): Node
 describe('tool:reconfigure command contract', function (): void {
     it('rejects tools without a reconfigure action', function (): void {
         createToolReconfigureLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -55,7 +55,7 @@ describe('tool:reconfigure command contract', function (): void {
 
     it('rejects uninstalled tools', function (): void {
         createToolReconfigureLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolReconfigureRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -69,7 +69,7 @@ describe('tool:reconfigure command contract', function (): void {
 
     it('reconfigures opencode-server with password and config', function (): void {
         createToolReconfigureLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -97,7 +97,7 @@ describe('tool:reconfigure command contract', function (): void {
 
     it('reconfigures polyscope-server with unit restart', function (): void {
         createToolReconfigureLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'polyscope-server',

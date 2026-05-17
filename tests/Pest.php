@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Saloon\Http\Faking\MockClient;
@@ -132,6 +134,32 @@ function fakeGatewayCaRootThroughLaravelHttp(): MockClient
             );
         },
     ]);
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ * @param  array<string, mixed>  $settings
+ */
+function createTestAppHostNode(array $attributes = [], string $role = 'app-development', array $settings = ['tld' => 'test']): Node
+{
+    $environment = $role === 'app-production' ? 'production' : 'development';
+
+    $node = Node::factory()->create([
+        'role' => 'app',
+        'status' => 'active',
+        'environment' => $environment,
+        'tld' => $settings['tld'] ?? null,
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $role === 'app-development' ? $settings : [],
+    ]);
+
+    return $node;
 }
 
 /**

@@ -34,7 +34,7 @@ function createToolStopLocalNode(string $role = 'gateway'): Node
 
 function createToolStopTarget(string $nodeName, ?string $tld = null): Node
 {
-    return Node::factory()->create([
+    return createTestAppHostNode([
         'name' => $nodeName,
         'role' => 'app',
         'status' => 'active',
@@ -67,7 +67,7 @@ function toolStopLastOutputLine(): string
 describe('tool:stop command contract', function (): void {
     it('updates gateway intent and stops the managed tool on the selected node', function (): void {
         createToolStopLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -92,7 +92,7 @@ describe('tool:stop command contract', function (): void {
 
     it('rejects tools without a stop action before changing intent', function (): void {
         createToolStopLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',

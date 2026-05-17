@@ -44,7 +44,7 @@ function configureToolStopJsonControlGateway(): void
 describe('tool:stop JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the canonical tool entity', function (): void {
         createToolStopJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-stop-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-stop-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -99,7 +99,7 @@ describe('tool:stop JSON renderer', function (): void {
 
     it('renders invalid tool names as validation_failed with tool metadata before side effects', function (): void {
         createToolStopJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-stop-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-stop-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolStopJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -121,7 +121,7 @@ describe('tool:stop JSON renderer', function (): void {
 
     it('forces non-interactive input in JSON mode and fails missing target with target fields metadata', function (): void {
         createToolStopJsonLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-json-stop-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-stop-1', 'role' => 'app', 'status' => 'active']);
         $shell = new ToolStopJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 

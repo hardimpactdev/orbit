@@ -19,6 +19,15 @@ function toolProbeIssue(array $drift, string $key): mixed
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
 }
 
+function createToolsProbeAppHostNode(array $attributes = []): Node
+{
+    return createTestAppHostNode([
+        'role' => 'app',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+}
+
 describe('ToolsProbe', function (): void {
     it('has key and label', function (): void {
         $probe = new ToolsProbe;
@@ -28,7 +37,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects incomplete tool records', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => '',
@@ -50,7 +59,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('requires known tool catalog definitions', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'not-a-tool']);
 
         $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
@@ -59,7 +68,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects missing live capabilities', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
         $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 1));
 
@@ -70,7 +79,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('passes when live capability exists', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
         $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis\n"));
 
@@ -80,7 +89,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects version drift when the catalog tracks versions', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -99,7 +108,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects lifecycle state drift for running tools', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -118,7 +127,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects missing managed config files when config intent declares a path and hash', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -138,7 +147,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects managed config hash mismatches', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -163,7 +172,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects missing managed credential material when credential intent declares a path and hash', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -183,7 +192,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects managed credential hash mismatches', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',

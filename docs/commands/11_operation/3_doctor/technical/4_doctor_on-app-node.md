@@ -28,18 +28,19 @@ This page describes behavior when `orbit doctor` is invoked from an app node —
 - App-node working-directory reality is not enough to authorize an app or workspace scope. The gateway must still authorize the resulting scope.
 - Working-directory hints may help choose defaults, but only for families whose contract explicitly defines this behavior.
 
-## Category set by target role
+## Category Set by Target Roles
 
-The rendered category set is derived from the *target* node's role, not the
-calling peer's role.
+The rendered category set is derived from the *target* node's active roles, not
+the calling peer's role.
 
-| Target role | Categories |
+| Target role assignment state | Categories |
 | --- | --- |
-| `app` (default or `--self`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
-| `gateway` (via `--node=<gateway>`) | `Node` |
-| `control` (via `--node=<control>`) | `Node` |
+| active `app-development` or `app-production` role (default or `--self`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| active `database` role only | `Node`, `Tools` |
+| active `gateway` role (via `--node=<gateway>`) | `Node` |
+| joined client with no active hosted role | `Node` |
 
-A narrow `--family` filter intersects with the target role's set; families
+A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`

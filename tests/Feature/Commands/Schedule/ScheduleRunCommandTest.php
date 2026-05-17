@@ -8,6 +8,7 @@ use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,9 +34,27 @@ function createScheduleRunLocalNode(string $role = 'gateway'): Node
     ]);
 }
 
+function createScheduleRunAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'app',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
+}
+
 it('runs an app scoped schedule on the target node and records history', function (): void {
     createScheduleRunLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRunAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -68,7 +87,7 @@ it('runs an app scoped schedule on the target node and records history', functio
 
 it('returns schedule run failed with captured history for non-zero exits', function (): void {
     createScheduleRunLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRunAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'backups',
@@ -130,7 +149,7 @@ it('forwards non-gateway schedule runs through the typed gateway request', funct
 
 it('renders human progress and success prose', function (): void {
     createScheduleRunLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRunAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -163,7 +182,7 @@ it('exposes schedule run over the authenticated gateway API', function (): void 
         'role' => 'control',
         'wireguard_address' => '10.6.0.70',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = createScheduleRunAppHostNode(['name' => 'app-1']);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $node->id,

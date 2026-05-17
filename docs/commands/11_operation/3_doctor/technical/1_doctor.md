@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | The full category set derived from the target node's role. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. Must intersect with the target role's category set. |
+| `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. Must intersect with the target's role-assignment category set. |
 | `node` | `--node` | Never. | `--self` is present. | The calling peer's node as identified by the gateway (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
 | `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
@@ -35,17 +35,21 @@ This command follows the shared
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Target role and category set
+## Target Roles and Category Set
 
-The rendered category set is derived from the target node's role:
+The rendered category set is derived from the target node's active role
+assignments. The legacy node role field remains a compatibility shadow for
+identity and output, but hosted-family doctor eligibility comes from
+`node_roles`.
 
-| Target role | Categories |
+| Target role assignment state | Categories |
 | --- | --- |
-| `control` | `Node` |
-| `gateway` | `Node` |
-| `app` | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| joined client with no active hosted role | `Node` |
+| active `gateway` role | `Node` |
+| active `database` role only | `Node`, `Tools` |
+| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
-Families outside the target role's set are rejected before probes. A narrow `--family` filter intersects with the target role's set. The renderer never shows placeholder rows for families that are not in the target's set.
+Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
 A future `DNS/TLD` row is reserved for control/app targets and a `DNS` row for gateway targets. They will render as a slice of the `node` family once a DNS diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside the `Node` row and produces no separate row.
 
@@ -98,7 +102,7 @@ Input-mode-specific contracts are required for resolution modes:
 - Fail before probes when mutually exclusive options are combined.
 - Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
 - Fail before probes when a requested family, node, app, or workspace scope cannot be resolved.
-- Fail before probes when a requested family is outside the target node's role-derived category set.
+- Fail before probes when a requested family is outside the target node's active-role category set.
 - Fail before side effects when the selected family does not support the requested mode.
 
 ### App-Node Write Boundaries
@@ -192,7 +196,7 @@ Required contract tests:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-node write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
-| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target role, `--family` rejection for families outside the target role's set, and per-node probe scoping for app/workspace/proxy families. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
 | `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 

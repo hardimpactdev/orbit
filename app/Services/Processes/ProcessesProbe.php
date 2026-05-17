@@ -13,6 +13,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use InvalidArgumentException;
 
@@ -246,8 +247,8 @@ BASH;
 
         if (
             ! $process->app->node instanceof Node
-            || $process->app->node->role !== 'app'
             || $process->app->node->status !== 'active'
+            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($process->app->node)
         ) {
             return [
                 new DriftEntry(

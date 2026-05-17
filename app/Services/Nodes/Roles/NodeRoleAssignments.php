@@ -4,18 +4,69 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles;
 
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Database\Eloquent\Collection;
 
 class NodeRoleAssignments
 {
+    /**
+     * @return list<string>
+     */
+    public function appHostRoles(): array
+    {
+        return [
+            NodeRoleName::AppDevelopment->value,
+            NodeRoleName::AppProduction->value,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function toolHostRoles(): array
+    {
+        return [
+            ...$this->appHostRoles(),
+            NodeRoleName::Database->value,
+        ];
+    }
+
     public function nodeHasActiveRole(Node $node, string $role): bool
     {
         return $node->roleAssignments()
             ->where('role', $role)
-            ->where('status', 'active')
+            ->where('status', NodeRoleStatus::Active->value)
             ->exists();
+    }
+
+    public function nodeHasActiveAppHostRole(Node $node): bool
+    {
+        return $this->nodeHasAnyActiveRole($node, $this->appHostRoles());
+    }
+
+    public function nodeHasActiveToolHostRole(Node $node): bool
+    {
+        return $this->nodeHasAnyActiveRole($node, $this->toolHostRoles());
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    public function nodeHasAnyActiveRole(Node $node, array $roles): bool
+    {
+        if (! $node->relationLoaded('roleAssignments')) {
+            return $node->roleAssignments()
+                ->whereIn('role', $roles)
+                ->where('status', NodeRoleStatus::Active->value)
+                ->exists();
+        }
+
+        return $node->roleAssignments
+            ->contains(fn (NodeRoleAssignment $assignment): bool => in_array($assignment->role, $roles, true)
+                && $assignment->status === NodeRoleStatus::Active->value);
     }
 
     /**
@@ -23,9 +74,36 @@ class NodeRoleAssignments
      */
     public function activeNodeIdsForRole(string $role): array
     {
+        return $this->activeNodeIdsForRoles([$role]);
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeAppHostNodeIds(): array
+    {
+        return $this->activeNodeIdsForRoles($this->appHostRoles());
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeToolHostNodeIds(): array
+    {
+        return $this->activeNodeIdsForRoles($this->toolHostRoles());
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return list<int>
+     */
+    public function activeNodeIdsForRoles(array $roles): array
+    {
         return NodeRoleAssignment::query()
-            ->where('role', $role)
-            ->where('status', 'active')
+            ->whereIn('role', $roles)
+            ->where('status', NodeRoleStatus::Active->value)
+            ->distinct()
+            ->orderBy('node_id')
             ->pluck('node_id')
             ->map(fn (mixed $nodeId): int => (int) $nodeId)
             ->all();

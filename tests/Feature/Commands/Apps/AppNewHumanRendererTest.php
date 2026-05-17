@@ -3,13 +3,19 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
 
 it('renders the documented progress tree and completion summary', function (): void {
     Node::factory()->create([
@@ -17,9 +23,8 @@ it('renders the documented progress tree and completion summary', function (): v
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -59,9 +64,8 @@ it('renders decorated progress tree glyphs and colors', function (): void {
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -93,9 +97,8 @@ it('renders warning retry hints in human output', function (): void {
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    createTestAppHostNode([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -103,7 +106,6 @@ it('renders warning retry hints in human output', function (): void {
     app()->instance(RemoteShell::class, new AppNewHumanSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
     ]));

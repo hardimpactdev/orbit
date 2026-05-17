@@ -76,9 +76,9 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
     return $node;
 }
 
-function createDoctorHostedAppNode(string $name = 'app-1'): Node
+function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = []): Node
 {
-    $node = Node::factory()->create([
+    $node = Node::factory()->create(array_merge([
         'name' => $name,
         'role' => 'app',
         'status' => 'active',
@@ -86,7 +86,7 @@ function createDoctorHostedAppNode(string $name = 'app-1'): Node
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'platform' => 'ubuntu_24-04',
-    ]);
+    ], $attributes));
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -156,7 +156,7 @@ describe('doctor command contract', function (): void {
 
     it('renders completed restore actions in the human doctor report without fix mode', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -309,7 +309,7 @@ describe('doctor command contract', function (): void {
 
     it('reports workspace family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
@@ -337,7 +337,7 @@ describe('doctor command contract', function (): void {
 
     it('reports process family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
@@ -377,7 +377,7 @@ describe('doctor command contract', function (): void {
 
     it('reports proxy family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -402,7 +402,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported proxy actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -430,7 +430,7 @@ describe('doctor command contract', function (): void {
 
     it('names the affected proxy route in interactive doctor prompts', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -451,7 +451,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported proxy TLS actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -479,7 +479,7 @@ describe('doctor command contract', function (): void {
 
     it('reports proxy route_extra drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -508,7 +508,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode remove extra proxy routes through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -541,7 +541,7 @@ describe('doctor command contract', function (): void {
     it('lets adopt mode create custom proxy intent from observed routes', function (): void {
         ProxyRoute::query()->delete();
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $body = base64_encode("adopted.test {\n    reverse_proxy localhost:8080\n}\n");
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(
             perRouteStdout: '',
@@ -574,7 +574,7 @@ describe('doctor command contract', function (): void {
 
     it('reports tool family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
@@ -593,7 +593,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported tool lifecycle actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'caddy',
@@ -619,7 +619,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported tool version actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'composer',
@@ -645,7 +645,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported tool config actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $content = "port 6379\n";
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
@@ -676,7 +676,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported tool credential actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $secret = 'generated-password';
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
@@ -707,7 +707,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode install missing tools through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'redis',
@@ -733,7 +733,7 @@ describe('doctor command contract', function (): void {
 
     it('runs the schedule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
@@ -753,7 +753,7 @@ describe('doctor command contract', function (): void {
 
     it('reports schedule family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
@@ -773,7 +773,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported schedule scheduler actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("missing\n"));
@@ -796,7 +796,7 @@ describe('doctor command contract', function (): void {
 
     it('runs the firewall rule family for an app node target', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        createDoctorHostedAppNode('app-1', ['platform' => 'ubuntu']);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['firewall_rule'], '--json' => true]);
@@ -809,7 +809,7 @@ describe('doctor command contract', function (): void {
 
     it('reports firewall rule family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $appNode = createDoctorHostedAppNode('app-1', ['platform' => 'ubuntu']);
         FirewallRule::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'public-ssh',
@@ -837,7 +837,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported firewall actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $appNode = createDoctorHostedAppNode('app-1', ['platform' => 'ubuntu']);
         FirewallRule::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'local-vite',
@@ -864,7 +864,7 @@ describe('doctor command contract', function (): void {
 
     it('lets adopt mode create registry records from observed backend rules', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $appNode = createDoctorHostedAppNode('app-1', ['platform' => 'ubuntu']);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['firewall_rule'], '--adopt' => true, '--json' => true]);

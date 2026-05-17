@@ -30,18 +30,19 @@ Gateway peers are the authority path for doctor.
 - Reject `--self` combined with `--node`.
 - Apply authorization before probing the selected target node.
 
-## Category set by target role
+## Category Set by Target Roles
 
-The rendered category set is derived from the *target* node's role, not the
-calling peer's role.
+The rendered category set is derived from the *target* node's active roles, not
+the calling peer's role.
 
-| Target role | Categories |
+| Target role assignment state | Categories |
 | --- | --- |
-| `gateway` (default or `--self`) | `Node` |
-| `control` (via `--node=<control>`) | `Node` |
-| `app` (via `--node=<app-node>`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| active `gateway` role (default or `--self`) | `Node` |
+| joined client with no active hosted role | `Node` |
+| active `database` role only | `Node`, `Tools` |
+| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
-A narrow `--family` filter intersects with the target role's set; families
+A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`

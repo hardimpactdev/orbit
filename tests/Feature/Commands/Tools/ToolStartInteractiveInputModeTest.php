@@ -40,7 +40,7 @@ function fakeStartShell(): void
 describe('tool:start interactive input mode', function (): void {
     it('prompts for tool name when omitted in interactive mode', function (): void {
         createToolStartInteractiveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id, 'expected_state' => 'stopped']);
         fakeStartShell();
 
@@ -51,7 +51,7 @@ describe('tool:start interactive input mode', function (): void {
 
     it('does not prompt when tool argument is supplied', function (): void {
         createToolStartInteractiveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id, 'expected_state' => 'stopped']);
         fakeStartShell();
 

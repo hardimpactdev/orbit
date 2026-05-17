@@ -12,6 +12,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class ProxyRouteProbe
 {
@@ -314,7 +315,7 @@ BASH;
             ];
         }
 
-        if ($route->node->status !== 'active' || ! in_array($route->node->role, ['gateway', 'app'], true)) {
+        if ($route->node->status !== 'active' || ! $this->canServeProxyRoutes($route->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -331,6 +332,12 @@ BASH;
         }
 
         return [];
+    }
+
+    private function canServeProxyRoutes(Node $node): bool
+    {
+        return $node->role === 'gateway'
+            || app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node);
     }
 
     /**

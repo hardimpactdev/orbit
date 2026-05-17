@@ -17,7 +17,7 @@ uses(RefreshDatabase::class);
 
 describe('ToolsFixer', function (): void {
     it('starts service-backed tools when lifecycle intent expects running', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -47,7 +47,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('skips issue codes without catalog-declared repair commands', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -68,7 +68,7 @@ describe('ToolsFixer', function (): void {
 
     it('rewrites managed config when the row contains complete content intent', function (): void {
         $content = "port 6379\n";
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -103,7 +103,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('does not repair managed config when content does not match declared hash', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -131,7 +131,7 @@ describe('ToolsFixer', function (): void {
 
     it('rewrites managed secret material when the row contains complete secret intent', function (): void {
         $secret = 'generated-password';
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -167,7 +167,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('does not repair managed secret material when content does not match declared hash', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -194,7 +194,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('installs missing docker-managed tools through catalog install script', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -221,7 +221,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('returns null for capability missing when no install script exists', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\Concerns;
 
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,7 +24,7 @@ trait ResolvesVisibleToolNodes
                 ->where('status', 'active');
 
             if (! $allowAnyActiveNode) {
-                $query->where('role', 'app');
+                $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
             }
 
             return $query->pluck('id')->all();
@@ -35,7 +36,7 @@ trait ResolvesVisibleToolNodes
             ->where('nodes.status', 'active');
 
         if (! $allowAnyActiveNode) {
-            $query->where('nodes.role', 'app');
+            $query->whereIn('nodes.id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
         }
 
         return $query->pluck('nodes.id')->all();
@@ -88,7 +89,7 @@ trait ResolvesVisibleToolNodes
         if ($allowOnlyVisibleFallback && $caller->role !== 'gateway') {
             $nodes = Node::query()
                 ->whereIn('id', $visibleNodeIds)
-                ->where('role', 'app')
+                ->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds())
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->limit(2)
@@ -119,7 +120,7 @@ trait ResolvesVisibleToolNodes
             ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds));
 
         if (! $allowAnyActiveNode) {
-            $query->where('role', 'app');
+            $query->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds());
         }
 
         return $query->first();
@@ -149,7 +150,7 @@ trait ResolvesVisibleToolNodes
                     ->where('name', $appName)
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
                         $query
-                            ->where('role', 'app')
+                            ->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds())
                             ->where('status', 'active')
                             ->where('tld', $nodeTld);
                     })
@@ -161,7 +162,7 @@ trait ResolvesVisibleToolNodes
             return null;
         }
 
-        if ($model->node->role !== 'app' || $model->node->status !== 'active') {
+        if ($model->node->status !== 'active' || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($model->node)) {
             return null;
         }
 
@@ -210,7 +211,7 @@ trait ResolvesVisibleToolNodes
                 ->whereNotIn('id', $visibleNodeIds);
 
             if (! $allowAnyActiveNode) {
-                $query->where('role', 'app');
+                $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
             }
 
             return $query->exists();
@@ -236,11 +237,16 @@ trait ResolvesVisibleToolNodes
                 }
             })
             ->whereHas('node', function (Builder $query) use ($visibleNodeIds): void {
-                $query->where('role', 'app')
+                $query->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds())
                     ->where('status', 'active')
                     ->whereNotIn('id', $visibleNodeIds);
             })
             ->exists();
+    }
+
+    private function nodeRoleAssignments(): NodeRoleAssignments
+    {
+        return app(NodeRoleAssignments::class);
     }
 
     /**

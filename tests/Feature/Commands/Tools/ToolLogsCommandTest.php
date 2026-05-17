@@ -34,7 +34,7 @@ function createToolLogsLocalNode(string $role = 'gateway'): Node
 describe('tool:logs command contract', function (): void {
     it('reads finite logs for a managed service tool', function (): void {
         createToolLogsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
@@ -65,7 +65,7 @@ describe('tool:logs command contract', function (): void {
 
     it('prints finite human output as source-ordered log lines without progress or tool-state metadata', function (): void {
         createToolLogsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
@@ -88,7 +88,7 @@ describe('tool:logs command contract', function (): void {
 
     it('prints a finite human fallback when no log lines are returned', function (): void {
         createToolLogsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
@@ -108,7 +108,7 @@ describe('tool:logs command contract', function (): void {
 
     it('rejects tools without a log source before remote work', function (): void {
         createToolLogsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
@@ -144,7 +144,7 @@ describe('tool:logs command contract', function (): void {
 
     it('reads tool logs in follow mode for human output', function (): void {
         createToolLogsLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',

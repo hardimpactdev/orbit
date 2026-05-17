@@ -12,6 +12,8 @@ use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -132,7 +134,15 @@ final class ScheduleStoreController implements Loggable
                 : $this->error('validation_failed', "App '{$app}' not found.", ['field' => 'app', 'value' => $app], 422);
         }
 
-        $target = Node::query()->with('schedulerState')->where('name', $node)->whereIn('role', ['gateway', 'app'])->first();
+        $target = Node::query()
+            ->with('schedulerState')
+            ->where('name', $node)
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds());
+            })
+            ->first();
 
         return $target instanceof Node
             ? $target

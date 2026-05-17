@@ -33,8 +33,8 @@ function createToolListLocalNode(string $role = 'gateway'): Node
 describe('tool:list command contract', function (): void {
     it('lists local gateway tools sorted by node then tool name', function (): void {
         createToolListLocalNode('gateway');
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = createTestAppHostNode(['name' => 'z-node', 'role' => 'app']);
+        $aNode = createTestAppHostNode(['name' => 'a-node', 'role' => 'app']);
 
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $zNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $aNode->id]);
@@ -53,8 +53,8 @@ describe('tool:list command contract', function (): void {
 
     it('filters local gateway tools by node and app', function (): void {
         createToolListLocalNode('gateway');
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $secondNode->id]);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
@@ -146,7 +146,7 @@ describe('tool:list command contract', function (): void {
         Process::preventStrayProcesses();
 
         createToolListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
 

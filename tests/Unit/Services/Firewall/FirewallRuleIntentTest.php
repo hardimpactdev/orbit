@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleIntent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -23,9 +24,28 @@ function grantFirewallRuleIntentAccess(Node $caller, Node $servingNode): void
     ]);
 }
 
+function createFirewallRuleIntentAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'platform' => 'ubuntu',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
+}
+
 describe('FirewallRuleIntent', function (): void {
     it('creates idempotent firewall intent and returns a deferred enactment warning', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleIntentAppHostNode();
 
         $result = app(FirewallRuleIntent::class)->store(
             action: 'allow',
@@ -52,7 +72,7 @@ describe('FirewallRuleIntent', function (): void {
     });
 
     it('rejects same-name different policy before mutation', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite', 'port' => '5173']);
 
         app(FirewallRuleIntent::class)->store('allow', 'local-vite', 'app-1', 'incoming', 'any', null, '8080', 'tcp', null);
@@ -60,7 +80,7 @@ describe('FirewallRuleIntent', function (): void {
 
     it('authorizes non-gateway callers through node access grants', function (): void {
         $caller = Node::factory()->create(['role' => 'app', 'platform' => 'ubuntu']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleIntentAppHostNode();
         grantFirewallRuleIntentAccess($caller, $node);
 
         app(FirewallRuleIntent::class)->store('deny', 'block-redis', 'app-1', 'incoming', 'any', null, '6379', 'tcp', null, $caller);
@@ -69,7 +89,7 @@ describe('FirewallRuleIntent', function (): void {
     });
 
     it('removes intent idempotently and reports deferred cleanup', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $removed = app(FirewallRuleIntent::class)->remove('local-vite', 'app-1');
@@ -81,7 +101,7 @@ describe('FirewallRuleIntent', function (): void {
     });
 
     it('blocks bootstrap policy mutations', function (): void {
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        createFirewallRuleIntentAppHostNode();
 
         app(FirewallRuleIntent::class)->store('allow', 'ssh-public', 'app-1', 'incoming', 'any', null, '22', 'tcp', null);
     })->throws(GatewayApiException::class, 'The requested rule would mutate node bootstrap policy.');

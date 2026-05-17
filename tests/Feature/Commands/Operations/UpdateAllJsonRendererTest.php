@@ -38,6 +38,17 @@ beforeEach(function (): void {
             'updated_at' => now(),
         ],
     ]);
+
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', 'beast')->value('id'),
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 });
 
 it('selects json renderer with --json flag', function (): void {
@@ -96,6 +107,16 @@ it('updates app nodes in parallel while preserving json target order', function 
         'host' => 'sidecar',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', 'sidecar')->value('id'),
+        'role' => 'app-production',
+        'status' => 'active',
+        'settings' => json_encode([], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
         'created_at' => now(),
         'updated_at' => now(),
     ]);

@@ -34,7 +34,7 @@ function createToolRestartTargetLocalNode(string $role = 'gateway'): Node
 
 function createToolRestartTarget(string $nodeName, ?string $tld = null): Node
 {
-    return Node::factory()->create([
+    return createTestAppHostNode([
         'name' => $nodeName,
         'role' => 'app',
         'status' => 'active',

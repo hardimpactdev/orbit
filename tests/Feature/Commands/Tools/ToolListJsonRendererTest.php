@@ -42,7 +42,7 @@ function configureToolListJsonControlGateway(): void
 describe('tool:list JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits canonical tool entities', function (): void {
         createToolListJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-json-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-json-1', 'role' => 'app']);
 
         NodeTool::factory()->create([
             'name' => 'redis',
@@ -102,7 +102,7 @@ describe('tool:list JSON renderer', function (): void {
 
     it('omits observed liveness columns from the human registry renderer', function (): void {
         createToolListJsonLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-human-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-human-1', 'role' => 'app']);
 
         NodeTool::factory()->create([
             'name' => 'redis',

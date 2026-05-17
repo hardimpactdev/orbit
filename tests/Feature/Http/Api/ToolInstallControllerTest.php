@@ -105,6 +105,7 @@ describe('ToolInstallController', function (): void {
     it('rejects invalid status before row writes or remote shell actions', function (): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-development');
         grantToolInstallApiAccess($caller, $node);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -127,6 +128,7 @@ describe('ToolInstallController', function (): void {
     it('rejects direct API install-time version intent before side effects', function (array $payload): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-development');
         grantToolInstallApiAccess($caller, $node);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -151,6 +153,7 @@ describe('ToolInstallController', function (): void {
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-development');
         grantToolInstallApiAccess($caller, $node);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);

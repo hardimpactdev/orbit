@@ -13,6 +13,7 @@ use App\Enums\DriftKind;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Platform\PlatformDetector;
@@ -34,6 +35,16 @@ beforeEach(function (): void {
 afterEach(function (): void {
     File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
 });
+
+function assignNodesProbeAppHostRole(Node $node, array $settings = ['tld' => 'test']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
+}
 
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
@@ -618,6 +629,7 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        assignNodesProbeAppHostRole($node);
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -647,6 +659,7 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        assignNodesProbeAppHostRole($node);
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -718,6 +731,7 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        assignNodesProbeAppHostRole($node);
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -747,6 +761,7 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        assignNodesProbeAppHostRole($node);
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));

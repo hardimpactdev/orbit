@@ -17,6 +17,7 @@ use App\Http\Gateway\Responses\Apps\AppRegisterResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -384,7 +385,7 @@ class AppRegisterCommand extends Command
 
             if ($nodeName === null) {
                 $nodeNames = Node::query()
-                    ->where('role', 'app')
+                    ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
                     ->where('status', 'active')
                     ->orderBy('name')
                     ->pluck('name')
@@ -409,7 +410,7 @@ class AppRegisterCommand extends Command
 
     private function ensureEligibleNode(Node $node): Node|int
     {
-        if ($node->role === 'app' && $node->status === 'active') {
+        if ($node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
             return $node;
         }
 

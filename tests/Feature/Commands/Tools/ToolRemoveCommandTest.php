@@ -34,7 +34,7 @@ function createToolRemoveLocalNode(string $role = 'gateway'): Node
 describe('tool:remove command contract', function (): void {
     it('removes a managed tool after interactive confirmation without force', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -53,7 +53,7 @@ describe('tool:remove command contract', function (): void {
 
     it('cancels interactive removal when confirmation is declined', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -73,7 +73,7 @@ describe('tool:remove command contract', function (): void {
 
     it('bypasses interactive confirmation when force is supplied', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -92,7 +92,7 @@ describe('tool:remove command contract', function (): void {
 
     it('removes a managed tool with destructive consent', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -119,7 +119,7 @@ describe('tool:remove command contract', function (): void {
 
     it('treats json as destructive consent without force after ordinary validation passes', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -142,7 +142,7 @@ describe('tool:remove command contract', function (): void {
 
     it('enforces ordinary validation before json destructive consent side effects', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -163,7 +163,7 @@ describe('tool:remove command contract', function (): void {
 
     it('requires force for non-json non-interactive removal before side effects', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -182,7 +182,7 @@ describe('tool:remove command contract', function (): void {
 
     it('rejects tools without a remove action before changing intent', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -206,7 +206,7 @@ describe('tool:remove command contract', function (): void {
 
     it('keeps retry material when remote cleanup fails', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -228,7 +228,7 @@ describe('tool:remove command contract', function (): void {
 
     it('requires an explicit target source instead of falling back to the only visible app node', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -249,7 +249,7 @@ describe('tool:remove command contract', function (): void {
 
     it('uses local node default as an explicit target source', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
