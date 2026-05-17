@@ -74,6 +74,19 @@ class NodeRoleAssignments
         return $this->nodeHasAnyActiveRole($node, $this->toolHostRoles());
     }
 
+    public function activeAppHostEnvironment(Node $node): ?string
+    {
+        if ($this->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
+            return 'development';
+        }
+
+        if ($this->nodeHasActiveRole($node, NodeRoleName::AppProduction->value)) {
+            return 'production';
+        }
+
+        return null;
+    }
+
     public function nodeCanServeGatewayOrAppHostWorkloads(Node $node): bool
     {
         return $this->nodeIsGateway($node)

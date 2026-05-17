@@ -6,9 +6,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -96,7 +99,11 @@ final readonly class NodeListController implements Loggable
         }
 
         if ($environment !== null) {
-            $query->where('environment', $environment);
+            $query->whereHas('roleAssignments', function ($query) use ($environment): void {
+                $query
+                    ->where('role', $environment === 'development' ? NodeRoleName::AppDevelopment->value : NodeRoleName::AppProduction->value)
+                    ->where('status', NodeRoleStatus::Active->value);
+            });
         }
 
         return $query->get();
@@ -112,7 +119,7 @@ final readonly class NodeListController implements Loggable
             'name' => $node->name,
             'role' => $node->role,
             'host' => $node->host,
-            'environment' => $node->role === 'app' ? $node->environment : null,
+            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [

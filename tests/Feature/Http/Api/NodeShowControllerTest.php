@@ -48,6 +48,20 @@ function createShowCallerNode(): void
     ]);
 }
 
+function assignApiShowNodeRole(string $nodeName, string $role, array $settings = []): void
+{
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', $nodeName)->value('id'),
+        'role' => $role,
+        'status' => 'active',
+        'settings' => json_encode($settings, JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
 /**
  * @param  array<string, string>  $server
  */
@@ -85,6 +99,7 @@ describe('NodeShowController', function (): void {
                 'status' => 'active',
             ]),
         ]);
+        assignApiShowNodeRole('app-1', 'app-development', ['tld' => 'test']);
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
@@ -98,7 +113,13 @@ describe('NodeShowController', function (): void {
                             'status' => 'active',
                             'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
-                            'roles' => [],
+                            'roles' => [
+                                [
+                                    'role' => 'app-development',
+                                    'status' => 'active',
+                                    'settings' => ['tld' => 'test'],
+                                ],
+                            ],
                             'addresses' => [
                                 'wireguard' => '10.6.0.7',
                             ],
@@ -168,6 +189,22 @@ describe('NodeShowController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.environment', null);
+    });
+
+    it('derives environment from active app role assignments', function (): void {
+        DB::table('nodes')->insert([
+            apiShowNodeRow([
+                'name' => 'control-app',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+        ]);
+        assignApiShowNodeRole('control-app', 'app-production');
+
+        $response = getApiNodeJson('/api/nodes/control-app', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.node.environment', 'production');
     });
 
     it('defaults platform to unknown when not set', function (): void {

@@ -54,6 +54,20 @@ function createCallerNode(): void
     ]);
 }
 
+function assignApiNodeRole(string $nodeName, string $role, array $settings = []): void
+{
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', $nodeName)->value('id'),
+        'role' => $role,
+        'status' => 'active',
+        'settings' => json_encode($settings, JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
 /**
  * @param  array<string, string>  $server
  */
@@ -125,6 +139,8 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'dev-app', 'environment' => 'development']),
             apiNodeRow(['name' => 'prod-app', 'environment' => 'production']),
         ]);
+        assignApiNodeRole('dev-app', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('prod-app', 'app-production');
 
         $response = getApiNodesJson('/api/nodes?environment=production', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
@@ -211,6 +227,7 @@ describe('NodeListController', function (): void {
                 'status' => 'active',
             ]),
         ]);
+        assignApiNodeRole('app-1', 'app-development', ['tld' => 'test']);
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
@@ -224,8 +241,36 @@ describe('NodeListController', function (): void {
             'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
-            'roles' => [],
+            'roles' => [
+                [
+                    'role' => 'app-development',
+                    'status' => 'active',
+                    'settings' => ['tld' => 'test'],
+                ],
+            ],
         ]);
+    });
+
+    it('derives serialized environment from active app role assignments', function (): void {
+        DB::table('nodes')->insert([
+            apiNodeRow([
+                'name' => 'control-app',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+            apiNodeRow([
+                'name' => 'legacy-app',
+                'role' => 'app',
+                'environment' => 'development',
+            ]),
+        ]);
+        assignApiNodeRole('control-app', 'app-development', ['tld' => 'test']);
+
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $nodes = collect($response->json('success.data.nodes'))->keyBy('name');
+
+        expect($nodes['control-app']['environment'])->toBe('development')
+            ->and($nodes['legacy-app']['environment'])->toBeNull();
     });
 
     it('rejects unauthenticated requests', function (): void {
@@ -248,15 +293,21 @@ describe('NodeListController', function (): void {
                 'wireguard_address' => null,
             ]),
         ]);
+        assignApiNodeRole('incomplete-app', 'app-development', ['tld' => 'test']);
 
         $response = getApiNodesJson('/api/nodes?doctor=1&role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.meta.doctor.checked', 1)
-            ->assertJsonPath('success.meta.doctor.issues', 1)
-            ->assertJsonPath('success.meta.doctor.failures.0.node', 'incomplete-app')
-            ->assertJsonPath('success.meta.doctor.failures.0.code', 'node.record_incomplete')
-            ->assertJsonPath('success.meta.doctor.failures.0.family', 'node');
+            ->assertJsonPath('success.meta.doctor.issues', 2);
+
+        $failure = collect($response->json('success.meta.doctor.failures'))
+            ->first(fn (array $failure): bool => $failure['code'] === 'node.record_incomplete');
+
+        expect($failure)->toMatchArray([
+            'node' => 'incomplete-app',
+            'family' => 'node',
+        ]);
     });
 });
 

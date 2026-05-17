@@ -10,6 +10,7 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
@@ -232,6 +233,41 @@ describe('node role assignment service', function (): void {
 
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-development'))
             ->toThrow(InvalidArgumentException::class, "Role 'app-development' cannot be removed while dependents exist.");
+    });
+
+    it('rechecks removal dependents inside the transaction before destructive cleanup', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+        $inspector = new class extends NodeRoleDependencyInspector
+        {
+            public int $calls = 0;
+
+            public bool $removed = false;
+
+            public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
+            {
+                $this->calls++;
+
+                return $this->calls === 1 ? [] : ['1 development app record'];
+            }
+
+            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
+            {
+                $this->removed = true;
+            }
+        };
+        app()->instance(NodeRoleDependencyInspector::class, $inspector);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-development'))
+            ->toThrow(InvalidArgumentException::class, "Role 'app-development' cannot be removed while dependents exist.");
+
+        expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($inspector->calls)->toBe(2)
+            ->and($inspector->removed)->toBeFalse();
     });
 
     it('requires force when purge data is requested', function (): void {

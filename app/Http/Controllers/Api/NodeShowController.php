@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use stdClass;
@@ -45,7 +46,7 @@ final class NodeShowController implements Loggable
                         'name' => $node->name,
                         'role' => $node->role,
                         'status' => $node->status,
-                        'environment' => $node->role === 'app' ? $node->environment : null,
+                        'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
                         'platform' => $node->platform ?? 'unknown',
                         'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                             'role' => $assignment->role,

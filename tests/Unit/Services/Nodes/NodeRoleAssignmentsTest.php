@@ -57,6 +57,9 @@ describe('node role assignments', function (): void {
             ->and($assignments->nodeHasActiveAppHostRole($legacyAppOnlyNode))->toBeFalse()
             ->and($assignments->nodeHasActiveAppHostRole($pendingAppNode))->toBeFalse()
             ->and($assignments->nodeHasActiveAppHostRole($databaseNode))->toBeFalse()
-            ->and($assignments->nodeHasActiveToolHostRole($databaseNode))->toBeTrue();
+            ->and($assignments->nodeHasActiveToolHostRole($databaseNode))->toBeTrue()
+            ->and($assignments->activeAppHostEnvironment($developmentNode))->toBe('development')
+            ->and($assignments->activeAppHostEnvironment($productionNode))->toBe('production')
+            ->and($assignments->activeAppHostEnvironment($legacyAppOnlyNode))->toBeNull();
     });
 });

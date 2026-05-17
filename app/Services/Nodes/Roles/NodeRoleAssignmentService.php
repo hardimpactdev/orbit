@@ -101,23 +101,31 @@ class NodeRoleAssignmentService
         }
 
         try {
-            DB::transaction(function () use ($node, $assignment, $dependents, $purgeData): void {
+            DB::transaction(function () use ($node, $assignment, $force, $purgeData, $role): void {
                 $transactionAssignment = NodeRoleAssignment::query()
                     ->lockForUpdate()
                     ->findOrFail($assignment->id);
+
+                $transactionDependents = $this->dependencyInspector->dependentSummaries($node, $transactionAssignment);
+
+                if ($transactionDependents !== [] && ! $force) {
+                    throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
+                }
 
                 $transactionAssignment->forceFill([
                     'status' => NodeRoleStatus::Removing->value,
                     'last_error' => null,
                 ])->save();
 
-                if ($dependents !== []) {
+                if ($transactionDependents !== []) {
                     $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
                 }
 
                 $this->converger->remove($node, $transactionAssignment, $purgeData);
                 $transactionAssignment->delete();
             });
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
         } catch (Throwable $throwable) {
             NodeRoleAssignment::query()
                 ->whereKey($assignment->id)
