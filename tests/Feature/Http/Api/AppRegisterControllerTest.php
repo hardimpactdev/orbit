@@ -116,6 +116,39 @@ describe('AppRegisterController', function (): void {
             ->and($remoteShell->scripts)->toBe([]);
     });
 
+    it('rejects production registration when the target node lacks the app-production role', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'role' => 'app',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps/register', [
+            'name' => 'docs',
+            'node' => 'app-1',
+            'path' => '/home/orbit/apps/docs',
+            'domain' => 'docs.example.com',
+        ], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'app.ineligible_node')
+            ->assertJsonPath('error.meta.required_role', 'app-production');
+
+        expect(App::query()->count())->toBe(0)
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
     it('rejects database-only hosted callers even when they can access the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',

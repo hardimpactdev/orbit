@@ -60,7 +60,9 @@ This command follows the shared
    - Do not read or inherit the owning node's CLI PHP default; node CLI PHP and
      app PHP-FPM configuration are separate architecture concepts.
 5. **Validate Eligibility**:
-   - Target node must be an active app node.
+   - Target node must have the active app role required by the requested
+     registration mode: `app-development` when `--domain` is absent,
+     `app-production` when `--domain` is supplied.
    - Provided `--path` must exist on the target node.
    - Provided `name` must not be owned by a different path or node.
    - Provided `--path` on the resolved node must not already be owned by a

@@ -165,6 +165,42 @@ it('reports production domain activation as a retryable proxy warning', function
         ]);
 });
 
+it('rejects production registration on a development-only app node before remote work', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    createTestAppHostNode([
+        'name' => 'app-1',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    $remoteShell = new AppRegisterSequencedRemoteShell([]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:register', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--path' => '/home/docs/app',
+        '--domain' => 'docs.example.com',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and(App::query()->where('name', 'docs')->exists())->toBeFalse()
+        ->and($remoteShell->scripts)->toBe([])
+        ->and($payload['error']['code'])->toBe('app.ineligible_node')
+        ->and($payload['error']['meta'])->toMatchArray([
+            'node' => 'app-1',
+            'required_role' => 'app-production',
+            'status' => 'active',
+        ]);
+});
+
 it('renders production activation warnings in human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',

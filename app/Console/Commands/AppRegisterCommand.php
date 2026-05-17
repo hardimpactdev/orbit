@@ -62,7 +62,8 @@ class AppRegisterCommand extends Command
             ->where('name', $input['name'])
             ->first();
 
-        $node = $this->resolveTargetNode($input['node'], $existingApp);
+        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $node = $this->resolveTargetNode($input['node'], $existingApp, $requiredRole);
 
         if (is_int($node)) {
             return $node;
@@ -350,14 +351,14 @@ class AppRegisterCommand extends Command
         ];
     }
 
-    private function resolveTargetNode(?string $nodeName, ?App $existingApp): Node|int
+    private function resolveTargetNode(?string $nodeName, ?App $existingApp, string $requiredRole): Node|int
     {
         if ($nodeName === null && $existingApp instanceof App) {
             $existingApp->loadMissing('node');
             $node = $existingApp->node;
 
             if ($node instanceof Node) {
-                return $this->ensureEligibleNode($node);
+                return $this->ensureEligibleNode($node, $requiredRole);
             }
         }
 
@@ -405,12 +406,12 @@ class AppRegisterCommand extends Command
             return $this->failValidation('node', "Node '{$nodeName}' was not found.");
         }
 
-        return $this->ensureEligibleNode($node);
+        return $this->ensureEligibleNode($node, $requiredRole);
     }
 
-    private function ensureEligibleNode(Node $node): Node|int
+    private function ensureEligibleNode(Node $node, string $requiredRole): Node|int
     {
-        if ($node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
+        if ($node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, $requiredRole)) {
             return $node;
         }
 
@@ -419,7 +420,7 @@ class AppRegisterCommand extends Command
             message: "Node '{$node->name}' is not an active app node.",
             meta: [
                 'node' => $node->name,
-                'role' => $node->role,
+                'required_role' => $requiredRole,
                 'status' => $node->status,
             ],
         );
