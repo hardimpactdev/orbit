@@ -93,6 +93,8 @@ function nodeRoleAssignmentPayload(
 
 function fakeNodeRoleGateway(string $requestClass, array|string $body, int $status = 200): MockClient
 {
+    MockClient::destroyGlobal();
+
     return MockClient::global([
         $requestClass => MockResponse::make($body, $status),
     ]);

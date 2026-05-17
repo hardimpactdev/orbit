@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\ListNodeRolesRequest;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -87,5 +88,39 @@ describe('node role:list', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('node');
+    });
+
+    it('forwards control callers to the gateway', function (): void {
+        setupNodeRoleControlCaller();
+
+        $convergedAt = now()->toJSON();
+        $mock = fakeNodeRoleGateway(ListNodeRolesRequest::class, [
+            'success' => [
+                'data' => [
+                    'node' => 'client-1',
+                    'roles' => [
+                        nodeRoleAssignmentPayload('database', 'active', [], null, $convergedAt),
+                    ],
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('node role:list', [
+            'node' => 'client-1',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'node' => 'client-1',
+                'roles' => [
+                    nodeRoleAssignmentPayload('database', 'active', [], null, $convergedAt),
+                ],
+            ]);
+
+        $mock->assertSent(fn (ListNodeRolesRequest $request): bool => $request->node === 'client-1'
+            && $request->resolveEndpoint() === '/api/nodes/client-1/roles');
     });
 });
