@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeShowCommand;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -43,6 +44,23 @@ function setupNodeShowJsonGatewayCaller(): void
         'role' => 'gateway',
         'environment' => null,
     ]));
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeShowJsonRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 function invokeNodeShowFailCommand(bool $json, string $code, string $message, array $meta): array
@@ -101,6 +119,7 @@ describe('node:show JSON renderer contract', function (): void {
 
     it('returns success.data.node with all documented fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow());
+        assignNodeShowJsonRole('app-1', 'app-development', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -135,6 +154,21 @@ describe('node:show JSON renderer contract', function (): void {
             ->and($node['grants']['consuming_nodes'])->toBeArray()
             ->and($node['grants'])->toHaveKey('serving_nodes')
             ->and($node['grants']['serving_nodes'])->toBeArray();
+    });
+
+    it('derives environment from active app role assignments', function (): void {
+        DB::table('nodes')->insert(nodeShowJsonRow([
+            'name' => 'host-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        assignNodeShowJsonRole('host-1', 'app-production');
+
+        $exitCode = Artisan::call('node:show', ['name' => 'host-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['environment'])->toBe('production');
     });
 
     it('returns environment null for non-app roles', function (): void {

@@ -137,15 +137,7 @@ final readonly class NodeGrantController implements Loggable
 
     private function gatewayQuery(): Builder
     {
-        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
-
-        return Node::query()
-            ->where('status', 'active')
-            ->where(function (Builder $query) use ($gatewayNodeIds): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', $gatewayNodeIds);
-            });
+        return app(NodeRoleAssignments::class)->activeGatewayNodeQuery();
     }
 
     private function resolveNode(string $name, string $field): Node|JsonResponse

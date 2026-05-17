@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,23 @@ function nodeListRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeListRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 describe('node:list base contract', function (): void {
@@ -91,6 +109,8 @@ describe('node:list filters', function (): void {
                 'environment' => null,
             ]),
         ]);
+        assignNodeListRole('dev-app', 'app-development', ['tld' => 'test']);
+        assignNodeListRole('prod-app', 'app-production');
     });
 
     it('filters by --role gateway', function (): void {

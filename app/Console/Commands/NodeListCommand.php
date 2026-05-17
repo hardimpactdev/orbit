@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
@@ -11,9 +13,11 @@ use App\Http\Gateway\Responses\Nodes\NodeListResponse;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use stdClass;
 use Throwable;
@@ -163,7 +167,11 @@ class NodeListCommand extends Command
         }
 
         if ($environment !== null) {
-            $query->where('environment', $environment);
+            $query->whereHas('roleAssignments', function (Builder $query) use ($environment): void {
+                $query
+                    ->where('role', $environment === 'development' ? NodeRoleName::AppDevelopment->value : NodeRoleName::AppProduction->value)
+                    ->where('status', NodeRoleStatus::Active->value);
+            });
         }
 
         return $query->get();
@@ -177,7 +185,7 @@ class NodeListCommand extends Command
         return [
             'name' => $node->name,
             'role' => $node->role,
-            'environment' => $node->role === 'app' ? $node->environment : null,
+            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [

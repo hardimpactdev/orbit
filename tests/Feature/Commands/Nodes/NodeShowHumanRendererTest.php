@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeShowCommand;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -42,6 +43,23 @@ function setupNodeShowHumanGatewayCaller(): void
         'role' => 'gateway',
         'environment' => null,
     ]));
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeShowHumanRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 function invokeNodeShowFailCommandHuman(string $code, string $message, array $meta): array
@@ -112,6 +130,7 @@ describe('node:show human renderer contract', function (): void {
 
     it('renders registry success output with all fields for app node', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
+        assignNodeShowHumanRole('app-1', 'app-development', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
         $output = Artisan::output();
@@ -119,7 +138,7 @@ describe('node:show human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: app-1')
             ->and($output)->toContain('Role: app')
-            ->and($output)->not->toContain('Roles:')
+            ->and($output)->toContain('Roles: app-development')
             ->and($output)->toContain('Environment: development')
             ->and($output)->toContain('Platform: ubuntu_24-04')
             ->and($output)->toContain('WireGuard: 10.6.0.7')

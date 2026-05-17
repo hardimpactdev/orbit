@@ -284,4 +284,31 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.required_node', 'gateway-1');
     });
+
+    it('authorizes callers through any active gateway they can access', function (): void {
+        DB::table('node_access')->delete();
+
+        $callerId = (int) DB::table('nodes')
+            ->where('wireguard_address', NODE_ROLE_API_CALLER_WG_IP)
+            ->value('id');
+
+        $authorizedGatewayId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
+            'name' => 'zzz-gateway',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.3',
+        ]));
+
+        assignNodeRoleApiRole($authorizedGatewayId, 'gateway');
+        grantNodeRoleApiGatewayAccess($callerId, $authorizedGatewayId);
+
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'database',
+            'settings' => [],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.assignment.role', 'database');
+    });
 });

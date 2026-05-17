@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 class NodeRoleAssignments
@@ -67,6 +68,19 @@ class NodeRoleAssignments
     public function nodeHasActiveGatewayRole(Node $node): bool
     {
         return $this->nodeHasActiveRole($node, NodeRoleName::Gateway->value);
+    }
+
+    public function activeGatewayNodeQuery(): Builder
+    {
+        $gatewayNodeIds = $this->activeNodeIdsForRole(NodeRoleName::Gateway->value);
+
+        return Node::query()
+            ->where('status', 'active')
+            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+                $query
+                    ->where('role', NodeRoleName::Gateway->value)
+                    ->orWhereIn('id', $gatewayNodeIds);
+            });
     }
 
     public function nodeIsGateway(Node $node): bool

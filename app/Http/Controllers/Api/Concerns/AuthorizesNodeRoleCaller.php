@@ -7,8 +7,8 @@ namespace App\Http\Controllers\Api\Concerns;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
 trait AuthorizesNodeRoleCaller
 {
@@ -20,17 +20,19 @@ trait AuthorizesNodeRoleCaller
             return null;
         }
 
-        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
-
-        $gateway = Node::query()
-            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+        if ($this->gatewayQuery()
+            ->whereExists(function (QueryBuilder $query) use ($caller): void {
                 $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', $gatewayNodeIds);
+                    ->selectRaw('1')
+                    ->from('node_access')
+                    ->whereColumn('node_access.serving_node_id', 'nodes.id')
+                    ->where('node_access.consumer_node_id', $caller->id);
             })
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->first();
+            ->exists()) {
+            return null;
+        }
+
+        $gateway = $this->gatewayQuery()->orderBy('name')->first();
 
         if (! $gateway instanceof Node) {
             return $this->authorizationFailed(
@@ -39,18 +41,14 @@ trait AuthorizesNodeRoleCaller
             );
         }
 
-        $hasGatewayAccess = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->exists();
-
-        if ($hasGatewayAccess) {
-            return null;
-        }
-
         return $this->authorizationFailed(
             "This caller is not authorized to {$verb}.",
             ['required_node' => $gateway->name, 'caller_role' => $caller->role],
         );
+    }
+
+    private function gatewayQuery(): Builder
+    {
+        return app(NodeRoleAssignments::class)->activeGatewayNodeQuery();
     }
 }

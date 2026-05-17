@@ -13,6 +13,7 @@ use App\Http\Gateway\Responses\Nodes\NodeShowResponse;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -197,7 +198,7 @@ class NodeShowCommand extends Command
             'name' => $node->name,
             'role' => $node->role,
             'status' => $node->status,
-            'environment' => $node->role === 'app' ? $node->environment : null,
+            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
