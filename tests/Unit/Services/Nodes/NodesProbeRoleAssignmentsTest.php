@@ -350,6 +350,58 @@ it('retries baseline convergence for error assignments during reconcile', functi
         ->converged_at->not->toBeNull();
 });
 
+it('keeps role assignments errored when convergence retry fails during reconcile', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'test',
+        'role' => 'app',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '10.0.0.1',
+        'wireguard_address' => '10.6.0.5',
+    ]);
+
+    $assignment = NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => NodeRoleStatus::Error->value,
+        'settings' => ['tld' => 'test'],
+        'last_error' => 'baseline failed',
+        'converged_at' => null,
+    ]);
+
+    $this->app->bind(NodeRoleBaselineConverger::class, function (): NodeRoleBaselineConverger {
+        return new class extends NodeRoleBaselineConverger
+        {
+            public function __construct() {}
+
+            public function converge(Node $node, NodeRoleAssignment $assignment): void
+            {
+                throw new RuntimeException('baseline still failed');
+            }
+
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+            {
+                throw new RuntimeException('not used');
+            }
+        };
+    });
+
+    expect(fn () => $this->probe->reconcile($node, new DriftEntry(
+        family: 'nodes',
+        key: 'node.role_convergence_failed',
+        kind: DriftKind::Divergent,
+        summary: 'retry role convergence',
+        detail: [
+            'role' => 'app-development',
+        ],
+    )))->toThrow(RuntimeException::class, 'baseline still failed');
+
+    expect($assignment->fresh())
+        ->status->toBe(NodeRoleStatus::Error->value)
+        ->last_error->toBe('baseline still failed')
+        ->converged_at->toBeNull();
+});
+
 it('restores role-owned settings-derived artifacts during reconcile', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',

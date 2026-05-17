@@ -144,20 +144,23 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'app-production' conflicts with active role 'app-development'.");
     });
 
-    it('rejects gateway assignments that conflict with active composable roles', function (string $activeRole, array $settings): void {
-        $node = Node::factory()->create(['platform' => 'ubuntu']);
+    it('rejects roles that conflict with an active gateway assignment', function (string $role, array $settings): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'gateway.example.com',
+        ]);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => $activeRole,
+            'role' => 'gateway',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => $settings,
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'gateway', []))
-            ->toThrow(InvalidArgumentException::class, "Role 'gateway' conflicts with active role '{$activeRole}'.");
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, $role, $settings))
+            ->toThrow(InvalidArgumentException::class, "Role '{$role}' conflicts with active role 'gateway'.");
     })->with([
         'app-development' => ['app-development', ['tld' => 'test']],
+        'app-production' => ['app-production', []],
         'database' => ['database', []],
     ]);
 

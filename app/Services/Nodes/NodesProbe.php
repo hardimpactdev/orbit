@@ -873,6 +873,8 @@ final readonly class NodesProbe
                 'last_error' => $throwable->getMessage(),
                 'converged_at' => null,
             ])->save();
+
+            throw $throwable;
         }
     }
 

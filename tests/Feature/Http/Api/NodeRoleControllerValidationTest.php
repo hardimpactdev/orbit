@@ -258,7 +258,8 @@ describe('node role api validation envelopes', function (): void {
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', "Role 'gateway' conflicts with active role 'database'.")
+            ->assertJsonPath('error.message', 'The gateway role cannot be managed through node role commands.')
+            ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.meta.role', 'gateway')
             ->assertJsonMissingPath('success');
 
@@ -280,7 +281,8 @@ describe('node role api validation envelopes', function (): void {
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', "Role 'gateway' conflicts with active role 'app-development'.")
+            ->assertJsonPath('error.message', 'The gateway role cannot be managed through node role commands.')
+            ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.meta.role', 'gateway')
             ->assertJsonMissingPath('success');
 

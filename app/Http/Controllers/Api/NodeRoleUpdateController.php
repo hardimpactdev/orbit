@@ -38,6 +38,15 @@ final class NodeRoleUpdateController implements Loggable
             return $authorization;
         }
 
+        if ($role === 'gateway') {
+            return $this->error(
+                'validation_failed',
+                'The gateway role cannot be managed through node role commands.',
+                ['field' => 'role', 'role' => 'gateway'],
+                422,
+            );
+        }
+
         $node = Node::query()->where('name', $name)->where('status', 'active')->first();
         if (! $node instanceof Node) {
             return $this->error('node.not_found', "Node '{$name}' not found.", ['name' => $name], 404);
