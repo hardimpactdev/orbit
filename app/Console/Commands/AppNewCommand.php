@@ -573,22 +573,26 @@ class AppNewCommand extends Command
         if ((bool) config('orbit.is_gateway', false)) {
             $node = Node::query()
                 ->where('name', $name)
-                ->where('role', 'app')
-                ->where('environment', 'development')
                 ->where('status', 'active')
                 ->first();
 
-            return $node instanceof Node ? $node->name : null;
+            if (! $node instanceof Node) {
+                return null;
+            }
+
+            return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-development')
+                ? $node->name
+                : null;
         }
 
-        $nodes = $this->visibleNodePromptPayloads(role: 'app', environment: 'development', activeOnly: true);
+        $nodes = $this->visibleNodePromptPayloads(activeOnly: true);
 
         if ($nodes instanceof GatewayApiException) {
             return $nodes;
         }
 
         foreach ($nodes as $node) {
-            if (($node['name'] ?? null) === $name) {
+            if (($node['name'] ?? null) === $name && $this->payloadHasActiveRole($node, 'app-development')) {
                 return $name;
             }
         }
@@ -601,6 +605,30 @@ class AppNewCommand extends Command
         $name = LocalNodeDefault::query()->value('default_node_name');
 
         return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadHasActiveRole(array $payload, string $role): bool
+    {
+        $roles = $payload['roles'] ?? null;
+
+        if (! is_array($roles)) {
+            return false;
+        }
+
+        foreach ($roles as $assignment) {
+            if (
+                is_array($assignment)
+                && ($assignment['role'] ?? null) === $role
+                && ($assignment['status'] ?? null) === 'active'
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function failAppNameCollision(string $name, string $node): int

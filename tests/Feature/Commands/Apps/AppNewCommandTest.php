@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
@@ -116,6 +117,148 @@ it('uses local node default in non-interactive mode when node option is missing'
         ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
         ->and($payload['success']['data']['app']['node'])->toBe('app-2')
         ->and(App::query()->where('name', 'docs')->value('node_id'))->toBe($targetNode->id);
+});
+
+it('uses a configured gateway-local default node when it has active app-development despite legacy shadow mismatch', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-2',
+        'role' => 'database',
+        'environment' => 'production',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+
+    LocalNodeDefault::query()->create([
+        'default_node_name' => 'app-2',
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
+        ->and($payload['success']['data']['app']['node'])->toBe('app-2');
+});
+
+it('ignores a configured gateway-local default node when it only has legacy app-development shadows', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-2',
+        'role' => 'app',
+        'environment' => 'development',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    LocalNodeDefault::query()->create([
+        'default_node_name' => 'app-2',
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($remoteShell->runs)->toBe([])
+        ->and($payload['error']['code'])->toBe('validation_failed')
+        ->and($payload['error']['meta']['field'])->toBe('node');
+});
+
+it('uses a visible control-mode default node based on active app-development payload roles, not legacy shadows', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    LocalNodeDefault::query()->create([
+        'default_node_name' => 'app-1',
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $mock = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'nodes' => [[
+                        'name' => 'app-1',
+                        'role' => 'database',
+                        'environment' => 'production',
+                        'status' => 'active',
+                        'roles' => [
+                            ['role' => 'app-development', 'status' => 'active'],
+                        ],
+                    ]],
+                ],
+            ],
+        ], 200),
+        CreateAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                ],
+                'meta' => ['warnings' => []],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['app']['node'])->toBe('app-1');
+
+    $mock->assertSent(fn (mixed $request): bool => $request instanceof ListNodesRequest
+        && $request->role === null
+        && $request->environment === null);
+    $mock->assertSent(fn (mixed $request): bool => $request instanceof CreateAppRequest
+        && $request->node === 'app-1');
 });
 
 it('accepts active app-production nodes for production app creation on the gateway', function (): void {
