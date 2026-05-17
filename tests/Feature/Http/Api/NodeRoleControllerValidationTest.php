@@ -244,6 +244,55 @@ describe('node role api validation envelopes', function (): void {
         expect(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
     });
 
+    it('rejects adding gateway when the target already has a composable role', function (): void {
+        $targetId = (int) DB::table('nodes')
+            ->where('name', 'target-1')
+            ->value('id');
+
+        assignNodeRoleApiRole($targetId, 'database');
+
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'gateway',
+            'settings' => [],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "Role 'gateway' conflicts with active role 'database'.")
+            ->assertJsonPath('error.meta.role', 'gateway')
+            ->assertJsonMissingPath('success');
+
+        expect(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'gateway')->exists())->toBeFalse()
+            ->and(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
+    });
+
+    it('rejects updating gateway when the target has an active composable role', function (): void {
+        $targetId = (int) DB::table('nodes')
+            ->where('name', 'target-1')
+            ->value('id');
+
+        assignNodeRoleApiRole($targetId, 'gateway');
+        assignNodeRoleApiRole($targetId, 'app-development', ['tld' => 'test']);
+
+        $response = patchNodeRoleApiJson('/api/nodes/target-1/roles/gateway', [
+            'settings' => [],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "Role 'gateway' conflicts with active role 'app-development'.")
+            ->assertJsonPath('error.meta.role', 'gateway')
+            ->assertJsonMissingPath('success');
+
+        $gatewayAssignment = DB::table('node_roles')
+            ->where('node_id', $targetId)
+            ->where('role', 'gateway')
+            ->first();
+
+        expect($gatewayAssignment?->status)->toBe('active')
+            ->and(json_decode((string) $gatewayAssignment?->settings, true, flags: JSON_THROW_ON_ERROR))->toBe([]);
+    });
+
     it('returns the orbit error envelope for invalid force on remove', function (): void {
         $response = deleteNodeRoleApiJson('/api/nodes/target-1/roles/database', [
             'force' => 'invalid',

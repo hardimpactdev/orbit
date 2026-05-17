@@ -28,18 +28,18 @@ class NodeRoleAssignmentService
     {
         $definition = $this->registry->definition($role);
 
-        if (! $definition->assignableByCommand) {
-            throw new InvalidArgumentException("Role '{$role}' cannot be assigned through this service.");
-        }
-
         if ($this->assignments->find($node, $role) instanceof NodeRoleAssignment) {
             throw new InvalidArgumentException("Role '{$role}' is already assigned to node '{$node->name}'.");
         }
 
         $this->guardSupportedPlatform($node, $definition);
+        $this->guardAgainstConflicts($node, $definition);
+
+        if (! $definition->assignableByCommand) {
+            throw new InvalidArgumentException("Role '{$role}' cannot be assigned through this service.");
+        }
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
-        $this->guardAgainstConflicts($node, $definition);
 
         $assignment = $node->roleAssignments()->create([
             'role' => $role,
@@ -59,10 +59,6 @@ class NodeRoleAssignmentService
     {
         $definition = $this->registry->definition($role);
 
-        if (! $definition->assignableByCommand) {
-            throw new InvalidArgumentException("Role '{$role}' cannot be updated through this service.");
-        }
-
         $assignment = $this->assignments->find($node, $role);
 
         if (! $assignment instanceof NodeRoleAssignment) {
@@ -71,6 +67,10 @@ class NodeRoleAssignmentService
 
         $this->guardSupportedPlatform($node, $definition);
         $this->guardAgainstConflicts($node, $definition);
+
+        if (! $definition->assignableByCommand) {
+            throw new InvalidArgumentException("Role '{$role}' cannot be updated through this service.");
+        }
 
         $assignment->forceFill([
             'settings' => $definition->settingsFromArray($settings)->toArray(),
