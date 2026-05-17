@@ -109,10 +109,28 @@ describe('node role assignment service', function (): void {
             ->toBeNull();
     });
 
+    it('marks app-development as error when the development dns mapping cannot be materialized', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'wireguard_address' => null,
+        ]);
+
+        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']);
+
+        expect($assignment->status)
+            ->toBe(NodeRoleStatus::Error->value)
+            ->and($assignment->last_error)
+            ->toBe('The app-development role requires a WireGuard address so the development DNS mapping can be materialized.')
+            ->and($assignment->converged_at)
+            ->toBeNull();
+    });
+
     it('updates an existing role and re-activates it after convergence succeeds', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu_24-04',
             'role' => 'control',
+            'wireguard_address' => '10.0.0.10',
         ]);
 
         NodeRoleAssignment::factory()->create([
@@ -169,6 +187,19 @@ describe('node role assignment service', function (): void {
 
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'queue'))
             ->toThrow(InvalidArgumentException::class, 'Unknown node role [queue].');
+    });
+
+    it('rejects gateway removal through the normal service', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'gateway'))
+            ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be removed through this service.");
     });
 
     it('blocks removal when dependents exist and force is false', function (): void {

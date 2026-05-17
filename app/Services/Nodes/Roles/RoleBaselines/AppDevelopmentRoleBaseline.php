@@ -25,9 +25,11 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
 
         $result = $this->developmentDnsMappingEnactor->converge($this->developmentNode($node, $tld));
 
-        if (($result['status'] ?? null) === 'not_applicable') {
+        if (($result['status'] ?? null) !== 'not_applicable') {
             return;
         }
+
+        throw new RuntimeException('The app-development role requires a WireGuard address so the development DNS mapping can be materialized.');
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
