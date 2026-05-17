@@ -50,7 +50,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Gateway->value,
                     NodeRoleName::AppProduction->value,
                 ],
-                supportedPlatforms: ['ubuntu', 'macos'],
+                supportedPlatforms: ['ubuntu'],
                 settingsClass: AppDevelopmentRoleSettings::class,
             ),
             NodeRoleName::AppProduction->value => new NodeRoleDefinition(

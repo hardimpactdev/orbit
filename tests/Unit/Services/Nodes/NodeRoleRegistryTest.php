@@ -40,7 +40,7 @@ describe('node role registry', function (): void {
 
         expect($registry->definition('gateway')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('gateway')->assignableByCommand)->toBeFalse()
-            ->and($registry->definition('app-development')->supportedPlatforms)->toBe(['ubuntu', 'macos'])
+            ->and($registry->definition('app-development')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('app-development')->assignableByCommand)->toBeTrue()
             ->and($registry->definition('app-production')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('database')->supportedPlatforms)->toBe(['ubuntu']);

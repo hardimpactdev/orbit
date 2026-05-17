@@ -761,7 +761,7 @@ new NodeRoleDefinition(
 ```
 
 Use:
-- `app-development`: conflicts `['gateway', 'app-production']`, supported platforms `['ubuntu', 'macos']`, settings `AppDevelopmentRoleSettings::class`.
+- `app-development`: conflicts `['gateway', 'app-production']`, supported platforms `['ubuntu']`, settings `AppDevelopmentRoleSettings::class`.
 - `app-production`: conflicts `['gateway', 'app-development']`, supported platforms `['ubuntu']`, settings `AppProductionRoleSettings::class`.
 - `database`: conflicts `['gateway']`, supported platforms `['ubuntu']`, settings `DatabaseRoleSettings::class`.
 
