@@ -146,7 +146,34 @@ describe('GET /api/me', function (): void {
             ->assertJsonPath('success.data.self.status', 'active');
     });
 
-    it('serializes legacy environment for app nodes and null for non-app nodes', function (): void {
+    it('derives environment from active app role assignments', function (): void {
+        $appId = (int) DB::table('nodes')->insertGetId(meNodeRow([
+            'name' => 'app-1',
+            'role' => 'app',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.9',
+        ]));
+        DB::table('nodes')->insert(meNodeRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.2',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appId,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.self.environment', 'development')
+            ->assertJsonPath('success.data.gateway.environment', null);
+    });
+
+    it('ignores legacy app environment without an active app role assignment', function (): void {
         DB::table('nodes')->insert(meNodeRow([
             'name' => 'app-1',
             'role' => 'app',
@@ -163,8 +190,7 @@ describe('GET /api/me', function (): void {
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.self.environment', 'development')
-            ->assertJsonPath('success.data.gateway.environment', null);
+            ->assertJsonPath('success.data.self.environment', null);
     });
 
     it('serializes composable roles for self and gateway', function (): void {

@@ -118,11 +118,12 @@ class NodeRoleAssignmentService
                     'last_error' => null,
                 ])->save();
 
+                $this->converger->remove($node, $transactionAssignment, $purgeData);
+
                 if ($transactionDependents !== []) {
                     $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
                 }
 
-                $this->converger->remove($node, $transactionAssignment, $purgeData);
                 $transactionAssignment->delete();
             });
         } catch (InvalidArgumentException $exception) {

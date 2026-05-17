@@ -416,7 +416,7 @@ describe('node role assignment service', function (): void {
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
 
-    it('leaves the assignment in error and keeps dependents intact when removal cleanup fails', function (): void {
+    it('leaves the assignment in error and keeps dependents intact when baseline removal fails', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $assignment = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -432,6 +432,21 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'domain' => 'docs.test',
         ]);
+        $inspector = new class extends NodeRoleDependencyInspector
+        {
+            public bool $removed = false;
+
+            public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
+            {
+                return ['1 development app record'];
+            }
+
+            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
+            {
+                $this->removed = true;
+            }
+        };
+        app()->instance(NodeRoleDependencyInspector::class, $inspector);
 
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
@@ -458,6 +473,8 @@ describe('node role assignment service', function (): void {
             ->toBe(NodeRoleStatus::Error->value)
             ->and($assignment->fresh()->last_error)
             ->toBe('Cleanup failed.')
+            ->and($inspector->removed)
+            ->toBeFalse()
             ->and(App::query()->whereKey($app->id)->exists())
             ->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
