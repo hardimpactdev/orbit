@@ -17,14 +17,14 @@ owning family concept document.
 - **Adopt** — doctor direction that records observed node reality into gateway configuration. Flag: `--adopt`. See [Architecture: Keeping Nodes In Sync](ARCHITECTURE.md#keeping-nodes-in-sync).
 - **Fix** — interactive doctor resolution flow that asks per drifted item whether to restore or adopt. Flag: `--fix`. See [Architecture: Keeping Nodes In Sync](ARCHITECTURE.md#keeping-nodes-in-sync).
 - **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](ARCHITECTURE.md#authentication-and-authorization).
-- **Node access grant** — gateway-stored permission that lets one node manage another. See [Architecture: Authentication And Authorization](ARCHITECTURE.md#authentication-and-authorization).
-- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on every gateway and app node. See [Building Blocks: Process Manager](BUILDING-BLOCKS.md#process-manager).
+- **Node access grant** — gateway-stored permission that lets one node operate on another after WireGuard identity is authenticated. See [Architecture: Authentication And Authorization](ARCHITECTURE.md#authentication-and-authorization).
+- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Building Blocks: Process Manager](BUILDING-BLOCKS.md#process-manager).
 - **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](commands/7_process/process-concepts.md).
 - **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](commands/7_process/process-concepts.md).
-- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on every gateway and app node under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch, overlap policy, run history, and heartbeat. See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
+- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway and on hosted nodes with local schedules under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch, overlap policy, run history, and heartbeat. See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager that keeps Supervisor alive. systemd on Ubuntu. Not Orbit's process manager.
-- **RemoteShell** — gateway-to-app-node execution primitive. See [Building Blocks: Gateway To App Node](BUILDING-BLOCKS.md#gateway-to-app-node).
-- **CLI caller** — an Orbit CLI invocation from a control node, app node, or the gateway host. See [Architecture: Trust And Transport](ARCHITECTURE.md#trust-and-transport).
+- **RemoteShell** — gateway-to-hosted-node execution primitive. See [Building Blocks: Gateway To Hosted Node](BUILDING-BLOCKS.md#gateway-to-hosted-node).
+- **CLI caller** — an Orbit CLI invocation from a joined client, hosted node, or the gateway host. See [Architecture: Trust And Transport](ARCHITECTURE.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Building Blocks: Gateway API](BUILDING-BLOCKS.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](ARCHITECTURE.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](ARCHITECTURE.md#command-and-api-model) and [Command Contracts](commands/README.md).
@@ -51,16 +51,20 @@ Source: [Node Concepts](commands/1_node/node-concepts.md).
 <!-- concept-index:commands/1_node/node-concepts.md -->
 - **Node**
 - **Gateway**
-- **Control node**
-- **App node**
-- **Caller role**
+- **Joined client**
+- **Hosted node**
+- **Hosted role**
+- **Role assignment**
+- **Hosted role settings**
+- **Role assignment status**
+- **Caller identity**
 - **Node identity**
 - **First-gateway bootstrap**
-- **Control-node enrollment**
+- **Joined-client enrollment**
 - **Compatible existing node**
 - **CLI-to-gateway edge**
-- **Gateway-to-app-node edge**
-- **App-node event ingestion**
+- **Gateway-to-hosted-node edge**
+- **Hosted-node event ingestion**
 - **Node reality**
 - **Consuming node**
 - **Serving node**

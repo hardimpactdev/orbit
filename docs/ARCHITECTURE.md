@@ -4,7 +4,11 @@ This document describes Orbit's architecture at a high level.
 
 ## Hub and spoke
 
-Orbit uses a hub-and-spoke architecture. The gateway is the hub: it owns fleet configuration, serves a typed API, coordinates the VPN, and applies changes on app nodes. Control nodes and app nodes are spokes. They join the gateway-managed private network for secure communication.
+Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the
+singleton authority role, owns fleet configuration, serves a typed API,
+coordinates the VPN, and applies changes on hosted nodes. Joined clients and
+hosted nodes are spokes. They join the gateway-managed private network for
+secure communication.
 
 ```text
               ┌─────────────────────┐
@@ -39,9 +43,12 @@ Orbit uses a hub-and-spoke architecture. The gateway is the hub: it owns fleet c
 
 One hub, one path: there is exactly one place to answer "what should exist?", and exactly one place changes are written. Spokes initiate commands and serve workloads, but durable configuration always lives on the gateway.
 
-### Control node
+### Joined client
 
-A control node is where you drive Orbit from, usually your Mac or Ubuntu workstation. It runs the Orbit CLI and communicates with the gateway to handle operations. Control nodes do not write fleet state directly; they call the gateway and let the gateway do the work.
+A joined client is where you drive Orbit from, usually your Mac or Ubuntu
+workstation. It runs the Orbit CLI, presents a WireGuard identity, and
+communicates with the gateway to handle operations. Joined clients do not write
+fleet state directly; they call the gateway and let the gateway do the work.
 
 ### Gateway node
 
@@ -49,19 +56,40 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 It runs the VPN server every Orbit node joins and acts as Orbit's certificate authority. Steady-state traffic stays on a private network, and HTTPS works without an external CA.
 
-The gateway exposes the typed API that the CLI talks to. It holds SSH access to app nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new app node can be provisioned from the same configuration that built the previous one.
+The gateway exposes the typed API that the CLI talks to. It holds SSH access to
+hosted nodes and applies changes on them over that SSH connection. Because the
+gateway owns the fleet configuration, a drifted node can be restored from it,
+and a new hosted node can be provisioned from the same configuration that built
+the previous one.
 
-### App node
+### Hosted node
 
-An app node is a workload host with an environment role — either **development** or **production**. It runs your apps and the supporting runtime (PHP-FPM, Caddy, Docker services, scheduled jobs). Development nodes use a local TLD for URLs (`myapp.test`, for example); production nodes serve real domains. Staging is a usage pattern of production app nodes — same role, just not internet-facing. App nodes do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on an app node, but only as a gateway client that calls the gateway like any other caller.
+A hosted node is a workload host with one or more active hosted role
+assignments. Hosted roles are fixed code-defined bundles:
+`app-development`, `app-production`, and `database`. `app-development`
+uses a local TLD for URLs (`myapp.test`, for example); `app-production`
+serves real domains. Staging is a usage pattern of `app-production`, not a
+separate hosted role. Hosted nodes do not own durable Orbit state and do not
+run a local control plane. The Orbit CLI can run on a hosted node, but only as
+a joined client that calls the gateway like any other caller.
 
 ### VPN
 
-The VPN is the secure network every Orbit node joins. Steady-state traffic flows over it: CLI calls to the gateway, changes the gateway pushes to app nodes, and events app nodes send back. Staging and development nodes do not need a public face. Production nodes expose only ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable only over the VPN. The current VPN implementation is WireGuard; see [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md).
+The VPN is the secure network every Orbit node joins. Steady-state traffic
+flows over it: CLI calls to the gateway, changes the gateway pushes to hosted
+nodes, and events hosted nodes send back. Development nodes and database-only
+nodes do not need a public face. Hosted nodes with `app-production` expose only
+ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable
+only over the VPN. The current VPN implementation is WireGuard; see
+[BUILDING-BLOCKS.md](BUILDING-BLOCKS.md).
 
 ### CLI
 
-The CLI is the product surface for humans, AI agents, and CI. It runs on control nodes, on the gateway itself, and on app nodes as a gateway client. Every command takes the same path: gather local input, call the gateway typed API over the VPN, and render output. Commands that return structured data expose `--json`.
+The CLI is the product surface for humans, AI agents, and CI. It runs on joined
+clients, on the gateway itself, and on hosted nodes as a gateway client. Every
+command takes the same path: gather local input, call the gateway typed API
+over the VPN, and render output. Commands that return structured data expose
+`--json`.
 
 ## State model
 
@@ -87,33 +115,53 @@ Orbit has two network edges, and only two.
 | Edge | Transport | Purpose |
 |---|---|---|
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
-| Gateway → app node | SSH | Running scripts, uploading config, streaming logs, controlling services |
+| Gateway → hosted node | SSH | Running scripts, uploading config, streaming logs, controlling services |
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
 The blast radius of any single caller, including an AI agent driving Orbit, is bounded by the API surface. If a caller needs to be cut off — a runaway agent, a compromised laptop, a former contributor — revoking its VPN access shuts down everything it could do, immediately.
 
-CLI callers can run on a control node, on the gateway itself, or on an app node. The caller location changes how local context (current app, current workspace) is resolved, but it never changes who writes state — that is always the gateway.
+CLI callers can run on a joined client, on the gateway itself, or on a hosted
+node. The caller location changes how local context (current app, current
+workspace) is resolved, but it never changes who writes state — that is always
+the gateway.
 
-App nodes do not accept Orbit API calls from other nodes. They run apps, not orchestration. When something needs to happen on an app node, the gateway opens the SSH connection and runs the work there. App nodes do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
+Hosted nodes do not accept Orbit API calls from other nodes. They run workloads,
+not orchestration. When something needs to happen on a hosted node, the gateway
+opens the SSH connection and runs the work there. Hosted nodes do send a small
+amount of outbound traffic back to the gateway — process crash notifications
+and scheduler run history — but they never accept inbound RPC.
 
-The SSH primitive the gateway uses to act on app nodes is called `RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives in [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md#gateway-to-app-node).
+The SSH primitive the gateway uses to act on hosted nodes is called
+`RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives
+in [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md#gateway-to-hosted-node).
 
 ## Authentication and authorization
 
 Every Orbit command needs two things: an identity and permission.
 
-**Identity** comes from the VPN. Every node — control, gateway, or app — joins the VPN with its own credentials. The gateway knows which node is on the other end of every API call.
+**Identity** comes from the VPN. Every node joins the VPN with its own
+credentials. The gateway knows which node is on the other end of every API
+call.
 
-**Permission** is controlled by the gateway. For each node, the gateway stores which other nodes are allowed to manage it. A control node can only act on the app nodes it has been granted access to. The same applies to gateway-owned data: only nodes granted access to the gateway can read gateway policy or activity history.
+**Permission** is controlled by the gateway. Operation is WireGuard identity
+plus gateway grants, not an operator role. For each node, the gateway stores
+which other nodes are allowed to manage it. A joined client can only act on the
+hosted nodes it has been granted access to. The same applies to gateway-owned
+data: only nodes granted access to the gateway can read gateway policy or
+activity history.
 
 This grant model lets you scope access naturally:
 
-- A developer's control node might have access to development app nodes but not production.
-- A CI runner's control node might have access only to the apps it deploys.
-- An app node's local CLI can manage its own apps and workspaces but not other app nodes in the fleet.
+- A developer's joined client might have access to `app-development` nodes but
+  not `app-production`.
+- A CI runner's joined client might have access only to the apps it deploys.
+- A hosted node's local CLI can manage its own apps and workspaces but not
+  other hosted nodes in the fleet.
 
-Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no app-node config edit, no SSH key removal needed.
+Permissions are revocable from the gateway. Removing a grant immediately
+revokes access — no key rotation, no hosted-node config edit, no SSH key
+removal needed.
 
 ## Command and API model
 
@@ -131,7 +179,7 @@ Orbit has eight state families:
 
 | Family | Owns | Concept doc |
 |---|---|---|
-| `node` | Which nodes exist, their role, VPN identity, SSH access | [Node Concepts](commands/1_node/node-concepts.md) |
+| `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](commands/1_node/node-concepts.md) |
 | `app` | App config, process config, deploy steps, app health | [App Concepts](commands/5_app/app-concepts.md) |
 | `workspace` | Workspace config, URL, PHP pool, inherited process config | [Workspace Concepts](commands/6_workspace/workspace-concepts.md) |
 | `process` | Long-running processes for apps and workspaces | [Process Concepts](commands/7_process/process-concepts.md) |

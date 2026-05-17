@@ -8,34 +8,47 @@ override the [Architecture](../../ARCHITECTURE.md).
 
 Each term below has a precise meaning in the node command family.
 
-- **Node:** A gateway-owned fleet member with a stable name, role, platform,
-  identity, reachability metadata, and access policy.
-- **Gateway:** Node that owns durable Orbit state, the typed API, WireGuard
-  coordination, root CA material, DNS coordination, node access policy, and
-  doctor convergence.
-- **Control node:** CLI caller configured to use a gateway. A control node
+- **Node:** A gateway-owned fleet member with a stable name, role assignments,
+  platform, identity, reachability metadata, and access policy.
+- **Gateway:** Special singleton authority role that owns durable Orbit state,
+  the typed API, WireGuard coordination, root CA material, DNS coordination,
+  node access policy, and doctor convergence. `gateway` is stored as a role
+  assignment, but normal hosted-role mutation does not add it.
+- **Joined client:** CLI caller configured to use a gateway. A joined client
   stores local gateway configuration and WireGuard identity material, but it
-  does not orchestrate app nodes directly.
-- **App node:** Workload host for apps, workspaces, and managed runtime
-  artifacts. It may run the Orbit CLI as a stateless gateway client, but it is
-  not a control plane.
-- **Caller role:** The role recorded on the gateway-owned node record that
-  authenticates a CLI request (`control`, `gateway`, or `app`). The gateway
-  derives the caller role from the presented WireGuard peer identity and uses
-  it for authorization. The CLI does not store or check this role locally.
+  is not a hosted role and does not orchestrate hosted nodes directly.
+- **Hosted node:** Workload host for apps, workspaces, databases, and managed
+  runtime artifacts. A hosted node may run the Orbit CLI as a stateless gateway
+  client, but it is not a control plane.
+- **Hosted role:** A fixed code-defined bundle attached through a role
+  assignment. v1 hosted roles are `app-development`, `app-production`, and
+  `database`.
+- **Role assignment:** Gateway-owned record that attaches one role to one node,
+  carries any role-specific settings, and tracks convergence status.
+- **Hosted role settings:** Assignment-local configuration for a hosted role.
+  In v1, only `app-development` has settings: `tld`.
+- **Role assignment status:** Lifecycle state of one role assignment:
+  `pending`, `active`, `error`, or `removing`. Eligibility and compatibility
+  checks use only active assignments.
+- **Caller identity:** The gateway-known WireGuard identity that authenticates a
+  CLI request. Operation is WireGuard identity plus gateway grants, not an
+  operator role. The CLI does not store or check a caller role locally.
 
 ## Role Platform Support
 
 Each role is supported on a specific set of host platforms.
 
-| Role | Supported platforms |
+| Role kind | Supported platforms |
 | --- | --- |
-| `control` | macOS, Ubuntu |
 | `gateway` | Ubuntu |
-| `app` | Ubuntu |
+| joined client | macOS, Ubuntu |
+| `app-development` | Ubuntu |
+| `app-production` | Ubuntu |
+| `database` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
-observed host platform is supported for the node's role before side effects.
+observed host platform is supported for the node's gateway role assignment or
+active hosted roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
@@ -43,31 +56,32 @@ platform checks; platform drift belongs to `doctor --family=node`.
 
 These terms describe how nodes join the fleet and prove their identity to the gateway.
 
-- **Node identity:** The node record that the gateway owns, plus its WireGuard peer
-  identity, assigned WireGuard address, role, and node name.
-- **First-gateway bootstrap:** The one allowed no-gateway path. A control node
-  provisions the first gateway over SSH, creates the initiating control node
+- **Node identity:** The node record that the gateway owns, plus its WireGuard
+  peer identity, assigned WireGuard address, role assignments, and node name.
+- **First-gateway bootstrap:** The one allowed no-gateway path. A joined client
+  provisions the first gateway over SSH, creates the initiating joined-client
   identity, installs local trust and gateway config, and verifies gateway API
   access.
-- **Control-node enrollment:** A two-machine path: the gateway mints the
-  control node identity through `node:new --role=control`; the control machine
-  installs that WireGuard identity and runs `gateway:add`.
-- **Compatible existing node:** An active node whose role is known to the gateway
-  and whose role, identity, host, app-node environment, and development TLD match the resolved
-  command input for the requested path.
+- **Joined-client enrollment:** A two-machine path: the gateway mints the
+  joined-client identity, the client machine installs that WireGuard identity,
+  and then runs `gateway:add`.
+- **Compatible existing node:** An active node whose role assignments are known
+  to the gateway and whose role assignments, identity, host, and
+  assignment-local settings match the resolved command input for the requested
+  path.
 
 ## Transport and authority
 
 These terms describe how nodes communicate and how authority is enforced.
 
-- **CLI-to-gateway edge:** HTTPS over WireGuard from control nodes, app-node CLI
-  clients, or the gateway-local CLI to the gateway API.
-- **Gateway-to-app-node edge:** SSH through `RemoteShell` for node-side
+- **CLI-to-gateway edge:** HTTPS over WireGuard from joined clients, hosted-node
+  CLI clients, or the gateway-local CLI to the gateway API.
+- **Gateway-to-hosted-node edge:** SSH through `RemoteShell` for node-side
   applying.
-- **App-node event ingestion:** Narrow app-node-to-gateway callbacks for
-  purpose-built lifecycle events, not app-node control-plane authority.
-- **Node reality:** Observed role, platform, WireGuard, SSH, reachability, and
-  gateway runtime readiness for a node.
+- **Hosted-node event ingestion:** Narrow hosted-node-to-gateway callbacks for
+  purpose-built lifecycle events, not hosted-node control-plane authority.
+- **Node reality:** Observed role assignments, assignment status, platform,
+  WireGuard, SSH, reachability, and gateway runtime readiness for a node.
 
 ## Access Policy
 
@@ -82,20 +96,24 @@ do not grant SSH, and do not replace WireGuard authentication.
 
 ## Development DNS Mapping
 
-These terms describe how the gateway maintains DNS resolution for development app nodes.
+These terms describe how the gateway maintains DNS resolution for development
+hosted nodes.
 
 - **Gateway-owned development DNS mapping:** Node-family gateway configuration
-  and gateway-local resolver reality that maps `*.{nodes.tld}` for an active
-  development app node to that node's WireGuard address. The gateway owns this mapping.
-- **Development DNS configuration model:** Derived from the active app-node row.
-  A mapping exists only when the node row is an active development app node,
-  `nodes.tld` is non-empty, and the node row has a non-empty WireGuard address.
-  The canonical domain is `*.{nodes.tld}` and the canonical target is the
+  and gateway-local resolver reality that maps `*.{tld}` for an active
+  `app-development` role assignment to that node's WireGuard address. The
+  gateway owns this mapping.
+- **Development DNS configuration model:** Derived from the active
+  `app-development` role assignment. A mapping exists only when that assignment
+  is active, its `tld` setting is non-empty, and the node row has a non-empty
+  WireGuard address.
+  The canonical domain is `*.{tld}` and the canonical target is the
   node's WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that
   converges or removes resolver artifacts on the gateway from
-  the derived configuration model. It is used by app-node provisioning, app-node
-  adoption and materialization, node removal, and `doctor --family=node --restore`.
+  the derived configuration model. It is used by hosted-node provisioning,
+  hosted-node adoption and materialization, node removal, and
+  `doctor --family=node --restore`.
 - **Development DNS probe:** Internal node-family gateway service that reads
   gateway-local resolver reality for derived development DNS configuration and
   reports node-family drift when the mapping is absent, points at another
@@ -104,14 +122,14 @@ These terms describe how the gateway maintains DNS resolution for development ap
 Development DNS mappings are not a public `dns:*` command surface and do not
 create a `dns` state family. The `dns:*` commands own only the resolver overrides
 local to the caller. The node family owns the gateway mapping lifecycle because it is
-part of development app-node readiness.
+part of development hosted-role readiness.
 
 ## Node Family Boundaries
 
-The node family owns fleet membership, node roles, supported platforms, gateway
-configuration, node identity, app-node reachability from the gateway, access
-policy, gateway runtime readiness, gateway-owned development DNS mappings, and
-node lifecycle checks.
+The node family owns fleet membership, node roles, role assignments, supported
+platforms, gateway configuration, node identity, hosted-node reachability from
+the gateway, access policy, gateway runtime readiness, gateway-owned
+development DNS mappings, and node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process
 or schedule definitions, proxy route lifecycle, tool registration, or editable
