@@ -57,6 +57,67 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'database' is already assigned to node '{$node->name}'.");
     });
 
+    it('rejects app-development assignment when another active node owns the tld', function (): void {
+        $existingNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => null,
+            'wireguard_address' => '10.0.0.11',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $existingNode->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'test'],
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'wireguard_address' => '10.0.0.12',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']))
+            ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
+
+        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeFalse();
+    });
+
+    it('rejects app-development updates when another active node owns the tld', function (): void {
+        $existingNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => null,
+            'wireguard_address' => '10.0.0.11',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $existingNode->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'test'],
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'app',
+            'environment' => 'development',
+            'wireguard_address' => '10.0.0.12',
+        ]);
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'old'],
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-development', ['tld' => 'test']))
+            ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
+
+        expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->last_error)->toBeNull();
+    });
+
     it('updates legacy node shadows when roles are added and removed', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',

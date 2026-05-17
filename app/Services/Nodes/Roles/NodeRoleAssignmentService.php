@@ -40,6 +40,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
+        $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
         $assignment = $node->roleAssignments()->create([
             'role' => $role,
@@ -72,8 +73,11 @@ class NodeRoleAssignmentService
         $this->guardSupportedPlatform($node, $definition);
         $this->guardAgainstConflicts($node, $definition);
 
+        $settingsData = $definition->settingsFromArray($settings)->toArray();
+        $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
+
         $assignment->forceFill([
-            'settings' => $definition->settingsFromArray($settings)->toArray(),
+            'settings' => $settingsData,
             'status' => NodeRoleStatus::Pending->value,
             'last_error' => null,
             'converged_at' => null,
@@ -231,5 +235,41 @@ class NodeRoleAssignmentService
         }
 
         throw new InvalidArgumentException("Role '{$definition->name}' conflicts with {$conflict->status} role '{$conflict->role}'.");
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function guardUniqueDevelopmentTld(Node $node, string $role, array $settings): void
+    {
+        if ($role !== NodeRoleName::AppDevelopment->value) {
+            return;
+        }
+
+        $tld = $settings['tld'] ?? null;
+
+        if (! is_string($tld) || $tld === '') {
+            return;
+        }
+
+        $legacyCollision = Node::query()
+            ->where('status', 'active')
+            ->where('tld', $tld)
+            ->whereKeyNot($node->id)
+            ->exists();
+
+        $roleCollision = NodeRoleAssignment::query()
+            ->where('role', NodeRoleName::AppDevelopment->value)
+            ->where('status', NodeRoleStatus::Active->value)
+            ->where('node_id', '!=', $node->id)
+            ->where('settings->tld', $tld)
+            ->whereRelation('node', 'status', 'active')
+            ->exists();
+
+        if (! $legacyCollision && ! $roleCollision) {
+            return;
+        }
+
+        throw new InvalidArgumentException("Development TLD '{$tld}' is already assigned to another node.");
     }
 }
