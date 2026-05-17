@@ -72,6 +72,8 @@ class NodeRoleAssignmentService
 
     public function remove(Node $node, string $role, bool $force = false, bool $purgeData = false): void
     {
+        $this->registry->definition($role);
+
         if ($purgeData && ! $force) {
             throw new InvalidArgumentException('The purgeData option requires force.');
         }

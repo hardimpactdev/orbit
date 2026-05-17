@@ -130,6 +130,13 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be assigned through this service.");
     });
 
+    it('rejects unknown roles during removal through the registry', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'queue'))
+            ->toThrow(InvalidArgumentException::class, 'Unknown node role [queue].');
+    });
+
     it('blocks removal when dependents exist and force is false', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
