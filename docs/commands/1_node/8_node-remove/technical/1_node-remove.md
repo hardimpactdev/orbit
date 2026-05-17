@@ -154,7 +154,7 @@ node-family drift. JSON output reports this under `success.meta.warnings` with
 Partial development DNS cleanup is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale
 gateway resolver artifact is node-family drift. JSON output reports this under
-`success.meta.warnings` with `code=node.development_dns_mapping_mismatch` and
+`success.meta.warnings` with `code=node.role_baseline_mismatch` and
 `next_command=doctor --fix --family=node --restore`.
 
 The absent-target rule is intentionally different from `node:revoke`.
