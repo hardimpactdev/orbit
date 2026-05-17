@@ -179,6 +179,24 @@ it('creates compatible app-production and database hosted roles', function (): v
         ->and($roles->pluck('status')->unique()->all())->toBe([NodeRoleStatus::Active->value]);
 });
 
+it('creates a database hosted role without requiring host input', function (): void {
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'db-1',
+        '--role' => ['database'],
+        '--json' => true,
+    ]);
+
+    $node = Node::query()->where('name', 'db-1')->first();
+
+    expect($exitCode)->toBe(0)
+        ->and($node)->not->toBeNull()
+        ->and($node->host)->toBe('')
+        ->and($node->user)->toBe('orbit')
+        ->and($node->roleAssignments)->toHaveCount(1)
+        ->and($node->roleAssignments->first()?->role)->toBe('database')
+        ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value);
+});
+
 it('rejects conflicting hosted roles before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'bad',
@@ -191,6 +209,25 @@ it('rejects conflicting hosted roles before side effects', function (): void {
     expect($exitCode)->toBe(1)
         ->and(Node::query()->where('name', 'bad')->exists())->toBeFalse()
         ->and(NodeRoleAssignment::query()->count())->toBe(0);
+});
+
+it('rejects environment for canonical hosted-role input', function (): void {
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'canonical-env',
+        '--role' => ['database'],
+        '--environment' => 'production',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'validation_failed',
+            'message' => 'Environment is only supported for legacy app role mapping.',
+            'meta' => ['field' => 'environment'],
+        ])
+        ->and(Node::query()->where('name', 'canonical-env')->exists())->toBeFalse();
 });
 
 it('maps the legacy app role to app-development', function (): void {

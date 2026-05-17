@@ -2323,16 +2323,19 @@ class NodeNewCommand extends Command
      */
     private function resolveHostedRoleInputs(array $roles): array|int
     {
+        if ($this->stringOption('environment') !== null) {
+            return $this->validationFailed('environment', 'Environment is only supported for legacy app role mapping.');
+        }
+
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
-            NodeRoleName::Database->value,
         ]) !== [];
 
         $host = $needsHost ? $this->resolveHost('app') : null;
 
         if ($needsHost && $host === null) {
-            return $this->validationFailed('host', 'Host is required for hosted app and database roles.');
+            return $this->validationFailed('host', 'Host is required for hosted app roles.');
         }
 
         if ($host !== null && ! $this->isValidHost($host)) {
