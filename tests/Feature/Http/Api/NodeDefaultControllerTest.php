@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -50,6 +51,16 @@ function grantDefaultNodeAccess(int $callerId, int $nodeId): void
         'serving_node_id' => $nodeId,
         'created_at' => now(),
         'updated_at' => now(),
+    ]);
+}
+
+function assignApiDefaultRole(int $nodeId, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
+{
+    return NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+        'settings' => $settings,
     ]);
 }
 
@@ -134,6 +145,7 @@ describe('NodeDefaultController', function (): void {
     it('sets an authorized development app node as default', function (): void {
         $callerId = createDefaultCallerNode();
         $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
+        assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
         grantDefaultNodeAccess($callerId, $appId);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
@@ -148,6 +160,7 @@ describe('NodeDefaultController', function (): void {
     it('logs activity when setting the default node', function (): void {
         $callerId = createDefaultCallerNode();
         $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
+        assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
         grantDefaultNodeAccess($callerId, $appId);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
@@ -170,6 +183,8 @@ describe('NodeDefaultController', function (): void {
         $callerId = createDefaultCallerNode();
         $firstId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow(['name' => 'app-1']));
         $secondId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow(['name' => 'app-2']));
+        assignApiDefaultRole($firstId, 'app-development', settings: ['tld' => 'test']);
+        assignApiDefaultRole($secondId, 'app-development', settings: ['tld' => 'test']);
         grantDefaultNodeAccess($callerId, $firstId);
         grantDefaultNodeAccess($callerId, $secondId);
 
@@ -280,6 +295,7 @@ describe('NodeDefaultController', function (): void {
             'name' => 'prod-1',
             'environment' => 'production',
         ]));
+        assignApiDefaultRole($prodId, 'app-production');
         grantDefaultNodeAccess($callerId, $prodId);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'prod-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
@@ -287,13 +303,13 @@ describe('NodeDefaultController', function (): void {
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.invalid_role')
             ->assertJsonPath('error.message', "Node 'prod-1' is not a development app node.")
-            ->assertJsonPath('error.meta.required_role', 'app')
-            ->assertJsonPath('error.meta.required_environment', 'development');
+            ->assertJsonPath('error.meta.required_role_assignment', 'app-development');
     });
 
     it('rejects unauthorized target nodes', function (): void {
         createDefaultCallerNode();
-        DB::table('nodes')->insert(apiDefaultNodeRow());
+        $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
+        assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 

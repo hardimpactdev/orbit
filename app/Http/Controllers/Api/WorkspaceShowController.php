@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceShowPayload;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -18,6 +19,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class WorkspaceShowController implements Loggable
 {
+    public function __construct(
+        private NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function __invoke(string $name, Request $request, WorkspaceShowPayload $payload): JsonResponse
     {
         return $this->showWorkspace($name, $request, $payload);
@@ -146,20 +151,29 @@ final readonly class WorkspaceShowController implements Loggable
      */
     private function visibleAppNodeIds(Node $caller): array
     {
+        $visibleNodeIds = $this->hostedAppNodeIds();
+
         if ($caller->role === 'gateway') {
-            return Node::query()
-                ->where('role', 'app')
-                ->pluck('id')
-                ->all();
+            return $visibleNodeIds;
         }
 
         return DB::table('node_access')
-            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
             ->where('node_access.consumer_node_id', $caller->id)
-            ->where('nodes.role', 'app')
-            ->where('nodes.status', 'active')
-            ->pluck('nodes.id')
+            ->whereIn('node_access.serving_node_id', $visibleNodeIds)
+            ->pluck('node_access.serving_node_id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
             ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function hostedAppNodeIds(): array
+    {
+        return array_values(array_unique([
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
+        ]));
     }
 
     /**

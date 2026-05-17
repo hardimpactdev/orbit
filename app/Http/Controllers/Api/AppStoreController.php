@@ -11,6 +11,7 @@ use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Support\GitRepositoryReference;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,10 @@ final class AppStoreController implements Loggable
     private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
 
     private ?App $activitySubject = null;
+
+    public function __construct(
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
 
     public function __invoke(Request $request, CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): JsonResponse
     {
@@ -42,7 +47,8 @@ final class AppStoreController implements Loggable
             return $input;
         }
 
-        $node = $this->resolveTargetNode($input['node']);
+        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $node = $this->resolveTargetNode($input['node'], $requiredRole);
 
         if ($node instanceof JsonResponse) {
             return $node;
@@ -160,7 +166,7 @@ final class AppStoreController implements Loggable
         ];
     }
 
-    private function resolveTargetNode(string $nodeName): Node|JsonResponse
+    private function resolveTargetNode(string $nodeName, string $requiredRole): Node|JsonResponse
     {
         $node = Node::query()->where('name', $nodeName)->first();
 
@@ -168,10 +174,10 @@ final class AppStoreController implements Loggable
             return $this->validationFailed('node', "Node '{$nodeName}' was not found.");
         }
 
-        if ($node->role !== 'app' || $node->status !== 'active') {
+        if ($node->status !== 'active' || ! $this->nodeRoleAssignments->nodeHasActiveRole($node, $requiredRole)) {
             return $this->error('app.ineligible_node', "Node '{$node->name}' is not an active app node.", [
                 'node' => $node->name,
-                'role' => $node->role,
+                'required_role' => $requiredRole,
                 'status' => $node->status,
             ], 400);
         }

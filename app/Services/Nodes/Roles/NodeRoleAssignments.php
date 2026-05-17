@@ -10,6 +10,27 @@ use Illuminate\Database\Eloquent\Collection;
 
 class NodeRoleAssignments
 {
+    public function nodeHasActiveRole(Node $node, string $role): bool
+    {
+        return $node->roleAssignments()
+            ->where('role', $role)
+            ->where('status', 'active')
+            ->exists();
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeNodeIdsForRole(string $role): array
+    {
+        return NodeRoleAssignment::query()
+            ->where('role', $role)
+            ->where('status', 'active')
+            ->pluck('node_id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
+    }
+
     public function find(Node $node, string $role): ?NodeRoleAssignment
     {
         return $node->roleAssignments()

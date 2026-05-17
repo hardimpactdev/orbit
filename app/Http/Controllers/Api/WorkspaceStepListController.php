@@ -10,6 +10,7 @@ use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class WorkspaceStepListController implements Loggable
 {
+    public function __construct(
+        private NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function __invoke(string $phase, Request $request, WorkspaceStepListPayload $payload): JsonResponse
     {
         $phaseEnum = WorkspaceLifecyclePhase::tryFrom($phase);
@@ -106,12 +111,21 @@ final readonly class WorkspaceStepListController implements Loggable
         }
 
         return DB::table('node_access')
-            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
             ->where('node_access.consumer_node_id', $caller->id)
-            ->where('nodes.role', 'app')
-            ->where('nodes.status', 'active')
-            ->where('nodes.id', $app->node_id)
+            ->whereIn('node_access.serving_node_id', $this->hostedAppNodeIds())
+            ->where('node_access.serving_node_id', $app->node_id)
             ->exists();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function hostedAppNodeIds(): array
+    {
+        return array_values(array_unique([
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
+        ]));
     }
 
     private function stringQuery(Request $request, string $key): ?string

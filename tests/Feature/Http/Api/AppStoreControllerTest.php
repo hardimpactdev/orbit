@@ -7,6 +7,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,16 @@ function grantAppStoreAccess(Node $caller, Node $appNode): void
     ]);
 }
 
+function assignAppStoreRole(Node $node, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
+{
+    return NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => $status,
+        'settings' => $settings,
+    ]);
+}
+
 describe('AppStoreController', function (): void {
     it('creates app source and registry intent for authorized callers', function (): void {
         $caller = createAppStoreCallerNode();
@@ -45,6 +56,7 @@ describe('AppStoreController', function (): void {
             'tld' => 'test',
             'status' => 'active',
         ]);
+        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         $remoteShell = new AppStoreRecordingRemoteShell;
@@ -70,11 +82,12 @@ describe('AppStoreController', function (): void {
 
     it('rejects app creation when the caller cannot access the target app node', function (): void {
         createAppStoreCallerNode();
-        Node::factory()->create([
+        $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',
         ]);
+        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
@@ -99,6 +112,7 @@ describe('AppStoreController', function (): void {
             'tld' => 'test',
             'status' => 'active',
         ]);
+        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         ProxyRoute::query()->create([
@@ -132,6 +146,7 @@ describe('AppStoreController', function (): void {
             'role' => 'app',
             'status' => 'active',
         ]);
+        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         $remoteShell = new AppStoreRecordingRemoteShell(new RemoteShellResult(

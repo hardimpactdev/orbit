@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\SetDefaultNodeApiRequest;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class NodeDefaultController implements Loggable
 {
+    public function __construct(
+        private NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function show(Request $request): JsonResponse
     {
         $caller = $this->controlCaller($request);
@@ -53,7 +58,7 @@ final readonly class NodeDefaultController implements Loggable
             );
         }
 
-        if ($node->role !== 'app' || $node->environment !== 'development') {
+        if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-development')) {
             return $this->error(
                 code: 'node.invalid_role',
                 message: "Node '{$name}' is not a development app node.",
@@ -61,8 +66,7 @@ final readonly class NodeDefaultController implements Loggable
                     'name' => $name,
                     'role' => $node->role,
                     'environment' => $node->environment,
-                    'required_role' => 'app',
-                    'required_environment' => 'development',
+                    'required_role_assignment' => 'app-development',
                 ],
                 status: 422,
             );

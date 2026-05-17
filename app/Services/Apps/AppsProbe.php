@@ -10,6 +10,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class AppsProbe
 {
@@ -17,6 +18,7 @@ final readonly class AppsProbe
         private ?RemoteShell $remoteShell = null,
         private ?AppFpmPoolRenderer $fpmPoolRenderer = null,
         private ?AppAgentIdeDefaults $agentIdeDefaults = null,
+        private ?NodeRoleAssignments $nodeRoleAssignments = null,
     ) {}
 
     public function key(): string
@@ -284,7 +286,9 @@ BASH;
             ];
         }
 
-        if ($app->node->role !== 'app' || $app->node->status !== 'active') {
+        $requiredRole = $app->environment === 'production' ? 'app-production' : 'app-development';
+
+        if ($app->node->status !== 'active' || ! $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, $requiredRole)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -462,5 +466,10 @@ BASH;
     private function agentIdeDefaults(): AppAgentIdeDefaults
     {
         return $this->agentIdeDefaults ?? app(AppAgentIdeDefaults::class);
+    }
+
+    private function nodeRoleAssignments(): NodeRoleAssignments
+    {
+        return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 }

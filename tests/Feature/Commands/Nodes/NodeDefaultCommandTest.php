@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +51,18 @@ function setLocalDefaultCommand(string $name): void
         'default_node_name' => $name,
         'created_at' => now(),
         'updated_at' => now(),
+    ]);
+}
+
+function assignNodeDefaultCommandRole(string $nodeName, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
+{
+    $nodeId = DB::table('nodes')->where('name', $nodeName)->value('id');
+
+    return NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+        'settings' => $settings,
     ]);
 }
 
@@ -117,6 +130,7 @@ describe('node:default command contract', function (): void {
 
     it('routes to set sub-action when name is provided', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow());
+        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', [
             'name' => 'app-1',
@@ -212,6 +226,7 @@ describe('node:default command contract', function (): void {
 
     it('persists default to local_node_defaults table on set', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow());
+        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
 
         Artisan::call('node:default', ['name' => 'app-1']);
 
@@ -226,6 +241,8 @@ describe('node:default command contract', function (): void {
             nodeDefaultCommandRow(['name' => 'app-1']),
             nodeDefaultCommandRow(['name' => 'app-2']),
         ]);
+        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultCommandRole('app-2', 'app-development', settings: ['tld' => 'test']);
 
         Artisan::call('node:default', ['name' => 'app-1']);
         Artisan::call('node:default', ['name' => 'app-2']);
@@ -375,6 +392,7 @@ describe('node:default command contract', function (): void {
 
     it('does not invoke SSH or external processes', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow());
+        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', ['name' => 'app-1']);
 

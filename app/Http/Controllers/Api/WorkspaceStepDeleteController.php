@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\DB;
 final class WorkspaceStepDeleteController implements Loggable
 {
     private ?WorkspaceStep $activitySubject = null;
+
+    public function __construct(
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
 
     public function __invoke(string $phase, int $step, Request $request, WorkspaceStepListPayload $payload): JsonResponse
     {
@@ -139,12 +144,21 @@ final class WorkspaceStepDeleteController implements Loggable
         }
 
         return DB::table('node_access')
-            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
             ->where('node_access.consumer_node_id', $caller->id)
-            ->where('nodes.role', 'app')
-            ->where('nodes.status', 'active')
-            ->where('nodes.id', $app->node_id)
+            ->whereIn('node_access.serving_node_id', $this->hostedAppNodeIds())
+            ->where('node_access.serving_node_id', $app->node_id)
             ->exists();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function hostedAppNodeIds(): array
+    {
+        return array_values(array_unique([
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
+        ]));
     }
 
     private function stringValue(Request $request, string $key): ?string

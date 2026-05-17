@@ -16,6 +16,7 @@ use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -238,15 +239,15 @@ class NodeDefaultCommand extends Command
             );
         }
 
-        if ($node->role !== 'app' || $node->environment !== 'development') {
+        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-development')) {
             return $this->failCommand(
                 code: 'node.invalid_role',
                 message: "Node '{$name}' is not a development app node.",
                 meta: [
                     'name' => $name,
                     'role' => $node->role,
-                    'required_role' => 'app',
-                    'required_environment' => 'development',
+                    'environment' => $node->environment,
+                    'required_role_assignment' => 'app-development',
                 ],
                 humanMessage: "Node '{$name}' is not a development app node.\nOnly development app nodes may be set as the local default.",
             );
@@ -300,9 +301,10 @@ class NodeDefaultCommand extends Command
      */
     private function fetchLocalDevelopmentAppNodes(): array
     {
+        $nodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('app-development');
+
         return Node::query()
-            ->where('role', 'app')
-            ->where('environment', 'development')
+            ->whereIn('id', $nodeIds)
             ->where('status', 'active')
             ->orderBy('name')
             ->get()
