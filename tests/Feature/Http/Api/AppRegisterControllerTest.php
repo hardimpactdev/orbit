@@ -116,6 +116,36 @@ describe('AppRegisterController', function (): void {
             ->and($remoteShell->scripts)->toBe([]);
     });
 
+    it('rejects omitted-node registration when the caller cannot access the inferred target app node', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+        ]);
+
+        createAppRegisterCallerNode();
+        createTestAppHostNode([
+            'name' => 'app-1',
+            'role' => 'app',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps/register', [
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+        ], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.node', 'app-1');
+
+        expect(App::query()->count())->toBe(0)
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
     it('rejects production registration when the target node lacks the app-production role', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',

@@ -88,11 +88,33 @@ final class AppRegisterController implements Loggable
             return null;
         }
 
-        return App::query()
+        $existingNode = App::query()
             ->with('node')
             ->where('name', $name)
             ->first()
             ?->node;
+
+        if ($existingNode instanceof Node) {
+            return $existingNode;
+        }
+
+        return $this->singleActiveAppHostNode();
+    }
+
+    private function singleActiveAppHostNode(): ?Node
+    {
+        $nodes = Node::query()
+            ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->limit(2)
+            ->get();
+
+        if ($nodes->count() !== 1) {
+            return null;
+        }
+
+        return $nodes->first();
     }
 
     private function callerCanRegisterOnNode(Node $caller, Node $node, bool $callerIsGateway): bool
