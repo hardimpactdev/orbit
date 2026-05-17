@@ -47,10 +47,21 @@ class NodeRoleAssignments
 
     public function nodeHasActiveRole(Node $node, string $role): bool
     {
+        return $this->activeAssignment($node, $role) instanceof NodeRoleAssignment;
+    }
+
+    public function activeAssignment(Node $node, string $role): ?NodeRoleAssignment
+    {
+        if ($node->relationLoaded('roleAssignments')) {
+            return $node->roleAssignments
+                ->first(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role
+                    && $assignment->status === NodeRoleStatus::Active->value);
+        }
+
         return $node->roleAssignments()
             ->where('role', $role)
             ->where('status', NodeRoleStatus::Active->value)
-            ->exists();
+            ->first();
     }
 
     public function nodeHasActiveGatewayRole(Node $node): bool

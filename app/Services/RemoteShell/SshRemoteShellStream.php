@@ -6,6 +6,7 @@ namespace App\Services\RemoteShell;
 
 use App\Contracts\RemoteShellStream;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Facades\Process;
 
 final readonly class SshRemoteShellStream implements RemoteShellStream
@@ -64,7 +65,7 @@ final readonly class SshRemoteShellStream implements RemoteShellStream
 
     private function command(Node $node, string $script): string
     {
-        if ((bool) config('orbit.is_gateway', false) && $node->role === 'gateway') {
+        if ((bool) config('orbit.is_gateway', false) && app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return 'bash -c '.escapeshellarg($script);
         }
 

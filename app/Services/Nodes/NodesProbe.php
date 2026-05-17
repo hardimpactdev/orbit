@@ -391,7 +391,7 @@ final readonly class NodesProbe
             ];
         }
 
-        if ($defaultNode->environment !== 'development') {
+        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($defaultNode, NodeRoleName::AppDevelopment->value)) {
             return [
                 new DriftEntry(
                     family: $this->key(),

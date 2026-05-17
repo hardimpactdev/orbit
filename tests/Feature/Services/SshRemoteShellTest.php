@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\RemoteShell\SshRemoteShell;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,6 +37,30 @@ it('runs local nodes through bash without ssh', function (): void {
             && $process->timeout === 45
             && $processResult->output() === "ok\n";
     });
+});
+
+it('runs nodes with an assigned gateway role through bash without ssh', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "ok\n"),
+    ]);
+
+    $node = Node::factory()->create([
+        'role' => 'control',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    $result = (new SshRemoteShell)->run($node, 'pwd');
+
+    expect($result->successful())->toBeTrue()
+        ->and($result->stdout)->toBe("ok\n");
+
+    Process::assertRan(fn (PendingProcess $process): bool => $process->command === "bash -c 'pwd'");
 });
 
 it('runs remote nodes over ssh using wireguard address and steady state user', function (): void {

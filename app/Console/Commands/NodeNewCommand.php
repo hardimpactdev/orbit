@@ -21,6 +21,7 @@ use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeIdentityArtifactProbe;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
@@ -33,6 +34,7 @@ use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -209,7 +211,7 @@ class NodeNewCommand extends Command
             if (
                 $callerRole === 'control'
                 && $gatewayConfigured
-                && Node::query()->where('name', $name)->where('role', 'gateway')->where('status', 'active')->exists()
+                && $this->gatewayQuery()->where('name', $name)->exists()
             ) {
                 return $this->convergeFirstGateway($name);
             }
@@ -254,10 +256,8 @@ class NodeNewCommand extends Command
             return $this->validationFailed('control_name', 'Control node name must be different from gateway node name.');
         }
 
-        $gateway = Node::query()
+        $gateway = $this->gatewayQuery()
             ->where('name', $name)
-            ->where('role', 'gateway')
-            ->where('status', 'active')
             ->first();
 
         if (! $gateway instanceof Node || $gateway->host !== $host) {
@@ -690,10 +690,8 @@ class NodeNewCommand extends Command
             return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
-        $gateway = Node::query()
+        $gateway = $this->gatewayQuery()
             ->where('name', $name)
-            ->where('role', 'gateway')
-            ->where('status', 'active')
             ->first();
 
         if (! $gateway instanceof Node || ! $this->gatewayHostMatches($gateway, $host)) {
@@ -813,10 +811,7 @@ class NodeNewCommand extends Command
             ? $existing->wireguard_address
             : $this->nextWireguardAddress();
 
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
+        $gateway = $this->gatewayQuery()->first();
 
         if (! $gateway instanceof Node) {
             return $this->failCommand(
@@ -1981,7 +1976,7 @@ class NodeNewCommand extends Command
 
     private function gatewayConfigured(): bool
     {
-        if (Node::query()->where('role', 'gateway')->where('status', 'active')->exists()) {
+        if ($this->gatewayQuery()->exists()) {
             return true;
         }
 
@@ -2521,9 +2516,7 @@ class NodeNewCommand extends Command
     private function gatewayEndpoint(): ?string
     {
         /** @var Node|null $gateway */
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
+        $gateway = $this->gatewayQuery()
             ->first();
 
         if (! $gateway instanceof Node) {
@@ -2531,6 +2524,17 @@ class NodeNewCommand extends Command
         }
 
         return $gateway->wireguard_address ?? $gateway->gateway_endpoint ?? $gateway->host;
+    }
+
+    private function gatewayQuery(): Builder
+    {
+        return Node::query()
+            ->where('status', 'active')
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
+            });
     }
 
     /**

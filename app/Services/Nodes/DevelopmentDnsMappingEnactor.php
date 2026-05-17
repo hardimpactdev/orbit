@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Facades\File;
 
 class DevelopmentDnsMappingEnactor
@@ -22,8 +25,40 @@ class DevelopmentDnsMappingEnactor
      */
     public function converge(Node $node): array
     {
-        $mapping = $this->mappingFor($node);
+        return $this->convergeMapping($this->mappingFor($node));
+    }
 
+    /**
+     * @return array{
+     *     status: string,
+     *     changed: bool,
+     *     domain?: string,
+     *     target?: string,
+     *     path?: string,
+     * }
+     */
+    public function convergeDevelopmentRole(Node $node, string $tld): array
+    {
+        return $this->convergeMapping($this->mappingForDevelopmentRole($node, $tld));
+    }
+
+    /**
+     * @param  array{
+     *      node: string,
+     *      tld: string,
+     *      domain: string,
+     *      target: string,
+     *  }|null  $mapping
+     * @return array{
+     *     status: string,
+     *     changed: bool,
+     *     domain?: string,
+     *     target?: string,
+     *     path?: string,
+     * }
+     */
+    private function convergeMapping(?array $mapping): array
+    {
         if ($mapping === null) {
             return [
                 'status' => 'not_applicable',
@@ -69,8 +104,42 @@ class DevelopmentDnsMappingEnactor
      */
     public function remove(Node $node): array
     {
-        $mapping = $this->mappingFor($node);
+        return $this->removeMapping($this->mappingFor($node));
+    }
 
+    /**
+     * @return array{
+     *     status: string,
+     *     changed: bool,
+     *     domain?: string,
+     *     target?: string,
+     *     path?: string,
+     *     reason?: string,
+     * }
+     */
+    public function removeDevelopmentRole(Node $node, string $tld): array
+    {
+        return $this->removeMapping($this->mappingForDevelopmentRole($node, $tld));
+    }
+
+    /**
+     * @param  array{
+     *      node: string,
+     *      tld: string,
+     *      domain: string,
+     *      target: string,
+     *  }|null  $mapping
+     * @return array{
+     *     status: string,
+     *     changed: bool,
+     *     domain?: string,
+     *     target?: string,
+     *     path?: string,
+     *     reason?: string,
+     * }
+     */
+    private function removeMapping(?array $mapping): array
+    {
         if ($mapping === null) {
             return [
                 'status' => 'not_applicable',
@@ -133,11 +202,39 @@ class DevelopmentDnsMappingEnactor
      */
     public function mappingFor(Node $node): ?array
     {
-        if ($node->role !== 'app' || $node->environment !== 'development' || $node->status !== 'active') {
+        $assignment = app(NodeRoleAssignments::class)->activeAssignment($node, NodeRoleName::AppDevelopment->value);
+
+        if (! $assignment instanceof NodeRoleAssignment) {
             return null;
         }
 
-        if (! is_string($node->tld) || trim($node->tld) === '') {
+        $settings = $assignment->settings ?? [];
+        $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+
+        if (! is_string($tld)) {
+            return null;
+        }
+
+        return $this->mappingForDevelopmentRole($node, $tld);
+    }
+
+    /**
+     * @return array{
+     *     node: string,
+     *     tld: string,
+     *     domain: string,
+     *     target: string,
+     * }|null
+     */
+    public function mappingForDevelopmentRole(Node $node, string $tld): ?array
+    {
+        if ($node->status !== 'active') {
+            return null;
+        }
+
+        $tld = trim($tld);
+
+        if ($tld === '') {
             return null;
         }
 
@@ -147,8 +244,8 @@ class DevelopmentDnsMappingEnactor
 
         return [
             'node' => (string) $node->name,
-            'tld' => trim($node->tld),
-            'domain' => '*.'.$node->tld,
+            'tld' => $tld,
+            'domain' => '*.'.$tld,
             'target' => trim($node->wireguard_address),
         ];
     }

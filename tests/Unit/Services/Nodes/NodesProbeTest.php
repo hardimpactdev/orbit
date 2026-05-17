@@ -218,6 +218,7 @@ describe('local default', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        assignNodesProbeAppHostRole($defaultNode);
 
         LocalNodeDefault::create(['default_node_name' => 'dev-app']);
 
@@ -248,8 +249,45 @@ describe('local default', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        assignNodesProbeAppHostRole($defaultNode);
 
         LocalNodeDefault::create(['default_node_name' => 'dev-app']);
+
+        $node = Node::create([
+            'name' => 'control',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        NodeAccess::create([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $defaultNode->id,
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
+
+        expect($localDefault)->toHaveCount(0);
+    });
+
+    it('passes for authorized app-development default without legacy app metadata', function (): void {
+        $defaultNode = Node::create([
+            'name' => 'dev-client',
+            'role' => 'control',
+            'host' => '10.0.0.5',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => null,
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        assignNodesProbeAppHostRole($defaultNode);
+
+        LocalNodeDefault::create(['default_node_name' => 'dev-client']);
 
         $node = Node::create([
             'name' => 'control',

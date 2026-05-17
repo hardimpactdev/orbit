@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Concerns;
 
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -14,12 +16,18 @@ trait AuthorizesNodeRoleCaller
 
     protected function authorizeNodeRoleCaller(Node $caller, string $verb): ?JsonResponse
     {
-        if ($caller->role === 'gateway') {
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return null;
         }
 
+        $gatewayNodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway');
+
         $gateway = Node::query()
-            ->where('role', 'gateway')
+            ->where(function (Builder $query) use ($gatewayNodeIds): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', $gatewayNodeIds);
+            })
             ->where('status', 'active')
             ->orderBy('name')
             ->first();

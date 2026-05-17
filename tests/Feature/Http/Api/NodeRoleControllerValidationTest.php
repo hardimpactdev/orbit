@@ -64,6 +64,23 @@ function grantNodeRoleApiGatewayAccess(int $callerId, int $gatewayId): void
 }
 
 /**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeRoleApiRole(int $nodeId, string $role, array $settings = []): void
+{
+    DB::table('node_roles')->insert([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => json_encode($settings, JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+/**
  * @param  array<string, mixed>  $data
  * @param  array<string, string>  $server
  */
@@ -196,5 +213,46 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonPath('error.meta.field', 'purge_data')
             ->assertJsonPath('error.message', 'purge_data must be true or false.')
             ->assertJsonMissingPath('success');
+    });
+
+    it('allows callers with an active gateway role assignment without a grant', function (): void {
+        DB::table('node_access')->delete();
+
+        $callerId = (int) DB::table('nodes')
+            ->where('wireguard_address', NODE_ROLE_API_CALLER_WG_IP)
+            ->value('id');
+
+        assignNodeRoleApiRole($callerId, 'gateway');
+
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'database',
+            'settings' => [],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.assignment.role', 'database');
+    });
+
+    it('uses an active gateway role assignment when reporting the required gateway node', function (): void {
+        DB::table('node_access')->delete();
+
+        $gatewayId = (int) DB::table('nodes')
+            ->where('name', 'gateway-1')
+            ->value('id');
+
+        DB::table('nodes')
+            ->where('id', $gatewayId)
+            ->update(['role' => 'control']);
+
+        assignNodeRoleApiRole($gatewayId, 'gateway');
+
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'database',
+            'settings' => [],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.required_node', 'gateway-1');
     });
 });

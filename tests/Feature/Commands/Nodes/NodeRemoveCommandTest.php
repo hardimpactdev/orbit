@@ -195,6 +195,16 @@ describe('node:remove base contract', function (): void {
         ]));
 
         $node = Node::query()->where('name', 'app-1')->firstOrFail();
+        DB::table('node_roles')->insert([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
         expect(File::exists(storage_path('app/orbit/node-development-dns.d/test.conf')))->toBeTrue();

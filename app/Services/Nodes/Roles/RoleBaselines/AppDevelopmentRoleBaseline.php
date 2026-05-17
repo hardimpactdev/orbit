@@ -23,7 +23,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
             throw new RuntimeException('The app-development role requires a non-empty tld setting.');
         }
 
-        $result = $this->developmentDnsMappingEnactor->converge($this->developmentNode($node, $tld));
+        $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'not_applicable') {
             return;
@@ -40,7 +40,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
             return;
         }
 
-        $result = $this->developmentDnsMappingEnactor->remove($this->developmentNode($node, $tld));
+        $result = $this->developmentDnsMappingEnactor->removeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'failed') {
             return;
@@ -49,16 +49,5 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $reason = $result['reason'] ?? 'Failed to remove development DNS mapping.';
 
         throw new RuntimeException(is_string($reason) ? $reason : 'Failed to remove development DNS mapping.');
-    }
-
-    private function developmentNode(Node $node, string $tld): Node
-    {
-        $developmentNode = clone $node;
-        $developmentNode->role = 'app';
-        $developmentNode->environment = 'development';
-        $developmentNode->status = 'active';
-        $developmentNode->tld = $tld;
-
-        return $developmentNode;
     }
 }

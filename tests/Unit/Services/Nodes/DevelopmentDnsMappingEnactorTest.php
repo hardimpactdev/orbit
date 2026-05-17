@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Nodes;
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -25,6 +26,7 @@ afterEach(function (): void {
 
 it('converges a gateway-owned development dns mapping from active app node intent', function (): void {
     $node = developmentDnsMappingNode();
+    assignDevelopmentDnsMappingRole($node);
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
 
     $result = $enactor->converge($node);
@@ -48,6 +50,7 @@ it('does not create mappings for production app nodes', function (): void {
         'environment' => 'production',
         'tld' => null,
     ]);
+    assignDevelopmentDnsMappingRole($node, 'app-production');
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
 
     $result = $enactor->converge($node);
@@ -61,6 +64,7 @@ it('does not create mappings for production app nodes', function (): void {
 
 it('removes the derived mapping for a development app node', function (): void {
     $node = developmentDnsMappingNode();
+    assignDevelopmentDnsMappingRole($node);
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
     $enactor->converge($node);
 
@@ -73,6 +77,21 @@ it('removes the derived mapping for a development app node', function (): void {
         'target' => '10.6.0.7',
     ]);
     expect(File::exists("{$this->configDir}/test.conf"))->toBeFalse();
+});
+
+it('uses the app-development role settings as the development dns tld', function (): void {
+    $node = developmentDnsMappingNode(['tld' => 'legacy']);
+    assignDevelopmentDnsMappingRole($node, settings: ['tld' => 'assigned']);
+    $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
+
+    $result = $enactor->converge($node);
+
+    expect($result)->toMatchArray([
+        'status' => 'configured',
+        'domain' => '*.assigned',
+    ]);
+    expect(File::exists("{$this->configDir}/assigned.conf"))->toBeTrue();
+    expect(File::exists("{$this->configDir}/legacy.conf"))->toBeFalse();
 });
 
 /**
@@ -92,4 +111,17 @@ function developmentDnsMappingNode(array $overrides = []): Node
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
     ], $overrides));
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignDevelopmentDnsMappingRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $role === 'app-development' ? $settings : [],
+    ]);
 }
