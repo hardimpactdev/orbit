@@ -118,7 +118,7 @@ it('reports invalid role settings when assignment settings do not hydrate', func
         ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent);
 });
 
-it('reports conflicting active role assignments', function (): void {
+it('reports conflicting unresolved role assignments', function (NodeRoleStatus $conflictingStatus): void {
     $node = Node::factory()->create([
         'name' => 'test',
         'role' => 'control',
@@ -138,7 +138,7 @@ it('reports conflicting active role assignments', function (): void {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 'app-production',
-        'status' => NodeRoleStatus::Active->value,
+        'status' => $conflictingStatus->value,
     ]);
 
     File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
@@ -151,11 +151,18 @@ it('reports conflicting active role assignments', function (): void {
     ]));
 
     $roleDrift = roleDriftEntries($node);
+    $conflictDrift = array_values(array_filter(
+        $roleDrift,
+        fn (DriftEntry $entry): bool => $entry->key === 'node.role_conflict',
+    ));
 
-    expect($roleDrift)->toHaveCount(1)
-        ->and($roleDrift[0]->key)->toBe('node.role_conflict')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent);
-});
+    expect($conflictDrift)->toHaveCount(1)
+        ->and($conflictDrift[0]->kind)->toBe(DriftKind::Divergent);
+})->with([
+    'active' => [NodeRoleStatus::Active],
+    'pending' => [NodeRoleStatus::Pending],
+    'error' => [NodeRoleStatus::Error],
+]);
 
 it('reports invalid role settings when an active app-development assignment has no tld', function (): void {
     $node = Node::factory()->create([

@@ -107,6 +107,35 @@ describe('tool API target authorization', function (): void {
             ->assertJsonPath('success.data.credentials.fields.password', 'visible-secret');
     });
 
+    it('allows hosted callers to target their own app tool node without a self grant', function (): void {
+        $caller = createTestAppHostNode([
+            'name' => 'caller',
+            'role' => 'app',
+            'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
+            'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
+        ]);
+
+        NodeTool::factory()->create([
+            'node_id' => $caller->id,
+            'name' => 'redis',
+            'credentials' => [
+                'fields' => [
+                    'password' => 'self-secret',
+                ],
+            ],
+        ]);
+
+        $response = $this->call('GET', '/api/tools/redis/credentials', [
+            'node' => 'caller',
+        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.credentials.node', 'caller')
+            ->assertJsonPath('success.data.credentials.fields.password', 'self-secret');
+
+        expect(DB::table('node_access')->count())->toBe(0);
+    });
+
     it('streams tool mutation progress from the canonical endpoint', function (): void {
         $caller = createToolTargetAuthCaller();
         $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);

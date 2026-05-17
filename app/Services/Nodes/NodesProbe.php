@@ -151,6 +151,7 @@ final readonly class NodesProbe
         }
 
         $activeDefinitions = [];
+        $unresolvedDefinitions = [];
         $invalidRoles = [];
 
         foreach ($assignments as $assignment) {
@@ -166,6 +167,10 @@ final readonly class NodesProbe
                 $invalidRoles[] = $assignment->role;
 
                 continue;
+            }
+
+            if ($this->assignmentStatusIsUnresolved($assignment)) {
+                $unresolvedDefinitions[$assignment->role] = $definition;
             }
 
             if (! $this->assignmentSettingsAreValid($definition, $assignment)) {
@@ -212,12 +217,12 @@ final readonly class NodesProbe
             );
         }
 
-        if ($this->activeAssignmentsConflict($assignments->all(), $activeDefinitions)) {
+        if ($this->unresolvedAssignmentsConflict($assignments->all(), $unresolvedDefinitions)) {
             $drift[] = new DriftEntry(
                 family: $this->key(),
                 key: 'node.role_conflict',
                 kind: DriftKind::Divergent,
-                summary: "Node {$node->name} has conflicting active role assignments.",
+                summary: "Node {$node->name} has conflicting unresolved role assignments.",
             );
         }
 
@@ -289,33 +294,42 @@ final readonly class NodesProbe
 
     /**
      * @param  list<NodeRoleAssignment>  $assignments
-     * @param  array<string, NodeRoleDefinition>  $activeDefinitions
+     * @param  array<string, NodeRoleDefinition>  $unresolvedDefinitions
      */
-    private function activeAssignmentsConflict(array $assignments, array $activeDefinitions): bool
+    private function unresolvedAssignmentsConflict(array $assignments, array $unresolvedDefinitions): bool
     {
-        $activeRoles = array_values(array_map(
+        $unresolvedRoles = array_values(array_unique(array_map(
             fn (NodeRoleAssignment $assignment): string => $assignment->role,
             array_filter(
                 $assignments,
-                fn (NodeRoleAssignment $assignment): bool => $assignment->status === NodeRoleStatus::Active->value,
+                fn (NodeRoleAssignment $assignment): bool => $this->assignmentStatusIsUnresolved($assignment),
             ),
-        ));
+        )));
 
-        foreach ($activeRoles as $role) {
-            $definition = $activeDefinitions[$role] ?? null;
+        foreach ($unresolvedRoles as $role) {
+            $definition = $unresolvedDefinitions[$role] ?? null;
 
             if (! $definition instanceof NodeRoleDefinition) {
                 continue;
             }
 
             foreach ($definition->conflictsWith as $conflictingRole) {
-                if (in_array($conflictingRole, $activeRoles, true)) {
+                if (in_array($conflictingRole, $unresolvedRoles, true)) {
                     return true;
                 }
             }
         }
 
         return false;
+    }
+
+    private function assignmentStatusIsUnresolved(NodeRoleAssignment $assignment): bool
+    {
+        return in_array($assignment->status, [
+            NodeRoleStatus::Active->value,
+            NodeRoleStatus::Pending->value,
+            NodeRoleStatus::Error->value,
+        ], true);
     }
 
     private function baselineDriftForAssignment(Node $node, NodeRoleAssignment $assignment): ?DriftEntry

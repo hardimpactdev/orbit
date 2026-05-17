@@ -74,6 +74,30 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts)->toHaveCount(1);
     });
 
+    it('allows database callers to install postgres on themselves without a self grant', function (): void {
+        $caller = createToolInstallApiCallerNode([
+            'name' => 'database-self-install-api-caller',
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($caller, 'database');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/postgres/install', [
+            'node' => 'database-self-install-api-caller',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'postgres')
+            ->assertJsonPath('success.data.tool.node', 'database-self-install-api-caller')
+            ->assertJsonPath('success.data.tool.state', 'installed');
+
+        expect(NodeTool::query()->where('node_id', $caller->id)->where('name', 'postgres')->exists())->toBeTrue()
+            ->and(DB::table('node_access')->count())->toBe(0)
+            ->and($shell->scripts)->toHaveCount(1);
+    });
+
     it('does not treat the legacy gateway role column as gateway tool authority', function (): void {
         Node::factory()->create([
             'name' => 'legacy-gateway-install-api-caller',

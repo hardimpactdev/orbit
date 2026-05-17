@@ -39,7 +39,15 @@ trait ResolvesVisibleToolNodes
             $query->whereIn('nodes.id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
         }
 
-        return $query->pluck('nodes.id')->all();
+        $visibleNodeIds = $query->pluck('nodes.id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
+
+        if ($caller->status === 'active' && $this->nodeRoleAssignments()->nodeHasActiveToolHostRole($caller)) {
+            $visibleNodeIds[] = $caller->id;
+        }
+
+        return array_values(array_unique($visibleNodeIds));
     }
 
     /**

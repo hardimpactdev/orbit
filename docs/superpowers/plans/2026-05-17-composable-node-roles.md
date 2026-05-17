@@ -1439,7 +1439,7 @@ Cover drift:
 - active node has no compatible role assignment but legacy role says app → `node.role_assignment_missing`.
 - assignment has invalid role → `node.role_assignment_invalid`.
 - assignment settings do not hydrate → `node.role_settings_invalid`.
-- active role assignment conflicts with another active assignment → `node.role_conflict`.
+- active, pending, or error role assignment conflicts with another unresolved assignment → `node.role_conflict`.
 - development role has no TLD → `node.role_settings_invalid`.
 - role assignment status `error` → `node.role_convergence_failed`.
 

@@ -128,7 +128,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.record_incomplete` | A selected node record lacks required platform-version identifier, required host/endpoint metadata, or WireGuard address. |
 | `node.role_assignment_missing` | A selected active node still depends on a legacy role shape, but no compatible active role assignment exists. |
 | `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
-| `node.role_conflict` | Active role assignments violate the compatibility matrix. |
+| `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |
 | `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-development` `tld`. |
 | `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
 | `node.role_baseline_mismatch` | Active role-owned baseline artifacts no longer match the role assignment's desired state. |
