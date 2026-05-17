@@ -65,7 +65,7 @@ describe('node:remove on control node contract', function (): void {
                     ],
                     'meta' => [
                         'warnings' => [[
-                            'code' => 'node.development_dns_mapping_mismatch',
+                            'code' => 'node.role_baseline_mismatch',
                             'message' => 'Development DNS mapping could not be removed: file delete error',
                             'family' => 'node',
                             'next_command' => 'doctor --fix --family=node --restore',
@@ -85,7 +85,7 @@ describe('node:remove on control node contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['meta']['warnings'])->toBe([[
-                'code' => 'node.development_dns_mapping_mismatch',
+                'code' => 'node.role_baseline_mismatch',
                 'message' => 'Development DNS mapping could not be removed: file delete error',
                 'family' => 'node',
                 'next_command' => 'doctor --fix --family=node --restore',

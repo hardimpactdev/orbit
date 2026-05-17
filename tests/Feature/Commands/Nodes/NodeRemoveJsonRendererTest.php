@@ -91,7 +91,7 @@ function setupNodeRemoveGatewayCallerJson(): void
 function nodeRemoveJsonDnsWarning(): array
 {
     return [
-        'code' => 'node.development_dns_mapping_mismatch',
+        'code' => 'node.role_baseline_mismatch',
         'message' => 'Development DNS mapping could not be removed: file delete error',
         'family' => 'node',
         'next_command' => 'doctor --fix --family=node --restore',

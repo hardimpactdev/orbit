@@ -124,7 +124,7 @@ function setupNodeRemoveDnsControlCaller(): void
 function nodeRemoveDnsWarning(string $message = 'Development DNS mapping could not be removed.'): array
 {
     return [
-        'code' => 'node.development_dns_mapping_mismatch',
+        'code' => 'node.role_baseline_mismatch',
         'message' => $message,
         'family' => 'node',
         'next_command' => 'doctor --fix --family=node --restore',
@@ -381,7 +381,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and(substr_count($output, 'node.development_dns_mapping_mismatch'))->toBe(0)
+            ->and(substr_count($output, 'node.role_baseline_mismatch'))->toBe(0)
             ->and(substr_count($output, 'Drift detected: Development DNS:'))->toBe(1)
             ->and(substr_count($output, 'Run: orbit doctor --fix --family=node --restore'))->toBe(1);
     });
