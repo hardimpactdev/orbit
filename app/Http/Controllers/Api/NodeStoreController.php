@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Artisan;
 
 final readonly class NodeStoreController implements Loggable
 {
+    public function __construct(
+        private NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function __invoke(Request $request): JsonResponse
     {
         /** @var mixed $resolvedUser */
@@ -25,7 +29,10 @@ final readonly class NodeStoreController implements Loggable
             return $this->forbidden();
         }
 
-        if ($caller->role !== 'control' && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
+
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->forbidden();
         }
 

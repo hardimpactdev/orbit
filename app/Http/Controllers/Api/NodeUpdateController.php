@@ -10,6 +10,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\UpdateNodeApiRequest;
 use App\Models\Node;
 use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,10 @@ final class NodeUpdateController implements Loggable
      */
     private array $activityChangedFields = [];
 
+    public function __construct(
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function __invoke(UpdateNodeApiRequest $request, string $name, ReenactNodeArtifacts $reenactNodeArtifacts): JsonResponse
     {
         $this->activityTargetName = $name;
@@ -37,16 +42,19 @@ final class NodeUpdateController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if (! in_array($caller->role, ['control', 'gateway'], true)) {
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
+
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $caller->role],
+                meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 status: 403,
             );
         }
 
-        if ($caller->role === 'control') {
+        if (! $callerIsGateway) {
             $authorization = $this->authorizeControlCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
@@ -166,9 +174,8 @@ final class NodeUpdateController implements Loggable
 
     private function authorizeControlCaller(Node $caller): ?JsonResponse
     {
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
+        $gateway = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
             ->orderBy('name')
             ->first();
 

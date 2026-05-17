@@ -75,6 +75,38 @@ describe('NodeStoreController', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
+    it('rejects database callers before provisioning when the legacy role shadow is control', function (): void {
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'database-caller',
+            'role' => 'control',
+            'host' => '10.6.0.7',
+            'wireguard_address' => '10.6.0.7',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $callerId,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.7'])
+            ->postJson('/api/nodes', [
+                'name' => 'app-dev-1',
+                'role' => 'app-development',
+                'host' => '192.0.2.20',
+                'tld' => 'test',
+            ]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('allows assigned gateway callers through the gateway authority path', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'gateway',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -48,13 +49,26 @@ function createUpdateCallerNode(string $role = 'control'): int
 
 function createUpdateGatewayNode(): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
+    $gatewayId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+
+    assignUpdateNodeRole($gatewayId, 'gateway');
+
+    return $gatewayId;
+}
+
+function assignUpdateNodeRole(int $nodeId, string $role, string $status = 'active'): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+    ]);
 }
 
 function grantUpdateGatewayAccess(int $callerId, int $gatewayId): void
@@ -145,7 +159,7 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('updates a node directly for a gateway caller', function (): void {
-        createUpdateCallerNode('gateway');
+        assignUpdateNodeRole(createUpdateCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiUpdateNodeRow());
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
@@ -154,6 +168,21 @@ describe('NodeUpdateController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['host']);
+    });
+
+    it('rejects stale gateway role shadows before mutation', function (): void {
+        createUpdateCallerNode('gateway');
+        DB::table('nodes')->insert(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', [
+            'host' => '10.6.0.8',
+        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'gateway');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
 
     it('returns empty changed array for no-op updates', function (): void {
@@ -236,6 +265,23 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
 
+    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+        $callerId = createUpdateCallerNode();
+        assignUpdateNodeRole($callerId, 'database');
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.message', 'This command may only be run from a control or gateway node.')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
+    });
+
     it('rejects control callers without gateway access', function (): void {
         createUpdateCallerNode();
         createUpdateGatewayNode();
@@ -248,6 +294,29 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.message', 'This control node is not authorized to update nodes.')
             ->assertJsonPath('error.meta.required_node', 'gateway-1')
             ->assertJsonPath('error.meta.caller_role', 'control');
+    });
+
+    it('checks control caller authorization against active gateway assignments', function (): void {
+        $callerId = createUpdateCallerNode();
+        $staleGatewayId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
+            'name' => 'alpha-gateway',
+            'role' => 'gateway',
+            'host' => '10.6.0.3',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.3',
+        ]));
+        grantUpdateGatewayAccess($callerId, $staleGatewayId);
+        createUpdateGatewayNode();
+        DB::table('nodes')->insert(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.required_node', 'gateway-1')
+            ->assertJsonPath('error.meta.caller_role', 'control');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
 
     it('returns validation error when no fields are provided', function (): void {
