@@ -11,17 +11,34 @@ execution.
 - The gateway can issue or verify WireGuard node identity material.
 
 **Post-input path eligibility:**
-- For `--role=control`, the gateway identity service can mint a WireGuard peer.
-- For `--role=app`, `node_new.name`, `node_new.role`,
-  `node_new.environment`, `node_new.host`, and `node_new.user` can be
-  resolved, and the target host is reachable over SSH as `node_new.user`.
-- For `--role=app --environment=development`, `node_new.tld` can be resolved,
+- For omitted `--role` or legacy `--role=control`, the gateway identity service
+  can mint a WireGuard peer.
+- For canonical `--role=app-development`, `node_new.name`, `node_new.role`,
+  `node_new.host`, and `node_new.user` can be resolved, the target host is
+  reachable over SSH as `node_new.user`, and `node_new.tld` can be resolved,
   is unique in gateway node configuration, and is not already mapped to another
   gateway development DNS target.
-- For `--role=app --environment=development`, the gateway can use the internal
-  DNS applier for the node family to converge `*.{node_new.tld}` to the
-  app node's WireGuard address without exposing a public resolver.
-- For `--role=app`, the target host platform is supported for the app role.
+- For canonical `--role=app-development`, the gateway can use the internal DNS
+  applier for the node family to converge `*.{node_new.tld}` to the app node's
+  WireGuard address without exposing a public resolver.
+- For canonical `--role=app-production`, `node_new.name`, `node_new.role`,
+  `node_new.host`, and `node_new.user` can be resolved, and the target host is
+  reachable over SSH as `node_new.user`.
+- For canonical hosted-role requests that include `database` alongside an app
+  role, the shared host-provisioning preconditions for that app role apply.
+- For canonical hosted-role requests that include `database` alone, no
+  SSH/bootstrap-only inputs are required.
+- For legacy `--role=app`, `node_new.name`, `node_new.role`,
+  `node_new.environment`, `node_new.host`, and `node_new.user` can be
+  resolved, and the target host is reachable over SSH as `node_new.user`.
+- For legacy `--role=app --environment=development`, `node_new.tld` can be
+  resolved, is unique in gateway node configuration, and is not already mapped
+  to another gateway development DNS target.
+- For legacy `--role=app --environment=development`, the gateway can use the
+  internal DNS applier for the node family to converge `*.{node_new.tld}` to
+  the app node's WireGuard address without exposing a public resolver.
+- For canonical or legacy app-hosting requests, the target host platform is
+  supported for the requested hosted role set.
 - For `--role=gateway`, `node_new.host` can be resolved and is compatible with
   the requested gateway identity before convergence or adoption begins.
 - For `--role=gateway` when adoption is used, `node_new.user` can be
@@ -41,16 +58,22 @@ side effects that the gateway owns begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. |
-| `app` | Provision or adopt an app node over SSH. No enrollment-only path. |
-| `control` | Enroll a control node by minting a WireGuard peer and active node record. |
+| omitted `--role` | Enroll a joined/client identity with no hosted roles by minting a WireGuard peer and active node record. |
+| `control` | Legacy compatibility alias for the no-role joined/client enrollment path. |
+| `app-development` | Provision or adopt an app-development node over SSH, then create the hosted-role assignment. |
+| `app-production` | Provision or adopt an app-production node over SSH, then create the hosted-role assignment. |
+| `database` | Create the base node identity plus an active database hosted-role assignment. When requested alone, no SSH provisioning path runs. |
+| repeated hosted roles | Provision or adopt one compatible host for the requested hosted-role set, then create each hosted-role assignment. Supported initial combinations are `app-development` + `database` and `app-production` + `database`. |
+| `app` | Legacy compatibility path. Provision or adopt an app node over SSH using `node_new.environment`, then create the mapped hosted-role assignment. |
 
 ## Gateway Authority Rules
 
 - The gateway is the source of truth for node records, node roles, WireGuard
   identity, and node access policy.
 - Gateway execution may write durable node state directly.
-- Gateway execution may use SSH to provision app nodes.
-- Gateway execution must not SSH to control nodes for `--role=control`.
+- Gateway execution may use SSH to provision app-hosting nodes.
+- Gateway execution must not SSH to joined/client identities for omitted
+  `--role` or legacy `--role=control`.
 
 ## Gateway convergence and adoption
 
@@ -86,18 +109,18 @@ recovery, and reset flows require a separate explicit contract.
 `--json` only selects the JSON renderer and non-interactive input mode. It never
 changes the matrix and never authorizes reset or destructive reprovisioning.
 
-## Control-Node Enrollment
+## Joined/Client Enrollment
 
-For `--role=control`:
+For omitted `--role` or legacy `--role=control`:
 
 1. Resolve `node_new.name` and `node_new.role`.
-2. Apply the canonical forbidden-input rules for requested role `control`,
+2. Apply the canonical forbidden-input rules for a no-hosted-role identity,
    including SSH/bootstrap-only inputs.
 3. Mint a WireGuard peer.
 4. Create or converge the active control-node row with matching `wg_ip`.
 5. Return the WireGuard configuration and next-step instructions.
 
-## App-Node Provisioning
+## App-Hosted Role Provisioning
 
 App nodes must be gateway-provisioned or gateway-adopted over SSH. The gateway
 does not return a detached app-node WireGuard configuration for manual app-node
@@ -106,7 +129,8 @@ minimum runtime readiness, node identity readiness, narrow event-hook readiness,
 and development TLD mapping when applicable. Managed firewall configuration and
 drift belong to the `firewall_rule` family after the node exists.
 
-For `--role=app`:
+For canonical `--role=app-development`, `--role=app-production`, compatible
+repeated app-role sets that also include `database`, and legacy `--role=app`:
 
 1. Resolve `node_new.name`, `node_new.environment`, `node_new.host`, and
    `node_new.user`.
@@ -144,9 +168,9 @@ and points to `doctor --family=node --restore` or
 
 ### App Unknown-Host Adoption Materialization
 
-When `node:new --role=app` is invoked on the gateway and no gateway node record
-exists for `node_new.name`, the command may adopt an already-provisioned app
-host instead of provisioning it from scratch only when all of these rules pass
+When a gateway app-hosting path is invoked and no gateway node record exists
+for `node_new.name`, the command may adopt an already-provisioned app host
+instead of provisioning it from scratch only when all of these rules pass
 before any durable write:
 
 1. Build an in-memory candidate from the explicit request:
