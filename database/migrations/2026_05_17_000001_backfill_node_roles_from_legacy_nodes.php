@@ -10,55 +10,60 @@ return new class extends Migration
     public function up(): void
     {
         $timestamp = now();
+        $pendingAssignments = [];
 
-        $assignments = DB::table('nodes')
+        DB::table('nodes')
             ->select(['id', 'role', 'environment', 'tld'])
-            ->get()
-            ->map(function (object $node) use ($timestamp): ?array {
-                if ($node->role === 'gateway') {
-                    return [
+            ->lazyById()
+            ->each(function (object $node) use ($timestamp, &$pendingAssignments): void {
+                $assignment = match (true) {
+                    $node->role === 'gateway' => [
                         'node_id' => $node->id,
                         'role' => 'gateway',
                         'status' => 'active',
                         'settings' => json_encode([], JSON_THROW_ON_ERROR),
                         'created_at' => $timestamp,
                         'updated_at' => $timestamp,
-                    ];
-                }
-
-                if ($node->role === 'app' && $node->environment === 'development') {
-                    return [
+                    ],
+                    $node->role === 'app' && $node->environment === 'development' => [
                         'node_id' => $node->id,
                         'role' => 'app-development',
                         'status' => 'active',
                         'settings' => json_encode(['tld' => $node->tld], JSON_THROW_ON_ERROR),
                         'created_at' => $timestamp,
                         'updated_at' => $timestamp,
-                    ];
-                }
-
-                if ($node->role === 'app' && $node->environment === 'production') {
-                    return [
+                    ],
+                    $node->role === 'app' && $node->environment === 'production' => [
                         'node_id' => $node->id,
                         'role' => 'app-production',
                         'status' => 'active',
                         'settings' => json_encode([], JSON_THROW_ON_ERROR),
                         'created_at' => $timestamp,
                         'updated_at' => $timestamp,
-                    ];
+                    ],
+                    default => null,
+                };
+
+                if ($assignment === null) {
+                    return;
                 }
 
-                return null;
-            })
-            ->filter()
-            ->values()
-            ->all();
+                $pendingAssignments[] = $assignment;
 
-        if ($assignments === []) {
+                if (count($pendingAssignments) < 500) {
+                    return;
+                }
+
+                DB::table('node_roles')->insertOrIgnore($pendingAssignments);
+
+                $pendingAssignments = [];
+            });
+
+        if ($pendingAssignments === []) {
             return;
         }
 
-        DB::table('node_roles')->insertOrIgnore($assignments);
+        DB::table('node_roles')->insertOrIgnore($pendingAssignments);
     }
 
     public function down(): void {}

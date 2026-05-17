@@ -47,8 +47,8 @@ it('backfills legacy node roles into node role assignments', function (): void {
 
     runNodeRoleBackfillMigration();
 
-    expect(NodeRoleAssignment::query()->orderBy('node_id')->orderBy('role')->get())
-        ->toHaveCount(3);
+    expect(NodeRoleAssignment::query()->count())->toBe(3);
+    expect(DB::table('node_roles')->count())->toBe(3);
 
     expect(DB::table('node_roles')->where([
         'node_id' => $gateway->id,
