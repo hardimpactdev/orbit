@@ -130,6 +130,19 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be assigned through this service.");
     });
 
+    it('rejects gateway updates through the normal service', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'gateway', []))
+            ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be updated through this service.");
+    });
+
     it('rejects unknown roles during removal through the registry', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 

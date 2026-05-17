@@ -52,6 +52,11 @@ class NodeRoleAssignmentService
     public function update(Node $node, string $role, array $settings): NodeRoleAssignment
     {
         $definition = $this->registry->definition($role);
+
+        if (! $definition->assignableByCommand) {
+            throw new InvalidArgumentException("Role '{$role}' cannot be updated through this service.");
+        }
+
         $assignment = $this->assignments->find($node, $role);
 
         if (! $assignment instanceof NodeRoleAssignment) {
