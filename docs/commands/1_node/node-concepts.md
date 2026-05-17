@@ -37,7 +37,7 @@ Each term below has a precise meaning in the node command family.
 
 ## Role Compatibility
 
-Active role assignments must satisfy this matrix:
+Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
@@ -75,7 +75,8 @@ Role assignments use these lifecycle statuses:
 | `error` | Convergence failed; `doctor --family=node --restore` can retry after blockers are addressed. |
 | `removing` | Cleanup is in progress or failed; the role is not eligible for new resources. |
 
-Eligibility checks only use active assignments.
+Eligibility checks only use `active` assignments. Assignments in `pending`,
+`error`, or `removing` are not eligible for workloads.
 
 ## Role Platform Support
 
