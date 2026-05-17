@@ -11,6 +11,7 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use stdClass;
 
 final class NodeShowController implements Loggable
 {
@@ -49,7 +50,7 @@ final class NodeShowController implements Loggable
                         'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                             'role' => $assignment->role,
                             'status' => $assignment->status,
-                            'settings' => $assignment->settings ?? [],
+                            'settings' => $this->normalizeRoleSettings($assignment->settings),
                         ])->all(),
                         'addresses' => [
                             'wireguard' => $node->wireguard_address ?? $node->host,
@@ -63,6 +64,18 @@ final class NodeShowController implements Loggable
                 ],
             ],
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>|stdClass
+     */
+    private function normalizeRoleSettings(mixed $settings): array|stdClass
+    {
+        if (! is_array($settings) || $settings === []) {
+            return (object) [];
+        }
+
+        return $settings;
     }
 
     public function effect(): ActivityLogType

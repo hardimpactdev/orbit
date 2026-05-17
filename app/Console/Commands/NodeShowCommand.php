@@ -17,6 +17,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use stdClass;
 use Throwable;
 
 #[Signature('node:show
@@ -164,7 +165,7 @@ class NodeShowCommand extends Command
             'status' => $nodeData['status'] ?? 'active',
             'environment' => $nodeData['environment'] ?? null,
             'platform' => $nodeData['platform'] ?? 'unknown',
-            'roles' => is_array($nodeData['roles'] ?? null) ? $nodeData['roles'] : [],
+            'roles' => $this->normalizeRoles($nodeData['roles'] ?? null),
             'addresses' => [
                 'wireguard' => $nodeData['wireguard_address']
                     ?? ($nodeData['addresses']['wireguard'] ?? ($nodeData['host'] ?? '')),
@@ -201,7 +202,7 @@ class NodeShowCommand extends Command
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
                 'status' => $assignment->status,
-                'settings' => $assignment->settings ?? [],
+                'settings' => $this->normalizeRoleSettings($assignment->settings),
             ])->all(),
             'addresses' => [
                 'wireguard' => $node->wireguard_address ?? $node->host,
@@ -297,6 +298,51 @@ class NodeShowCommand extends Command
         }
 
         return $labels === [] ? null : implode(', ', $labels);
+    }
+
+    /**
+     * @return list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>
+     */
+    private function normalizeRoles(mixed $roles): array
+    {
+        if (! is_array($roles)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($roles as $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $name = $role['role'] ?? null;
+            $status = $role['status'] ?? null;
+
+            if (! is_string($name) || ! is_string($status)) {
+                continue;
+            }
+
+            $normalized[] = [
+                'role' => $name,
+                'status' => $status,
+                'settings' => $this->normalizeRoleSettings($role['settings'] ?? null),
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string, mixed>|stdClass
+     */
+    private function normalizeRoleSettings(mixed $settings): array|stdClass
+    {
+        if (! is_array($settings) || $settings === []) {
+            return (object) [];
+        }
+
+        return $settings;
     }
 
     /**

@@ -97,7 +97,8 @@ describe('node:list role paths', function (): void {
         ]);
 
         $exitCode = Artisan::call('node:list', ['--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $rawOutput = Artisan::output();
+        $payload = json_decode($rawOutput, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['nodes'])->toHaveCount(1)
@@ -108,7 +109,8 @@ describe('node:list role paths', function (): void {
                     'status' => 'active',
                     'settings' => [],
                 ],
-            ]);
+            ])
+            ->and($rawOutput)->toContain('"settings":{}');
     });
 
     it('handles gateway forwarding error for control caller', function (): void {

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use stdClass;
 
 final readonly class NodeListController implements Loggable
 {
@@ -117,9 +118,21 @@ final readonly class NodeListController implements Loggable
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
                 'status' => $assignment->status,
-                'settings' => $assignment->settings ?? [],
+                'settings' => $this->normalizeRoleSettings($assignment->settings),
             ])->all(),
         ])->all();
+    }
+
+    /**
+     * @return array<string, mixed>|stdClass
+     */
+    private function normalizeRoleSettings(mixed $settings): array|stdClass
+    {
+        if (! is_array($settings) || $settings === []) {
+            return (object) [];
+        }
+
+        return $settings;
     }
 
     public function effect(): ActivityLogType

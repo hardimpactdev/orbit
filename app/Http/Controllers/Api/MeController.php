@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use stdClass;
 
 final readonly class MeController
 {
@@ -46,11 +47,23 @@ final readonly class MeController
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
                 'status' => $assignment->status,
-                'settings' => $assignment->settings ?? [],
+                'settings' => $this->normalizeRoleSettings($assignment->settings),
             ])->all(),
             'addresses' => [
                 'wireguard' => $node->wireguard_address,
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|stdClass
+     */
+    private function normalizeRoleSettings(mixed $settings): array|stdClass
+    {
+        if (! is_array($settings) || $settings === []) {
+            return (object) [];
+        }
+
+        return $settings;
     }
 }

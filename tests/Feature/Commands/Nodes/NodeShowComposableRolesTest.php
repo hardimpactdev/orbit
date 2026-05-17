@@ -55,7 +55,8 @@ describe('node:show composable roles', function (): void {
         ]);
 
         $exitCode = Artisan::call('node:show', ['name' => 'host-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $rawOutput = Artisan::output();
+        $payload = json_decode($rawOutput, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['role'])->toBe('app')
@@ -71,7 +72,9 @@ describe('node:show composable roles', function (): void {
                     'status' => 'error',
                     'settings' => [],
                 ],
-            ]);
+            ])
+            ->and($rawOutput)->toContain('"settings":{}')
+            ->and($rawOutput)->toContain('"tld":"orbit.test"');
     });
 
     it('renders composable role assignments in the human output', function (): void {

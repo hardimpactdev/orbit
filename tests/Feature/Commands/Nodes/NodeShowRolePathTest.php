@@ -101,7 +101,8 @@ describe('node:show role paths', function (): void {
         ]);
 
         $exitCode = Artisan::call('node:show', ['name' => 'gateway-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $rawOutput = Artisan::output();
+        $payload = json_decode($rawOutput, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['name'])->toBe('gateway-1')
@@ -111,7 +112,8 @@ describe('node:show role paths', function (): void {
                     'status' => 'active',
                     'settings' => [],
                 ],
-            ]);
+            ])
+            ->and($rawOutput)->toContain('"settings":{}');
     });
 
     it('forwards real grant data from gateway for control caller', function (): void {

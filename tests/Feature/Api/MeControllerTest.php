@@ -219,6 +219,8 @@ describe('GET /api/me', function (): void {
                     'settings' => [],
                 ],
             ]);
+
+        expect($response->getContent())->toContain('"settings":{}');
     });
 
     it('does not include legacy id field', function (): void {
