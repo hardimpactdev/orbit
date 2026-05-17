@@ -430,29 +430,40 @@ class NodeNewCommand extends Command
             );
         }
 
+        $requiresHostProvisioning = array_intersect($roles, [
+            NodeRoleName::AppDevelopment->value,
+            NodeRoleName::AppProduction->value,
+        ]) !== [];
+
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
         $wireguardAddress = $this->nextWireguardAddress();
         $gatewayEndpoint = $this->gatewayEndpoint();
+        $platform = 'ubuntu';
+        $host = $requiresHostProvisioning ? $inputs['host'] : '';
+        $user = $requiresHostProvisioning ? $runtimeUser : self::DEFAULT_RUNTIME_USER;
+        $orbitPath = $requiresHostProvisioning ? "/home/{$runtimeUser}/orbit" : "/home/{$runtimeUser}/orbit";
 
-        $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
+        if ($requiresHostProvisioning) {
+            $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
 
-        if (! $installation->successful) {
-            return $this->installerFailure(
-                role: 'app',
+            if (! $installation->successful) {
+                return $this->installerFailure(
+                    role: 'app',
+                    host: $inputs['host'],
+                    sshUser: $inputs['sshUser'],
+                    errorOutput: $installation->errorOutput,
+                );
+            }
+
+            $sshAuthorization = $this->authorizeRuntimeSshUser(
                 host: $inputs['host'],
                 sshUser: $inputs['sshUser'],
-                errorOutput: $installation->errorOutput,
+                runtimeUser: $runtimeUser,
             );
-        }
 
-        $sshAuthorization = $this->authorizeRuntimeSshUser(
-            host: $inputs['host'],
-            sshUser: $inputs['sshUser'],
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($sshAuthorization)) {
-            return $sshAuthorization;
+            if (is_int($sshAuthorization)) {
+                return $sshAuthorization;
+            }
         }
 
         $node = $registryWriter->writeNodeIdentity(
@@ -462,12 +473,12 @@ class NodeNewCommand extends Command
                 : 'control',
             environment: $this->legacyEnvironmentForRoles($roles),
             tld: $inputs['tld'],
-            platform: 'ubuntu',
-            host: $inputs['host'],
+            platform: $platform,
+            host: $host,
             wireguardAddress: $wireguardAddress,
             gatewayEndpoint: $gatewayEndpoint,
-            user: $runtimeUser,
-            orbitPath: "/home/{$runtimeUser}/orbit",
+            user: $user,
+            orbitPath: $orbitPath,
         );
 
         $failedAssignment = null;
@@ -518,9 +529,9 @@ class NodeNewCommand extends Command
                 'last_error' => $assignment->last_error,
             ])->values()->all(),
             'provisioning' => [
-                'transport' => 'ssh',
-                'host' => $inputs['host'],
-                'status' => 'complete',
+                'transport' => $requiresHostProvisioning ? 'ssh' : 'none',
+                'host' => $requiresHostProvisioning ? $inputs['host'] : null,
+                'status' => $requiresHostProvisioning ? 'complete' : 'created',
             ],
             'next_steps' => [],
         ];

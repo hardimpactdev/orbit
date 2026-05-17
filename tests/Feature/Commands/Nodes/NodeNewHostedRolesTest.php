@@ -24,13 +24,19 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     config(['orbit.is_gateway' => true]);
 
-    app()->instance(OrbitHostInstaller::class, new class extends OrbitHostInstaller
+    $this->fakeInstaller = new class extends OrbitHostInstaller
     {
+        public int $calls = 0;
+
         public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
         {
+            $this->calls++;
+
             return new OrbitHostInstallResult(successful: true);
         }
-    });
+    };
+
+    app()->instance(OrbitHostInstaller::class, $this->fakeInstaller);
 
     app()->instance(PlatformDetector::class, new class extends PlatformDetector
     {
@@ -192,6 +198,7 @@ it('creates a database hosted role without requiring host input', function (): v
         ->and($node)->not->toBeNull()
         ->and($node->host)->toBe('')
         ->and($node->user)->toBe('orbit')
+        ->and($this->fakeInstaller->calls)->toBe(0)
         ->and($node->roleAssignments)->toHaveCount(1)
         ->and($node->roleAssignments->first()?->role)->toBe('database')
         ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value);
