@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\WireGuardPeer;
+use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -34,7 +36,34 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
+        $this->wgEasyServiceInstaller = new class extends WgEasyServiceInstaller
+        {
+            /** @var list<array{publicHost: string, passwordHash: string}> */
+            public array $invocations = [];
+
+            public function __construct() {}
+
+            public function install(string $publicHost, string $passwordHash): void
+            {
+                $this->invocations[] = ['publicHost' => $publicHost, 'passwordHash' => $passwordHash];
+            }
+        };
+
+        $this->orbitDnsServiceInstaller = new class extends OrbitDnsServiceInstaller
+        {
+            public int $installs = 0;
+
+            public function __construct() {}
+
+            public function install(): void
+            {
+                $this->installs++;
+            }
+        };
+
         app()->instance(GatewayApiRuntimeInstaller::class, $this->gatewayApiRuntimeInstaller);
+        app()->instance(WgEasyServiceInstaller::class, $this->wgEasyServiceInstaller);
+        app()->instance(OrbitDnsServiceInstaller::class, $this->orbitDnsServiceInstaller);
     });
 
     afterEach(function (): void {
@@ -51,6 +80,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
+            '--public-host' => '203.0.113.10',
         ]);
 
         $output = Artisan::output();
@@ -64,7 +94,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2']);
     });
 
-    it('can skip gateway api runtime installation for container topology preparation', function (): void {
+    it('can skip gateway runtime installation for container topology preparation', function (): void {
         $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
@@ -73,7 +103,81 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
-            ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe([]);
+            ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe([])
+            ->and($this->wgEasyServiceInstaller->invocations)->toBe([])
+            ->and($this->orbitDnsServiceInstaller->installs)->toBe(0);
+    });
+
+    it('installs wg-easy before orbit-dns after the gateway API runtime', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--public-host' => '203.0.113.10',
+        ]);
+
+        expect($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2'])
+            ->and($this->wgEasyServiceInstaller->invocations)->toHaveCount(1)
+            ->and($this->wgEasyServiceInstaller->invocations[0]['publicHost'])->toBe('203.0.113.10')
+            ->and($this->wgEasyServiceInstaller->invocations[0]['passwordHash'])->not->toBe('')
+            ->and($this->orbitDnsServiceInstaller->installs)->toBe(1);
+    });
+
+    it('persists the wg-easy admin password hash in the gateway env', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--public-host' => '203.0.113.10',
+        ]);
+
+        $env = File::get(app()->environmentFilePath());
+
+        expect($env)->toContain('WG_EASY_PASSWORD_HASH=');
+    });
+
+    it('reuses an existing wg-easy admin password hash on re-bootstrap', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--public-host' => '203.0.113.10',
+        ]);
+        $firstHash = $this->wgEasyServiceInstaller->invocations[0]['passwordHash'];
+
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--public-host' => '203.0.113.10',
+        ]);
+
+        expect($this->wgEasyServiceInstaller->invocations[1]['passwordHash'])->toBe($firstHash);
+    });
+
+    it('skips wg-easy and orbit-dns when public host is not provided', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+        ]);
+
+        expect($this->wgEasyServiceInstaller->invocations)->toBe([])
+            ->and($this->orbitDnsServiceInstaller->installs)->toBe(0);
+    });
+
+    it('sets the gateway tld to "gateway" by default', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+        ]);
+
+        expect(Node::query()->where('name', 'gateway-1')->value('tld'))->toBe('gateway');
+    });
+
+    it('honors a custom --tld value for the gateway', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--tld' => 'orbital',
+        ]);
+
+        expect(Node::query()->where('name', 'gateway-1')->value('tld'))->toBe('orbital');
     });
 
     it('is idempotent when the gateway node and CA already exist', function (): void {

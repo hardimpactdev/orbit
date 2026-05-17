@@ -1,0 +1,113 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\E2E\Support;
+
+use RuntimeException;
+
+/**
+ * Verifies runtime reachability from inside an E2E topology — DNS resolution
+ * and HTTP responses over WireGuard, as a real human or agent would experience.
+ *
+ * Always runs *from the control node* via SSH, not from the test host. The
+ * control container reaches the gateway over WG, asks gateway-side DNS to
+ * resolve a TLD, and exercises the resulting URL. Verifying from the host
+ * bypasses WG and proves nothing about the real path.
+ */
+final readonly class E2EReachability
+{
+    public static function assertDnsResolvesOverWg(
+        E2EInstance $control,
+        string $controlUser,
+        SshKeyPair $key,
+        string $hostname,
+        string $expectedIp,
+        string $dnsServer = '10.6.0.1',
+        int $timeoutSeconds = 15,
+    ): void {
+        $command = sprintf(
+            'dig +time=%d +short %s @%s',
+            $timeoutSeconds,
+            escapeshellarg($hostname),
+            escapeshellarg($dnsServer),
+        );
+
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, $timeoutSeconds + 5);
+        $answer = trim($result->output());
+
+        if ($answer === '') {
+            throw new RuntimeException(sprintf(
+                'DNS for %s did not resolve via %s (empty answer).',
+                $hostname,
+                $dnsServer,
+            ));
+        }
+
+        $answers = array_filter(array_map('trim', explode("\n", $answer)));
+
+        if (! in_array($expectedIp, $answers, true)) {
+            throw new RuntimeException(sprintf(
+                'DNS for %s via %s resolved to [%s], expected %s.',
+                $hostname,
+                $dnsServer,
+                implode(', ', $answers),
+                $expectedIp,
+            ));
+        }
+    }
+
+    public static function assertHttpReachable(
+        E2EInstance $control,
+        string $controlUser,
+        SshKeyPair $key,
+        string $url,
+        int $expectedStatus = 200,
+        int $timeoutSeconds = 15,
+    ): void {
+        $command = sprintf(
+            'curl -k -s -o /dev/null -w "%%{http_code}" --max-time %d %s',
+            $timeoutSeconds,
+            escapeshellarg($url),
+        );
+
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, $timeoutSeconds + 5);
+        $observed = trim($result->output());
+
+        if ($observed !== (string) $expectedStatus) {
+            throw new RuntimeException(sprintf(
+                'HTTP %s returned status %s, expected %d.',
+                $url,
+                $observed === '' ? '<empty>' : $observed,
+                $expectedStatus,
+            ));
+        }
+    }
+
+    public static function assertHttpResponseContains(
+        E2EInstance $control,
+        string $controlUser,
+        SshKeyPair $key,
+        string $url,
+        string $marker,
+        int $timeoutSeconds = 15,
+    ): void {
+        $command = sprintf(
+            'curl -k -s --max-time %d %s',
+            $timeoutSeconds,
+            escapeshellarg($url),
+        );
+
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, $timeoutSeconds + 5);
+        $body = $result->output();
+
+        if (! str_contains($body, $marker)) {
+            throw new RuntimeException(sprintf(
+                'HTTP %s body did not contain marker %s. Body: %s',
+                $url,
+                $marker,
+                trim($body),
+            ));
+        }
+    }
+}

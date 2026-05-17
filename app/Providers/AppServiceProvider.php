@@ -24,13 +24,18 @@ use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
 use App\Services\AgentIde\SdkOpenCodeClientFactory;
 use App\Services\Ca\OrbitSiteCertificateInstaller;
 use App\Services\CurlRequestProfiler;
+use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\LocalResolver;
+use App\Services\Dns\OrbitDnsServiceInstaller;
+use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\RemoteShell\SshRemoteShell;
 use App\Services\RemoteShell\SshRemoteShellStream;
 use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
@@ -96,6 +101,25 @@ class AppServiceProvider extends ServiceProvider
             $app->make(OpenCodeServerTool::class),
         ]));
 
+        $this->app->singleton(WgEasyServiceInstaller::class, fn (): WgEasyServiceInstaller => new WgEasyServiceInstaller(
+            rootPath: $this->orbitConfigPath(),
+        ));
+
+        $this->app->singleton(OrbitDnsServiceInstaller::class, fn ($app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
+            configBuilder: $app->make(DnsmasqConfigBuilder::class),
+            rootPath: $this->orbitConfigPath(),
+        ));
+
+        $this->app->singleton(DnsmasqReconciler::class, fn ($app): DnsmasqReconciler => new DnsmasqReconciler(
+            configBuilder: $app->make(DnsmasqConfigBuilder::class),
+            rootPath: $this->orbitConfigPath(),
+        ));
+
+        $this->app->singleton(DnsRuntimeProbe::class, fn ($app): DnsRuntimeProbe => new DnsRuntimeProbe(
+            configBuilder: $app->make(DnsmasqConfigBuilder::class),
+            rootPath: $this->orbitConfigPath(),
+        ));
+
         $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);
 
@@ -113,5 +137,22 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         //
+    }
+
+    private function orbitConfigPath(): string
+    {
+        $configured = config('orbit.paths.config_root');
+
+        if (is_string($configured) && $configured !== '') {
+            return $configured;
+        }
+
+        $home = getenv('HOME');
+
+        if (! is_string($home) || $home === '') {
+            $home = '/root';
+        }
+
+        return $home.'/.config/orbit';
     }
 }

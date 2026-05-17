@@ -1121,11 +1121,15 @@ class NodeNewCommand extends Command
             return $sshAuthorization;
         }
 
+        $gatewayTld = $this->resolveGatewayTld();
+
         $bootstrapCommand = sprintf(
-            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s --identity-json=-',
+            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s',
             escapeshellarg("/home/{$runtimeUser}/orbit"),
             escapeshellarg($name),
             escapeshellarg($gatewayAddress),
+            escapeshellarg($host),
+            escapeshellarg($gatewayTld),
         );
 
         $command = $sshUser === $runtimeUser
@@ -1669,6 +1673,13 @@ class NodeNewCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function resolveGatewayTld(): string
+    {
+        $value = $this->stringOption('tld');
+
+        return $value ?? 'gateway';
     }
 
     private function resolveName(): ?string

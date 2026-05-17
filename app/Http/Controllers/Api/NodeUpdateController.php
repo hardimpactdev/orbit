@@ -9,6 +9,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\UpdateNodeApiRequest;
 use App\Models\Node;
+use App\Services\Dns\DnsmasqReconciler;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +111,10 @@ final class NodeUpdateController implements Loggable
 
         if ($changes !== []) {
             $node->update($changes);
+        }
+
+        if ($changes !== [] && config('orbit.is_gateway') === true && $this->touchesDnsFields(array_keys($changes))) {
+            app(DnsmasqReconciler::class)->reconcile();
         }
 
         $warnings = $this->reenactNodeArtifacts(
@@ -259,6 +264,15 @@ final class NodeUpdateController implements Loggable
         }
 
         return $changes;
+    }
+
+    /**
+     * @param  list<string>  $changedFields
+     */
+    private function touchesDnsFields(array $changedFields): bool
+    {
+        return in_array('tld', $changedFields, true)
+            || in_array('wireguard_address', $changedFields, true);
     }
 
     /**

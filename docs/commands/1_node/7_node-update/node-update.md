@@ -77,6 +77,12 @@ that are directly affected by the changed metadata.
   gateway targets, control targets, and production-effective app targets are
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
+- Reconciles the gateway's `dnsmasq.conf` and SIGHUPs `orbit-dns` when `tld`
+  or `wireguard_address` actually change for a node. This keeps the
+  WG-served DNS layer aligned with the registry without restarting the
+  container. The contract for the DNS substrate is
+  [`docs/commands/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
+  Other field changes do not touch DNS.
 - Does not change node role after creation. Role change is an identity
   migration outside `node:update` scope; a future explicit role-migration
   contract will own that flow.

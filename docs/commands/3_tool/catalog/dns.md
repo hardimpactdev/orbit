@@ -19,8 +19,9 @@ These fields describe the DNS tool's identity, backend, and support model in Orb
 `dns` supports lifecycle actions (`tool:start`, `tool:stop`, `tool:restart`),
 `tool:update`, `tool:logs`, safe doctor fix, and safe doctor adopt.
 
-`tool:install dns` and `tool:remove dns` are not supported as ordinary
-operator actions unless a later DNS bootstrap contract explicitly says so.
+`tool:install dns` and `tool:remove dns` are not operator-facing commands.
+They are reachable only through the gateway bootstrap path described in
+[the DNS bootstrap contract](../dns-bootstrap-contract.md).
 
 ## Credentials
 
@@ -36,7 +37,13 @@ In the current topology, the DNS runtime tool is gateway infrastructure. App and
 control nodes do not own DNS runtime rows unless a future DNS contract expands
 node-local DNS support.
 
+The runtime layout — `wg-easy` plus `orbit-dns` sharing wg-easy's network
+namespace so dnsmasq binds the wg-easy WG IP — is specified in
+[the DNS bootstrap contract](../dns-bootstrap-contract.md).
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the DNS runtime tool. DNS record drift belongs
-to the DNS family.
+to the DNS family. The three runtime drift kinds (`dns.container_missing`,
+`dns.port_not_listening`, `dns.config_drift`) are specified in
+[the DNS bootstrap contract](../dns-bootstrap-contract.md).

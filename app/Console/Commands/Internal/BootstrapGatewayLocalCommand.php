@@ -7,13 +7,16 @@ namespace App\Console\Commands\Internal;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
 
@@ -21,7 +24,9 @@ use RuntimeException;
     {name : Gateway node name}
     {wireguard-address : WireGuard address for the gateway}
     {--identity-json= : Gateway/control WireGuard identity payload; use - to read JSON from STDIN}
-    {--skip-runtime-install : Skip PHP-FPM and Caddy gateway API runtime installation for container-only E2E topology preparation}')]
+    {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
+    {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
+    {--skip-runtime-install : Skip PHP-FPM, Caddy, wg-easy, and orbit-dns installation for container-only E2E topology preparation}')]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
 {
@@ -29,22 +34,25 @@ class BootstrapGatewayLocalCommand extends Command
         OrbitCaService $caService,
         WireGuardInterfaceInstaller $wireGuard,
         GatewayApiRuntimeInstaller $gatewayApiRuntimeInstaller,
+        WgEasyServiceInstaller $wgEasyServiceInstaller,
+        OrbitDnsServiceInstaller $orbitDnsServiceInstaller,
     ): int {
         $name = $this->stringArgument('name');
         $wireguardAddress = $this->stringArgument('wireguard-address');
         $identity = $this->identityPayload();
+        $gatewayTld = $this->stringOption('tld') ?? 'gateway';
 
         if ($name === null || $wireguardAddress === null) {
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
-        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity): ?array {
+        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld): ?array {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
                     'role' => 'gateway',
                     'environment' => null,
-                    'tld' => null,
+                    'tld' => $gatewayTld,
                     'platform' => 'unknown',
                     'host' => $wireguardAddress,
                     'wireguard_address' => $wireguardAddress,
@@ -115,11 +123,78 @@ class BootstrapGatewayLocalCommand extends Command
 
         if (! (bool) $this->option('skip-runtime-install')) {
             $gatewayApiRuntimeInstaller->install($wireguardAddress);
+
+            $publicHost = $this->stringOption('public-host');
+
+            if ($publicHost !== null) {
+                $passwordHash = $this->ensureWgEasyPasswordHash();
+                $wgEasyServiceInstaller->install(publicHost: $publicHost, passwordHash: $passwordHash);
+                $orbitDnsServiceInstaller->install();
+            }
         }
 
         $this->line($caService->rootCert());
 
         return self::SUCCESS;
+    }
+
+    private function ensureWgEasyPasswordHash(): string
+    {
+        $existing = $this->readEnvVar('WG_EASY_PASSWORD_HASH');
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $password = Str::random(32);
+        $hash = password_hash($password, PASSWORD_BCRYPT);
+
+        $this->writeEnvVar('WG_EASY_PASSWORD_HASH', $hash);
+
+        return $hash;
+    }
+
+    private function readEnvVar(string $key): ?string
+    {
+        $path = app()->environmentFilePath();
+
+        if (! File::exists($path)) {
+            return null;
+        }
+
+        $contents = File::get($path);
+
+        if (preg_match('/^'.preg_quote($key, '/').'=(.*)$/m', $contents, $matches) === 1) {
+            $value = trim($matches[1]);
+
+            return $value === '' ? null : $value;
+        }
+
+        return null;
+    }
+
+    private function writeEnvVar(string $key, string $value): void
+    {
+        $path = app()->environmentFilePath();
+        $contents = File::exists($path) ? File::get($path) : '';
+        $line = "{$key}={$value}";
+
+        if (preg_match('/^'.preg_quote($key, '/').'=/m', $contents) === 1) {
+            $contents = (string) preg_replace('/^'.preg_quote($key, '/').'=.*$/m', $line, $contents);
+        } else {
+            $contents = rtrim($contents)."\n{$line}\n";
+        }
+
+        File::put($path, $contents);
+        $_ENV[$key] = $value;
+        putenv("{$key}={$value}");
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     private function markGatewayEnvironment(): void

@@ -8,6 +8,7 @@ use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\WireGuardPeer;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 
 final readonly class RemoveNode
@@ -16,6 +17,7 @@ final readonly class RemoveNode
 
     public function __construct(
         private DevelopmentDnsMappingEnactor $developmentDnsMappingEnactor,
+        private DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     public function handle(Node $node, bool $removedSelf): NodeRemoveResponse
@@ -41,6 +43,10 @@ final readonly class RemoveNode
         }
 
         $node->delete();
+
+        if (config('orbit.is_gateway') === true) {
+            $this->dnsmasqReconciler->reconcile();
+        }
 
         return new NodeRemoveResponse(
             name: $name,

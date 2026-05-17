@@ -19,12 +19,16 @@ final class DnsTool extends BaseTool
 
     public function installScript(array $config = []): string
     {
-        return $this->dockerComposeInstallScript($this->service($config), $config);
+        $orbitPath = $this->orbitPath($config);
+
+        return "cd '{$orbitPath}' && php artisan orbit:internal:install-orbit-dns";
     }
 
     public function removeScript(array $config = []): string
     {
-        return $this->dockerComposeRemoveScript($this->service($config), $config);
+        $composePath = $this->composePath($config);
+
+        return "docker compose -f '{$composePath}' stop orbit-dns && docker compose -f '{$composePath}' rm -f orbit-dns";
     }
 
     public function updateScript(array $config = []): string
@@ -32,8 +36,17 @@ final class DnsTool extends BaseTool
         return $this->installScript($config);
     }
 
-    private function service(array $config): string
+    private function orbitPath(array $config): string
     {
-        return (string) ($config['service'] ?? 'dns');
+        $value = $config['orbit_path'] ?? '/home/orbit/orbit';
+
+        return is_string($value) && $value !== '' ? $value : '/home/orbit/orbit';
+    }
+
+    private function composePath(array $config): string
+    {
+        $value = $config['compose_path'] ?? '/home/orbit/.config/orbit/docker-compose.yaml';
+
+        return is_string($value) && $value !== '' ? $value : '/home/orbit/.config/orbit/docker-compose.yaml';
     }
 }

@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Models\Node;
+use App\Services\Dns\DnsmasqReconciler;
 
 final class NodeRegistryWriter
 {
+    public function __construct(
+        private readonly DnsmasqReconciler $dnsmasqReconciler,
+    ) {}
+
     public function writeAppNode(
         string $name,
         string $environment,
@@ -18,7 +23,7 @@ final class NodeRegistryWriter
         string $sshUser,
         string $user,
     ): Node {
-        return Node::query()->updateOrCreate(
+        $node = Node::query()->updateOrCreate(
             ['name' => $name],
             [
                 'role' => 'app',
@@ -33,5 +38,11 @@ final class NodeRegistryWriter
                 'status' => 'active',
             ],
         );
+
+        if (config('orbit.is_gateway') === true) {
+            $this->dnsmasqReconciler->reconcile();
+        }
+
+        return $node;
     }
 }

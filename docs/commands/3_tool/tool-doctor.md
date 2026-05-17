@@ -77,6 +77,13 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.credentials_mismatch` | Managed credential metadata exists but differs from gateway configuration. |
 | `tool.lifecycle_state_mismatch` | A managed service or container is running when it should be installed-only, stopped when it should be running, or otherwise differs from expected state. |
 | `tool.unregistered_capability` | During an explicit adoption scope, a selected observed capability has no matching gateway tool row. |
+| `dns.container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
+| `dns.port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
+| `dns.config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `nodes.tld` + `nodes.wireguard_address` state. |
+
+The three `dns.*` codes are owned by the gateway DNS bootstrap contract; see
+[`dns-bootstrap-contract.md`](dns-bootstrap-contract.md) for the runtime layout
+they probe.
 
 ## Tool Fix Map
 
@@ -91,6 +98,9 @@ This table shows what `doctor --fix --restore` does for each fixable issue code.
 | `tool.credentials_missing` | Recreate managed credential material when the tool definition owns credential generation and declares the repair safe. |
 | `tool.credentials_mismatch` | Rewrite managed credential metadata or generated material when the tool definition declares the repair safe. |
 | `tool.lifecycle_state_mismatch` | Start, stop, or restart the managed lifecycle backend to match gateway expected state. |
+| `dns.container_missing` | Re-run the orbit-dns installer (renders compose file + dnsmasq.conf + `docker compose up -d`). Requires wg-easy to be running first. |
+| `dns.port_not_listening` | Restart the `orbit-dns` container. |
+| `dns.config_drift` | Rewrite `dnsmasq.conf` from the gateway intent and SIGHUP `orbit-dns` (no container restart). |
 
 `doctor --fix --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, or
@@ -117,6 +127,7 @@ This table shows what `doctor --fix --adopt` does for each adoptable issue code.
 | `tool.version_mismatch` | Update expected version only when the observed version is supported and the operator selected the specific tool for adoption. |
 | `tool.config_mismatch` | Update expected config when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
+| `dns.config_drift` | Record the observed `dnsmasq.conf` content as the gateway intent. Narrow use case: an operator hand-edited the file for an emergency and now wants Orbit to adopt that change. |
 
 `doctor --fix --adopt` does not scan arbitrary hosts for inventory, adopt unsupported
 packages or containers, infer app/database ownership, adopt generated process or

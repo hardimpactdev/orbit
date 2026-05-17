@@ -46,7 +46,10 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
 - `--environment`: app-node environment: `development` or `production`.
-- `--tld`: development TLD for a development app node, without a leading dot.
+- `--tld`: TLD for the node, without a leading dot. For development app nodes,
+  this is the suffix future apps and workspaces on that node use. For gateway
+  nodes, this is the TLD under which the gateway resolves over its own
+  WG-served DNS (defaults to `gateway`).
 - `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
   steady-state `nodes.user` after the gateway-managed SSH user is set up.
 - `--json`: Output JSON.
@@ -86,11 +89,29 @@ WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
 local gateway endpoint, and verifies gateway API access. After that successful
 flow, the initiating control node does not run `gateway:add`.
 
+Gateway bootstrap also installs the gateway-side DNS substrate:
+
+- `wg-easy` (the WireGuard VPN server) is installed under
+  `~/.config/orbit/wg-easy/`. The bcrypt admin password hash is generated and
+  persisted as `WG_EASY_PASSWORD_HASH` in the gateway's `.env`.
+- `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
+  sharing wg-easy's network namespace, so it answers DNS for fleet TLDs on
+  the wg-easy WG IP. The initial `dnsmasq.conf` reflects the current
+  `nodes.tld` + `nodes.wireguard_address` state and is kept in sync by later
+  `node:new`, `node:update`, and `node:remove` calls.
+
+The full contract for the DNS substrate is
+[`docs/commands/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
+
 `--host` is required for every gateway request, including later gateway
 convergence checks after a gateway already exists. During first-gateway
 bootstrap, the resolved `--host` value becomes the initial gateway endpoint used
-in generated WireGuard peer configs. This endpoint must be an IP address or
-dotted DNS name reachable by the nodes that will join the fleet.
+in generated WireGuard peer configs *and* is passed to wg-easy as `WG_HOST`,
+so it must be an IP address or dotted DNS name reachable by the nodes that will
+join the fleet.
+
+`--tld` defaults to `gateway` on `--role=gateway`. The gateway is reachable
+over WG as `<gateway-name>.<gateway-tld>` once the substrate is up.
 
 If the requested gateway is already provisioned and active, and the supplied host is
 compatible with that gateway identity, Orbit converges idempotently without

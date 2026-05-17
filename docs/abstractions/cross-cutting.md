@@ -4,6 +4,50 @@ This file captures implementation patterns shared by two or more concrete
 callers. It is not product authority; command behavior remains in
 `docs/commands/**` and the top-level product docs.
 
+## E2E runtime reachability assertions
+
+**Problem:** Most E2E tests verify *state convergence* — DB rows, file shapes,
+doctor reports, JSON command output. That doesn't catch failures where the
+state is correct but the runtime path is broken (DNS not actually resolving
+over WG, Caddy serving 502, etc.). Reachability tests assert *runtime HTTP
+responses* the way an operator on a control node would experience them.
+
+**When to use:**
+
+- Any test that exercises gateway DNS, Caddy proxy routes, or app deployments
+  benefits from a reachability tail. Add `assertDnsResolvesOverWg`,
+  `assertHttpReachable`, and/or `assertHttpResponseContains` after the
+  existing convergence assertions.
+- Tag tests `pest()->group('e2e-feature', 'e2e-feature-reachability')` so they
+  can be run on their own:
+  `vendor/bin/pest --group=e2e-feature-reachability`.
+
+**Where reachability is verified from:**
+
+- Always from the **control node**, via SSH. That is the path a human or
+  agent on the control node would take. Verifying from the test host bypasses
+  WG and proves nothing about the real flow.
+
+**TLS:**
+
+- `assertHttpReachable` uses `curl -k`. Orbit's internal CA is not the thing
+  under test here. A separate test could pin CA trust if needed.
+
+**Current pointers:**
+
+- `app/E2E/Support/E2EReachability.php`
+- `tests/E2E/GatewayDnsReachableTest.php`
+- `tests/E2E/AppNewReachableTest.php`
+- `tests/E2E/AppDeployedReachableTest.php`
+- `tests/E2E/AppRemoveReachabilityTest.php`
+- Source plan: `docs/superpowers/plans/2026-05-16-e2e-http-reachability.md`
+- Prerequisite: `docs/commands/3_tool/dns-bootstrap-contract.md`
+
+**Locked-in contracts:**
+
+- After `app:remove`, the hostname returns **404** (Caddy default for an
+  unconfigured site on a node with no matching route). Tests rely on this.
+
 ## Gateway API transport and envelope parsing
 
 **Problem:** CLI-to-gateway calls need one transport shape for base URL, trust,
