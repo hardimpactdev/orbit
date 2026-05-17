@@ -12,6 +12,12 @@ final class MysqlTool extends DockerComposeTool
     }
 
     #[\Override]
+    public function requiredNodeRole(): string
+    {
+        return 'database';
+    }
+
+    #[\Override]
     public function probeMetadata(): array
     {
         return [

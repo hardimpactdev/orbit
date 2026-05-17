@@ -60,6 +60,11 @@ configuration owned by the tool definition, not an HTTP proxy route.
 PostgreSQL is a managed database capability. App database selection and
 application migrations remain app or deployment concerns.
 
+`tool:install postgres` requires the target node to have an active
+`database` role assignment. Orbit does not select an app database host here.
+Installing PostgreSQL on an app node is allowed only when that same node also
+has an active `database` role.
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the managed PostgreSQL container, expected

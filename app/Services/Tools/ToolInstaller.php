@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ToolInstaller
 {
@@ -35,10 +36,15 @@ final readonly class ToolInstaller
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
         }
 
-        $targetNode = $this->resolveTargetNode($node, $app);
+        $requiredRole = $this->catalog->requiredNodeRole($tool);
+        $targetNode = $this->resolveTargetNode($node, $app, $requiredRole);
 
         if ($targetNode instanceof ToolRegistryFailure) {
             return $targetNode;
+        }
+
+        if ($requiredRole !== null && ! $targetNode->hasActiveRole($requiredRole)) {
+            return ToolRegistryFailure::nodeRoleRequired($tool, $targetNode->name, $requiredRole);
         }
 
         $script = $this->catalog->installScript($tool, $config);
@@ -96,11 +102,11 @@ final readonly class ToolInstaller
         ];
     }
 
-    private function resolveTargetNode(?string $node, ?string $app): Node|ToolRegistryFailure
+    private function resolveTargetNode(?string $node, ?string $app, ?string $requiredRole): Node|ToolRegistryFailure
     {
         $validation = $this->registry->validateFilters($node, $app);
 
-        if ($validation instanceof ToolRegistryFailure) {
+        if ($validation instanceof ToolRegistryFailure && ! $this->canResolveExplicitRequiredRoleNode($validation, $node, $app, $requiredRole)) {
             return $validation;
         }
 
@@ -113,6 +119,21 @@ final readonly class ToolInstaller
 
             if ($resolved instanceof Node) {
                 return $resolved;
+            }
+
+            if ($requiredRole !== null) {
+                $resolved = Node::query()
+                    ->where('name', $node)
+                    ->where('status', 'active')
+                    ->whereHas('roleAssignments', function (Builder $query) use ($requiredRole): void {
+                        $query->where('role', $requiredRole)
+                            ->where('status', 'active');
+                    })
+                    ->first();
+
+                if ($resolved instanceof Node) {
+                    return $resolved;
+                }
             }
         }
 
@@ -135,5 +156,19 @@ final readonly class ToolInstaller
             '',
             'A node or app target is required.',
         );
+    }
+
+    private function canResolveExplicitRequiredRoleNode(
+        ToolRegistryFailure $validation,
+        ?string $node,
+        ?string $app,
+        ?string $requiredRole,
+    ): bool {
+        if ($requiredRole === null || $node === null || $app !== null) {
+            return false;
+        }
+
+        return $validation->code === 'validation_failed'
+            && ($validation->meta['field'] ?? null) === 'node';
     }
 }

@@ -55,6 +55,19 @@ final readonly class ToolRegistryFailure
         );
     }
 
+    public static function nodeRoleRequired(string $tool, string $node, string $requiredRole): self
+    {
+        return new self(
+            code: 'node.role_required',
+            message: "Tool '{$tool}' requires node '{$node}' to have active role '{$requiredRole}'.",
+            meta: [
+                'node' => $node,
+                'required_role' => $requiredRole,
+                'tool' => $tool,
+            ],
+        );
+    }
+
     public static function remoteActionFailed(string $tool, string $node, string $action, int $exitCode, string $stderr): self
     {
         return new self(

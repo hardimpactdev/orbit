@@ -111,6 +111,11 @@ final readonly class ToolCatalog
         return in_array($capability, $this->capabilities($tool), true);
     }
 
+    public function requiredNodeRole(string $tool): ?string
+    {
+        return $this->definition($tool)?->requiredNodeRole();
+    }
+
     public function installScript(string $tool, array $config = []): ?string
     {
         if (! $this->hasCapability($tool, 'install')) {

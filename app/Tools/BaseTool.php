@@ -8,6 +8,11 @@ use App\Contracts\ToolDefinition;
 
 abstract class BaseTool implements ToolDefinition
 {
+    public function requiredNodeRole(): ?string
+    {
+        return null;
+    }
+
     /**
      * @return list<string>
      */

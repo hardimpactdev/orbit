@@ -8,6 +8,8 @@ interface ToolDefinition
 {
     public function slug(): string;
 
+    public function requiredNodeRole(): ?string;
+
     /**
      * @return list<string>
      */
