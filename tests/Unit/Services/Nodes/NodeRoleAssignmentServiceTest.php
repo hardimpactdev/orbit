@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
-use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -134,20 +135,17 @@ describe('node role assignment service', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'database',
+            'role' => 'app-development',
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        app()->instance(NodeRoleDependencyInspector::class, new class extends NodeRoleDependencyInspector
-        {
-            public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
-            {
-                return ['app api depends on database'];
-            }
-        });
+        App::factory()->create([
+            'node_id' => $node->id,
+            'environment' => 'development',
+        ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'database'))
-            ->toThrow(InvalidArgumentException::class, "Role 'database' cannot be removed while dependents exist.");
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-development'))
+            ->toThrow(InvalidArgumentException::class, "Role 'app-development' cannot be removed while dependents exist.");
     });
 
     it('requires force when purge data is requested', function (): void {
@@ -168,30 +166,72 @@ describe('node role assignment service', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'environment' => 'development',
+        ]);
+        ProxyRoute::factory()->forApp($app)->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.test',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true);
+
+        expect(App::query()->whereKey($app->id)->exists())->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
+            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+    });
+
+    it('forces database role removal by clearing database tool dependents and docker baseline intent', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'postgres',
+            'expected_state' => 'running',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docker',
+            'expected_state' => 'running',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['postgres', 'docker'])->exists())->toBeFalse()
+            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+    });
+
+    it('leaves a removing assignment in error when cleanup fails', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
             'role' => 'database',
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $inspector = new class extends NodeRoleDependencyInspector
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
-            public bool $removedDependents = false;
-
-            public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
             {
-                return ['app api depends on database'];
+                throw new RuntimeException('Cleanup failed.');
             }
-
-            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
-            {
-                $this->removedDependents = true;
-            }
-        };
-
-        app()->instance(NodeRoleDependencyInspector::class, $inspector);
+        });
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
 
-        expect($inspector->removedDependents)->toBeTrue()
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Error->value)
+            ->and($assignment->fresh()->last_error)
+            ->toBe('Cleanup failed.');
     });
 });

@@ -43,7 +43,13 @@ class DatabaseRoleBaseline implements RoleBaseline
         );
     }
 
-    public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void {}
+    public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+    {
+        NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'docker')
+            ->delete();
+    }
 
     private function toolCatalog(): ToolCatalog
     {
