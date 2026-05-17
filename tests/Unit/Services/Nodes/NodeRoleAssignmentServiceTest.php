@@ -144,6 +144,56 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'app-production' conflicts with active role 'app-development'.");
     });
 
+    it('rejects pending and error role conflicts', function (string $status): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => $status,
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', []))
+            ->toThrow(InvalidArgumentException::class, "Role 'app-production' conflicts with {$status} role 'app-development'.");
+    })->with([
+        NodeRoleStatus::Pending->value,
+        NodeRoleStatus::Error->value,
+    ]);
+
+    it('rejects updates when pending and error role conflicts exist', function (string $status): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu_24-04',
+            'role' => 'control',
+            'wireguard_address' => '10.0.0.10',
+        ]);
+
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'old'],
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-production',
+            'status' => $status,
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-development', ['tld' => 'new']))
+            ->toThrow(InvalidArgumentException::class, "Role 'app-development' conflicts with {$status} role 'app-production'.");
+
+        expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->last_error)->toBeNull();
+    })->with([
+        NodeRoleStatus::Pending->value,
+        NodeRoleStatus::Error->value,
+    ]);
+
     it('rejects roles that conflict with an active gateway assignment', function (string $role, array $settings): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -164,7 +214,7 @@ describe('node role assignment service', function (): void {
         'database' => ['database', []],
     ]);
 
-    it('ignores non-active assignments during conflict checks', function (string $status): void {
+    it('ignores removing assignments during conflict checks', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'host' => 'app-prod-1.example.com',
@@ -173,7 +223,7 @@ describe('node role assignment service', function (): void {
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
             'role' => 'app-development',
-            'status' => $status,
+            'status' => NodeRoleStatus::Removing->value,
             'settings' => ['tld' => 'test'],
         ]);
 
@@ -183,11 +233,7 @@ describe('node role assignment service', function (): void {
             ->toBe(NodeRoleStatus::Active->value)
             ->and($assignment->role)
             ->toBe('app-production');
-    })->with([
-        NodeRoleStatus::Pending->value,
-        NodeRoleStatus::Error->value,
-        NodeRoleStatus::Removing->value,
-    ]);
+    });
 
     it('marks role as error when convergence fails', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
@@ -462,6 +508,54 @@ describe('node role assignment service', function (): void {
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
 
+    it('removes Orbit-owned dependents before removing role baselines', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        /** @var ArrayObject<int, string> $events */
+        $events = new ArrayObject;
+
+        app()->instance(NodeRoleDependencyInspector::class, new class($events) extends NodeRoleDependencyInspector
+        {
+            /**
+             * @param  ArrayObject<int, string>  $events
+             */
+            public function __construct(private readonly ArrayObject $events) {}
+
+            public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
+            {
+                return ['1 development app record'];
+            }
+
+            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
+            {
+                $this->events->append('dependents');
+            }
+        });
+
+        app()->instance(NodeRoleBaselineConverger::class, new class($events) extends NodeRoleBaselineConverger
+        {
+            /**
+             * @param  ArrayObject<int, string>  $events
+             */
+            public function __construct(private readonly ArrayObject $events) {}
+
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+            {
+                $this->events->append('baseline');
+            }
+        });
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true);
+
+        expect($events->getArrayCopy())->toBe(['dependents', 'baseline']);
+    });
+
     it('removes app dependents and passes purge intent when purge data is requested', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
@@ -596,7 +690,7 @@ describe('node role assignment service', function (): void {
             ->and($assignment->fresh()->last_error)
             ->toBe('Cleanup failed.')
             ->and($inspector->removed)
-            ->toBeFalse()
+            ->toBeTrue()
             ->and(App::query()->whereKey($app->id)->exists())
             ->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
