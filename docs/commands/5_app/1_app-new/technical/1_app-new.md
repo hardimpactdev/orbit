@@ -6,10 +6,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to create apps on the target app node.
+- The current node identity is a control caller authorized to create apps on the
+  target app node, or the gateway itself.
 - The gateway can reach the target app node over SSH.
 - The resolved target node is an active `app` node.
-- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
+- App-node callers are denied by the gateway with
+  `error.code=caller_role_not_allowed` before prompts or side effects.
+  Database-only hosted-role callers are denied the same way.
 
 [Back to public page](../app-new.md)
 
@@ -139,6 +142,9 @@ If `--domain` is supplied:
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
+- **Caller Role Not Allowed:** Fails before registry reads, prompts, SSH, or
+  app writes if the gateway-known caller is neither a control caller nor the
+  gateway itself.
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
 - **Collision:** Fails if the app name is already registered in the gateway

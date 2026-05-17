@@ -37,8 +37,15 @@ final class AppStoreController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+
+        if (! $callerIsGateway && $caller->role !== 'control') {
+            return $this->error(
+                'caller_role_not_allowed',
+                'This command may only be run from a control or gateway node.',
+                ['caller_role' => $this->nodeRoleAssignments->assignmentRoleLabel($caller)],
+                403,
+            );
         }
 
         $input = $this->validatedInput($request);
@@ -54,7 +61,7 @@ final class AppStoreController implements Loggable
             return $node;
         }
 
-        if (! $this->callerCanCreateOnNode($caller, $node)) {
+        if (! $this->callerCanCreateOnNode($caller, $node, $callerIsGateway)) {
             return $this->error('authorization_failed', "This node is not authorized to create apps on '{$node->name}'.", ['node' => $node->name], 403);
         }
 
@@ -185,9 +192,9 @@ final class AppStoreController implements Loggable
         return $node;
     }
 
-    private function callerCanCreateOnNode(Node $caller, Node $node): bool
+    private function callerCanCreateOnNode(Node $caller, Node $node, bool $callerIsGateway): bool
     {
-        if ($caller->role === 'gateway') {
+        if ($callerIsGateway) {
             return true;
         }
 

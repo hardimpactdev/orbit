@@ -104,6 +104,36 @@ describe('AppStoreController', function (): void {
             ->and($remoteShell->runs)->toBe([]);
     });
 
+    it('rejects database callers before remote work even when they have target access', function (): void {
+        $caller = createAppStoreCallerNode([
+            'role' => 'database',
+        ]);
+        assignAppStoreRole($caller, 'database');
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps', [
+            'name' => 'docs',
+            'node' => 'app-1',
+        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+
+        expect(App::query()->count())->toBe(0)
+            ->and($remoteShell->runs)->toBe([]);
+    });
+
     it('rejects app creation before remote work when the proxy route domain is already registered', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([

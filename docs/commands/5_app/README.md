@@ -104,7 +104,8 @@ repository value and stores `repository=null` when adopting an unmanaged path.
 
 App commands use gateway-owned access policy for visibility and authorization.
 App-node callers may run app read commands when authorized for the resolved app.
-App-node callers may not initiate app-level writes, cross-node app creation,
+Hosted-role callers that are not the gateway, including app nodes and
+database-only nodes, may not initiate app-level writes, cross-node app creation,
 registration/adoption, destructive cleanup, source-of-truth pruning, or
 preference changes unless a command explicitly documents a narrow exception.
 The current local workflow exception is
