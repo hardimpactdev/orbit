@@ -18,6 +18,7 @@ use App\Models\App;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Support\GitRepositoryReference;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -63,7 +64,8 @@ class AppNewCommand extends Command
             return $this->forwardCreate($input);
         }
 
-        $node = $this->resolveTargetNode($input['node']);
+        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $node = $this->resolveTargetNode($input['node'], $requiredRole);
 
         if (is_int($node)) {
             return $node;
@@ -618,7 +620,7 @@ class AppNewCommand extends Command
         return "App name '{$name}' is already registered in the gateway app registry on node '{$node}'.";
     }
 
-    private function resolveTargetNode(string $nodeName): Node|int
+    private function resolveTargetNode(string $nodeName, string $requiredRole): Node|int
     {
         $node = Node::query()->where('name', $nodeName)->first();
 
@@ -630,13 +632,13 @@ class AppNewCommand extends Command
             );
         }
 
-        if ($node->role !== 'app' || $node->status !== 'active') {
+        if ($node->status !== 'active' || ! app(NodeRoleAssignments::class)->nodeHasActiveRole($node, $requiredRole)) {
             return $this->failCommand(
                 code: 'app.ineligible_node',
                 message: "Node '{$node->name}' is not an active app node.",
                 meta: [
                     'node' => $node->name,
-                    'role' => $node->role,
+                    'required_role' => $requiredRole,
                     'status' => $node->status,
                 ],
             );

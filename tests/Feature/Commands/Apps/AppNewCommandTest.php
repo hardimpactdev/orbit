@@ -10,6 +10,7 @@ use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -27,6 +28,16 @@ afterEach(function (): void {
     MockClient::destroyGlobal();
 });
 
+function assignAppNewRole(Node $node, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
+{
+    return NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => $status,
+        'settings' => $settings,
+    ]);
+}
+
 it('creates source on the target app node before writing gateway app intent', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
@@ -39,6 +50,7 @@ it('creates source on the target app node before writing gateway app intent', fu
         'tld' => 'test',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -84,6 +96,7 @@ it('uses local node default in non-interactive mode when node option is missing'
         'tld' => 'test',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     LocalNodeDefault::query()->create([
         'default_node_name' => 'app-2',
@@ -105,18 +118,111 @@ it('uses local node default in non-interactive mode when node option is missing'
         ->and(App::query()->where('name', 'docs')->value('node_id'))->toBe($targetNode->id);
 });
 
+it('accepts active app-production nodes for production app creation on the gateway', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'prod-1',
+        'role' => 'app',
+        'status' => 'active',
+        'tld' => null,
+    ]);
+    assignAppNewRole($targetNode, 'app-production');
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'prod-1',
+        '--domain' => 'docs.example.com',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($remoteShell->runs)->toHaveCount(4)
+        ->and($payload['success']['data']['app']['environment'])->toBe('production')
+        ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com');
+});
+
+it('rejects gateway-local app creation on database-only nodes', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'db-1',
+        'role' => 'app',
+        'status' => 'active',
+    ]);
+    assignAppNewRole($targetNode, 'database');
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'db-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($remoteShell->runs)->toBe([])
+        ->and($payload['error']['code'])->toBe('app.ineligible_node')
+        ->and($payload['error']['meta']['required_role'])->toBe('app-development');
+});
+
+it('rejects gateway-local app creation on pending app-development nodes', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+    ]);
+    assignAppNewRole($targetNode, 'app-development', 'pending', ['tld' => 'test']);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($remoteShell->runs)->toBe([])
+        ->and($payload['error']['code'])->toBe('app.ineligible_node')
+        ->and($payload['error']['meta']['required_role'])->toBe('app-development');
+});
+
 it('uses gh cli for github shorthand source creation and registry write', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'user' => 'deploy',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -145,12 +251,13 @@ it('uses gh cli for github urls', function (): void {
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'user' => 'deploy',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -174,12 +281,13 @@ it('uses git clone for non-github repositories', function (): void {
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'user' => 'deploy',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -203,11 +311,12 @@ it('does not write gateway app intent when source creation fails', function (): 
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell(new RemoteShellResult(
         exitCode: 128,
@@ -241,11 +350,12 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -276,11 +386,12 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new SequencedRecordingRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -322,6 +433,7 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         'tld' => 'test',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new SequencedRecordingRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -371,12 +483,13 @@ it('uses the production domain as the app-owned proxy route domain', function ()
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-production');
 
     app()->instance(RemoteShell::class, new RecordingRemoteShell);
 
@@ -398,12 +511,13 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
         'role' => 'gateway',
     ]);
 
-    Node::factory()->create([
+    $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -443,6 +557,7 @@ it('fails before source creation when the proxy route domain is already register
         'tld' => 'test',
         'status' => 'active',
     ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     ProxyRoute::query()->create([
         'node_id' => $targetNode->id,
@@ -485,6 +600,7 @@ it('fails before remote work when the app name is already registered', function 
         'role' => 'app',
         'status' => 'active',
     ]);
+    assignAppNewRole($existingNode, 'app-development', settings: ['tld' => 'test']);
 
     App::factory()->create([
         'name' => 'docs',

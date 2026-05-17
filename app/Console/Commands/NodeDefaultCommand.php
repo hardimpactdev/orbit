@@ -275,7 +275,7 @@ class NodeDefaultCommand extends Command
     {
         try {
             $dto = app(GatewayConnector::class)
-                ->send(new ListNodesRequest(role: 'app', environment: 'development'))
+                ->send(new ListNodesRequest)
                 ->dto();
         } catch (GatewayApiException $e) {
             throw $e;
@@ -331,11 +331,20 @@ class NodeDefaultCommand extends Command
             return false;
         }
 
-        return isset($node['name'])
-            && is_string($node['name'])
-            && $node['name'] !== ''
-            && ($node['role'] ?? null) === 'app'
-            && ($node['environment'] ?? null) === 'development';
+        if (! isset($node['name']) || ! is_string($node['name']) || $node['name'] === '') {
+            return false;
+        }
+
+        $roles = $node['roles'] ?? null;
+
+        if (! is_array($roles)) {
+            return false;
+        }
+
+        return collect($roles)
+            ->contains(fn (mixed $assignment): bool => is_array($assignment)
+                && ($assignment['role'] ?? null) === 'app-development'
+                && ($assignment['status'] ?? null) === 'active');
     }
 
     private function failGatewayUnavailable(): int

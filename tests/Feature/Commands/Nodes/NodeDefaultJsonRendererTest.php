@@ -6,6 +6,7 @@ use App\Console\Commands\NodeDefaultCommand;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -80,6 +81,18 @@ function invokeNodeDefaultFailCommand(bool $json, string $code, string $message,
         'exitCode' => $exitCode,
         'output' => $output->fetch(),
     ];
+}
+
+function assignNodeDefaultJsonRole(string $nodeName, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
+{
+    $nodeId = DB::table('nodes')->where('name', $nodeName)->value('id');
+
+    return NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+        'settings' => $settings,
+    ]);
 }
 
 /**
@@ -195,6 +208,7 @@ describe('node:default JSON renderer contract', function (): void {
 
     it('returns set success with default_node object', function (): void {
         DB::table('nodes')->insert(nodeDefaultJsonRow());
+        assignNodeDefaultJsonRole('app-1', 'app-development', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', [
             'name' => 'app-1',
@@ -219,6 +233,7 @@ describe('node:default JSON renderer contract', function (): void {
 
     it('omits meta from JSON success for set', function (): void {
         DB::table('nodes')->insert(nodeDefaultJsonRow());
+        assignNodeDefaultJsonRole('app-1', 'app-development', settings: ['tld' => 'test']);
 
         Artisan::call('node:default', ['name' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -405,8 +420,8 @@ describe('node:default JSON renderer contract', function (): void {
             ->and($error['meta'])->toBe([
                 'name' => 'gateway-1',
                 'role' => 'gateway',
-                'required_role' => 'app',
-                'required_environment' => 'development',
+                'environment' => null,
+                'required_role_assignment' => 'app-development',
             ]);
     });
 

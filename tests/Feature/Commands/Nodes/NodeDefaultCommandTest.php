@@ -91,6 +91,21 @@ function nodeDefaultGatewayResponse(array $nodes): array
     ];
 }
 
+function nodeDefaultGatewayNode(
+    string $name,
+    array $roles,
+    array $overrides = [],
+): array {
+    return array_merge([
+        'name' => $name,
+        'role' => 'app',
+        'environment' => 'development',
+        'platform' => 'ubuntu_24-04',
+        'status' => 'active',
+        'roles' => $roles,
+    ], $overrides);
+}
+
 function nodeDefaultCommandIdentityEnvelope(): array
 {
     return [
@@ -111,8 +126,8 @@ function nodeDefaultCommandIdentityEnvelope(): array
 
 function expectNodeDefaultListRequest(ListNodesRequest $request): bool
 {
-    return $request->role === 'app'
-        && $request->environment === 'development'
+    return $request->role === null
+        && $request->environment === null
         && $request->doctor === false;
 }
 
@@ -259,13 +274,9 @@ describe('node:default command contract', function (): void {
         $mock = MockClient::global([
             ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
-                [
-                    'name' => 'remote-app',
-                    'role' => 'app',
-                    'environment' => 'development',
-                    'platform' => 'ubuntu_24-04',
-                    'status' => 'active',
-                ],
+                nodeDefaultGatewayNode('remote-app', [
+                    ['role' => 'app-development', 'status' => 'active'],
+                ]),
             ]), 200),
         ]);
 
@@ -296,20 +307,12 @@ describe('node:default command contract', function (): void {
         $mock = MockClient::global([
             ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
-                [
-                    'name' => 'remote-app-1',
-                    'role' => 'app',
-                    'environment' => 'development',
-                    'platform' => 'ubuntu_24-04',
-                    'status' => 'active',
-                ],
-                [
-                    'name' => 'remote-app-2',
-                    'role' => 'app',
-                    'environment' => 'development',
-                    'platform' => 'ubuntu_24-04',
-                    'status' => 'active',
-                ],
+                nodeDefaultGatewayNode('remote-app-1', [
+                    ['role' => 'app-development', 'status' => 'active'],
+                ]),
+                nodeDefaultGatewayNode('remote-app-2', [
+                    ['role' => 'app-development', 'status' => 'active'],
+                ]),
             ]), 200),
         ]);
 
@@ -323,6 +326,60 @@ describe('node:default command contract', function (): void {
 
         $mock->assertSent(fn (ListNodesRequest $request): bool => expectNodeDefaultListRequest($request));
     });
+
+    it('accepts gateway payloads with active app-development roles even when legacy shadows do not match', function (): void {
+        setupConfiguredControlNodeDefaultCaller();
+
+        $mock = MockClient::global([
+            ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
+            ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
+                nodeDefaultGatewayNode('remote-app', [
+                    ['role' => 'app-development', 'status' => 'active'],
+                ], [
+                    'role' => 'database',
+                    'environment' => 'production',
+                ]),
+            ]), 200),
+        ]);
+
+        $exitCode = Artisan::call('node:default', [
+            'name' => 'remote-app',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['action'])->toBe('set')
+            ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app');
+
+        $mock->assertSent(fn (ListNodesRequest $request): bool => expectNodeDefaultListRequest($request));
+    });
+
+    it('rejects gateway payloads without an active app-development role', function (array $roles): void {
+        setupConfiguredControlNodeDefaultCaller();
+
+        $mock = MockClient::global([
+            ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
+            ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
+                nodeDefaultGatewayNode('other-node', $roles),
+            ]), 200),
+        ]);
+
+        $exitCode = Artisan::call('node:default', [
+            'name' => 'other-node',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node.not_found');
+
+        $mock->assertSent(fn (ListNodesRequest $request): bool => expectNodeDefaultListRequest($request));
+    })->with([
+        'missing role assignments' => [[]],
+        'database only' => [[['role' => 'database', 'status' => 'active']]],
+        'pending app-development' => [[['role' => 'app-development', 'status' => 'pending']]],
+    ]);
 
     it('keeps show and clear local-only for configured control callers', function (): void {
         setupConfiguredControlNodeDefaultCaller();
