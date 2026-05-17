@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
@@ -150,6 +151,81 @@ describe('NodeRoleRemoveController', function (): void {
         expect($entry->subject_type)->toBe(Node::class);
         expect($entry->subject_id)->toBe($node->id);
         expect($entry->properties->get('dependents'))->toBe(['1 development app record']);
+    });
+
+    it('preserves role dependents when force is true without purge data', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        $gatewayId = createNodeRoleRemoveGateway();
+        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+
+        NodeTool::query()->create([
+            'node_id' => $node->id,
+            'name' => 'postgres',
+            'expected_state' => 'running',
+            'installed_version' => null,
+            'settings' => [],
+            'status' => 'running',
+        ]);
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
+            'force' => true,
+        ], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.purged_data', false);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue();
+    });
+
+    it('purges role dependents only when purge data is requested with force', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        $gatewayId = createNodeRoleRemoveGateway();
+        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+
+        NodeTool::query()->create([
+            'node_id' => $node->id,
+            'name' => 'postgres',
+            'expected_state' => 'running',
+            'installed_version' => null,
+            'settings' => [],
+            'status' => 'running',
+        ]);
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
+            'force' => true,
+            'purge_data' => true,
+        ], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.purged_data', true);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
     it('returns an error when role removal cleanup fails', function (): void {

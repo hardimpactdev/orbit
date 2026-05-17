@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,31 @@ function createAppListCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
+function createAppListAppNode(array $overrides = [], string $role = 'app-development'): Node
+{
+    $node = Node::factory()->create(array_merge([
+        'role' => 'app',
+    ], $overrides));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+    ]);
+
+    return $node;
+}
+
+function assignAppListGatewayRole(Node $node): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+}
+
 function grantAppListAccess(Node $caller, Node $appNode): void
 {
     DB::table('node_access')->insert([
@@ -35,8 +61,8 @@ function grantAppListAccess(Node $caller, Node $appNode): void
 describe('AppListController', function (): void {
     it('lists visible apps sorted by owning node then app name', function (): void {
         $caller = createAppListCallerNode();
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = createAppListAppNode(['name' => 'z-node']);
+        $aNode = createAppListAppNode(['name' => 'a-node']);
         grantAppListAccess($caller, $zNode);
         grantAppListAccess($caller, $aNode);
 
@@ -54,8 +80,8 @@ describe('AppListController', function (): void {
 
     it('filters apps by owning node and environment', function (): void {
         $caller = createAppListCallerNode();
-        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'app']);
-        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'app']);
+        $devNode = createAppListAppNode(['name' => 'dev-1']);
+        $prodNode = createAppListAppNode(['name' => 'prod-1'], 'app-production');
         grantAppListAccess($caller, $devNode);
         grantAppListAccess($caller, $prodNode);
 
@@ -71,8 +97,8 @@ describe('AppListController', function (): void {
 
     it('omits hidden apps from the result', function (): void {
         $caller = createAppListCallerNode();
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app']);
+        $visibleNode = createAppListAppNode(['name' => 'visible-node']);
+        $hiddenNode = createAppListAppNode(['name' => 'hidden-node']);
         grantAppListAccess($caller, $visibleNode);
 
         App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
@@ -85,10 +111,11 @@ describe('AppListController', function (): void {
             ->assertJsonPath('success.data.apps.0.name', 'visible');
     });
 
-    it('lets gateway callers read all app registry records', function (): void {
-        createAppListCallerNode(['role' => 'gateway']);
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+    it('lets active gateway role assignments read all app registry records', function (): void {
+        $caller = createAppListCallerNode(['role' => 'control']);
+        assignAppListGatewayRole($caller);
+        $firstNode = createAppListAppNode(['name' => 'app-1']);
+        $secondNode = createAppListAppNode(['name' => 'app-2']);
 
         App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
         App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
@@ -99,9 +126,20 @@ describe('AppListController', function (): void {
             ->assertJsonCount(2, 'success.data.apps');
     });
 
+    it('does not treat the legacy gateway role column as gateway visibility', function (): void {
+        createAppListCallerNode(['role' => 'gateway']);
+        $node = createAppListAppNode(['name' => 'app-1']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
+
     it('returns authorization failure when the caller has no app registry visibility', function (): void {
         createAppListCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createAppListAppNode(['name' => 'app-1']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
@@ -123,8 +161,9 @@ describe('AppListController', function (): void {
     });
 
     it('returns the canonical app entity shape', function (): void {
-        createAppListCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $caller = createAppListCallerNode(['role' => 'control']);
+        assignAppListGatewayRole($caller);
+        $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
         $app = App::factory()->create([
             'name' => 'docs',

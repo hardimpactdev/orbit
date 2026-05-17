@@ -13,6 +13,7 @@ use App\Http\Gateway\Responses\Nodes\NodeShowResponse;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
+use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -186,7 +187,7 @@ class NodeShowCommand extends Command
      *     status: string,
      *     environment: string|null,
      *     platform: string,
-     *     roles: list<array{role: string, status: string, settings: array<string, mixed>}>,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
@@ -223,7 +224,7 @@ class NodeShowCommand extends Command
      *     status: string,
      *     environment: string|null,
      *     platform: string,
-     *     roles: list<array{role: string, status: string, settings: array<string, mixed>}>,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
@@ -339,11 +340,7 @@ class NodeShowCommand extends Command
      */
     private function normalizeRoleSettings(mixed $settings): array|stdClass
     {
-        if (! is_array($settings) || $settings === []) {
-            return (object) [];
-        }
-
-        return $settings;
+        return NodeRoleAssignmentPayload::settings($settings);
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
+use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -135,11 +136,7 @@ final readonly class NodeListController implements Loggable
      */
     private function normalizeRoleSettings(mixed $settings): array|stdClass
     {
-        if (! is_array($settings) || $settings === []) {
-            return (object) [];
-        }
-
-        return $settings;
+        return NodeRoleAssignmentPayload::settings($settings);
     }
 
     public function effect(): ActivityLogType

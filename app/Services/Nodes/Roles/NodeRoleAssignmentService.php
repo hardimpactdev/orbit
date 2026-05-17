@@ -120,7 +120,7 @@ class NodeRoleAssignmentService
 
                 $this->converger->remove($node, $transactionAssignment, $purgeData);
 
-                if ($transactionDependents !== []) {
+                if ($purgeData && $transactionDependents !== []) {
                     $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
                 }
 

@@ -366,7 +366,7 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, 'The purgeData option requires force.');
     });
 
-    it('forces removal by clearing dependents and deleting the assignment', function (): void {
+    it('forces removal by preserving dependents and deleting the assignment', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
         NodeRoleAssignment::factory()->create([
@@ -386,12 +386,37 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true);
 
+        expect(App::query()->whereKey($app->id)->exists())->toBeTrue()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeTrue()
+            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+    });
+
+    it('purges dependents only when removing with purge data', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'environment' => 'development',
+        ]);
+        ProxyRoute::factory()->forApp($app)->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.test',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'app-development', force: true, purgeData: true);
+
         expect(App::query()->whereKey($app->id)->exists())->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
 
-    it('forces database role removal by clearing database tool dependents and docker baseline intent', function (): void {
+    it('forces database role removal by preserving database dependents and clearing docker baseline intent', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
         NodeRoleAssignment::factory()->create([
@@ -411,6 +436,32 @@ describe('node role assignment service', function (): void {
         ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
+            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+    });
+
+    it('purges database dependents only when removing with purge data', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'postgres',
+            'expected_state' => 'running',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docker',
+            'expected_state' => 'running',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true, purgeData: true);
 
         expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['postgres', 'docker'])->exists())->toBeFalse()
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);

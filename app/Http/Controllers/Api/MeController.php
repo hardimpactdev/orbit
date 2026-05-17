@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -62,10 +63,6 @@ final readonly class MeController
      */
     private function normalizeRoleSettings(mixed $settings): array|stdClass
     {
-        if (! is_array($settings) || $settings === []) {
-            return (object) [];
-        }
-
-        return $settings;
+        return NodeRoleAssignmentPayload::settings($settings);
     }
 }

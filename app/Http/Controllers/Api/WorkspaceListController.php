@@ -43,24 +43,25 @@ final readonly class WorkspaceListController implements Loggable
             return $this->validationFailed('node', $node, "Unknown node: '{$node}'.");
         }
 
-        $visibleNodeIds = $this->visibleAppNodeIds($caller);
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $visibleNodeIds = $this->visibleAppNodeIds($caller, $callerIsGateway);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $callerIsGateway && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the workspace registry.', [
                 'caller_role' => $caller->role,
             ]);
         }
 
-        if ($app !== null && ! $this->appFilterIsValid($app, $caller, $visibleNodeIds)) {
+        if ($app !== null && ! $this->appFilterIsValid($app, $callerIsGateway, $visibleNodeIds)) {
             return $this->validationFailed('app', $app, "Unknown app: '{$app}'.");
         }
 
-        if ($node !== null && ! $this->nodeFilterIsValid($node, $caller, $visibleNodeIds)) {
+        if ($node !== null && ! $this->nodeFilterIsValid($node, $callerIsGateway, $visibleNodeIds)) {
             return $this->validationFailed('node', $node, "Unknown node: '{$node}'.");
         }
 
         $workspaces = $this->fetchWorkspaces(
-            caller: $caller,
+            callerIsGateway: $callerIsGateway,
             visibleNodeIds: $visibleNodeIds,
             app: $app,
             node: $node,
@@ -78,11 +79,11 @@ final readonly class WorkspaceListController implements Loggable
     /**
      * @return list<int>
      */
-    private function visibleAppNodeIds(Node $caller): array
+    private function visibleAppNodeIds(Node $caller, bool $callerIsGateway): array
     {
         $visibleNodeIds = $this->hostedAppNodeIds();
 
-        if ($caller->role === 'gateway') {
+        if ($callerIsGateway) {
             return $visibleNodeIds;
         }
 
@@ -97,22 +98,22 @@ final readonly class WorkspaceListController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function appFilterIsValid(string $app, Node $caller, array $visibleNodeIds): bool
+    private function appFilterIsValid(string $app, bool $callerIsGateway, array $visibleNodeIds): bool
     {
         return App::query()
             ->where('name', $app)
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->exists();
     }
 
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function nodeFilterIsValid(string $node, Node $caller, array $visibleNodeIds): bool
+    private function nodeFilterIsValid(string $node, bool $callerIsGateway, array $visibleNodeIds): bool
     {
         return Node::query()
             ->where('name', $node)
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
+            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
             ->whereIn('id', $this->hostedAppNodeIds())
             ->exists();
     }
@@ -132,11 +133,11 @@ final readonly class WorkspaceListController implements Loggable
      * @param  list<int>  $visibleNodeIds
      * @return Collection<int, Workspace>
      */
-    private function fetchWorkspaces(Node $caller, array $visibleNodeIds, ?string $app, ?string $node): Collection
+    private function fetchWorkspaces(bool $callerIsGateway, array $visibleNodeIds, ?string $app, ?string $node): Collection
     {
         return Workspace::query()
             ->with(['app.node'])
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
             ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->get()

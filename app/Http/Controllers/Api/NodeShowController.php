@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
+use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -72,11 +73,7 @@ final class NodeShowController implements Loggable
      */
     private function normalizeRoleSettings(mixed $settings): array|stdClass
     {
-        if (! is_array($settings) || $settings === []) {
-            return (object) [];
-        }
-
-        return $settings;
+        return NodeRoleAssignmentPayload::settings($settings);
     }
 
     public function effect(): ActivityLogType

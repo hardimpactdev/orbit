@@ -51,13 +51,14 @@ final readonly class AppListController implements Loggable
             ], 400);
         }
 
-        $visibleNodeIds = $this->visibleAppNodeIds($caller);
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $visibleNodeIds = $this->visibleAppNodeIds($caller, $callerIsGateway);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $callerIsGateway && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the app registry.');
         }
 
-        if (is_string($node) && $node !== '' && ! $this->nodeFilterIsValid($node, $caller, $visibleNodeIds)) {
+        if (is_string($node) && $node !== '' && ! $this->nodeFilterIsValid($node, $callerIsGateway, $visibleNodeIds)) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
@@ -71,7 +72,7 @@ final readonly class AppListController implements Loggable
         }
 
         $apps = $this->fetchApps(
-            caller: $caller,
+            callerIsGateway: $callerIsGateway,
             visibleNodeIds: $visibleNodeIds,
             node: is_string($node) && $node !== '' ? $node : null,
             environment: is_string($environment) && $environment !== '' ? $environment : null,
@@ -89,11 +90,11 @@ final readonly class AppListController implements Loggable
     /**
      * @return list<int>
      */
-    private function visibleAppNodeIds(Node $caller): array
+    private function visibleAppNodeIds(Node $caller, bool $callerIsGateway): array
     {
         $visibleNodeIds = $this->hostedAppNodeIds();
 
-        if ($caller->role === 'gateway') {
+        if ($callerIsGateway) {
             return $visibleNodeIds;
         }
 
@@ -108,11 +109,11 @@ final readonly class AppListController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function nodeFilterIsValid(string $node, Node $caller, array $visibleNodeIds): bool
+    private function nodeFilterIsValid(string $node, bool $callerIsGateway, array $visibleNodeIds): bool
     {
         return Node::query()
             ->where('name', $node)
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
+            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
             ->whereIn('id', $this->hostedAppNodeIds())
             ->exists();
     }
@@ -132,11 +133,11 @@ final readonly class AppListController implements Loggable
      * @param  list<int>  $visibleNodeIds
      * @return Collection<int, App>
      */
-    private function fetchApps(Node $caller, array $visibleNodeIds, ?string $node, ?string $environment): Collection
+    private function fetchApps(bool $callerIsGateway, array $visibleNodeIds, ?string $node, ?string $environment): Collection
     {
         return App::query()
             ->with(['node', 'workspaces'])
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
             ->get()

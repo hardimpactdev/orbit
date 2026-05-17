@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -95,7 +96,7 @@ final readonly class LogActivity
 
     private function resolveLocalNode(): ?Node
     {
-        if (! Schema::hasTable('nodes')) {
+        if (! Schema::hasTable('nodes') || ! Schema::hasTable('node_roles')) {
             return null;
         }
 
@@ -103,6 +104,11 @@ final readonly class LogActivity
             return null;
         }
 
-        return Node::query()->where('role', 'gateway')->where('status', 'active')->first();
+        $node = app(NodeRoleAssignments::class)
+            ->activeGatewayNodeQuery()
+            ->orderBy('name')
+            ->first();
+
+        return $node instanceof Node ? $node : null;
     }
 }

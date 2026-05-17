@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,31 @@ function createWorkspaceListCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
+function createWorkspaceListAppNode(array $overrides = [], string $role = 'app-development'): Node
+{
+    $node = Node::factory()->create(array_merge([
+        'role' => 'app',
+    ], $overrides));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+    ]);
+
+    return $node;
+}
+
+function assignWorkspaceListGatewayRole(Node $node): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+}
+
 function grantWorkspaceListAccess(Node $caller, Node $appNode): void
 {
     DB::table('node_access')->insert([
@@ -36,8 +62,8 @@ function grantWorkspaceListAccess(Node $caller, Node $appNode): void
 describe('WorkspaceListController', function (): void {
     it('lists visible workspaces sorted by node then app then workspace name', function (): void {
         $caller = createWorkspaceListCallerNode();
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = createWorkspaceListAppNode(['name' => 'z-node']);
+        $aNode = createWorkspaceListAppNode(['name' => 'a-node']);
         grantWorkspaceListAccess($caller, $zNode);
         grantWorkspaceListAccess($caller, $aNode);
 
@@ -60,8 +86,8 @@ describe('WorkspaceListController', function (): void {
 
     it('filters workspaces by app and node', function (): void {
         $caller = createWorkspaceListCallerNode();
-        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'app']);
-        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'app']);
+        $devNode = createWorkspaceListAppNode(['name' => 'dev-1']);
+        $prodNode = createWorkspaceListAppNode(['name' => 'prod-1'], 'app-production');
         grantWorkspaceListAccess($caller, $devNode);
         grantWorkspaceListAccess($caller, $prodNode);
 
@@ -79,8 +105,8 @@ describe('WorkspaceListController', function (): void {
 
     it('omits hidden workspaces from the result', function (): void {
         $caller = createWorkspaceListCallerNode();
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app']);
+        $visibleNode = createWorkspaceListAppNode(['name' => 'visible-node']);
+        $hiddenNode = createWorkspaceListAppNode(['name' => 'hidden-node']);
         grantWorkspaceListAccess($caller, $visibleNode);
 
         $visibleApp = App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
@@ -95,10 +121,11 @@ describe('WorkspaceListController', function (): void {
             ->assertJsonPath('success.data.workspaces.0.name', 'visible-workspace');
     });
 
-    it('lets gateway callers read all workspace registry records', function (): void {
-        createWorkspaceListCallerNode(['role' => 'gateway']);
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+    it('lets active gateway role assignments read all workspace registry records', function (): void {
+        $caller = createWorkspaceListCallerNode(['role' => 'control']);
+        assignWorkspaceListGatewayRole($caller);
+        $firstNode = createWorkspaceListAppNode(['name' => 'app-1']);
+        $secondNode = createWorkspaceListAppNode(['name' => 'app-2']);
         $firstApp = App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
         $secondApp = App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
 
@@ -111,9 +138,21 @@ describe('WorkspaceListController', function (): void {
             ->assertJsonCount(2, 'success.data.workspaces');
     });
 
+    it('does not treat the legacy gateway role column as gateway visibility', function (): void {
+        createWorkspaceListCallerNode(['role' => 'gateway']);
+        $node = createWorkspaceListAppNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+
+        $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
+
     it('returns authorization failure when the caller has no workspace registry visibility', function (): void {
         createWorkspaceListCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createWorkspaceListAppNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
@@ -126,7 +165,8 @@ describe('WorkspaceListController', function (): void {
     });
 
     it('returns validation errors for unknown filters', function (string $query, string $field, string $value, string $message): void {
-        createWorkspaceListCallerNode(['role' => 'gateway']);
+        $caller = createWorkspaceListCallerNode(['role' => 'control']);
+        assignWorkspaceListGatewayRole($caller);
 
         $response = $this->call('GET', "/api/workspaces?{$query}", [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
@@ -142,8 +182,9 @@ describe('WorkspaceListController', function (): void {
     ]);
 
     it('returns the workspace list entity shape', function (): void {
-        createWorkspaceListCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $caller = createWorkspaceListCallerNode(['role' => 'control']);
+        assignWorkspaceListGatewayRole($caller);
+        $node = createWorkspaceListAppNode(['name' => 'app-1', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
 
         Workspace::factory()->create([

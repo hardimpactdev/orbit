@@ -13,6 +13,7 @@ use App\Http\Gateway\Responses\Nodes\NodeListResponse;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
+use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -337,11 +338,7 @@ class NodeListCommand extends Command
      */
     private function normalizeRoleSettings(mixed $settings): array|stdClass
     {
-        if (! is_array($settings) || $settings === []) {
-            return (object) [];
-        }
-
-        return $settings;
+        return NodeRoleAssignmentPayload::settings($settings);
     }
 
     /**

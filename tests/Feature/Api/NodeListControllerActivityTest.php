@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
@@ -23,15 +24,21 @@ describe('NodeListController activity logging', function (): void {
             'updated_at' => now(),
         ]);
 
-        DB::table('nodes')->insert([
+        $gatewayId = (int) DB::table('nodes')->insertGetId([
             'name' => 'gw',
-            'role' => 'gateway',
+            'role' => 'control',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gatewayId,
+            'role' => 'gateway',
+            'status' => 'active',
         ]);
     });
 
@@ -48,6 +55,8 @@ describe('NodeListController activity logging', function (): void {
         expect($entry->properties->get('type'))->toBe('read');
         expect($entry->properties->get('method'))->toBe('GET');
         expect($entry->properties->get('path'))->toBe('api/nodes');
+        expect($entry->properties->get('served_by_name'))->toBe('gw');
+        expect($entry->properties->get('served_by_wg_ip'))->toBe('10.6.0.1');
     });
 
     it('preserves X-Orbit-Request-Id in batch_uuid for logged activity', function (): void {
