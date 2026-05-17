@@ -57,7 +57,7 @@ final class NodeRegistryWriter
             legacyRole: 'app',
             environment: $environment,
             tld: $tld,
-            platform: 'unknown',
+            platform: 'ubuntu',
             host: $host,
             wireguardAddress: $wireguardAddress,
             gatewayEndpoint: $gatewayEndpoint,

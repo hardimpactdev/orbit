@@ -91,7 +91,7 @@ class NodeNewCommand extends Command
             $role = 'gateway';
         }
 
-        if ($requestedRoles['hosted'] !== []) {
+        if ($requestedRoles['hosted'] !== [] && ! $requestedRoles['legacy_app']) {
             $inputs = $this->resolveHostedRoleInputs($requestedRoles['hosted']);
 
             if (is_int($inputs)) {
@@ -120,6 +120,10 @@ class NodeNewCommand extends Command
             );
         }
 
+        if ($requestedRoles['legacy_app']) {
+            $role = 'app';
+        }
+
         if ($role === null) {
             $role = 'control';
         }
@@ -143,7 +147,19 @@ class NodeNewCommand extends Command
                 return $this->forwardAppNodeCreation($name, $inputs);
             }
 
-            return $this->provisionAppNode($installer, $registryWriter, $nodesProbe, $name, $inputs);
+            $legacyHostedRoles = $inputs['environment'] === 'development'
+                ? [NodeRoleName::AppDevelopment->value]
+                : [NodeRoleName::AppProduction->value];
+
+            return $this->provisionAppNode(
+                installer: $installer,
+                registryWriter: $registryWriter,
+                nodesProbe: $nodesProbe,
+                roleAssignmentService: $nodeRoleAssignmentService,
+                name: $name,
+                inputs: $inputs,
+                initialHostedRoles: $requestedRoles['legacy_app'] ? $legacyHostedRoles : $requestedRoles['hosted'],
+            );
         }
 
         if ($callerRole === 'control' && ! $gatewayConfigured && $role === 'control') {
@@ -880,9 +896,17 @@ class NodeNewCommand extends Command
 
     /**
      * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  list<string>  $initialHostedRoles
      */
-    private function provisionAppNode(OrbitHostInstaller $installer, NodeRegistryWriter $registryWriter, NodesProbe $nodesProbe, string $name, array $inputs): int
-    {
+    private function provisionAppNode(
+        OrbitHostInstaller $installer,
+        NodeRegistryWriter $registryWriter,
+        NodesProbe $nodesProbe,
+        NodeRoleAssignmentService $roleAssignmentService,
+        string $name,
+        array $inputs,
+        array $initialHostedRoles = [],
+    ): int {
         $existing = Node::query()->where('name', $name)->first();
 
         if (
@@ -891,7 +915,7 @@ class NodeNewCommand extends Command
             && $existing->role === 'app'
             && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
         ) {
-            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs);
+            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles);
         }
 
         if ($existing instanceof Node && $existing->status === 'active') {
@@ -903,7 +927,7 @@ class NodeNewCommand extends Command
         }
 
         if ($existing instanceof Node) {
-            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs);
+            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles);
         }
 
         if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
@@ -917,7 +941,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $name, $inputs);
+        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $name, $inputs, $roleAssignmentService, $initialHostedRoles);
 
         if (is_int($adoption)) {
             return $adoption;
@@ -959,7 +983,17 @@ class NodeNewCommand extends Command
             user: $runtimeUser,
         );
 
+        $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+
+        if (is_int($roleAssignmentFailure)) {
+            return $roleAssignmentFailure;
+        }
+
         $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
+
+        if ($initialHostedRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
+            $developmentDns['status'] = 'configured';
+        }
 
         $payload = [
             'result' => [
@@ -1007,9 +1041,16 @@ class NodeNewCommand extends Command
 
     /**
      * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  list<string>  $initialHostedRoles
      */
-    private function materializeUnknownAppNode(NodesProbe $nodesProbe, NodeRegistryWriter $registryWriter, string $name, array $inputs): ?int
-    {
+    private function materializeUnknownAppNode(
+        NodesProbe $nodesProbe,
+        NodeRegistryWriter $registryWriter,
+        string $name,
+        array $inputs,
+        NodeRoleAssignmentService $roleAssignmentService,
+        array $initialHostedRoles = [],
+    ): ?int {
         $candidate = new Node([
             'name' => $name,
             'role' => 'app',
@@ -1092,7 +1133,7 @@ class NodeNewCommand extends Command
             'platform' => $artifact->platform,
         ]);
 
-        return $this->adoptExistingAppNode($nodesProbe, $node->refresh(), $inputs);
+        return $this->adoptExistingAppNode($nodesProbe, $node->refresh(), $inputs, $roleAssignmentService, $initialHostedRoles);
     }
 
     private function identityArtifactMatchesAppRequest(NodeIdentityArtifact $artifact, string $name): bool
@@ -1107,9 +1148,15 @@ class NodeNewCommand extends Command
 
     /**
      * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  list<string>  $initialHostedRoles
      */
-    private function adoptExistingAppNode(NodesProbe $nodesProbe, Node $node, array $inputs): int
-    {
+    private function adoptExistingAppNode(
+        NodesProbe $nodesProbe,
+        Node $node,
+        array $inputs,
+        NodeRoleAssignmentService $roleAssignmentService,
+        array $initialHostedRoles = [],
+    ): int {
         $incompatibleFields = [];
 
         if ($node->role !== 'app') {
@@ -1172,7 +1219,17 @@ class NodeNewCommand extends Command
             );
         }
 
+        $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+
+        if (is_int($roleAssignmentFailure)) {
+            return $roleAssignmentFailure;
+        }
+
         $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
+
+        if ($initialHostedRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
+            $developmentDns['status'] = 'configured';
+        }
 
         $payload = [
             'result' => [
@@ -1986,14 +2043,14 @@ class NodeNewCommand extends Command
     }
 
     /**
-     * @return array{gateway: bool, hosted: list<string>}|int
+     * @return array{gateway: bool, hosted: list<string>, legacy_app: bool, requested_role_meta: string|null}|int
      */
     private function resolveRequestedRoles(): array|int
     {
         $roles = $this->roleOptions();
 
         if ($roles === []) {
-            return ['gateway' => false, 'hosted' => []];
+            return ['gateway' => false, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => null];
         }
 
         if ($roles === ['control']) {
@@ -2001,18 +2058,23 @@ class NodeNewCommand extends Command
                 $this->warn('The legacy control role now maps to a client identity with no hosted roles.');
             }
 
-            return ['gateway' => false, 'hosted' => []];
+            return ['gateway' => false, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'control'];
         }
 
         if ($roles === ['gateway']) {
-            return ['gateway' => true, 'hosted' => []];
+            return ['gateway' => true, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'gateway'];
         }
 
         if ($roles === ['app']) {
             $environment = $this->stringOption('environment');
 
             if ($environment === null) {
-                return $this->validationFailed('environment', 'Environment is required for legacy app role mapping.');
+                return [
+                    'gateway' => false,
+                    'hosted' => [],
+                    'legacy_app' => true,
+                    'requested_role_meta' => 'app',
+                ];
             }
 
             if (! in_array($environment, ['development', 'production'], true)) {
@@ -2026,6 +2088,8 @@ class NodeNewCommand extends Command
             return [
                 'gateway' => false,
                 'hosted' => [$environment === 'development' ? NodeRoleName::AppDevelopment->value : NodeRoleName::AppProduction->value],
+                'legacy_app' => true,
+                'requested_role_meta' => 'app',
             ];
         }
 
@@ -2052,7 +2116,12 @@ class NodeNewCommand extends Command
             );
         }
 
-        return ['gateway' => false, 'hosted' => array_values(array_unique($roles))];
+        return [
+            'gateway' => false,
+            'hosted' => array_values(array_unique($roles)),
+            'legacy_app' => false,
+            'requested_role_meta' => $roles[0] ?? null,
+        ];
     }
 
     private function resolveHost(string $role): ?string
@@ -2326,6 +2395,42 @@ class NodeNewCommand extends Command
         }
 
         return [];
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function ensureInitialHostedRoles(
+        Node $node,
+        NodeRoleAssignmentService $roleAssignmentService,
+        array $roles,
+        ?string $tld,
+    ): ?int {
+        foreach ($roles as $role) {
+            $existingAssignment = $node->roleAssignments()->where('role', $role)->first();
+
+            $assignment = $existingAssignment instanceof NodeRoleAssignment
+                ? $roleAssignmentService->update($node, $role, $this->settingsForRole($role, $tld))
+                : $roleAssignmentService->add($node, $role, $this->settingsForRole($role, $tld));
+
+            if ($assignment->status !== NodeRoleStatus::Error->value) {
+                continue;
+            }
+
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Node '{$node->name}' created but hosted role '{$assignment->role}' failed to converge.",
+                meta: [
+                    'node' => $node->name,
+                    'role' => $assignment->role,
+                    'status' => $assignment->status,
+                    'settings' => $assignment->settings ?? [],
+                    'last_error' => $assignment->last_error,
+                ],
+            );
+        }
+
+        return null;
     }
 
     private function defaultControlName(): ?string

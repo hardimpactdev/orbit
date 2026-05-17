@@ -1057,6 +1057,7 @@ describe('node:new', function (): void {
 
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+            'docker exec orbit-dns kill -HUP 1' => Process::result(),
         ]);
         Process::preventStrayProcesses();
 
@@ -1136,6 +1137,7 @@ describe('node:new', function (): void {
 
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+            'docker exec orbit-dns kill -HUP 1' => Process::result(),
         ]);
         Process::preventStrayProcesses();
 
