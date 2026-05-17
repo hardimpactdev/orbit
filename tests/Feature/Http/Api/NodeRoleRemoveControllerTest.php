@@ -206,6 +206,39 @@ describe('NodeRoleRemoveController', function (): void {
         expect($node->roleAssignments()->where('role', 'gateway')->exists())->toBeTrue();
     });
 
+    it('refreshes legacy node shadows when the final app role is removed', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        $gatewayId = createNodeRoleRemoveGateway();
+        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+            'tld' => 'test',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.role', 'app-development');
+
+        $node->refresh();
+
+        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeFalse()
+            ->and($node->role)->toBe('control')
+            ->and($node->environment)->toBeNull()
+            ->and($node->tld)->toBeNull();
+    });
+
     it('removes Orbit-owned role dependents when force is true without purge data', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         $gatewayId = createNodeRoleRemoveGateway();
