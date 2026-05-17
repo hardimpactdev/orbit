@@ -93,6 +93,19 @@ final readonly class AdoptResult
 | `Skipped` | `skipped` |
 | `Conflict` | `conflict` |
 
+### `App\Enums\Nodes\NodeRoleStatus`
+
+| Case | Value | Doctor meaning |
+| --- | --- | --- |
+| `Pending` | `pending` | Desired role is stored, but convergence has not completed. |
+| `Active` | `active` | Role baseline is converged and eligible for compatibility and resource checks. |
+| `Error` | `error` | Last synchronous convergence attempt failed; restore may retry after blockers are addressed. |
+| `Removing` | `removing` | Cleanup is in progress or failed; the role is not eligible for new resources. |
+
+Eligibility checks only use active assignments. Compatibility checks ignore
+assignments that are not active, but the probe still reports non-active
+assignments that block the selected node's desired state.
+
 ## Probe Layers
 
 ### Implemented (In-Memory)

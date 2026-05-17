@@ -21,14 +21,20 @@ live in [BUILDING-BLOCKS.md](../../BUILDING-BLOCKS.md#platform-and-roles) and
 
 ## Role Model
 
-Orbit has one special authority role and three fixed hosted roles:
+Orbit distinguishes three concepts:
 
-- `gateway`: singleton authority role. It is stored as a role assignment, but
-  normal `node role:add` does not add it. It conflicts with all hosted roles.
-- `app-development`: hosted role bundle for development app workloads. Its role
-  assignment carries `tld` in v1.
-- `app-production`: hosted role bundle for production app workloads.
-- `database`: hosted role bundle for backing data services.
+- **Gateway role:** the singleton authority role. It owns durable Orbit state,
+  the typed API, WireGuard coordination, certificate authority material,
+  development DNS coordination, grants, and doctor convergence. A gateway role
+  assignment is stored in the role assignment model but cannot be added through
+  normal role commands and conflicts with every hosted role.
+- **Hosted node roles:** composable roles that prepare a node to serve a kind of
+  workload. The initial hosted roles are `app-development`, `app-production`,
+  and `database`.
+- **Joined client identity:** a CLI installation that has gateway configuration
+  and a gateway-issued WireGuard identity. A joined client may have no hosted
+  roles. It can request self-scoped actions and can operate other nodes only
+  through explicit gateway grants.
 
 Hosted roles are code-defined bundles, not open-ended labels. Orbit stores role
 assignments only; capabilities are derived internally from the active
@@ -290,9 +296,9 @@ whose role assignments, node identity, host, and assignment-local settings match
 being requested.
 
 Gateway, hosted-node, and joined-client identities are minted or adopted during
-[`orbit node:new [name]`](1_node-new/node-new.md). Creating a control machine is
-local CLI installation: clone Orbit, install dependencies, and symlink
-`artisan` as `orbit`; the project README owns those installation steps.
+[`orbit node:new [name]`](1_node-new/node-new.md). Preparing a joined client
+starts with local CLI installation: clone Orbit, install dependencies, and
+symlink `artisan` as `orbit`; the project README owns those installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 joined client. When a joined client with no configured gateway runs

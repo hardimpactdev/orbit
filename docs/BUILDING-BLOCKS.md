@@ -218,7 +218,7 @@ Other DNS/CDN providers can be added as extension points without changing core O
 
 Orbit runs from source.
 
-Control node setup is local:
+Joined-client setup is local:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
@@ -254,13 +254,13 @@ macOS or Ubuntu. macOS is not a hosted-role platform.
 The CLI is always a thin gateway client. It has no client-side role awareness.
 On any machine, the CLI gathers local context (current app, workspace, paths),
 calls the gateway over the VPN, and renders the result. The gateway
-authenticates the WireGuard peer, derives grants from its own `nodes` table,
+authenticates the WireGuard peer, derives grants from its own node records,
 and decides what to do. When work needs to run on a hosted node (file writes,
 service control, log access), the gateway opens an SSH connection back to that
 node via `RemoteShell` — even if the CLI that initiated the work is on that
 same hosted node.
 
-One machine in the network is the gateway. That machine sets `ORBIT_IS_GATEWAY=true` in its `.env`, exposing `config('orbit.is_gateway') === true`. Every other machine leaves the flag unset (defaults to `false`). The gateway uses this flag to short-circuit its own HTTP self-calls and hit the local DB and services directly. It finds its own node row by `where('role', 'gateway')` — unique within its own DB.
+One machine in the network is the gateway. That machine sets `ORBIT_IS_GATEWAY=true` in its `.env`, exposing `config('orbit.is_gateway') === true`. Every other machine leaves the flag unset (defaults to `false`). The gateway uses this flag to short-circuit its own HTTP self-calls and hit the local DB and services directly. It finds its own node row through the singleton active `gateway` role assignment in its local registry.
 
 Joined-client and hosted-node machines hold only gateway rows in their local
 `nodes` table — the gateways they know how to reach. Initially empty (fresh

@@ -12,7 +12,7 @@ secure communication.
 
 ```text
               ┌─────────────────────┐
-              │    Control Node     │
+              │    Joined Client    │
               │     CLI caller      │
               └──────────┬──────────┘
                          │
@@ -29,8 +29,8 @@ secure communication.
                          │
                          ▼
               ┌─────────────────────┐
-              │      App Node       │
-              │      workloads      │
+              │    Hosted Node      │
+              │  workload roles     │
               └──────────┬──────────┘
                          │
                 public 80 / 443 only

@@ -26,13 +26,55 @@ Each term below has a precise meaning in the node command family.
 - **Role assignment:** Gateway-owned record that attaches one role to one node,
   carries any role-specific settings, and tracks convergence status.
 - **Hosted role settings:** Assignment-local configuration for a hosted role.
-  In v1, only `app-development` has settings: `tld`.
+  Role-local desired configuration lives on the role assignment, not on the
+  generic node record.
 - **Role assignment status:** Lifecycle state of one role assignment:
   `pending`, `active`, `error`, or `removing`. Eligibility and compatibility
   checks use only active assignments.
 - **Caller identity:** The gateway-known WireGuard identity that authenticates a
   CLI request. Operation is WireGuard identity plus gateway grants, not an
   operator role. The CLI does not store or check a caller role locally.
+
+## Role Compatibility
+
+Active role assignments must satisfy this matrix:
+
+| Role | Combines with | Conflicts with |
+| --- | --- | --- |
+| `gateway` | none | `app-development`, `app-production`, `database` |
+| `app-development` | `database` | `gateway`, `app-production` |
+| `app-production` | `database` | `gateway`, `app-development` |
+| `database` | `app-development`, `app-production` | `gateway` |
+
+Compatibility checks ignore assignments in `pending`, `error`, or `removing`.
+
+## Role Settings
+
+Role-local desired configuration lives on the role assignment, not on the
+generic node record. Each role assignment has typed settings:
+
+| Role | Settings |
+| --- | --- |
+| `app-development` | `tld` |
+| `app-production` | none in v1 |
+| `database` | none in v1 |
+| `gateway` | none in v1 |
+
+Changing role settings is a desired-state change and triggers the same baseline
+convergence path as adding the role.
+
+## Role Assignment Lifecycle
+
+Role assignments use these lifecycle statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | The desired role has been stored, but convergence has not completed. |
+| `active` | The role baseline is converged and can be used for eligibility checks. |
+| `error` | Convergence failed; `doctor --family=node --restore` can retry after blockers are addressed. |
+| `removing` | Cleanup is in progress or failed; the role is not eligible for new resources. |
+
+Eligibility checks only use active assignments.
 
 ## Role Platform Support
 

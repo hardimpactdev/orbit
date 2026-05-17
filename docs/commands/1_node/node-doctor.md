@@ -91,6 +91,34 @@ connectivity facts. Node doctor may verify that an endpoint works for the node
 path that uses it, but it does not infer public IPv4/IPv6 metadata from that
 endpoint.
 
+## Role Assignment Status
+
+Node doctor treats role assignment status as gateway desired-state metadata:
+
+| Status | Doctor meaning |
+| --- | --- |
+| `pending` | The role is not yet converged. Doctor reports it as incomplete until the synchronous role mutation finishes or marks it `error`. |
+| `active` | The role baseline is converged. Eligibility, compatibility, and role-dependent resource checks may use it. |
+| `error` | The last synchronous convergence attempt failed. `doctor --family=node --restore` retries convergence after blockers are addressed. |
+| `removing` | Cleanup is in progress or failed. The role is not eligible for new resources, and doctor can reevaluate cleanup blockers on a later restore. |
+
+Eligibility checks only use active assignments. Compatibility checks ignore
+assignments that are not active, but doctor still reports non-active assignments
+that block the selected node's desired state.
+
+## Role Removal
+
+`node role:remove` blocks when dependents exist.
+`node role:remove --force` removes Orbit-owned dependents and role-owned
+configuration while preserving user data.
+`node role:remove --force --purge-data` also deletes role-owned data for
+resources whose command contract explicitly supports purging.
+
+Doctor does not perform destructive role removal on its own. After the operator
+addresses a removal blocker, `doctor --family=node --restore` reevaluates the
+selected assignment and retries the assignment cleanup path when the assignment
+is `removing`, or the baseline convergence path when the assignment is `error`.
+
 ## Node Issue Codes
 
 Each code below identifies a specific kind of node-family drift that `doctor --family=node` may report.
