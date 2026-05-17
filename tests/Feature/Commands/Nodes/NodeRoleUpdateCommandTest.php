@@ -55,4 +55,26 @@ describe('node role:update', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
+
+    it('rejects an explicitly supplied empty tld for database', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'db-1',
+        ]);
+
+        assignNodeRole($node, 'database');
+
+        $exitCode = Artisan::call('node role:update', [
+            'node' => 'db-1',
+            'role' => 'database',
+            '--tld' => '',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('tld');
+    });
 });

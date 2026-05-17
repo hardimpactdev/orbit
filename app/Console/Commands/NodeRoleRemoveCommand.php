@@ -58,6 +58,10 @@ class NodeRoleRemoveCommand extends Command
             return $this->failCommand('validation_failed', 'The gateway role cannot be managed through node role commands.', ['field' => 'role', 'role' => $role]);
         }
 
+        if (! $force && ($this->wantsJson() || ! $this->input->isInteractive())) {
+            return $this->failCommand('validation_failed', 'Use --force to remove this role.', ['field' => 'force']);
+        }
+
         if (! $force && ! $this->wantsJson() && $this->input->isInteractive()) {
             try {
                 $confirmed = $this->promptConfirm("Remove role '{$role}' from '{$nodeName}'?", default: false);

@@ -12,7 +12,31 @@ uses(RefreshDatabase::class);
 require_once __DIR__.'/NodeRoleCommandTestHelpers.php';
 
 describe('node role:remove', function (): void {
-    it('blocks removal when dependents exist', function (): void {
+    it('requires force in non-interactive json mode even when there are no dependents', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'client-1',
+            'role' => 'control',
+            'environment' => null,
+        ]);
+
+        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+
+        $exitCode = Artisan::call('node role:remove', [
+            'node' => 'client-1',
+            'role' => 'app-development',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('force')
+            ->and($node->roleAssignments()->where('role', 'app-development')->exists())->toBeTrue();
+    });
+
+    it('blocks removal when dependents exist after interactive confirmation', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
@@ -26,16 +50,16 @@ describe('node role:remove', function (): void {
             'environment' => 'development',
         ]);
 
-        $exitCode = Artisan::call('node role:remove', [
+        /** @phpstan-ignore-next-line Pest resolves artisan() on the bound Laravel test case at runtime. */
+        $this->artisan('node role:remove', [
             'node' => 'client-1',
             'role' => 'app-development',
-            '--json' => true,
-        ]);
+        ])
+            ->expectsConfirmation("Remove role 'app-development' from 'client-1'?", 'yes')
+            ->expectsOutputToContain("Role 'app-development' cannot be removed while dependents exist.")
+            ->assertExitCode(1);
 
-        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('node_role.remove_blocked');
+        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeTrue();
     });
 
     it('requires force when purge-data is requested', function (): void {

@@ -146,7 +146,7 @@ class NodeRoleAddCommand extends Command
             return ['tld' => $tld];
         }
 
-        if (is_string($tld) && $tld !== '') {
+        if (is_string($tld)) {
             return $this->failCommand('validation_failed', "Role '{$role}' does not accept --tld.", ['field' => 'tld', 'role' => $role]);
         }
 

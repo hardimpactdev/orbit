@@ -118,6 +118,47 @@ describe('node role:add', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
+    it('rejects an explicitly supplied empty tld for app-production', function (): void {
+        setupNodeRoleGatewayCaller();
+        createHostedNode([
+            'name' => 'prod-1',
+            'environment' => 'production',
+        ]);
+
+        $exitCode = Artisan::call('node role:add', [
+            'node' => 'prod-1',
+            'role' => 'app-production',
+            '--tld' => '',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('tld');
+    });
+
+    it('rejects an explicitly supplied empty tld for database', function (): void {
+        setupNodeRoleGatewayCaller();
+        createHostedNode([
+            'name' => 'db-1',
+        ]);
+
+        $exitCode = Artisan::call('node role:add', [
+            'node' => 'db-1',
+            'role' => 'database',
+            '--tld' => '',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('tld');
+    });
+
     it('rejects app-production when app-development is active', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
