@@ -11,13 +11,20 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\Nodes\NodeIdentityArtifact;
 use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\NodeRoleDefinition;
+use App\Services\Nodes\Roles\NodeRoleRegistry;
 use App\Services\Platform\PlatformDetector;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
@@ -31,6 +38,8 @@ final readonly class NodesProbe
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
         private ?DevelopmentDnsMappingProbe $developmentDnsMappingProbe = null,
         private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
+        private ?NodeRoleRegistry $nodeRoleRegistry = null,
+        private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
     ) {}
 
     public function key(): string
@@ -55,6 +64,7 @@ final readonly class NodesProbe
     {
         $drift = [];
 
+        $drift = array_merge($drift, $this->checkRoleAssignments($node));
         $drift = array_merge($drift, $this->checkRecordCompleteness($node));
         $drift = array_merge($drift, $this->checkLocalDefault($node));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($node));
@@ -84,7 +94,6 @@ final readonly class NodesProbe
             || $node->platform === ''
             || ! is_string($node->wireguard_address)
             || $node->wireguard_address === ''
-            || ($node->role === 'app' && (! is_string($node->environment) || $node->environment === ''))
             || ! is_string($node->host)
             || $node->host === ''
         ) {
@@ -99,6 +108,243 @@ final readonly class NodesProbe
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRoleAssignments(Node $node): array
+    {
+        $assignments = $node->relationLoaded('roleAssignments')
+            ? $node->roleAssignments
+            : $node->roleAssignments()->orderBy('role')->get();
+
+        $drift = [];
+
+        if ($this->missingCompatibleLegacyRoleAssignment($node, $assignments->all())) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_assignment_missing',
+                kind: DriftKind::Missing,
+                summary: "Node {$node->name} is missing the active role assignment implied by its legacy role fields.",
+            );
+        }
+
+        $activeDefinitions = [];
+        $invalidRoles = [];
+
+        foreach ($assignments as $assignment) {
+            try {
+                $definition = $this->nodeRoleRegistry()->definition($assignment->role);
+            } catch (InvalidArgumentException) {
+                $invalidRoles[] = $assignment->role;
+
+                continue;
+            }
+
+            if (! in_array($assignment->status, $this->validRoleAssignmentStatuses(), true)) {
+                $invalidRoles[] = $assignment->role;
+
+                continue;
+            }
+
+            if (! $this->assignmentSettingsAreValid($definition, $assignment)) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_settings_invalid',
+                    kind: DriftKind::Divergent,
+                    summary: "Role assignment '{$assignment->role}' on node {$node->name} has invalid settings.",
+                );
+
+                continue;
+            }
+
+            if ($assignment->status === NodeRoleStatus::Error->value) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_convergence_failed',
+                    kind: DriftKind::Divergent,
+                    summary: "Role assignment '{$assignment->role}' on node {$node->name} failed convergence.",
+                );
+
+                continue;
+            }
+
+            if ($assignment->status !== NodeRoleStatus::Active->value) {
+                continue;
+            }
+
+            $activeDefinitions[$assignment->role] = $definition;
+        }
+
+        if ($invalidRoles !== []) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_assignment_invalid',
+                kind: DriftKind::Divergent,
+                summary: "Node {$node->name} has invalid role assignments: ".implode(', ', $invalidRoles).'.',
+            );
+        }
+
+        if ($this->activeAssignmentsConflict($assignments->all(), $activeDefinitions)) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_conflict',
+                kind: DriftKind::Divergent,
+                summary: "Node {$node->name} has conflicting active role assignments.",
+            );
+        }
+
+        foreach ($assignments as $assignment) {
+            if ($assignment->status !== NodeRoleStatus::Active->value) {
+                continue;
+            }
+
+            if (! isset($activeDefinitions[$assignment->role])) {
+                continue;
+            }
+
+            $baselineDrift = $this->baselineDriftForAssignment($node, $assignment);
+
+            if ($baselineDrift instanceof DriftEntry) {
+                $drift[] = $baselineDrift;
+            }
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @param  list<NodeRoleAssignment>  $assignments
+     */
+    private function missingCompatibleLegacyRoleAssignment(Node $node, array $assignments): bool
+    {
+        if ($node->status !== 'active') {
+            return false;
+        }
+
+        $expectedRoles = match ($node->role) {
+            'gateway' => [NodeRoleName::Gateway->value],
+            'app' => match ($node->environment) {
+                'development' => [NodeRoleName::AppDevelopment->value],
+                'production' => [NodeRoleName::AppProduction->value],
+                default => [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
+            },
+            default => [],
+        };
+
+        if ($expectedRoles === []) {
+            return false;
+        }
+
+        foreach ($assignments as $assignment) {
+            if (
+                $assignment->status === NodeRoleStatus::Active->value
+                && in_array($assignment->role, $expectedRoles, true)
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function assignmentSettingsAreValid(NodeRoleDefinition $definition, NodeRoleAssignment $assignment): bool
+    {
+        try {
+            $definition->settingsFromArray(is_array($assignment->settings) ? $assignment->settings : []);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<NodeRoleAssignment>  $assignments
+     * @param  array<string, NodeRoleDefinition>  $activeDefinitions
+     */
+    private function activeAssignmentsConflict(array $assignments, array $activeDefinitions): bool
+    {
+        $activeRoles = array_values(array_map(
+            fn (NodeRoleAssignment $assignment): string => $assignment->role,
+            array_filter(
+                $assignments,
+                fn (NodeRoleAssignment $assignment): bool => $assignment->status === NodeRoleStatus::Active->value,
+            ),
+        ));
+
+        foreach ($activeRoles as $role) {
+            $definition = $activeDefinitions[$role] ?? null;
+
+            if (! $definition instanceof NodeRoleDefinition) {
+                continue;
+            }
+
+            foreach ($definition->conflictsWith as $conflictingRole) {
+                if (in_array($conflictingRole, $activeRoles, true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function baselineDriftForAssignment(Node $node, NodeRoleAssignment $assignment): ?DriftEntry
+    {
+        if ($assignment->role !== NodeRoleName::AppDevelopment->value) {
+            return null;
+        }
+
+        $settings = $assignment->settings ?? [];
+        $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+
+        if (! is_string($tld) || trim($tld) === '') {
+            return null;
+        }
+
+        $mapping = $this->developmentDnsMappingProbe()->inspect(
+            $this->developmentNodeFromAssignment($node, $tld),
+        );
+
+        if (($mapping['expected_target'] ?? null) === null) {
+            return new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_baseline_mismatch',
+                kind: DriftKind::Missing,
+                summary: "Role baseline for '{$assignment->role}' on node {$node->name} is incomplete.",
+                detail: $mapping,
+            );
+        }
+
+        if (
+            ($mapping['exists'] ?? false) !== true
+            || ($mapping['actual_target'] ?? null) !== ($mapping['expected_target'] ?? null)
+            || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
+            || ($mapping['public_exposure'] ?? false) === true
+        ) {
+            return new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_baseline_mismatch',
+                kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
+                summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
+                detail: $mapping,
+            );
+        }
+
+        return null;
+    }
+
+    private function developmentNodeFromAssignment(Node $node, string $tld): Node
+    {
+        $developmentNode = clone $node;
+        $developmentNode->role = 'app';
+        $developmentNode->environment = 'development';
+        $developmentNode->status = 'active';
+        $developmentNode->tld = $tld;
+
+        return $developmentNode;
     }
 
     /**
@@ -475,61 +721,7 @@ final readonly class NodesProbe
      */
     private function checkDevelopmentTld(Node $node): array
     {
-        if ($node->role !== 'app' || $node->environment !== 'development') {
-            return [];
-        }
-
-        if (! is_string($node->tld) || trim($node->tld) === '') {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.development_tld_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Development app node {$node->name} is missing a development TLD.",
-                ),
-            ];
-        }
-
-        return $this->checkDevelopmentDnsMapping($node);
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkDevelopmentDnsMapping(Node $node): array
-    {
-        $mapping = $this->developmentDnsMappingProbe()->inspect($node);
-        $drift = [];
-
-        if (($mapping['expected_target'] ?? null) === null) {
-            return [];
-        }
-
-        if (
-            ($mapping['exists'] ?? false) !== true
-            || ($mapping['actual_target'] ?? null) !== ($mapping['expected_target'] ?? null)
-            || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
-        ) {
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'node.development_dns_mapping_mismatch',
-                kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
-                summary: "Gateway development DNS mapping for {$node->name} is missing or mismatched.",
-                detail: $mapping,
-            );
-        }
-
-        if (($mapping['public_exposure'] ?? false) === true) {
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'node.development_dns_public_exposure',
-                kind: DriftKind::Divergent,
-                summary: "Gateway development DNS mapping for {$node->name} is publicly exposed.",
-                detail: $mapping,
-            );
-        }
-
-        return $drift;
+        return [];
     }
 
     private function developmentDnsMappingProbe(): DevelopmentDnsMappingProbe
@@ -568,8 +760,8 @@ final readonly class NodesProbe
             'node.gateway_runtime_unready',
             'node.app_runtime_missing',
             'node.access_grant_invalid',
-            'node.development_dns_mapping_mismatch',
-            'node.development_dns_public_exposure',
+            'node.role_convergence_failed',
+            'node.role_baseline_mismatch',
         ];
 
         if (! in_array($entry->key, $fixableKeys, true)) {
@@ -582,7 +774,8 @@ final readonly class NodesProbe
             'node.gateway_runtime_unready' => $this->reconcileGatewayRuntime($node),
             'node.app_runtime_missing' => $this->reconcileAppRuntime($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
-            'node.development_dns_mapping_mismatch', 'node.development_dns_public_exposure' => $this->reconcileDevelopmentDnsMapping($node),
+            'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node),
+            'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node),
         };
     }
 
@@ -623,9 +816,53 @@ final readonly class NodesProbe
             ->delete();
     }
 
-    private function reconcileDevelopmentDnsMapping(Node $node): void
+    private function reconcileRoleConvergenceFailures(Node $node): void
     {
-        app(DevelopmentDnsMappingEnactor::class)->converge($node);
+        foreach ($node->roleAssignments()->where('status', NodeRoleStatus::Error->value)->get() as $assignment) {
+            try {
+                $this->nodeRoleBaselineConverger()->converge($node, $assignment);
+
+                $assignment->forceFill([
+                    'status' => NodeRoleStatus::Active->value,
+                    'last_error' => null,
+                    'converged_at' => now(),
+                ])->save();
+            } catch (Throwable $throwable) {
+                $assignment->forceFill([
+                    'status' => NodeRoleStatus::Error->value,
+                    'last_error' => $throwable->getMessage(),
+                    'converged_at' => null,
+                ])->save();
+            }
+        }
+    }
+
+    private function reconcileRoleBaselineMismatch(Node $node): void
+    {
+        foreach ($node->roleAssignments()->where('status', NodeRoleStatus::Active->value)->get() as $assignment) {
+            $this->nodeRoleBaselineConverger()->converge($node, $assignment);
+        }
+    }
+
+    private function nodeRoleRegistry(): NodeRoleRegistry
+    {
+        return $this->nodeRoleRegistry ?? app(NodeRoleRegistry::class);
+    }
+
+    private function nodeRoleBaselineConverger(): NodeRoleBaselineConverger
+    {
+        return $this->nodeRoleBaselineConverger ?? app(NodeRoleBaselineConverger::class);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function validRoleAssignmentStatuses(): array
+    {
+        return array_map(
+            static fn (NodeRoleStatus $status): string => $status->value,
+            NodeRoleStatus::cases(),
+        );
     }
 
     public function snapshotForAdopt(Node $node): ProbeSnapshot

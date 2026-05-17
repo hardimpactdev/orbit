@@ -93,7 +93,7 @@ describe('record completeness', function (): void {
         expect($recordIncomplete)->toHaveCount(0);
     });
 
-    it('requires environment for app nodes', function (): void {
+    it('reports a missing role assignment for app nodes without compatible active assignments', function (): void {
         $node = Node::create([
             'name' => 'app-no-env',
             'role' => 'app',
@@ -105,9 +105,9 @@ describe('record completeness', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $recordIncomplete = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.record_incomplete');
+        $missingRoleAssignment = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_assignment_missing');
 
-        expect($recordIncomplete)->toHaveCount(1);
+        expect($missingRoleAssignment)->toHaveCount(1);
     });
 
     it('does not require environment for non-app nodes', function (): void {
@@ -794,12 +794,17 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => [],
+        ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $tld = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_tld_missing'));
+        $tld = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_settings_invalid'));
 
         expect($tld)->toHaveCount(1);
-        expect($tld[0]->kind)->toBe(DriftKind::Missing);
+        expect($tld[0]->kind)->toBe(DriftKind::Divergent);
     });
 
     it('accepts configured development TLD for development app nodes', function (): void {
@@ -814,6 +819,11 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
         File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
         File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
@@ -824,7 +834,7 @@ describe('external service stubs', function (): void {
         ]));
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.development'));
+        $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.role_'));
 
         expect($tld)->toHaveCount(0);
     });
@@ -841,9 +851,14 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_dns_mapping_mismatch'));
+        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch'));
 
         expect($mapping)->toHaveCount(1);
         expect($mapping[0]->kind)->toBe(DriftKind::Missing);
@@ -861,6 +876,11 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
         File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
         File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
@@ -871,7 +891,7 @@ describe('external service stubs', function (): void {
         ]));
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_dns_mapping_mismatch'));
+        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch'));
 
         expect($mapping)->toHaveCount(1);
         expect($mapping[0]->kind)->toBe(DriftKind::Divergent);
@@ -889,6 +909,11 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
         File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
         File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
@@ -899,7 +924,7 @@ describe('external service stubs', function (): void {
         ]));
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $exposure = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_dns_public_exposure'));
+        $exposure = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch'));
 
         expect($exposure)->toHaveCount(1);
         expect($exposure[0]->kind)->toBe(DriftKind::Divergent);
@@ -984,8 +1009,8 @@ describe('reconciliation', function (): void {
             'node.gateway_runtime_unready',
             'node.app_runtime_missing',
             'node.access_grant_invalid',
-            'node.development_dns_mapping_mismatch',
-            'node.development_dns_public_exposure',
+            'node.role_convergence_failed',
+            'node.role_baseline_mismatch',
         ];
 
         foreach ($supportedKeys as $key) {
@@ -1053,6 +1078,11 @@ describe('reconciliation', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
         File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
         File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
@@ -1064,7 +1094,7 @@ describe('reconciliation', function (): void {
 
         $entry = new DriftEntry(
             family: 'nodes',
-            key: 'node.development_dns_mapping_mismatch',
+            key: 'node.role_baseline_mismatch',
             kind: DriftKind::Divergent,
             summary: 'test',
         );

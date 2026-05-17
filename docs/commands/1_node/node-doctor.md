@@ -126,10 +126,12 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | Code | Detected when |
 | --- | --- |
 | `node.record_incomplete` | A selected node record lacks required platform-version identifier, required host/endpoint metadata, or WireGuard address. |
-| `node.role_assignment_incomplete` | A required role assignment is missing, lacks required settings, or has no persisted status. |
-| `node.role_assignment_conflict` | Active role assignments violate the compatibility matrix. |
-| `node.role_assignment_error` | A role assignment is left in `error` after synchronous convergence failed. |
-| `node.role_assignment_baseline_drift` | Node reality no longer matches the baseline that an active role assignment owns. |
+| `node.role_assignment_missing` | A selected active node still depends on a legacy role shape, but no compatible active role assignment exists. |
+| `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
+| `node.role_conflict` | Active role assignments violate the compatibility matrix. |
+| `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-development` `tld`. |
+| `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
+| `node.role_baseline_mismatch` | Active role-owned baseline artifacts no longer match the role assignment's desired state. |
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
 | `node.identity_unresolved` | The caller presents no WireGuard identity or an identity that does not resolve to exactly one active node record. |
 | `node.gateway_api_unreachable` | A joined-client or hosted-node CLI caller cannot reach the configured gateway API over WireGuard. |
@@ -144,10 +146,6 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.app_runtime_missing` | A hosted node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or hosted node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
-| `node.development_tld_missing` | An active `app-development` role assignment has no `tld` setting. |
-| `node.development_tld_mismatch` | The hosted node's local TLD default differs from the active `app-development` assignment. |
-| `node.development_dns_mapping_mismatch` | The gateway development DNS mapping for `*.{tld}` is absent, is not owned by the selected node, or points anywhere other than the hosted node's WireGuard address. |
-| `node.development_dns_public_exposure` | Gateway-provisioned development DNS is exposed as a public resolver instead of being reachable only through the Orbit network. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` hosted node. |
 | `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway configuration is absent on the selected node or the target node's default `php` binary differs from gateway configuration. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
@@ -164,20 +162,16 @@ This table describes what `doctor --fix --family=node --restore` does for each r
 | `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
-| `node.role_assignment_error` | Retry synchronous convergence for the selected role assignment and leave it in `error` again if the retry fails. |
-| `node.role_assignment_baseline_drift` | Re-apply the baseline artifacts for the selected active role assignment. |
+| `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
+| `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |
 | `node.app_runtime_missing` | Rerun the hosted-node bootstrap step that installs the minimum Orbit runtime. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
-| `node.development_tld_missing` | Restore the development TLD from the active `app-development` role assignment when that assignment has exactly one value. |
-| `node.development_tld_mismatch` | Rewrite the hosted node's local TLD default to the value in the active `app-development` role assignment. |
-| `node.development_dns_mapping_mismatch` | Reconcile the derived gateway development DNS mapping to the hosted node's WireGuard address, or remove an orphaned Orbit-managed mapping when no active `app-development` role assignment owns it. |
-| `node.development_dns_public_exposure` | Recreate the gateway development DNS resolver so it is reachable only through the Orbit network and not bound as a public resolver. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
 
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
-`node.role_assignment_incomplete`, `node.role_assignment_conflict`,
+`node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.app_ssh_unreachable`,
 `node.local_default_invalid`, or

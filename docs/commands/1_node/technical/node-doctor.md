@@ -112,9 +112,11 @@ assignments that block the selected node's desired state.
 
 These layers are implemented without external service dependencies:
 
-1. **Registry configuration** (`node.record_incomplete`, `node.role_assignment_incomplete`, `node.role_assignment_conflict`, `node.role_assignment_error`)
-   - Detects missing role assignments, assignment status, platform,
-     wireguard_address, or host.
+1. **Registry configuration** (`node.record_incomplete`, `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`, `node.role_settings_invalid`, `node.role_convergence_failed`)
+   - Detects missing role assignments implied by legacy node role fields before
+     falling back to legacy completeness checks.
+   - Detects assignment rows with unknown roles, invalid statuses, or
+     non-hydratable typed settings.
    - Detects invalid active-assignment combinations from the compatibility
      matrix.
    - Detects assignments left in `error` after synchronous convergence failed.
@@ -132,8 +134,10 @@ These layers are implemented without external service dependencies:
    - Detects `NodeAccess` rows referencing missing or non-active nodes.
    - Checks both consumer and serving directions.
 
-5. **Role assignment settings** (`node.development_tld_missing`)
-   - Detects active `app-development` role assignments without a `tld` value.
+5. **Role assignment settings and baseline drift** (`node.role_settings_invalid`, `node.role_baseline_mismatch`)
+   - Detects active `app-development` role assignments without a valid `tld`.
+   - Detects missing or mismatched role-owned derived artifacts such as gateway
+     development DNS mappings for active `app-development` assignments.
 
 6. **WireGuard peer configuration** (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
    - Detects missing `wireguard_peers` rows for active non-gateway node records.
@@ -165,7 +169,7 @@ They do not mutate host state:
   - Reports `Unverifiable` drift when the gateway cannot reach the hosted node over
     SSH.
 
-- Hosted-node runtime readiness (`node.app_runtime_missing`, `node.role_assignment_baseline_drift`)
+- Hosted-node runtime readiness (`node.app_runtime_missing`)
   - Runs only for active hosted-node records.
   - Reuses `RuntimeBackendProbe` to verify the minimum remote process manager
     needed for gateway applying.
@@ -199,18 +203,15 @@ additional external services:
     available.
   - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active hosted node. Adoption of an unknown host or a gateway-role node still requires
     a separate materialization path before the proof can be used safely.
-- Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
+- Development DNS baseline reality (`node.role_baseline_mismatch`)
   - `DevelopmentDnsMappingProbe` reads gateway-local Orbit-managed development
     DNS resolver artifacts for the derived node configuration model:
     active `app-development` role assignments with non-empty `tld` and
     non-empty WireGuard addresses.
   - The canonical mapping is `*.{tld}` to the hosted node's WireGuard
     address, owned by the node name. Missing artifacts, conflicting
-    ownership, and target mismatches report
-    `node.development_dns_mapping_mismatch`.
-  - Resolver bindings or listener configuration that expose the development DNS
-    resolver outside the Orbit/WireGuard network report
-    `node.development_dns_public_exposure`.
+    ownership, target mismatches, and public exposure all report
+    `node.role_baseline_mismatch`.
   - `app-production`, `database`, gateway, and joined-client nodes must not have derived
     development DNS mappings.
 - CLI PHP default (`node.cli_php_default_mismatch`)
@@ -264,18 +265,18 @@ node names or roles from unselected live reality.
 | `node.gateway_runtime_unready` | Stub: reserved for gateway-side runtime restart. |
 | `node.app_runtime_missing` | Stub: reserved for hosted-node bootstrap rerun. |
 | `node.access_grant_invalid` | Removes stale `NodeAccess` rows referencing missing or non-active nodes. |
-| `node.role_assignment_error` | Retries convergence for the selected role assignment and persists `error` again on failure. |
-| `node.role_assignment_baseline_drift` | Re-applies the baseline artifacts that the selected active role assignment owns. |
-| `node.development_dns_mapping_mismatch` | Stub: reserved for `DevelopmentDnsMappingEnactor` convergence or orphaned mapping removal. |
-| `node.development_dns_public_exposure` | Stub: reserved for recreating the gateway development DNS resolver with Orbit/WireGuard-only binding. |
+| `node.role_convergence_failed` | Retries convergence for selected `error` role assignments and persists `error` again on failure. |
+| `node.role_baseline_mismatch` | Re-applies the baseline artifacts that the selected active role assignments own, including development DNS mappings derived from role settings. |
 
 ### Unsupported Keys
 
 Reconciliation throws `RuntimeException` for all other keys, including:
 
 - `node.record_incomplete`
-- `node.role_assignment_incomplete`
-- `node.role_assignment_conflict`
+- `node.role_assignment_missing`
+- `node.role_assignment_invalid`
+- `node.role_conflict`
+- `node.role_settings_invalid`
 - `node.identity_unresolved`
 - `node.platform_unsupported`
 - `node.platform_record_mismatch`
