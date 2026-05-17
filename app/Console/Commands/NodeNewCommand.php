@@ -2018,21 +2018,8 @@ class NodeNewCommand extends Command
     private function resolveRole(): ?string
     {
         $roles = $this->roleOptions();
-        $role = $roles[0] ?? null;
 
-        if ($role !== null) {
-            return $role;
-        }
-
-        if (! $this->isInteractiveInput()) {
-            return null;
-        }
-
-        return select(
-            label: 'Node role',
-            options: ['gateway', 'app', 'control'],
-            required: true,
-        );
+        return $roles[0] ?? null;
     }
 
     /**

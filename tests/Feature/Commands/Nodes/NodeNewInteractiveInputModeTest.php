@@ -74,16 +74,53 @@ function fakeNodeNewGateway(array|string $body, int $status = 200): MockClient
 }
 
 describe('node:new interactive input mode', function (): void {
-    it('prompts for missing name and role before control-node path validation', function (): void {
+    it('prompts for missing name but does not prompt for role when omitted', function (): void {
         config(['orbit.is_gateway' => false]);
 
         setupNodeNewInteractiveUnconfiguredControlCaller();
 
         $this->artisan('node:new')
             ->expectsQuestion('Node name', 'control-2')
-            ->expectsChoice('Node role', 'control', ['gateway', 'app', 'control'])
             ->expectsOutputToContain('Gateway connection is required before creating app or control nodes.')
             ->assertFailed();
+    });
+
+    it('omitted role forwards the joined client path without a role prompt', function (): void {
+        config(['orbit.is_gateway' => false]);
+
+        setupNodeNewInteractiveControlCaller();
+        fakeNodeNewGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'enrolled'],
+                    'node' => [
+                        'name' => 'control-2',
+                        'role' => 'control',
+                        'environment' => null,
+                        'tld' => null,
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'wireguard',
+                        'host' => null,
+                        'status' => 'enrolled',
+                    ],
+                    'wireguard' => [
+                        'config' => "[Interface]\nPrivateKey = control-private-key\n",
+                    ],
+                    'next_steps' => [
+                        'Install the WireGuard configuration on the control node.',
+                        'Join the Orbit WireGuard network.',
+                        'Run `orbit gateway:add` on the control node.',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->artisan('node:new')
+            ->expectsQuestion('Node name', 'control-2')
+            ->expectsOutputToContain('Enrolled control node control-2.')
+            ->assertSuccessful();
     });
 
     it('prompts for app inputs in documented order and forwards the resolved request', function (): void {
@@ -111,9 +148,8 @@ describe('node:new interactive input mode', function (): void {
             ],
         ]);
 
-        $this->artisan('node:new')
+        $this->artisan('node:new --role=app')
             ->expectsQuestion('Node name', 'app-1')
-            ->expectsChoice('Node role', 'app', ['gateway', 'app', 'control'])
             ->expectsChoice('App node environment', 'development', ['development', 'production'])
             ->expectsQuestion('Host', '192.0.2.20')
             ->expectsQuestion('Development TLD', 'test')
