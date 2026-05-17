@@ -17,6 +17,10 @@ use Illuminate\Http\JsonResponse;
 
 final readonly class NodeGrantController implements Loggable
 {
+    public function __construct(
+        private NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
+
     public function __invoke(GrantNodeApiRequest $request): JsonResponse
     {
         /** @var mixed $resolvedUser */
@@ -27,32 +31,24 @@ final readonly class NodeGrantController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $callerIsGateway = app(NodeRoleAssignments::class)->nodeIsGateway($caller);
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
 
-        if (! $callerIsGateway && $caller->role === 'app') {
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
+                meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 status: 403,
             );
         }
 
-        if (! $callerIsGateway && $caller->role === 'control') {
+        if (! $callerIsGateway) {
             $authorization = $this->authorizeControlCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
             }
-        }
-
-        if (! $callerIsGateway && $caller->role !== 'control') {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $caller->role],
-                status: 403,
-            );
         }
 
         $consumerName = $request->consumingNodeName();
@@ -137,7 +133,7 @@ final readonly class NodeGrantController implements Loggable
 
     private function gatewayQuery(): Builder
     {
-        return app(NodeRoleAssignments::class)->activeGatewayNodeQuery();
+        return $this->nodeRoleAssignments->activeGatewayNodeQuery();
     }
 
     private function resolveNode(string $name, string $field): Node|JsonResponse

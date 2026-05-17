@@ -77,10 +77,15 @@ function grantGatewayManagementAccess(int $callerId, int $gatewayId): void
 
 function assignApiGrantGatewayRole(int $nodeId): void
 {
+    assignApiGrantNodeRole($nodeId, 'gateway');
+}
+
+function assignApiGrantNodeRole(int $nodeId, string $role, string $status = 'active'): void
+{
     NodeRoleAssignment::factory()->create([
         'node_id' => $nodeId,
-        'role' => 'gateway',
-        'status' => 'active',
+        'role' => $role,
+        'status' => $status,
     ]);
 }
 
@@ -305,6 +310,71 @@ describe('NodeGrantController', function (): void {
             ->assertJsonPath('error.meta.caller_role', 'app');
 
         expect(DB::table('node_access')->count())->toBe(0);
+    });
+
+    it('rejects stale gateway role shadows before mutation', function (): void {
+        DB::table('nodes')->insert(apiGrantNodeRow([
+            'name' => 'gateway-caller',
+            'role' => 'gateway',
+            'host' => GRANT_CALLER_WG_IP,
+            'environment' => null,
+            'wireguard_address' => GRANT_CALLER_WG_IP,
+        ]));
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'gateway');
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeFalse();
+    });
+
+    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+        $callerId = createGrantCallerNode();
+        assignApiGrantNodeRole($callerId, 'database');
+        $gatewayId = createGrantGatewayNode();
+        grantGatewayManagementAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeFalse();
     });
 
     it('rejects control callers without gateway access before mutation', function (): void {
