@@ -16,40 +16,51 @@ trait ResolvesVisibleToolNodes
     /**
      * @return list<int>
      */
-    private function visibleToolNodeIds(Node $caller): array
+    private function visibleToolNodeIds(Node $caller, bool $allowAnyActiveNode = false): array
     {
         if ($caller->role === 'gateway') {
-            return Node::query()
-                ->where('role', 'app')
-                ->where('status', 'active')
-                ->pluck('id')
-                ->all();
+            $query = Node::query()
+                ->where('status', 'active');
+
+            if (! $allowAnyActiveNode) {
+                $query->where('role', 'app');
+            }
+
+            return $query->pluck('id')->all();
         }
 
-        return DB::table('node_access')
+        $query = DB::table('node_access')
             ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
             ->where('node_access.consumer_node_id', $caller->id)
-            ->where('nodes.role', 'app')
-            ->where('nodes.status', 'active')
-            ->pluck('nodes.id')
-            ->all();
+            ->where('nodes.status', 'active');
+
+        if (! $allowAnyActiveNode) {
+            $query->where('nodes.role', 'app');
+        }
+
+        return $query->pluck('nodes.id')->all();
     }
 
     /**
      * @param  list<int>  $visibleNodeIds
      * @return array{node: ?string, app: ?string}|JsonResponse
      */
-    private function authorizedToolTarget(Request $request, Node $caller, array $visibleNodeIds, bool $allowOnlyVisibleFallback = true): array|JsonResponse
-    {
+    private function authorizedToolTarget(
+        Request $request,
+        Node $caller,
+        array $visibleNodeIds,
+        bool $allowOnlyVisibleFallback = true,
+        bool $allowAnyActiveNode = false,
+    ): array|JsonResponse {
         $node = $this->toolTargetString($request, 'node');
         $app = $this->toolTargetString($request, 'app');
         $nodeFilter = null;
 
         if ($node !== null) {
-            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds);
+            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds, $allowAnyActiveNode);
 
             if (! $nodeFilter instanceof Node) {
-                return $this->toolTargetFailure($node, 'node', $caller, $visibleNodeIds);
+                return $this->toolTargetFailure($node, 'node', $caller, $visibleNodeIds, $allowAnyActiveNode);
             }
         }
 
@@ -100,14 +111,18 @@ trait ResolvesVisibleToolNodes
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function resolveNodeFilter(string $node, Node $caller, array $visibleNodeIds): ?Node
+    private function resolveNodeFilter(string $node, Node $caller, array $visibleNodeIds, bool $allowAnyActiveNode = false): ?Node
     {
-        return Node::query()
+        $query = Node::query()
             ->where('name', $node)
-            ->where('role', 'app')
             ->where('status', 'active')
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
-            ->first();
+            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds));
+
+        if (! $allowAnyActiveNode) {
+            $query->where('role', 'app');
+        }
+
+        return $query->first();
     }
 
     /**
@@ -163,16 +178,21 @@ trait ResolvesVisibleToolNodes
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function toolTargetFailure(string $value, string $field, Node $caller, array $visibleNodeIds): JsonResponse
-    {
-        if ($caller->role !== 'gateway' && $this->toolTargetExists($field, $value, $visibleNodeIds)) {
+    private function toolTargetFailure(
+        string $value,
+        string $field,
+        Node $caller,
+        array $visibleNodeIds,
+        bool $allowAnyActiveNode = false,
+    ): JsonResponse {
+        if ($caller->role !== 'gateway' && $this->toolTargetExists($field, $value, $visibleNodeIds, $allowAnyActiveNode)) {
             return $this->toolTargetAuthorizationFailed("This node is not authorized to manage tools for the selected {$field}.", [
                 $field => $value,
             ]);
         }
 
         $expected = $field === 'node'
-            ? 'Expected a visible app node name.'
+            ? ($allowAnyActiveNode ? 'Expected a visible node name.' : 'Expected a visible app node name.')
             : 'Expected a visible app name or domain.';
 
         return $this->toolTargetValidationFailed($field, $value, "Invalid value for --{$field}: '{$value}'. {$expected}");
@@ -181,15 +201,19 @@ trait ResolvesVisibleToolNodes
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function toolTargetExists(string $field, string $value, array $visibleNodeIds): bool
+    private function toolTargetExists(string $field, string $value, array $visibleNodeIds, bool $allowAnyActiveNode = false): bool
     {
         if ($field === 'node') {
-            return Node::query()
+            $query = Node::query()
                 ->where('name', $value)
-                ->where('role', 'app')
                 ->where('status', 'active')
-                ->whereNotIn('id', $visibleNodeIds)
-                ->exists();
+                ->whereNotIn('id', $visibleNodeIds);
+
+            if (! $allowAnyActiveNode) {
+                $query->where('role', 'app');
+            }
+
+            return $query->exists();
         }
 
         return App::query()

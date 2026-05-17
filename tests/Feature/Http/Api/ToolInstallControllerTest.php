@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +34,74 @@ function grantToolInstallApiAccess(Node $caller, Node $appNode): void
     ]);
 }
 
+function assignToolInstallApiRole(Node $node, string $role, string $status = 'active'): NodeRoleAssignment
+{
+    return NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => $status,
+    ]);
+}
+
 describe('ToolInstallController', function (): void {
+    it('allows gateway callers to install postgres on an active database-only node via explicit node', function (): void {
+        $caller = Node::factory()->create([
+            'name' => 'gateway-install-api-caller',
+            'role' => 'gateway',
+            'host' => TOOL_INSTALL_API_CALLER_WG_IP,
+            'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'db-install-api-1',
+            'role' => 'control',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'database');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/postgres/install', [
+            'node' => 'db-install-api-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'postgres')
+            ->assertJsonPath('success.data.tool.node', 'db-install-api-1')
+            ->assertJsonPath('success.data.tool.state', 'installed');
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue()
+            ->and($shell->scripts)->toHaveCount(1);
+    });
+
+    it('returns node.role_required for postgres on an active explicit node without an active database role', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create([
+            'name' => 'db-install-api-1',
+            'role' => 'control',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'database', 'pending');
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/postgres/install', [
+            'node' => 'db-install-api-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'node.role_required')
+            ->assertJsonPath('error.message', "Tool 'postgres' requires node 'db-install-api-1' to have active role 'database'.")
+            ->assertJsonPath('error.meta', [
+                'node' => 'db-install-api-1',
+                'required_role' => 'database',
+                'tool' => 'postgres',
+            ]);
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
+
     it('rejects invalid status before row writes or remote shell actions', function (): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);

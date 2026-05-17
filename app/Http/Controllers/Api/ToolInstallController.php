@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -27,6 +28,7 @@ final class ToolInstallController implements Loggable
     public function __invoke(
         Request $request,
         string $tool,
+        ToolCatalog $catalog,
         ToolInstaller $installer,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
@@ -37,7 +39,8 @@ final class ToolInstallController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller);
+        $allowAnyActiveNode = $catalog->requiredNodeRole($tool) !== null;
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, $allowAnyActiveNode);
 
         if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
@@ -49,7 +52,12 @@ final class ToolInstallController implements Loggable
             return $inputFailure;
         }
 
-        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+        $target = $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowAnyActiveNode: $allowAnyActiveNode,
+        );
 
         if ($target instanceof JsonResponse) {
             return $target;
