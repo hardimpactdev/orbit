@@ -61,6 +61,10 @@ final class NodeRoleRemoveController implements Loggable
             return $this->error('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge_data'], 422);
         }
 
+        if ($role === 'gateway') {
+            return $this->error('validation_failed', 'The gateway role cannot be managed through node role commands.', ['field' => 'role', 'role' => $role], 422);
+        }
+
         $assignment = NodeRoleAssignment::query()
             ->where('node_id', $node->id)
             ->where('role', $role)

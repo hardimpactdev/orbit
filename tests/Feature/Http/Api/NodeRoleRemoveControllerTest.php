@@ -174,6 +174,38 @@ describe('NodeRoleRemoveController', function (): void {
         expect($entry->properties->get('dependents'))->toBe(['1 development app record']);
     });
 
+    it('rejects gateway role removal before side effects', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        $gatewayId = createNodeRoleRemoveGateway();
+        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'gateway-2',
+            'role' => 'gateway',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.20',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/gateway-2/roles/gateway', [
+            'force' => true,
+        ], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'role')
+            ->assertJsonPath('error.meta.role', 'gateway');
+
+        expect($node->roleAssignments()->where('role', 'gateway')->exists())->toBeTrue();
+    });
+
     it('removes Orbit-owned role dependents when force is true without purge data', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         $gatewayId = createNodeRoleRemoveGateway();
