@@ -128,7 +128,7 @@ class NodeShowCommand extends Command
         }
 
         $localName = $isGateway
-            ? Node::query()->where('role', 'gateway')->where('status', 'active')->value('name')
+            ? app(NodeRoleAssignments::class)->activeGatewayNodeQuery()->orderBy('name')->value('name')
             : null;
 
         if (is_string($localName) && $localName !== '') {

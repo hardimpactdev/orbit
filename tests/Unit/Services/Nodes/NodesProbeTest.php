@@ -46,6 +46,15 @@ function assignNodesProbeAppHostRole(Node $node, array $settings = ['tld' => 'te
     ]);
 }
 
+function assignNodesProbeGatewayRole(Node $node): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+}
+
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
         expect($this->probe->key())->toBe('nodes');
@@ -610,6 +619,7 @@ describe('external service stubs', function (): void {
             'platform' => 'macos_14-0',
             'wireguard_address' => '10.6.0.2',
         ]);
+        assignNodesProbeGatewayRole($node);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
         $platform = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.platform_record_mismatch'));
@@ -642,6 +652,7 @@ describe('external service stubs', function (): void {
             'platform' => 'solaris_11',
             'wireguard_address' => '10.6.0.2',
         ]);
+        assignNodesProbeGatewayRole($node);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
         $platform = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.platform_unsupported'));
@@ -1201,6 +1212,7 @@ describe('adoption', function (): void {
             'platform' => 'macos_14-0',
             'wireguard_address' => '10.6.0.2',
         ]);
+        assignNodesProbeGatewayRole($node);
 
         $snapshot = $probe->snapshotForAdopt($node);
 
@@ -1570,6 +1582,7 @@ describe('adoption', function (): void {
             'platform' => 'macos_14-0',
             'wireguard_address' => '10.6.0.2',
         ]);
+        assignNodesProbeGatewayRole($node);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
         $platform = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.platform_record_mismatch'));

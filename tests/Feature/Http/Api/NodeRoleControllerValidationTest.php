@@ -44,13 +44,17 @@ function createNodeRoleApiCaller(string $role = 'control'): int
 
 function createNodeRoleApiGateway(): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+
+    assignNodeRoleApiRole($nodeId, 'gateway');
+
+    return $nodeId;
 }
 
 function grantNodeRoleApiGatewayAccess(int $callerId, int $gatewayId): void
@@ -272,8 +276,6 @@ describe('node role api validation envelopes', function (): void {
         DB::table('nodes')
             ->where('id', $gatewayId)
             ->update(['role' => 'control']);
-
-        assignNodeRoleApiRole($gatewayId, 'gateway');
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
             'role' => 'database',

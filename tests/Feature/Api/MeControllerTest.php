@@ -31,6 +31,16 @@ function meNodeRow(array $overrides = []): array
     ], $overrides);
 }
 
+function assignMeGatewayRole(int $nodeId): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+}
+
 describe('GET /api/me', function (): void {
     it('returns 403 for unknown peer', function (): void {
         $response = getJson('/api/me');
@@ -47,12 +57,13 @@ describe('GET /api/me', function (): void {
 
     it('returns success shape for peer node via wireguard ip', function (): void {
         DB::table('nodes')->insert(meNodeRow());
-        DB::table('nodes')->insert(meNodeRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));
+        assignMeGatewayRole($gatewayId);
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
@@ -77,7 +88,13 @@ describe('GET /api/me', function (): void {
                             'status' => 'active',
                             'environment' => null,
                             'platform' => 'ubuntu_24-04',
-                            'roles' => [],
+                            'roles' => [
+                                [
+                                    'role' => 'gateway',
+                                    'status' => 'active',
+                                    'settings' => [],
+                                ],
+                            ],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -88,12 +105,13 @@ describe('GET /api/me', function (): void {
     });
 
     it('returns success shape for gateway-local node via wireguard ip', function (): void {
-        DB::table('nodes')->insert(meNodeRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));
+        assignMeGatewayRole($gatewayId);
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.2']);
 
@@ -107,7 +125,13 @@ describe('GET /api/me', function (): void {
                             'status' => 'active',
                             'environment' => null,
                             'platform' => 'ubuntu_24-04',
-                            'roles' => [],
+                            'roles' => [
+                                [
+                                    'role' => 'gateway',
+                                    'status' => 'active',
+                                    'settings' => [],
+                                ],
+                            ],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -118,7 +142,13 @@ describe('GET /api/me', function (): void {
                             'status' => 'active',
                             'environment' => null,
                             'platform' => 'ubuntu_24-04',
-                            'roles' => [],
+                            'roles' => [
+                                [
+                                    'role' => 'gateway',
+                                    'status' => 'active',
+                                    'settings' => [],
+                                ],
+                            ],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -132,12 +162,13 @@ describe('GET /api/me', function (): void {
         DB::table('nodes')->insert(array_merge(meNodeRow(), [
             'platform' => null,
         ]));
-        DB::table('nodes')->insert(meNodeRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));
+        assignMeGatewayRole($gatewayId);
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
@@ -153,12 +184,13 @@ describe('GET /api/me', function (): void {
             'environment' => null,
             'wireguard_address' => '10.6.0.9',
         ]));
-        DB::table('nodes')->insert(meNodeRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
+        assignMeGatewayRole($gatewayId);
         NodeRoleAssignment::factory()->create([
             'node_id' => $appId,
             'role' => 'app-development',
@@ -278,11 +310,12 @@ describe('GET /api/me', function (): void {
 
     it('does not include legacy id field', function (): void {
         DB::table('nodes')->insert(meNodeRow());
-        DB::table('nodes')->insert(meNodeRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
         ]));
+        assignMeGatewayRole($gatewayId);
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 

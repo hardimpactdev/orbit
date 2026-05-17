@@ -22,6 +22,11 @@ it('runs local nodes through bash without ssh', function (): void {
     $node = Node::factory()->create([
         'role' => 'gateway',
     ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 
     $result = (new SshRemoteShell)->run($node, 'pwd', [
         'cwd' => '/srv/example',

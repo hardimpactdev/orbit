@@ -72,22 +72,15 @@ class NodeRoleAssignments
 
     public function activeGatewayNodeQuery(): Builder
     {
-        $gatewayNodeIds = $this->activeNodeIdsForRole(NodeRoleName::Gateway->value);
-
         return Node::query()
             ->where('status', 'active')
-            ->where(function (Builder $query) use ($gatewayNodeIds): void {
-                $query
-                    ->where('role', NodeRoleName::Gateway->value)
-                    ->orWhereIn('id', $gatewayNodeIds);
-            });
+            ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Gateway->value));
     }
 
     public function nodeIsGateway(Node $node): bool
     {
         return $node->status === 'active'
-            && ($node->role === NodeRoleName::Gateway->value
-                || $this->nodeHasActiveGatewayRole($node));
+            && $this->nodeHasActiveGatewayRole($node);
     }
 
     public function nodeHasActiveAppHostRole(Node $node): bool

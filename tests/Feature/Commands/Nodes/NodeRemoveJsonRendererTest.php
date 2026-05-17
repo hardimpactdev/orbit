@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\NodeRemoveCommand;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -78,11 +79,17 @@ function setupNodeRemoveGatewayCallerJson(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeRemoveJsonRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(nodeRemoveJsonRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 }
 
 /**
@@ -237,11 +244,16 @@ describe('node:remove JSON renderer contract', function (): void {
 
     it('returns node.gateway_removal_denied error with correct metadata', function (): void {
         setupNodeRemoveGatewayCallerJson();
-        DB::table('nodes')->insert(nodeRemoveJsonRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveJsonRow([
             'name' => 'gateway-2',
             'role' => 'gateway',
             'environment' => null,
         ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gatewayId,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'gateway-2',

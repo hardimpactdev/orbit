@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -33,11 +34,17 @@ function setupShowNonInteractiveGatewayCaller(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeShowNonInteractiveRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(nodeShowNonInteractiveRow([
         'name' => 'test-gateway',
         'role' => 'gateway',
         'environment' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 }
 
 function setupShowNonInteractiveControlCaller(): void

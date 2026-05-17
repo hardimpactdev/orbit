@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -34,11 +35,17 @@ function setupNodeShowCommandGatewayCaller(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeShowCommandRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(nodeShowCommandRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 }
 
 function setupNodeShowCommandControlCaller(): void

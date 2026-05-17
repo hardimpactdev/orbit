@@ -52,13 +52,21 @@ function createNodeRoleRemoveCaller(string $role = 'control'): int
 
 function createNodeRoleRemoveGateway(): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiNodeRoleRemoveRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRemoveRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $nodeId;
 }
 
 function grantNodeRoleRemoveGatewayAccess(int $callerId, int $gatewayId): void

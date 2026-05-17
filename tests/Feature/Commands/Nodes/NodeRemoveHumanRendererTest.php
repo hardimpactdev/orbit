@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\NodeRemoveCommand;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -78,11 +79,17 @@ function setupNodeRemoveGatewayCallerHuman(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeRemoveHumanRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(nodeRemoveHumanRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 }
 
 describe('node:remove human renderer contract', function (): void {
@@ -215,11 +222,16 @@ describe('node:remove human renderer contract', function (): void {
 
     it('renders gateway-removal-denied prose error', function (): void {
         setupNodeRemoveGatewayCallerHuman();
-        DB::table('nodes')->insert(nodeRemoveHumanRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveHumanRow([
             'name' => 'gateway-2',
             'role' => 'gateway',
             'environment' => null,
         ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gatewayId,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'gateway-2',

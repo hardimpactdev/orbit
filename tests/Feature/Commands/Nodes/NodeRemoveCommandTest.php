@@ -48,11 +48,17 @@ function setupNodeRemoveGatewayCaller(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeRemoveRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(nodeRemoveRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 }
 
 function setupNodeRemoveControlCaller(): void
@@ -222,11 +228,16 @@ describe('node:remove base contract', function (): void {
 
     it('rejects gateway-node removal before side effects', function (): void {
         setupNodeRemoveGatewayCaller();
-        DB::table('nodes')->insert(nodeRemoveRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveRow([
             'name' => 'gateway-2',
             'role' => 'gateway',
             'environment' => null,
         ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gatewayId,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'gateway-2',

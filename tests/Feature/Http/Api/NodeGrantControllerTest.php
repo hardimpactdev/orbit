@@ -35,24 +35,34 @@ function apiGrantNodeRow(array $overrides = []): array
 
 function createGrantCallerNode(string $role = 'control'): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
         'name' => "{$role}-caller",
         'role' => $role,
         'host' => GRANT_CALLER_WG_IP,
         'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => GRANT_CALLER_WG_IP,
     ]));
+
+    if ($role === 'gateway') {
+        assignApiGrantGatewayRole($nodeId);
+    }
+
+    return $nodeId;
 }
 
 function createGrantGatewayNode(): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+
+    assignApiGrantGatewayRole($nodeId);
+
+    return $nodeId;
 }
 
 function grantGatewayManagementAccess(int $callerId, int $gatewayId): void
