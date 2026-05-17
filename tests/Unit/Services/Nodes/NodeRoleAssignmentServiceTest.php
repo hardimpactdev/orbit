@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
@@ -32,6 +33,23 @@ describe('node role assignment service', function (): void {
             ->toBeNull()
             ->and($assignment->settings)
             ->toBe([]);
+    });
+
+    it('materializes docker as a desired tool for database roles', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'database', []);
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'docker')
+            ->first();
+
+        expect($tool)->not->toBeNull()
+            ->and($tool->expected_state)->toBe('running');
     });
 
     it('rejects conflicting roles', function (): void {
