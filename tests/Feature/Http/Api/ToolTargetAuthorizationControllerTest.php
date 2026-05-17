@@ -36,8 +36,8 @@ function grantToolTargetAuthAccess(Node $caller, Node $appNode): void
 describe('tool API target authorization', function (): void {
     it('rejects hidden target selectors before tool side effects', function (string $method, string $uri, array $parameters): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode);
 
         NodeTool::factory()->create([
@@ -77,8 +77,8 @@ describe('tool API target authorization', function (): void {
 
     it('uses the only visible target when no selector is supplied', function (): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode);
 
         NodeTool::factory()->create([
@@ -109,7 +109,7 @@ describe('tool API target authorization', function (): void {
 
     it('streams tool mutation progress from the canonical endpoint', function (): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode);
 
         app()->instance(RemoteShell::class, new ToolTargetAuthorizationRecordingShell);

@@ -42,7 +42,7 @@ final class ToolInstallController implements Loggable
         $allowAnyActiveNode = $catalog->requiredNodeRole($tool) !== null;
         $visibleNodeIds = $this->visibleToolNodeIds($caller, $allowAnyActiveNode);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 

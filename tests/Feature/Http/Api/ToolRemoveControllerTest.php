@@ -37,7 +37,7 @@ function grantToolRemoveApiAccess(Node $caller, Node $appNode): void
 describe('ToolRemoveController', function (): void {
     it('records json implicit destructive consent source for a direct API removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -70,7 +70,7 @@ describe('ToolRemoveController', function (): void {
 
     it('records explicit destructive consent source for a streamed human removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -103,7 +103,7 @@ describe('ToolRemoveController', function (): void {
 
     it('rejects missing destructive consent with validation metadata before side effects', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -128,7 +128,7 @@ describe('ToolRemoveController', function (): void {
 
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -152,8 +152,8 @@ describe('ToolRemoveController', function (): void {
     });
 
     it('rejects unauthenticated and unauthorized removals with documented codes', function (): void {
-        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
-        $hiddenNode = Node::factory()->create(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'redis']);
         $caller = createToolRemoveApiCallerNode();
         grantToolRemoveApiAccess($caller, $visibleNode);

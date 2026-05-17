@@ -31,7 +31,7 @@ final readonly class ToolListController implements Loggable
 
         $visibleNodeIds = $this->visibleToolNodeIds($caller);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the tool registry.');
         }
 
@@ -61,7 +61,7 @@ final readonly class ToolListController implements Loggable
             $nodeFilter = $appNode;
         }
 
-        $tools = $this->fetchTools($caller, $visibleNodeIds, $nodeFilter);
+        $tools = $this->fetchTools($visibleNodeIds, $nodeFilter);
 
         return response()->json([
             'success' => [
@@ -76,12 +76,11 @@ final readonly class ToolListController implements Loggable
      * @param  list<int>  $visibleNodeIds
      * @return Collection<int, NodeTool>
      */
-    private function fetchTools(Node $caller, array $visibleNodeIds, ?Node $node): Collection
+    private function fetchTools(array $visibleNodeIds, ?Node $node): Collection
     {
         return NodeTool::query()
             ->with('node')
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
-            ->when($caller->role === 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->whereIn('node_id', $visibleNodeIds)
             ->when($node instanceof Node, fn (Builder $query): Builder => $query->where('node_id', $node->id))
             ->get()
             ->sort(fn (NodeTool $first, NodeTool $second): int => [

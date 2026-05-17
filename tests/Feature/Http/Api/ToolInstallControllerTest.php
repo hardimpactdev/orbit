@@ -47,10 +47,11 @@ describe('ToolInstallController', function (): void {
     it('allows gateway callers to install postgres on an active database-only node via explicit node', function (): void {
         $caller = Node::factory()->create([
             'name' => 'gateway-install-api-caller',
-            'role' => 'gateway',
+            'role' => 'control',
             'host' => TOOL_INSTALL_API_CALLER_WG_IP,
             'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
         ]);
+        assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
             'name' => 'db-install-api-1',
             'role' => 'control',
@@ -71,6 +72,33 @@ describe('ToolInstallController', function (): void {
 
         expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue()
             ->and($shell->scripts)->toHaveCount(1);
+    });
+
+    it('does not treat the legacy gateway role column as gateway tool authority', function (): void {
+        Node::factory()->create([
+            'name' => 'legacy-gateway-install-api-caller',
+            'role' => 'gateway',
+            'host' => TOOL_INSTALL_API_CALLER_WG_IP,
+            'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'db-install-api-1',
+            'role' => 'control',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'database');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/postgres/install', [
+            'node' => 'db-install-api-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
     });
 
     it('returns node.role_required for postgres on an active explicit node without an active database role', function (): void {

@@ -37,7 +37,7 @@ function grantToolLogsControllerAccess(Node $caller, Node $appNode): void
 
 function createToolLogsControllerTarget(string $name): Node
 {
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => $name,
         'role' => 'app',
         'status' => 'active',

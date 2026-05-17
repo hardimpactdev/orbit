@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShellStream;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -13,18 +14,26 @@ const TOOL_LOGS_STREAM_CALLER_WG_IP = '10.6.0.95';
 
 function createToolLogsStreamCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $node = Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'gateway',
+        'role' => 'control',
         'host' => TOOL_LOGS_STREAM_CALLER_WG_IP,
         'wireguard_address' => TOOL_LOGS_STREAM_CALLER_WG_IP,
     ], $overrides));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 describe('ToolLogsStreamController', function (): void {
     it('streams followed tool log output through the gateway API', function (): void {
         createToolLogsStreamCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
@@ -51,7 +60,7 @@ describe('ToolLogsStreamController', function (): void {
 
     it('returns a gateway error before opening the stream when logs are unsupported', function (): void {
         createToolLogsStreamCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',

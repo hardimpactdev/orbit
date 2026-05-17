@@ -39,7 +39,7 @@ final class ToolUpdateController implements Loggable
 
         $visibleNodeIds = $this->visibleToolNodeIds($caller);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 

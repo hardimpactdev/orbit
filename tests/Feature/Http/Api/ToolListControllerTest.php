@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,15 @@ function grantToolListAccess(Node $caller, Node $appNode): void
         'serving_node_id' => $appNode->id,
         'created_at' => now(),
         'updated_at' => now(),
+    ]);
+}
+
+function assignToolListGatewayRole(Node $node): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
     ]);
 }
 
@@ -104,8 +114,9 @@ describe('ToolListController', function (): void {
             ->assertJsonPath('success.data.tools.0.name', 'redis');
     });
 
-    it('lets gateway callers read all active app-node tool records', function (): void {
-        createToolListCallerNode(['role' => 'gateway']);
+    it('lets active gateway role assignments read all active tool host records', function (): void {
+        $caller = createToolListCallerNode(['role' => 'control']);
+        assignToolListGatewayRole($caller);
         $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
         $controlNode = Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
@@ -120,8 +131,20 @@ describe('ToolListController', function (): void {
             ->assertJsonCount(2, 'success.data.tools');
     });
 
-    it('returns the canonical tool entity shape', function (): void {
+    it('does not treat the legacy gateway role column as gateway tool visibility', function (): void {
         createToolListCallerNode(['role' => 'gateway']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+
+        $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
+
+    it('returns the canonical tool entity shape', function (): void {
+        $caller = createToolListCallerNode(['role' => 'control']);
+        assignToolListGatewayRole($caller);
         $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         NodeTool::factory()->create([
