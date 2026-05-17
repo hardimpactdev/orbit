@@ -260,6 +260,47 @@ describe('node role:remove', function (): void {
             ]);
     });
 
+    it('forwards purge-data removal intent to the gateway', function (): void {
+        setupNodeRoleControlCaller();
+
+        $mock = fakeNodeRoleGateway(RemoveNodeRoleRequest::class, [
+            'success' => [
+                'data' => [
+                    'node' => 'client-1',
+                    'role' => 'database',
+                    'purged_data' => true,
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('node role:remove', [
+            'node' => 'client-1',
+            'role' => 'database',
+            '--force' => true,
+            '--purge-data' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'node' => 'client-1',
+                'role' => 'database',
+                'purged_data' => true,
+            ]);
+
+        $mock->assertSent(fn (RemoveNodeRoleRequest $request): bool => $request->node === 'client-1'
+            && $request->role === 'database'
+            && $request->force === true
+            && $request->purgeData === true
+            && $request->resolveEndpoint() === '/api/nodes/client-1/roles/database'
+            && $request->body()->all() === [
+                'force' => true,
+                'purge_data' => true,
+            ]);
+    });
+
     it('returns an error when local role removal cleanup fails', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
