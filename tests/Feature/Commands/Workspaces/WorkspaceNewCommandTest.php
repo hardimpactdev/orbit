@@ -16,7 +16,7 @@ use App\Models\Workspace;
 use HardImpact\OpenCode\OpenCode;
 use HardImpact\OpenCode\Requests\Projects\GetCurrentProject;
 use HardImpact\OpenCode\Requests\Sessions\CreateSession;
-use HardImpact\OpenCode\Requests\Workspaces\CreateWorkspace;
+use HardImpact\OpenCode\Requests\Worktrees\CreateWorktree;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -54,14 +54,26 @@ beforeEach(function (): void {
     ]);
 
     DB::table('node_roles')->insert([
-        'node_id' => DB::table('nodes')->where('name', 'app-1')->value('id'),
-        'role' => 'app-development',
-        'status' => 'active',
-        'settings' => json_encode(['tld' => 'beast'], JSON_THROW_ON_ERROR),
-        'last_error' => null,
-        'converged_at' => now(),
-        'created_at' => now(),
-        'updated_at' => now(),
+        [
+            'node_id' => DB::table('nodes')->where('name', 'gateway')->value('id'),
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => json_encode([], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'node_id' => DB::table('nodes')->where('name', 'app-1')->value('id'),
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => json_encode(['tld' => 'beast'], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
     ]);
 
     DB::table('apps')->insert([
@@ -212,11 +224,10 @@ it('creates an OpenCode workspace when the source driver resolves OpenCode', fun
     ]);
     expect(implode("\n---\n", $shell->scripts))
         ->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
-        ->toContain('git -C "$workspace_path" reset --hard "$base_ref"')
-        ->toContain('update workspace set name = :name, branch = :branch where id = :id');
+        ->toContain('git -C "$workspace_path" reset --hard "$base_ref"');
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, CreateWorkspace::class);
+    $mock->assertSentCount(1, CreateWorktree::class);
     $mock->assertSentCount(1, CreateSession::class);
 
     $workspace = Workspace::query()
@@ -571,13 +582,9 @@ function workspaceNewOpenCodeProjectPayload(array $sandboxes): array
 function workspaceNewOpenCodeWorkspacePayload(): array
 {
     return [
-        'id' => 'wrk_feature_open',
-        'type' => 'worktree',
         'name' => 'feature-open',
         'branch' => 'opencode/feature-open',
         'directory' => '/home/nckrtl/apps/demo/.worktrees/feature-open',
-        'extra' => null,
-        'projectID' => 'proj_demo',
     ];
 }
 
@@ -590,7 +597,6 @@ function workspaceNewOpenCodeSessionPayload(): array
         'id' => 'sess_feature_open',
         'title' => 'feature-open',
         'directory' => '/home/nckrtl/apps/demo/.worktrees/feature-open',
-        'workspaceID' => 'wrk_feature_open',
     ];
 }
 

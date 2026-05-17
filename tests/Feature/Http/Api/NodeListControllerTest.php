@@ -97,20 +97,25 @@ describe('NodeListController', function (): void {
         createCallerNode();
     });
 
-    it('lists all active nodes sorted by role then name', function (): void {
+    it('lists all active nodes sorted by effective role assignment then name', function (): void {
         DB::table('nodes')->insert([
-            apiNodeRow(['name' => 'zebra-app', 'role' => 'app']),
+            apiNodeRow(['name' => 'zebra-app', 'role' => 'control']),
             apiNodeRow(['name' => 'alpha-app', 'role' => 'app']),
-            apiNodeRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
+            apiNodeRow(['name' => 'database-1', 'role' => 'control', 'environment' => null]),
+            apiNodeRow(['name' => 'gateway-1', 'role' => 'control', 'environment' => null]),
             apiNodeRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
+        assignApiNodeRole('zebra-app', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('alpha-app', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('database-1', 'database');
+        assignApiNodeRole('gateway-1', 'gateway');
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk();
         $nodes = $response->json('success.data.nodes');
         $names = array_column($nodes, 'name');
-        expect($names)->toBe(['alpha-app', 'zebra-app', 'caller', 'control-1', 'gateway-1']);
+        expect($names)->toBe(['alpha-app', 'zebra-app', 'caller', 'control-1', 'database-1', 'gateway-1']);
     });
 
     it('returns only caller node when no other nodes exist', function (): void {
@@ -122,16 +127,38 @@ describe('NodeListController', function (): void {
 
     it('filters nodes by role', function (): void {
         DB::table('nodes')->insert([
-            apiNodeRow(['name' => 'app-1', 'role' => 'app']),
+            apiNodeRow(['name' => 'app-1', 'role' => 'control']),
             apiNodeRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
             apiNodeRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
+        assignApiNodeRole('app-1', 'app-development', ['tld' => 'test']);
 
         $response = getApiNodesJson('/api/nodes?role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'app-1');
+    });
+
+    it('filters nodes by concrete role assignments', function (): void {
+        DB::table('nodes')->insert([
+            apiNodeRow(['name' => 'db-1', 'role' => 'control', 'environment' => null]),
+            apiNodeRow(['name' => 'legacy-gateway', 'role' => 'gateway', 'environment' => null]),
+            apiNodeRow(['name' => 'assigned-gateway', 'role' => 'control', 'environment' => null]),
+        ]);
+        assignApiNodeRole('db-1', 'database');
+        assignApiNodeRole('assigned-gateway', 'gateway');
+
+        $databaseResponse = getApiNodesJson('/api/nodes?role=database', ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $gatewayResponse = getApiNodesJson('/api/nodes?role=gateway', ['REMOTE_ADDR' => CALLER_WG_IP]);
+
+        $databaseResponse->assertOk()
+            ->assertJsonCount(1, 'success.data.nodes')
+            ->assertJsonPath('success.data.nodes.0.name', 'db-1');
+
+        $gatewayResponse->assertOk()
+            ->assertJsonCount(1, 'success.data.nodes')
+            ->assertJsonPath('success.data.nodes.0.name', 'assigned-gateway');
     });
 
     it('filters nodes by environment', function (): void {
@@ -156,11 +183,11 @@ describe('NodeListController', function (): void {
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, app, control.",
+                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, app, app-development, app-production, database, control.",
                     'meta' => [
                         'field' => 'role',
                         'value' => 'invalid',
-                        'allowed' => ['gateway', 'app', 'control'],
+                        'allowed' => ['gateway', 'app', 'app-development', 'app-production', 'database', 'control'],
                     ],
                 ],
             ]);

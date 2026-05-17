@@ -15,12 +15,18 @@ const WORKSPACE_STEP_STORE_CALLER_WG_IP = '10.6.0.98';
 
 function createWorkspaceStepStoreCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'step-store-caller',
         'role' => 'control',
         'host' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode): void
@@ -36,7 +42,7 @@ function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode): void
 describe('WorkspaceStepStoreController', function (): void {
     it('creates a workspace step for authorized callers', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
         grantWorkspaceStepStoreAccess($caller, $node);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
@@ -70,7 +76,7 @@ describe('WorkspaceStepStoreController', function (): void {
 
     it('validates bad timeout and unknown anchors', function (): void {
         $caller = createWorkspaceStepStoreCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown]);
 

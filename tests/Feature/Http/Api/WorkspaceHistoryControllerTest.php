@@ -15,12 +15,18 @@ const WORKSPACE_HISTORY_CALLER_WG_IP = '10.6.0.95';
 
 function createWorkspaceHistoryCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => WORKSPACE_HISTORY_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_HISTORY_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    if ($attributes['role'] === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 function grantWorkspaceHistoryAccess(Node $caller, Node $appNode): void
@@ -36,7 +42,7 @@ function grantWorkspaceHistoryAccess(Node $caller, Node $appNode): void
 describe('WorkspaceHistoryController', function (): void {
     it('returns visible workspace runs sorted newest first with pagination metadata', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantWorkspaceHistoryAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
@@ -66,7 +72,7 @@ describe('WorkspaceHistoryController', function (): void {
 
     it('caps limit at 500 and reports the cap', function (): void {
         createWorkspaceHistoryCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
@@ -79,7 +85,7 @@ describe('WorkspaceHistoryController', function (): void {
 
     it('resolves history by path for forwarded cwd calls', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
         grantWorkspaceHistoryAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create([
@@ -107,7 +113,7 @@ describe('WorkspaceHistoryController', function (): void {
 
     it('returns authorization failure when the caller has no workspace visibility', function (): void {
         createWorkspaceHistoryCallerNode();
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 

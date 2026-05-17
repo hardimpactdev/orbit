@@ -59,11 +59,11 @@ final readonly class WorkspaceShowController implements Loggable
         $app = $this->stringQuery($request, 'app');
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed("This caller is not authorized to inspect '{$name}'.", [
                 'name' => $name,
                 'app' => $app,
-                'caller_role' => $caller->role,
+                'caller_role' => $this->nodeRoleAssignments->assignmentRoleLabel($caller),
             ]);
         }
 
@@ -115,10 +115,10 @@ final readonly class WorkspaceShowController implements Loggable
 
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed("This caller is not authorized to inspect '{$path}'.", [
                 'path' => $path,
-                'caller_role' => $caller->role,
+                'caller_role' => $this->nodeRoleAssignments->assignmentRoleLabel($caller),
             ]);
         }
 
@@ -153,7 +153,7 @@ final readonly class WorkspaceShowController implements Loggable
     {
         $visibleNodeIds = $this->hostedAppNodeIds();
 
-        if ($caller->role === 'gateway') {
+        if ($this->callerIsGateway($caller)) {
             return $visibleNodeIds;
         }
 
@@ -170,10 +170,7 @@ final readonly class WorkspaceShowController implements Loggable
      */
     private function hostedAppNodeIds(): array
     {
-        return array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
-        ]));
+        return $this->nodeRoleAssignments->activeAppHostNodeIds();
     }
 
     /**
@@ -185,7 +182,7 @@ final readonly class WorkspaceShowController implements Loggable
         return Workspace::query()
             ->with(['app.node', 'app.processes', 'proxyRoutes', 'runs'])
             ->where('name', $name)
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
             ->get();
     }
@@ -199,13 +196,18 @@ final readonly class WorkspaceShowController implements Loggable
 
         return Workspace::query()
             ->with(['app.node', 'app.processes', 'proxyRoutes', 'runs'])
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim($workspace->path, '/');
 
                 return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
             });
+    }
+
+    private function callerIsGateway(Node $caller): bool
+    {
+        return $this->nodeRoleAssignments->nodeIsGateway($caller);
     }
 
     private function stringQuery(Request $request, string $key): ?string

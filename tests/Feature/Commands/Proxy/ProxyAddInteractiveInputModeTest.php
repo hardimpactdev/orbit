@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Laravel\Prompts\DataTablePrompt;
@@ -11,13 +10,13 @@ use Laravel\Prompts\Key;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    Node::factory()->create([
+    createTestGatewayNode([
         'name' => 'local-gateway',
         'role' => 'gateway',
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
-    Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 });
 
 it('prompts for domain, node, route type, and upstream in interactive mode when all are missing', function (): void {

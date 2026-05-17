@@ -43,6 +43,17 @@ it('updates the local checkout and every active non-control remote node from the
         ],
     ]);
 
+    DB::table('node_roles')->insert([
+        'node_id' => DB::table('nodes')->where('name', 'beast')->value('id'),
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     Process::fake();
     Process::preventStrayProcesses();
 

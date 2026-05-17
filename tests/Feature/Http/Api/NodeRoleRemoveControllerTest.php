@@ -102,6 +102,27 @@ function deleteNodeRoleRemoveJson(string $uri, array $data = [], array $server =
 }
 
 describe('NodeRoleRemoveController', function (): void {
+    it('reports caller role metadata from active role assignments on authorization failure', function (): void {
+        $callerId = createNodeRoleRemoveCaller('control');
+        createNodeRoleRemoveGateway();
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $callerId,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [], [
+            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+        ]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.required_node', 'gateway-1')
+            ->assertJsonPath('error.meta.caller_role', 'app');
+    });
+
     it('logs dependent summaries when role removal is blocked', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         $gatewayId = createNodeRoleRemoveGateway();
@@ -153,7 +174,7 @@ describe('NodeRoleRemoveController', function (): void {
         expect($entry->properties->get('dependents'))->toBe(['1 development app record']);
     });
 
-    it('preserves role dependents when force is true without purge data', function (): void {
+    it('removes Orbit-owned role dependents when force is true without purge data', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         $gatewayId = createNodeRoleRemoveGateway();
         grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
@@ -187,7 +208,7 @@ describe('NodeRoleRemoveController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.purged_data', false);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue();
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
     it('purges role dependents only when purge data is requested with force', function (): void {

@@ -12,8 +12,8 @@ use App\Services\Workspaces\OpenCodeWorkspaceDriver;
 use HardImpact\OpenCode\OpenCode;
 use HardImpact\OpenCode\Requests\Projects\GetCurrentProject;
 use HardImpact\OpenCode\Requests\Sessions\CreateSession;
-use HardImpact\OpenCode\Requests\Workspaces\CreateWorkspace;
-use HardImpact\OpenCode\Requests\Workspaces\RemoveWorkspace;
+use HardImpact\OpenCode\Requests\Worktrees\CreateWorktree;
+use HardImpact\OpenCode\Requests\Worktrees\RemoveWorktree;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Tests\TestCase;
@@ -36,22 +36,17 @@ it('creates an OpenCode workspace and aligns it to the requested branch', functi
         ->and($result->path)->toBe('/srv/demo/.worktrees/feature-a')
         ->and($result->agentIde)->toBe('opencode')
         ->and($result->agentIdeWorkspaceId)->toBe('sess_feature_a')
-        ->and($shell->scripts)->toHaveCount(2)
+        ->and($shell->scripts)->toHaveCount(1)
         ->and($shell->options[0]['env'])->toMatchArray([
             'ORBIT_WORKSPACE_PATH' => '/srv/demo/.worktrees/feature-a',
             'ORBIT_WORKSPACE_NAME' => 'feature-a',
             'ORBIT_WORKSPACE_BASE' => 'main',
         ])
-        ->and($shell->options[1]['env'])->toMatchArray([
-            'ORBIT_OPENCODE_WORKSPACE_ID' => 'wrk_feature_a',
-            'ORBIT_WORKSPACE_NAME' => 'feature-a',
-        ])
         ->and($shell->scripts[0])->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
-        ->and($shell->scripts[0])->toContain('git -C "$workspace_path" reset --hard "$base_ref"')
-        ->and($shell->scripts[1])->toContain('update workspace set name = :name, branch = :branch where id = :id');
+        ->and($shell->scripts[0])->toContain('git -C "$workspace_path" reset --hard "$base_ref"');
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, CreateWorkspace::class);
+    $mock->assertSentCount(1, CreateWorktree::class);
     $mock->assertSentCount(1, CreateSession::class);
 });
 
@@ -73,8 +68,8 @@ it('cleans up the OpenCode workspace when branch alignment fails', function (): 
     expect($shell->scripts)->toHaveCount(1);
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, CreateWorkspace::class);
-    $mock->assertSentCount(1, RemoveWorkspace::class);
+    $mock->assertSentCount(1, CreateWorktree::class);
+    $mock->assertSentCount(1, RemoveWorktree::class);
     $mock->assertSentCount(0, CreateSession::class);
 });
 
@@ -83,7 +78,7 @@ it('recovers when OpenCode creates a workspace but returns a timeout response', 
         MockResponse::make(openCodeProjectPayload(sandboxes: [])),
         MockResponse::make([]),
         MockResponse::make(['name' => 'UnknownError'], 500),
-        MockResponse::make([openCodeWorkspacePayload()]),
+        MockResponse::make(['/srv/demo/.worktrees/feature-a']),
         MockResponse::make(openCodeSessionPayload()),
     ]);
 
@@ -93,10 +88,10 @@ it('recovers when OpenCode creates a workspace but returns a timeout response', 
 
     expect($result->name)->toBe('feature-a')
         ->and($result->path)->toBe('/srv/demo/.worktrees/feature-a')
-        ->and($shell->scripts)->toHaveCount(2);
+        ->and($shell->scripts)->toHaveCount(1);
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, CreateWorkspace::class);
+    $mock->assertSentCount(1, CreateWorktree::class);
     $mock->assertSentCount(1, CreateSession::class);
 });
 
@@ -148,13 +143,9 @@ function openCodeProjectPayload(array $sandboxes): array
 function openCodeWorkspacePayload(): array
 {
     return [
-        'id' => 'wrk_feature_a',
-        'type' => 'worktree',
         'name' => 'feature-a',
         'branch' => 'opencode/feature-a',
         'directory' => '/srv/demo/.worktrees/feature-a',
-        'extra' => null,
-        'projectID' => 'proj_demo',
     ];
 }
 
@@ -167,7 +158,6 @@ function openCodeSessionPayload(): array
         'id' => 'sess_feature_a',
         'title' => 'feature-a',
         'directory' => '/srv/demo/.worktrees/feature-a',
-        'workspaceID' => 'wrk_feature_a',
     ];
 }
 

@@ -11,7 +11,7 @@ availability.
 ## Usage
 
 ```bash
-orbit node:list [--role=<gateway|app|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|app|app-development|app-production|database|control>] [--environment=<development|production>] [--doctor] [--json]
 ```
 
 Run from any node with gateway visibility. No arguments are required.
@@ -28,7 +28,7 @@ orbit node:list --role=app --environment=development --json
 
 ## Arguments and options
 
-- `--role`: filter by node role. Single value, one of `gateway`, `app`, or `control`. Comma-separated input is rejected.
+- `--role`: filter by effective role assignment. Single value, one of `gateway`, `app`, `app-development`, `app-production`, `database`, or `control`. `app` matches both app host roles. `control` matches nodes without an active hosted role assignment. Comma-separated input is rejected.
 - `--environment`: filter app nodes by environment. Single value, one of `development` or `production`. Comma-separated input is rejected.
 - `--doctor`: include node doctor checks and summaries. This is explicit because it may perform live checks and take longer than a registry list.
 - `--json`: Output JSON.
@@ -57,7 +57,7 @@ commands.
 
 ## Output
 
-Human output is a table grouped by role.
+Human output is a table sorted by effective role assignment.
 
 JSON output is a structured node array. See the
 [JSON renderer contract](technical/6.2_node-list_output-render_json.md) for the

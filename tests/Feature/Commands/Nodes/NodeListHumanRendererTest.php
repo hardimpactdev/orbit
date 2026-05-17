@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -38,6 +39,20 @@ function nodeListHumanRow(array $overrides = []): array
     ], $overrides);
 }
 
+function assignNodeListHumanRole(string $nodeName, string $role): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => [],
+    ]);
+}
+
 describe('node:list human renderer contract', function (): void {
     beforeEach(function (): void {
         config(['orbit.is_gateway' => true]);
@@ -56,6 +71,7 @@ describe('node:list human renderer contract', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        assignNodeListHumanRole('local-gateway', 'gateway');
     });
 
     it('selects human renderer when --json is absent', function (): void {

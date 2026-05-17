@@ -11,7 +11,7 @@ use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
-use HardImpact\OpenCode\Data\Workspace as OpenCodeWorkspace;
+use HardImpact\OpenCode\Data\Worktree as OpenCodeWorktree;
 use HardImpact\OpenCode\OpenCode;
 use Throwable;
 
@@ -28,14 +28,13 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
         $this->currentProject($client, $app, $node);
 
         try {
-            $workspace = $this->createOpenCodeWorkspace($client, $app->path, $base);
-            $path = $this->workspacePath($workspace->directory);
+            $worktree = $this->createOpenCodeWorktree($client, $app->path, $name);
+            $path = $this->workspacePath($worktree->directory);
             $this->alignBranch($node, $path, $name, $base);
-            $this->syncWorkspaceMetadata($node, $workspace->id, $name);
-            $sessionId = $this->createSession($client, $name, $path, $workspace->id);
+            $sessionId = $this->createSession($client, $name, $path);
         } catch (Throwable $exception) {
-            if (isset($workspace)) {
-                $this->cleanupWorkspace($client, $workspace->id, $app->path);
+            if (isset($worktree)) {
+                $this->cleanupWorktree($client, $worktree->directory, $app->path);
             }
 
             throw new WorkspaceCreateFailed(
@@ -46,7 +45,7 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
                     'node' => $node->name,
                     'app' => $app->name,
                     'workspace' => $name,
-                    'path' => $workspace->directory ?? null,
+                    'path' => $worktree->directory ?? null,
                     'reason' => $exception->getMessage(),
                 ],
             );
@@ -60,25 +59,26 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
         );
     }
 
-    private function createOpenCodeWorkspace(OpenCode $client, string $projectPath, string $base): OpenCodeWorkspace
+    private function createOpenCodeWorktree(OpenCode $client, string $projectPath, string $name): OpenCodeWorktree
     {
-        $knownWorkspaceIds = array_map(
-            fn (OpenCodeWorkspace $workspace): string => $workspace->id,
-            $client->workspaces()->list(directory: $projectPath),
-        );
+        $knownWorktreeDirectories = $client->worktrees()->list(directory: $projectPath);
 
         try {
-            return $client->workspaces()->create(type: 'worktree', branch: $base, directory: $projectPath);
+            return $client->worktrees()->create(name: $name, directory: $projectPath);
         } catch (Throwable $exception) {
-            $createdWorkspaces = array_values(array_filter(
-                $client->workspaces()->list(directory: $projectPath),
-                fn (OpenCodeWorkspace $workspace): bool => ! in_array($workspace->id, $knownWorkspaceIds, true),
+            $createdWorktrees = array_values(array_filter(
+                $client->worktrees()->list(directory: $projectPath),
+                fn (string $worktreeDirectory): bool => ! in_array($worktreeDirectory, $knownWorktreeDirectories, true),
             ));
 
-            $workspace = array_pop($createdWorkspaces);
+            $worktreeDirectory = array_pop($createdWorktrees);
 
-            if ($workspace instanceof OpenCodeWorkspace) {
-                return $workspace;
+            if (is_string($worktreeDirectory) && $worktreeDirectory !== '') {
+                return new OpenCodeWorktree(
+                    name: $name,
+                    branch: $name,
+                    directory: $worktreeDirectory,
+                );
             }
 
             throw $exception;
@@ -165,78 +165,19 @@ git -C "$workspace_path" reset --hard "$base_ref"
 SH;
     }
 
-    private function syncWorkspaceMetadata(Node $node, string $workspaceId, string $name): void
-    {
-        $result = $this->remoteShell->run(
-            $node,
-            $this->syncWorkspaceMetadataScript(),
-            [
-                'env' => [
-                    'ORBIT_OPENCODE_WORKSPACE_ID' => $workspaceId,
-                    'ORBIT_WORKSPACE_NAME' => $name,
-                ],
-                'timeout' => 30,
-            ],
-        );
-
-        if ($result->successful()) {
-            return;
-        }
-
-        throw new WorkspaceCreateFailed(
-            'workspace.agent_ide_create_failed',
-            'OpenCode workspace was created but could not be named for the UI.',
-            [
-                'adapter' => 'opencode',
-                'node' => $node->name,
-                'workspace_id' => $workspaceId,
-                'workspace' => $name,
-                'reason' => trim($result->stderr) ?: trim($result->stdout),
-            ],
-        );
-    }
-
-    private function syncWorkspaceMetadataScript(): string
-    {
-        return <<<'SH'
-set -Eeuo pipefail
-workspace_id="${ORBIT_OPENCODE_WORKSPACE_ID:?}"
-workspace_name="${ORBIT_WORKSPACE_NAME:?}"
-database_path="${HOME}/.local/share/opencode/opencode.db"
-
-if [ ! -f "$database_path" ]; then
-    echo "OpenCode database is missing: $database_path" >&2
-    exit 2
-fi
-
-php -r '
-$database = new SQLite3(getenv("HOME")."/.local/share/opencode/opencode.db");
-$statement = $database->prepare("update workspace set name = :name, branch = :branch where id = :id");
-$statement->bindValue(":name", getenv("ORBIT_WORKSPACE_NAME"), SQLITE3_TEXT);
-$statement->bindValue(":branch", getenv("ORBIT_WORKSPACE_NAME"), SQLITE3_TEXT);
-$statement->bindValue(":id", getenv("ORBIT_OPENCODE_WORKSPACE_ID"), SQLITE3_TEXT);
-$result = $statement->execute();
-if ($result === false || $database->changes() !== 1) {
-    fwrite(STDERR, "OpenCode workspace row not found: ".getenv("ORBIT_OPENCODE_WORKSPACE_ID").PHP_EOL);
-    exit(2);
-}
-'
-SH;
-    }
-
-    private function createSession(OpenCode $client, string $name, string $path, string $workspaceId): ?string
+    private function createSession(OpenCode $client, string $name, string $path): ?string
     {
         try {
-            return $client->sessions()->create(directory: $path, title: $name, workspaceID: $workspaceId)->id;
+            return $client->sessions()->create(directory: $path, title: $name)->id;
         } catch (Throwable) {
             return null;
         }
     }
 
-    private function cleanupWorkspace(OpenCode $client, string $workspaceId, string $projectPath): void
+    private function cleanupWorktree(OpenCode $client, string $worktreeDirectory, string $projectPath): void
     {
         try {
-            $client->workspaces()->remove($workspaceId, directory: $projectPath);
+            $client->worktrees()->remove($worktreeDirectory, directory: $projectPath);
         } catch (Throwable) {
             // Best-effort cleanup after OpenCode created a workspace but a later step failed.
         }

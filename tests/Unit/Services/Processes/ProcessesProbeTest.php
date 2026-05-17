@@ -514,11 +514,7 @@ function issue(array $drift, string $key): ?DriftEntry
 
 function processableApp(array $overrides = []): App
 {
-    $node = Node::factory()->create([
-        'role' => 'app',
-        'status' => 'active',
-        'environment' => 'development',
-    ]);
+    $node = createTestAppHostNode();
 
     return App::factory()
         ->for($node, 'node')

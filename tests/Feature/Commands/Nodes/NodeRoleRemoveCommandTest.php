@@ -91,7 +91,7 @@ describe('node role:remove', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('purge-data');
     });
 
-    it('force preserves role dependents unless purge data is requested', function (): void {
+    it('force removes Orbit-owned role dependents without reporting data purge', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'db-1',
@@ -119,7 +119,7 @@ describe('node role:remove', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['purged_data'])->toBeFalse()
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeTrue();
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
     it('force with purge-data removes role dependents', function (): void {

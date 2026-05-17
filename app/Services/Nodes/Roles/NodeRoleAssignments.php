@@ -106,6 +106,23 @@ class NodeRoleAssignments
         return null;
     }
 
+    public function assignmentRoleLabel(Node $node): string
+    {
+        if ($this->nodeHasActiveGatewayRole($node)) {
+            return NodeRoleName::Gateway->value;
+        }
+
+        if ($this->nodeHasActiveAppHostRole($node)) {
+            return 'app';
+        }
+
+        if ($this->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
+            return NodeRoleName::Database->value;
+        }
+
+        return 'control';
+    }
+
     public function nodeCanServeGatewayOrAppHostWorkloads(Node $node): bool
     {
         return $this->nodeIsGateway($node)

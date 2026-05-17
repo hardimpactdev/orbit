@@ -26,6 +26,12 @@ final readonly class AppDevelopmentRoleSettings implements NodeRoleSettings
      */
     public static function fromArray(array $settings): self
     {
+        $unknownKeys = array_diff(array_keys($settings), ['tld']);
+
+        if ($unknownKeys !== []) {
+            throw new InvalidArgumentException('The app-development role does not accept unknown settings.');
+        }
+
         $tld = $settings['tld'] ?? null;
 
         if (! is_string($tld)) {

@@ -13,13 +13,19 @@ const FIREWALL_RULE_MUTATION_CALLER_WG_IP = '10.6.0.99';
 
 function createFirewallRuleMutationCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => FIREWALL_RULE_MUTATION_CALLER_WG_IP,
         'wireguard_address' => FIREWALL_RULE_MUTATION_CALLER_WG_IP,
         'platform' => 'ubuntu',
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantFirewallRuleMutationAccess(Node $caller, Node $servingNode): void
@@ -35,7 +41,7 @@ function grantFirewallRuleMutationAccess(Node $caller, Node $servingNode): void
 describe('FirewallRule mutation controllers', function (): void {
     it('stores firewall rule intent for authorized callers', function (): void {
         $caller = createFirewallRuleMutationCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
         grantFirewallRuleMutationAccess($caller, $node);
 
         $response = $this->call('POST', '/api/firewall-rules', [
@@ -56,7 +62,7 @@ describe('FirewallRule mutation controllers', function (): void {
 
     it('rejects unauthorized store requests without mutation', function (): void {
         createFirewallRuleMutationCallerNode(['role' => 'app']);
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
 
         $response = $this->call('POST', '/api/firewall-rules', [
             'action' => 'allow',
@@ -73,7 +79,7 @@ describe('FirewallRule mutation controllers', function (): void {
 
     it('requires destructive consent for delete requests', function (): void {
         createFirewallRuleMutationCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $response = $this->call('DELETE', '/api/firewall-rules/local-vite?node=app-1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
@@ -86,7 +92,7 @@ describe('FirewallRule mutation controllers', function (): void {
 
     it('removes firewall rule intent with deferred cleanup warnings', function (): void {
         createFirewallRuleMutationCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $response = $this->call('DELETE', '/api/firewall-rules/local-vite?node=app-1&destructive_consent=1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);

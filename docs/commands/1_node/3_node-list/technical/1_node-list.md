@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit node:list [--role=<gateway|app|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|app|app-development|app-production|database|control>] [--environment=<development|production>] [--doctor] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,7 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `app`, `control`. Single value only; comma-separated input fails as `validation_failed` because it is not one of the allowed values. Invalid values fail before side effects. |
+| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `app`, `app-development`, `app-production`, `database`, `control`. `app` matches both app host roles. `control` matches nodes without an active hosted role assignment. Single value only; comma-separated input fails as `validation_failed` because it is not one of the allowed values. Invalid values fail before side effects. |
 | `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. Single value only; comma-separated input fails as `validation_failed` because it is not one of the allowed values. Invalid values fail before side effects. |
 | `doctor` | `--doctor` | Optional. | Never. | `false`. | Boolean flag. Explicit secondary operation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
@@ -68,12 +68,13 @@ post-filter the result, or run separate scoped invocations.
 
 ### Filter and sort rules
 
-- If `--role` is present, include only nodes with the matching role.
+- If `--role` is present, include only nodes with the matching effective role assignment. The filter uses active `node_roles` assignments, not legacy node-row shadow fields.
 - If `--environment` is present, include only app nodes with the matching
-  environment.
+  environment. The filter uses active app role assignments.
 - Filters combine with AND semantics.
-- Preserve the gateway's sort order for every output renderer. Renderer
-  contracts own presentation shape.
+- Preserve the gateway's sort order for every output renderer. The gateway sorts
+  by effective role assignment and then by node name. Renderer contracts own
+  presentation shape.
 
 ### Doctor Summary Rules
 

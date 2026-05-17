@@ -21,19 +21,25 @@ afterEach(function (): void {
 
 function createFirewallListLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $attributes = [
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'ubuntu',
-    ]);
+    ];
+
+    if ($role === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 describe('firewall:list command contract', function (): void {
     it('lists gateway registry intent as json with metadata', function (): void {
         createFirewallListLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
 
         FirewallRule::factory()->create([
             'node_id' => $node->id,
@@ -67,8 +73,8 @@ describe('firewall:list command contract', function (): void {
 
     it('filters by firewall target node', function (): void {
         createFirewallListLocalNode('gateway');
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
 
         FirewallRule::factory()->create(['node_id' => $firstNode->id, 'name' => 'first']);
         FirewallRule::factory()->create(['node_id' => $secondNode->id, 'name' => 'second']);
@@ -89,7 +95,7 @@ describe('firewall:list command contract', function (): void {
 
     it('renders human tables and empty scope states', function (): void {
         createFirewallListLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
 
         FirewallRule::factory()->create([
             'node_id' => $node->id,

@@ -16,7 +16,9 @@ trait AuthorizesNodeRoleCaller
 
     protected function authorizeNodeRoleCaller(Node $caller, string $verb): ?JsonResponse
     {
-        if (app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
+        $assignments = app(NodeRoleAssignments::class);
+
+        if ($assignments->nodeIsGateway($caller)) {
             return null;
         }
 
@@ -37,13 +39,13 @@ trait AuthorizesNodeRoleCaller
         if (! $gateway instanceof Node) {
             return $this->authorizationFailed(
                 "This caller is not authorized to {$verb}.",
-                ['required_node' => null, 'caller_role' => $caller->role],
+                ['required_node' => null, 'caller_role' => $assignments->assignmentRoleLabel($caller)],
             );
         }
 
         return $this->authorizationFailed(
             "This caller is not authorized to {$verb}.",
-            ['required_node' => $gateway->name, 'caller_role' => $caller->role],
+            ['required_node' => $gateway->name, 'caller_role' => $assignments->assignmentRoleLabel($caller)],
         );
     }
 

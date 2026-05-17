@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +25,7 @@ final readonly class NodeStoreController implements Loggable
             return $this->forbidden();
         }
 
-        if (! in_array($caller->role, ['control', 'gateway'], true)) {
+        if ($caller->role !== 'control' && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return $this->forbidden();
         }
 

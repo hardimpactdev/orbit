@@ -74,6 +74,7 @@ describe('node:list JSON renderer contract', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        assignNodeListJsonRole('local-gateway', 'gateway');
     });
 
     it('selects JSON renderer with --json and returns discriminated success envelope', function (): void {

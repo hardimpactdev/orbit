@@ -20,18 +20,24 @@ afterEach(function (): void {
 
 function createProxyMutationLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $attributes = [
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-    ]);
+    ];
+
+    if ($role === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 describe('proxy add/remove commands', function (): void {
     it('adds custom proxy intent for gateway callers', function (): void {
         createProxyMutationLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         $exitCode = Artisan::call('proxy:add', [
             'domain' => 'vite.docs.test',
@@ -49,7 +55,7 @@ describe('proxy add/remove commands', function (): void {
 
     it('renders proxy add human progress through the shared step tree', function (): void {
         createProxyMutationLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         $this->artisan('proxy:add vite.docs.test --node=app-1 --upstream=http://127.0.0.1:5173')
             ->expectsOutputToContain('┌  Adding Proxy Route')
@@ -62,7 +68,7 @@ describe('proxy add/remove commands', function (): void {
 
     it('removes custom proxy intent with force', function (): void {
         createProxyMutationLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         ProxyRoute::factory()->create(['node_id' => $node->id, 'domain' => 'vite.docs.test']);
 
         $exitCode = Artisan::call('proxy:remove', [
@@ -80,7 +86,7 @@ describe('proxy add/remove commands', function (): void {
 
     it('renders proxy remove human progress through the shared step tree', function (): void {
         createProxyMutationLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         ProxyRoute::factory()->create(['node_id' => $node->id, 'domain' => 'vite.docs.test']);
 
         $this->artisan('proxy:remove vite.docs.test --force')

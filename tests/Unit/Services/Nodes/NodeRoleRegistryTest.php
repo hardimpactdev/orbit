@@ -86,6 +86,13 @@ describe('node role registry', function (): void {
             ->toThrow(InvalidArgumentException::class, 'The app-development role requires a valid tld setting.');
     });
 
+    it('rejects unknown app development settings', function (): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('app-development')
+            ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
+            ->toThrow(InvalidArgumentException::class, 'The app-development role does not accept unknown settings.');
+    });
+
     it('rejects settings for roles without settings', function (string $role): void {
         expect(fn () => (new NodeRoleRegistry)
             ->definition($role)

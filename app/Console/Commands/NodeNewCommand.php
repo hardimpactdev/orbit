@@ -1216,6 +1216,16 @@ class NodeNewCommand extends Command
             );
         }
 
+        if ($node->status === 'active') {
+            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+
+            if (is_int($roleAssignmentFailure)) {
+                return $roleAssignmentFailure;
+            }
+
+            $node->refresh();
+        }
+
         $results = $nodesProbe->adopt($node, $nodesProbe->snapshotForAdopt($node));
         $hasConflict = false;
         $activated = false;

@@ -87,4 +87,35 @@ describe('node role assignments', function (): void {
             ->and($assignments->nodeIsGateway($activeAssignedGateway))->toBeTrue()
             ->and($assignments->nodeIsGateway($inactiveAssignedGateway))->toBeFalse();
     });
+
+    it('labels effective roles from active assignments', function (): void {
+        $gateway = Node::factory()->create(['role' => 'control']);
+        $development = Node::factory()->create(['role' => 'control']);
+        $database = Node::factory()->create(['role' => 'control']);
+        $control = Node::factory()->create(['role' => 'gateway']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $development->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $database->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+
+        $assignments = app(NodeRoleAssignments::class);
+
+        expect($assignments->assignmentRoleLabel($gateway))->toBe('gateway')
+            ->and($assignments->assignmentRoleLabel($development))->toBe('app')
+            ->and($assignments->assignmentRoleLabel($database))->toBe('database')
+            ->and($assignments->assignmentRoleLabel($control))->toBe('control');
+    });
 });

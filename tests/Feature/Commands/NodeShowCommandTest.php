@@ -34,11 +34,22 @@ function setupNodeShowGatewayCaller(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeShowRow([
+    $nodeId = DB::table('nodes')->insertGetId(nodeShowRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
     ]));
+
+    DB::table('node_roles')->insert([
+        'node_id' => $nodeId,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => json_encode([], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 }
 
 describe('node:show base contract', function (): void {

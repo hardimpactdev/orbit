@@ -38,12 +38,13 @@ class ProxyRouteQuery
         $this->validateFilter($filter);
 
         $visibleNodeIds = $this->visibleNodeIds($caller);
+        $callerIsGateway = $caller instanceof Node && $this->nodeRoleAssignments()->nodeIsGateway($caller);
 
-        if ($caller instanceof Node && $caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if ($caller instanceof Node && ! $callerIsGateway && $visibleNodeIds === []) {
             throw new GatewayApiException(
                 message: 'This node is not authorized to read the proxy route registry.',
                 errorCode: 'authorization_failed',
-                errorMeta: ['caller_role' => $caller->role],
+                errorMeta: ['caller_role' => $this->nodeRoleAssignments()->assignmentRoleLabel($caller)],
             );
         }
 
@@ -52,7 +53,7 @@ class ProxyRouteQuery
         /** @var \Illuminate\Database\Eloquent\Collection<int, ProxyRoute> $proxyRoutes */
         $proxyRoutes = ProxyRoute::query()
             ->with(['node', 'app', 'workspace'])
-            ->when($caller instanceof Node && $caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when($caller instanceof Node && ! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->when($nodeId !== null, fn (Builder $query): Builder => $query->where('node_id', $nodeId))
             ->when($filter !== 'all', fn (Builder $query): Builder => $this->applyFilter($query, $filter))
             ->get();
@@ -106,7 +107,7 @@ class ProxyRouteQuery
 
         $query = Node::query()->where('name', $node);
 
-        if ($caller instanceof Node && $caller->role !== 'gateway') {
+        if ($caller instanceof Node && ! $this->nodeRoleAssignments()->nodeIsGateway($caller)) {
             $query->whereIn('id', $visibleNodeIds);
         }
 
@@ -131,7 +132,7 @@ class ProxyRouteQuery
      */
     private function visibleNodeIds(?Node $caller): array
     {
-        if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
+        if (! $caller instanceof Node || $this->nodeRoleAssignments()->nodeIsGateway($caller)) {
             return Node::query()->pluck('id')->all();
         }
 
@@ -141,6 +142,11 @@ class ProxyRouteQuery
             ->where('nodes.status', 'active')
             ->pluck('nodes.id')
             ->all();
+    }
+
+    private function nodeRoleAssignments(): NodeRoleAssignments
+    {
+        return app(NodeRoleAssignments::class);
     }
 
     private function applyFilter(Builder $query, string $filter): Builder

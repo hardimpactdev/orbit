@@ -15,7 +15,7 @@ orbit node role:remove [node] [role] [--force] [--purge-data] [--json]
 - `gateway` cannot be removed through this command.
 - `--purge-data` requires `--force`.
 - Removal blocks when dependents exist.
-- `--force` removes Orbit-owned dependent cleanup while preserving user data.
+- `--force` removes Orbit-owned dependents while preserving user data.
 - `--force --purge-data` also requests purge cleanup.
 
 ## Technical Contract

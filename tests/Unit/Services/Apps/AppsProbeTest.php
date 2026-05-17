@@ -333,10 +333,7 @@ function convergedRuntimeSnapshot(array $overrides = []): array
 
 function appNode(array $overrides = []): Node
 {
-    return Node::factory()->create([
-        'role' => 'app',
-        'status' => 'active',
-        'environment' => 'development',
+    return createTestAppHostNode([
         ...$overrides,
     ]);
 }

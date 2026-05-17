@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +38,62 @@ function apiStoreNodeRow(array $overrides = []): array
 }
 
 describe('NodeStoreController', function (): void {
+    it('rejects legacy gateway callers without an active gateway assignment', function (): void {
+        DB::table('nodes')->insert([
+            apiStoreNodeRow([
+                'name' => 'legacy-gateway',
+                'role' => 'gateway',
+                'host' => '10.6.0.2',
+                'wireguard_address' => '10.6.0.2',
+            ]),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+            ->postJson('/api/nodes', [
+                'name' => 'app-dev-1',
+                'role' => 'app-development',
+                'host' => '192.0.2.20',
+                'tld' => 'test',
+            ]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('allows assigned gateway callers through the gateway authority path', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'gateway',
+            'role' => 'gateway',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gatewayId,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+            ->postJson('/api/nodes', [
+                'name' => 'gateway',
+                'role' => 'app-production',
+                'host' => '192.0.2.20',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.incompatible');
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('executes node creation in gateway context even when local config is stale', function (): void {
         config(['orbit.is_gateway' => false]);
 
@@ -206,6 +263,7 @@ describe('NodeStoreController', function (): void {
 
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.9/32\n"),
+            'docker exec orbit-dns kill -HUP 1' => Process::result(),
         ]);
         Process::preventStrayProcesses();
 
@@ -281,6 +339,7 @@ describe('NodeStoreController', function (): void {
 
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+            'docker exec orbit-dns kill -HUP 1' => Process::result(),
         ]);
         Process::preventStrayProcesses();
 

@@ -27,7 +27,7 @@ function grantProxyRouteIntentAccess(Node $caller, Node $servingNode): void
 
 describe('ProxyRouteIntent', function (): void {
     it('creates custom upstream intent with runtime enactment warning', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
 
         $result = app(ProxyRouteIntent::class)->add(
             domain: 'vite.docs.test',
@@ -56,7 +56,7 @@ describe('ProxyRouteIntent', function (): void {
     });
 
     it('creates redirect intent with redirect code', function (): void {
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1']);
 
         $result = app(ProxyRouteIntent::class)->add(
             domain: 'old.test',
@@ -76,7 +76,7 @@ describe('ProxyRouteIntent', function (): void {
     });
 
     it('requires force before replacing different custom intent', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -97,7 +97,7 @@ describe('ProxyRouteIntent', function (): void {
     })->throws(GatewayApiException::class, 'Existing custom proxy route differs from requested intent.');
 
     it('rejects domains owned by another route family', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
@@ -119,7 +119,7 @@ describe('ProxyRouteIntent', function (): void {
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
 
     it('removes only custom route intent and returns cleanup warning', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'old.test',
@@ -142,7 +142,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('authorizes non-gateway callers by serving node grant', function (): void {
         $caller = Node::factory()->create(['role' => 'app']);
-        $servingNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $servingNode = createTestAppHostNode(['name' => 'app-1']);
         grantProxyRouteIntentAccess($caller, $servingNode);
 
         $result = app(ProxyRouteIntent::class)->add(

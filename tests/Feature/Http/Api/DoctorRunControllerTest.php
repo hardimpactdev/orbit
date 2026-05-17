@@ -32,13 +32,19 @@ const DOCTOR_RUN_CALLER_WG_IP = '10.6.0.94';
 
 function createDoctorRunCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'gateway',
         'host' => DOCTOR_RUN_CALLER_WG_IP,
         'wireguard_address' => DOCTOR_RUN_CALLER_WG_IP,
         'platform' => 'ubuntu',
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 describe('DoctorRunController', function (): void {
@@ -56,7 +62,7 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the proxy family scope when targeting an app node', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', nodeLevelStdout: ''));
 
         $response = $this->call('POST', '/api/doctor/run', [
@@ -79,7 +85,7 @@ describe('DoctorRunController', function (): void {
 
     it('restores firewall drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $appNode->id, 'name' => 'local-vite', 'source' => '10.6.0.0/24', 'port' => '5173']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
@@ -97,7 +103,7 @@ describe('DoctorRunController', function (): void {
 
     it('restores proxy drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
@@ -121,7 +127,7 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the tool family scope and returns tool drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
@@ -138,7 +144,7 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the app family scope and returns app drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
@@ -161,7 +167,7 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the workspace family scope and returns workspace drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
@@ -188,7 +194,7 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the process family scope and returns process drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
@@ -214,7 +220,7 @@ describe('DoctorRunController', function (): void {
 
     it('restores tool drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'caddy',
@@ -236,7 +242,7 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the schedule family scope and returns schedule health', function (): void {
         createDoctorRunCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([

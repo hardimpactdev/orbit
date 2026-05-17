@@ -17,12 +17,18 @@ const WORKSPACE_REMOVE_CALLER_WG_IP = '10.6.0.81';
 
 function createWorkspaceRemoveCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => WORKSPACE_REMOVE_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_REMOVE_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    if ($attributes['role'] === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 function grantWorkspaceRemoveAccess(Node $caller, Node $appNode): void
@@ -38,7 +44,7 @@ function grantWorkspaceRemoveAccess(Node $caller, Node $appNode): void
 describe('WorkspaceRemoveController', function (): void {
     it('removes workspace intent for authorized callers', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
-        $targetNode = Node::factory()->create([
+        $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',
@@ -94,7 +100,7 @@ describe('WorkspaceRemoveController', function (): void {
 
     it('requires destructive consent before removing workspace intent', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
-        $targetNode = Node::factory()->create([
+        $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',
@@ -122,7 +128,7 @@ describe('WorkspaceRemoveController', function (): void {
 
     it('rejects workspace removal when the caller cannot access the app node', function (): void {
         createWorkspaceRemoveCallerNode();
-        $targetNode = Node::factory()->create([
+        $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',

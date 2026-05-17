@@ -14,12 +14,18 @@ const PROXY_ROUTE_MUTATION_CALLER_WG_IP = '10.6.0.92';
 
 function createProxyRouteMutationCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
         'wireguard_address' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProxyRouteMutationAccess(Node $caller, Node $servingNode): void
@@ -35,7 +41,7 @@ function grantProxyRouteMutationAccess(Node $caller, Node $servingNode): void
 describe('ProxyRoute mutation API', function (): void {
     it('stores custom upstream route intent for authorized callers', function (): void {
         $caller = createProxyRouteMutationCallerNode();
-        $servingNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $servingNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         grantProxyRouteMutationAccess($caller, $servingNode);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP])->postJson('/api/proxy-routes', [
@@ -52,7 +58,7 @@ describe('ProxyRoute mutation API', function (): void {
 
     it('denies domain conflicts for non-custom routes', function (): void {
         createProxyRouteMutationCallerNode(['role' => 'gateway']);
-        $servingNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $servingNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
 
         ProxyRoute::factory()->create([
@@ -77,7 +83,7 @@ describe('ProxyRoute mutation API', function (): void {
 
     it('removes custom route intent with destructive consent', function (): void {
         createProxyRouteMutationCallerNode(['role' => 'gateway']);
-        $servingNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $servingNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,

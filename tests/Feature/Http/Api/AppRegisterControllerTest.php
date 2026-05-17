@@ -3,24 +3,36 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
 
 const APP_REGISTER_CALLER_WG_IP = '10.6.0.78';
 
 function createAppRegisterCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => APP_REGISTER_CALLER_WG_IP,
         'wireguard_address' => APP_REGISTER_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    if ($attributes['role'] === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 function grantAppRegisterAccess(Node $caller, Node $appNode): void
@@ -35,13 +47,13 @@ function grantAppRegisterAccess(Node $caller, Node $appNode): void
 
 describe('AppRegisterController', function (): void {
     it('registers an existing app path for authorized callers', function (): void {
-        Node::factory()->create([
+        createTestGatewayNode([
             'name' => 'gateway-1',
             'role' => 'gateway',
         ]);
 
         $caller = createAppRegisterCallerNode();
-        $targetNode = Node::factory()->create([
+        $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'role' => 'app',
             'tld' => 'test',
@@ -75,13 +87,13 @@ describe('AppRegisterController', function (): void {
     });
 
     it('rejects registration when the caller cannot access the target app node', function (): void {
-        Node::factory()->create([
+        createTestGatewayNode([
             'name' => 'gateway-1',
             'role' => 'gateway',
         ]);
 
         createAppRegisterCallerNode();
-        Node::factory()->create([
+        createTestAppHostNode([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',

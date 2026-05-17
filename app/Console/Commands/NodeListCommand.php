@@ -26,14 +26,14 @@ use Throwable;
 use function Laravel\Prompts\table;
 
 #[Signature('node:list
-    {--role= : Filter by role (gateway|app|control)}
+    {--role= : Filter by role (gateway|app|app-development|app-production|database|control)}
     {--environment= : Filter by environment (development|production)}
     {--doctor : Include node doctor checks and summaries}
     {--json : Output as JSON}')]
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
 {
-    private const array VALID_ROLES = ['gateway', 'app', 'control'];
+    private const array VALID_ROLES = ['gateway', 'app', 'app-development', 'app-production', 'database', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
@@ -159,12 +159,10 @@ class NodeListCommand extends Command
     private function fetchLocalNodeModels(?string $role, ?string $environment): Collection
     {
         $query = Node::query()
-            ->with('roleAssignments')
-            ->orderBy('role')
-            ->orderBy('name');
+            ->with('roleAssignments');
 
         if ($role !== null) {
-            $query->where('role', $role);
+            $this->applyRoleFilter($query, $role);
         }
 
         if ($environment !== null) {
@@ -175,7 +173,49 @@ class NodeListCommand extends Command
             });
         }
 
-        return $query->get();
+        $assignments = app(NodeRoleAssignments::class);
+
+        return $query
+            ->get()
+            ->sort(fn (Node $first, Node $second): int => [
+                $assignments->assignmentRoleLabel($first),
+                mb_strtolower($first->name),
+            ] <=> [
+                $assignments->assignmentRoleLabel($second),
+                mb_strtolower($second->name),
+            ])
+            ->values();
+    }
+
+    /**
+     * @param  Builder<Node>  $query
+     */
+    private function applyRoleFilter(Builder $query, string $role): void
+    {
+        $assignments = app(NodeRoleAssignments::class);
+
+        if ($role === 'app') {
+            $query->whereIn('id', $assignments->activeAppHostNodeIds());
+
+            return;
+        }
+
+        if ($role === 'control') {
+            $assignedNodeIds = $assignments->activeNodeIdsForRoles([
+                NodeRoleName::Gateway->value,
+                NodeRoleName::AppDevelopment->value,
+                NodeRoleName::AppProduction->value,
+                NodeRoleName::Database->value,
+            ]);
+
+            if ($assignedNodeIds !== []) {
+                $query->whereNotIn('id', $assignedNodeIds);
+            }
+
+            return;
+        }
+
+        $query->whereIn('id', $assignments->activeNodeIdsForRole($role));
     }
 
     /**

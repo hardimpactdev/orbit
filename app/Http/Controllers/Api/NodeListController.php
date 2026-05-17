@@ -13,6 +13,7 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +22,7 @@ use stdClass;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'app', 'control'];
+    private const array VALID_ROLES = ['gateway', 'app', 'app-development', 'app-production', 'database', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
@@ -91,12 +92,10 @@ final readonly class NodeListController implements Loggable
     private function fetchNodeModels(?string $role, ?string $environment): Collection
     {
         $query = Node::query()
-            ->with('roleAssignments')
-            ->orderBy('role')
-            ->orderBy('name');
+            ->with('roleAssignments');
 
         if ($role !== null) {
-            $query->where('role', $role);
+            $this->applyRoleFilter($query, $role);
         }
 
         if ($environment !== null) {
@@ -107,7 +106,49 @@ final readonly class NodeListController implements Loggable
             });
         }
 
-        return $query->get();
+        $assignments = app(NodeRoleAssignments::class);
+
+        return $query
+            ->get()
+            ->sort(fn (Node $first, Node $second): int => [
+                $assignments->assignmentRoleLabel($first),
+                mb_strtolower($first->name),
+            ] <=> [
+                $assignments->assignmentRoleLabel($second),
+                mb_strtolower($second->name),
+            ])
+            ->values();
+    }
+
+    /**
+     * @param  Builder<Node>  $query
+     */
+    private function applyRoleFilter(Builder $query, string $role): void
+    {
+        $assignments = app(NodeRoleAssignments::class);
+
+        if ($role === 'app') {
+            $query->whereIn('id', $assignments->activeAppHostNodeIds());
+
+            return;
+        }
+
+        if ($role === 'control') {
+            $assignedNodeIds = $assignments->activeNodeIdsForRoles([
+                NodeRoleName::Gateway->value,
+                NodeRoleName::AppDevelopment->value,
+                NodeRoleName::AppProduction->value,
+                NodeRoleName::Database->value,
+            ]);
+
+            if ($assignedNodeIds !== []) {
+                $query->whereNotIn('id', $assignedNodeIds);
+            }
+
+            return;
+        }
+
+        $query->whereIn('id', $assignments->activeNodeIdsForRole($role));
     }
 
     /**

@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -9,22 +12,34 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Key;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    app()->instance(RemoteShell::class, new ProcessEditInteractiveRemoteShell);
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
+
 function createProcessEditInteractiveLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $attributes = [
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-    ]);
+    ];
+
+    if ($role === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 it('prompts for app and name when both are absent', function (): void {
     createProcessEditInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = createTestAppHostNode(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -36,7 +51,7 @@ it('prompts for app and name when both are absent', function (): void {
 
 it('skips app prompt when --app is supplied', function (): void {
     createProcessEditInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = createTestAppHostNode(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -49,7 +64,7 @@ it('skips app prompt when --app is supplied', function (): void {
 
 it('does not prompt when name and app are both supplied', function (): void {
     createProcessEditInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = createTestAppHostNode(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -88,3 +103,11 @@ it('returns validation_failed in non-interactive mode when name is missing', fun
         ->and($payload['error']['code'])->toBe('validation_failed')
         ->and($payload['error']['meta']['field'])->toBe('name');
 });
+
+final class ProcessEditInteractiveRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1);
+    }
+}

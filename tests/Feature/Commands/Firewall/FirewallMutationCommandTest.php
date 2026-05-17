@@ -21,19 +21,25 @@ afterEach(function (): void {
 
 function createFirewallMutationLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $attributes = [
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'ubuntu',
-    ]);
+    ];
+
+    if ($role === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
 describe('firewall mutation commands', function (): void {
     it('stores allow and deny intent on gateway callers', function (string $command, string $action): void {
         createFirewallMutationLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
 
         $exitCode = Artisan::call($command, [
             'name' => "rule-{$action}",
@@ -55,7 +61,7 @@ describe('firewall mutation commands', function (): void {
 
     it('renders the raw store progress tree before the success prose', function (): void {
         createFirewallMutationLocalNode('gateway');
-        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
 
         $exitCode = Artisan::call('firewall:allow', [
             'name' => 'local-vite',
@@ -75,7 +81,7 @@ describe('firewall mutation commands', function (): void {
 
     it('renders the decorated remove progress tree with ansi state dots', function (): void {
         createFirewallMutationLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $output = new BufferedOutput(decorated: true);
@@ -125,7 +131,7 @@ describe('firewall mutation commands', function (): void {
 
     it('requires destructive consent for remove and then removes intent', function (): void {
         createFirewallMutationLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $missingConsent = Artisan::call('firewall:remove', ['name' => 'local-vite', '--json' => true, '--node' => 'app-1']);

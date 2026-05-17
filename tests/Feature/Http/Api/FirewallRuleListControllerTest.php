@@ -13,13 +13,19 @@ const FIREWALL_RULE_LIST_CALLER_WG_IP = '10.6.0.98';
 
 function createFirewallRuleListCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => FIREWALL_RULE_LIST_CALLER_WG_IP,
         'wireguard_address' => FIREWALL_RULE_LIST_CALLER_WG_IP,
         'platform' => 'ubuntu',
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantFirewallRuleListAccess(Node $caller, Node $servingNode): void
@@ -35,8 +41,8 @@ function grantFirewallRuleListAccess(Node $caller, Node $servingNode): void
 describe('FirewallRuleListController', function (): void {
     it('lists visible firewall rules with metadata', function (): void {
         $caller = createFirewallRuleListCallerNode();
-        $visibleNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
-        $hiddenNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
+        $visibleNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $hiddenNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
         grantFirewallRuleListAccess($caller, $visibleNode);
 
         FirewallRule::factory()->create(['node_id' => $visibleNode->id, 'name' => 'vite']);
@@ -54,7 +60,11 @@ describe('FirewallRuleListController', function (): void {
     it('lets gateway callers read all eligible firewall intent', function (): void {
         createFirewallRuleListCallerNode(['role' => 'gateway']);
 
-        FirewallRule::factory()->count(2)->create();
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
+
+        FirewallRule::factory()->create(['node_id' => $firstNode->id]);
+        FirewallRule::factory()->create(['node_id' => $secondNode->id]);
 
         $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
 

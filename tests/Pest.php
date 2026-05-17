@@ -163,6 +163,26 @@ function createTestAppHostNode(array $attributes = [], string $role = 'app-devel
 }
 
 /**
+ * @param  array<string, mixed>  $attributes
+ */
+function createTestGatewayNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'gateway',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
+/**
  * @param  array<string, mixed>  $self
  * @param  array<string, mixed>  $gateway
  * @return array<string, mixed>

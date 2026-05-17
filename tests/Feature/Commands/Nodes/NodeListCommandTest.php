@@ -60,13 +60,18 @@ describe('node:list base contract', function (): void {
         config(['orbit.is_gateway' => true]);
     });
 
-    it('sorts nodes by role then name', function (): void {
+    it('sorts nodes by effective role assignment then name', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'zebra-app', 'role' => 'app']),
+            nodeListRow(['name' => 'zebra-app', 'role' => 'control']),
             nodeListRow(['name' => 'alpha-app', 'role' => 'app']),
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
+            nodeListRow(['name' => 'database-1', 'role' => 'control', 'environment' => null]),
+            nodeListRow(['name' => 'gateway-1', 'role' => 'control', 'environment' => null]),
             nodeListRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
+        assignNodeListRole('zebra-app', 'app-development', ['tld' => 'test']);
+        assignNodeListRole('alpha-app', 'app-development', ['tld' => 'test']);
+        assignNodeListRole('database-1', 'database');
+        assignNodeListRole('gateway-1', 'gateway');
 
         $exitCode = Artisan::call('node:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -78,6 +83,7 @@ describe('node:list base contract', function (): void {
             'alpha-app',
             'zebra-app',
             'control-1',
+            'database-1',
             'gateway-1',
         ]);
     });
@@ -90,18 +96,23 @@ describe('node:list filters', function (): void {
         DB::table('nodes')->insert([
             nodeListRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
+                'role' => 'control',
                 'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'dev-app',
-                'role' => 'app',
+                'role' => 'control',
                 'environment' => 'development',
             ]),
             nodeListRow([
                 'name' => 'prod-app',
-                'role' => 'app',
+                'role' => 'control',
                 'environment' => 'production',
+            ]),
+            nodeListRow([
+                'name' => 'db-1',
+                'role' => 'control',
+                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'control-1',
@@ -109,8 +120,10 @@ describe('node:list filters', function (): void {
                 'environment' => null,
             ]),
         ]);
+        assignNodeListRole('gateway-1', 'gateway');
         assignNodeListRole('dev-app', 'app-development', ['tld' => 'test']);
         assignNodeListRole('prod-app', 'app-production');
+        assignNodeListRole('db-1', 'database');
     });
 
     it('filters by --role gateway', function (): void {
@@ -135,6 +148,21 @@ describe('node:list filters', function (): void {
         expect($names)->toContain('dev-app')
             ->and($names)->toContain('prod-app');
     });
+
+    it('filters by concrete app and database roles', function (string $role, string $node): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => $role]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $nodes = $payload['success']['data']['nodes'];
+
+        expect($exitCode)->toBe(0)
+            ->and($nodes)->toHaveCount(1)
+            ->and($nodes[0]['name'])->toBe($node);
+    })->with([
+        ['app-development', 'dev-app'],
+        ['app-production', 'prod-app'],
+        ['database', 'db-1'],
+    ]);
 
     it('filters by --role control', function (): void {
         $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'control']);
@@ -201,12 +229,12 @@ describe('node:list validation', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('role')
             ->and($payload['error']['meta']['value'])->toBe('bogus')
-            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'app', 'control']);
+            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'app', 'app-development', 'app-production', 'database', 'control']);
     });
 
     it('rejects invalid --role with human error message', function (): void {
         $this->artisan('node:list', ['--role' => 'bogus'])
-            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, app, control.")
+            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, app, app-development, app-production, database, control.")
             ->assertFailed();
     });
 
