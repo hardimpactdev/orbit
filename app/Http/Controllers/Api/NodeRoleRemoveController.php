@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\Concerns\AuthorizesNodeRoleCaller;
 use App\Http\Requests\Api\RemoveNodeRoleApiRequest;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -13,14 +14,20 @@ use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class NodeRoleRemoveController implements Loggable
 {
+    use AuthorizesNodeRoleCaller;
+
     private ?Node $activitySubject = null;
 
     private string $activityAction = 'node.role.removed';
+
+    /**
+     * @var list<string>
+     */
+    private array $activityDependents = [];
 
     public function __construct(
         private readonly NodeRoleAssignmentService $service,
@@ -37,7 +44,7 @@ final class NodeRoleRemoveController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $authorization = $this->authorizeCaller($caller, 'remove node roles');
+        $authorization = $this->authorizeNodeRoleCaller($caller, 'remove node roles');
         if ($authorization instanceof JsonResponse) {
             return $authorization;
         }
@@ -66,6 +73,7 @@ final class NodeRoleRemoveController implements Loggable
 
         if ($dependents !== [] && ! $request->force()) {
             $this->activityAction = 'node.role.remove_blocked';
+            $this->activityDependents = $dependents;
 
             return $this->error(
                 'node_role.remove_blocked',
@@ -90,29 +98,6 @@ final class NodeRoleRemoveController implements Loggable
                 ],
             ],
         ]);
-    }
-
-    private function authorizeCaller(Node $caller, string $verb): ?JsonResponse
-    {
-        if ($caller->role === 'gateway') {
-            return null;
-        }
-
-        $gateway = Node::query()->where('role', 'gateway')->where('status', 'active')->orderBy('name')->first();
-        if (! $gateway instanceof Node) {
-            return $this->authorizationFailed("This caller is not authorized to {$verb}.", ['required_node' => null, 'caller_role' => $caller->role]);
-        }
-
-        $hasGatewayAccess = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->exists();
-
-        if ($hasGatewayAccess) {
-            return null;
-        }
-
-        return $this->authorizationFailed("This caller is not authorized to {$verb}.", ['required_node' => $gateway->name, 'caller_role' => $caller->role]);
     }
 
     /**
@@ -174,6 +159,7 @@ final class NodeRoleRemoveController implements Loggable
             'role' => (string) request()->route('role'),
             'force' => (bool) request()->boolean('force'),
             'purge_data' => (bool) request()->boolean('purge_data'),
+            'dependents' => $this->activityDependents,
         ];
     }
 

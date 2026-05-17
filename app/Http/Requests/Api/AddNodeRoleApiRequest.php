@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api;
 
-use Illuminate\Contracts\Validation\Validator as ValidationContract;
+use App\Http\Requests\Api\Concerns\HandlesOrbitApiValidationFailure;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Http\Exceptions\HttpResponseException;
 
 class AddNodeRoleApiRequest extends FormRequest
 {
+    use HandlesOrbitApiValidationFailure;
+
     public function authorize(): bool
     {
         return true;
@@ -41,17 +42,11 @@ class AddNodeRoleApiRequest extends FormRequest
         return is_array($settings) ? $settings : [];
     }
 
-    #[\Override]
-    protected function failedValidation(ValidationContract $validator): void
+    protected function validationMessageFor(string $field): string
     {
-        throw new HttpResponseException(response()->json([
-            'error' => [
-                'code' => 'validation_failed',
-                'message' => 'Role is required.',
-                'meta' => [
-                    'field' => 'role',
-                ],
-            ],
-        ], 422));
+        return match ($field) {
+            'settings' => 'Settings must be an object.',
+            default => 'Role is required.',
+        };
     }
 }

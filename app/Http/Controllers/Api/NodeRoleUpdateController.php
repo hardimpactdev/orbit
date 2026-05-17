@@ -6,17 +6,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\Concerns\AuthorizesNodeRoleCaller;
 use App\Http\Requests\Api\UpdateNodeRoleApiRequest;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class NodeRoleUpdateController implements Loggable
 {
+    use AuthorizesNodeRoleCaller;
+
     private ?Node $activitySubject = null;
 
     public function __construct(private readonly NodeRoleAssignmentService $service) {}
@@ -31,7 +33,7 @@ final class NodeRoleUpdateController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $authorization = $this->authorizeCaller($caller, 'update node roles');
+        $authorization = $this->authorizeNodeRoleCaller($caller, 'update node roles');
         if ($authorization instanceof JsonResponse) {
             return $authorization;
         }
@@ -57,29 +59,6 @@ final class NodeRoleUpdateController implements Loggable
                 ],
             ],
         ]);
-    }
-
-    private function authorizeCaller(Node $caller, string $verb): ?JsonResponse
-    {
-        if ($caller->role === 'gateway') {
-            return null;
-        }
-
-        $gateway = Node::query()->where('role', 'gateway')->where('status', 'active')->orderBy('name')->first();
-        if (! $gateway instanceof Node) {
-            return $this->authorizationFailed("This caller is not authorized to {$verb}.", ['required_node' => null, 'caller_role' => $caller->role]);
-        }
-
-        $hasGatewayAccess = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->exists();
-
-        if ($hasGatewayAccess) {
-            return null;
-        }
-
-        return $this->authorizationFailed("This caller is not authorized to {$verb}.", ['required_node' => $gateway->name, 'caller_role' => $caller->role]);
     }
 
     /**
