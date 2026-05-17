@@ -158,6 +158,37 @@ describe('node:new interactive input mode', function (): void {
             ->assertSuccessful();
     });
 
+    it('does not prompt for ssh user on standalone canonical database role', function (): void {
+        config(['orbit.is_gateway' => false]);
+
+        setupNodeNewInteractiveControlCaller();
+        fakeNodeNewGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'db-1',
+                        'role' => 'control',
+                        'environment' => null,
+                        'tld' => null,
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'none',
+                        'host' => null,
+                        'status' => 'created',
+                    ],
+                    'next_steps' => [],
+                ],
+            ],
+        ]);
+
+        $this->artisan('node:new --role=database')
+            ->expectsQuestion('Node name', 'db-1')
+            ->expectsOutputToContain('Created node db-1.')
+            ->assertSuccessful();
+    });
+
     it('does not prompt for tld when app environment is production', function (): void {
         config(['orbit.is_gateway' => false]);
 

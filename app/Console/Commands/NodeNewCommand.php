@@ -352,7 +352,7 @@ class NodeNewCommand extends Command
     }
 
     /**
-     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string}  $inputs
      */
     private function forwardHostedRoleNodeCreation(string $name, array $roles, array $inputs): int
     {
@@ -398,8 +398,9 @@ class NodeNewCommand extends Command
     }
 
     /**
+    /**
      * @param  list<string>  $roles
-     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: string}  $inputs
+     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string}  $inputs
      */
     private function provisionHostedRoleNode(
         OrbitHostInstaller $installer,
@@ -444,20 +445,22 @@ class NodeNewCommand extends Command
         $orbitPath = $requiresHostProvisioning ? "/home/{$runtimeUser}/orbit" : "/home/{$runtimeUser}/orbit";
 
         if ($requiresHostProvisioning) {
-            $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
+            $sshUser = $inputs['sshUser'] ?? 'root';
+
+            $installation = $installer->install($inputs['host'], $sshUser, $runtimeUser);
 
             if (! $installation->successful) {
                 return $this->installerFailure(
                     role: 'app',
                     host: $inputs['host'],
-                    sshUser: $inputs['sshUser'],
+                    sshUser: $sshUser,
                     errorOutput: $installation->errorOutput,
                 );
             }
 
             $sshAuthorization = $this->authorizeRuntimeSshUser(
                 host: $inputs['host'],
-                sshUser: $inputs['sshUser'],
+                sshUser: $sshUser,
                 runtimeUser: $runtimeUser,
             );
 
@@ -2317,7 +2320,7 @@ class NodeNewCommand extends Command
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, environment: ?string, tld: ?string, sshUser: string}|int
+     * @return array{host: string, environment: ?string, tld: ?string, sshUser: ?string}|int
      */
     private function resolveHostedRoleInputs(array $roles): array|int
     {
@@ -2358,7 +2361,7 @@ class NodeNewCommand extends Command
             'host' => $host ?? '',
             'environment' => $this->legacyEnvironmentForRoles($roles),
             'tld' => $tld,
-            'sshUser' => $this->resolveSshUser(),
+            'sshUser' => $needsHost ? $this->resolveSshUser() : null,
         ];
     }
 
