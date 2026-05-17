@@ -172,6 +172,7 @@ This table describes what `doctor --fix --family=node --restore` does for each r
 
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
 `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,
+`node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.app_ssh_unreachable`,
 `node.local_default_invalid`, or
