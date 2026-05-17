@@ -53,6 +53,27 @@ describe('node role assignment service', function (): void {
             ->and($tool->expected_state)->toBe('running');
     });
 
+    it('materializes the production app runtime baseline as desired tools', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-production', []);
+
+        $tools = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->whereIn('name', ['caddy', 'php'])
+            ->orderBy('name')
+            ->get();
+
+        expect($tools->pluck('name')->all())
+            ->toBe(['caddy', 'php'])
+            ->and($tools->pluck('expected_state')->unique()->all())
+            ->toBe(['running']);
+    });
+
     it('rejects conflicting roles', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 

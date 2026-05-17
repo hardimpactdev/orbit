@@ -6,12 +6,13 @@ namespace App\Services\Nodes\Roles\RoleBaselines;
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\NodeTool;
 use App\Services\Tools\ToolCatalog;
 use RuntimeException;
 
 class DatabaseRoleBaseline implements RoleBaseline
 {
+    use ManagesNodeToolBaseline;
+
     public function __construct(
         private readonly ?ToolCatalog $toolCatalog = null,
     ) {}
@@ -26,32 +27,15 @@ class DatabaseRoleBaseline implements RoleBaseline
             throw new RuntimeException('The database role requires an Ubuntu host.');
         }
 
-        if (! $this->toolCatalog()->supports('docker')) {
-            return;
-        }
-
-        NodeTool::query()->updateOrCreate(
-            [
-                'node_id' => $node->id,
-                'name' => 'docker',
-            ],
-            [
-                'expected_state' => 'running',
-                'expected_version' => null,
-                'config' => null,
-            ],
-        );
+        $this->convergeTools($node, ['docker']);
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'docker')
-            ->delete();
+        $this->removeTools($node, ['docker']);
     }
 
-    private function toolCatalog(): ToolCatalog
+    protected function toolCatalog(): ToolCatalog
     {
         return $this->toolCatalog ?? app(ToolCatalog::class);
     }
