@@ -154,6 +154,7 @@ describe('node:new interactive input mode', function (): void {
             ->expectsQuestion('Host', '192.0.2.20')
             ->expectsQuestion('Development TLD', 'test')
             ->expectsQuestion('SSH user', 'deployer')
+            ->expectsOutputToContain('The legacy app role now maps to a hosted app role.')
             ->expectsOutputToContain('Created app node app-1.')
             ->assertSuccessful();
     });

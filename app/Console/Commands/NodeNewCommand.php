@@ -135,6 +135,10 @@ class NodeNewCommand extends Command
                 return $inputs;
             }
 
+            if ($requestedRoles['legacy_app'] && ! $this->wantsJson()) {
+                $this->warn('The legacy app role now maps to a hosted app role.');
+            }
+
             if (! $gatewayConfigured) {
                 return $this->failCommand(
                     code: 'gateway_unavailable',
@@ -2080,10 +2084,6 @@ class NodeNewCommand extends Command
 
             if (! in_array($environment, ['development', 'production'], true)) {
                 return $this->validationFailed('environment', 'Environment must be one of development or production.');
-            }
-
-            if (! $this->wantsJson()) {
-                $this->warn('The legacy app role now maps to a hosted app role.');
             }
 
             return [

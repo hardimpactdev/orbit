@@ -37,8 +37,13 @@ complete before side effects begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local control-node onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| `app` | Resolve required app-node inputs, then forward to the gateway over HTTPS. Interactive mode prompts for missing values; non-interactive mode and `--json` fail before forwarding when required values are absent. |
-| `control` | Forward to the configured gateway over HTTPS. |
+| omitted `--role` | Forward a joined/client identity request with no hosted roles to the configured gateway over HTTPS. |
+| `control` | Legacy compatibility alias for the no-role joined/client forwarding path. Human mode warns that `control` now maps to a client identity with no hosted roles. |
+| `app-development` | Resolve canonical hosted-role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
+| `app-production` | Resolve canonical hosted-role inputs, then forward to the gateway over HTTPS as `roles: ['app-production']`. Requires `node_new.host` and `node_new.user`. |
+| `database` | Forward a canonical hosted-role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
+| repeated hosted roles | Forward compatible canonical hosted-role arrays, such as `roles: ['app-production', 'database']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
+| `app` | Legacy compatibility path. Resolve app-node inputs, then forward to the gateway over HTTPS using the legacy app contract with `node_new.environment`. Human mode warns that `app` now maps to hosted app roles after the environment is resolved interactively or from flags. |
 
 ## First-Gateway Bootstrap
 
@@ -70,8 +75,11 @@ When a gateway is configured:
 
 - Forward `node:new` to the gateway.
 - Preserve all resolved role-specific inputs in the forwarded request,
-  including `node_new.host` and `node_new.user` for gateway convergence or
-  adoption, and `node_new.tld` for development app-node provisioning.
+  including:
+  - `node_new.host` and `node_new.user` for gateway convergence or adoption;
+  - canonical `roles[]` arrays for hosted-role requests;
+  - `node_new.tld` for development hosted app-node provisioning;
+  - legacy `node_new.environment` only for legacy `--role=app` forwarding.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.
 - Do not SSH directly to app nodes from the CLI.
