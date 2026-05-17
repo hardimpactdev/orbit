@@ -43,7 +43,7 @@ function assignToolInstallRole(Node $node, string $role, string $status = 'activ
 describe('tool:install node role eligibility', function (): void {
     it('installs postgres on a node with an active database role', function (): void {
         createToolInstallRoleLocalNode('gateway');
-        $node = createToolInstallRoleTargetNode('db-1');
+        $node = createToolInstallRoleTargetNode('db-1', ['role' => 'control']);
         assignToolInstallRole($node, 'database');
         $shell = new ToolInstallNodeRoleRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -107,7 +107,7 @@ describe('tool:install node role eligibility', function (): void {
 
     it('rejects postgres when the database role is present but not active', function (string $status): void {
         createToolInstallRoleLocalNode('gateway');
-        $node = createToolInstallRoleTargetNode('db-1');
+        $node = createToolInstallRoleTargetNode('db-1', ['role' => 'control']);
         assignToolInstallRole($node, 'database', $status);
         $shell = new ToolInstallNodeRoleRecordingShell;
         app()->instance(RemoteShell::class, $shell);

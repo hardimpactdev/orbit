@@ -8,7 +8,6 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
-use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ToolInstaller
 {
@@ -105,12 +104,24 @@ final readonly class ToolInstaller
     private function resolveTargetNode(?string $node, ?string $app, ?string $requiredRole): Node|ToolRegistryFailure
     {
         $validation = $this->registry->validateFilters($node, $app);
+        $canResolveExplicitRequiredRoleNode = $this->canResolveExplicitRequiredRoleNode($validation, $node, $app, $requiredRole);
 
-        if ($validation instanceof ToolRegistryFailure && ! $this->canResolveExplicitRequiredRoleNode($validation, $node, $app, $requiredRole)) {
+        if ($validation instanceof ToolRegistryFailure && ! $canResolveExplicitRequiredRoleNode) {
             return $validation;
         }
 
         if ($node !== null) {
+            if ($requiredRole !== null) {
+                $resolved = Node::query()
+                    ->where('name', $node)
+                    ->where('status', 'active')
+                    ->first();
+
+                if ($resolved instanceof Node) {
+                    return $resolved;
+                }
+            }
+
             $resolved = Node::query()
                 ->where('name', $node)
                 ->where('role', 'app')
@@ -121,19 +132,8 @@ final readonly class ToolInstaller
                 return $resolved;
             }
 
-            if ($requiredRole !== null) {
-                $resolved = Node::query()
-                    ->where('name', $node)
-                    ->where('status', 'active')
-                    ->whereHas('roleAssignments', function (Builder $query) use ($requiredRole): void {
-                        $query->where('role', $requiredRole)
-                            ->where('status', 'active');
-                    })
-                    ->first();
-
-                if ($resolved instanceof Node) {
-                    return $resolved;
-                }
+            if ($canResolveExplicitRequiredRoleNode && $validation instanceof ToolRegistryFailure) {
+                return $validation;
             }
         }
 
@@ -159,7 +159,7 @@ final readonly class ToolInstaller
     }
 
     private function canResolveExplicitRequiredRoleNode(
-        ToolRegistryFailure $validation,
+        ?ToolRegistryFailure $validation,
         ?string $node,
         ?string $app,
         ?string $requiredRole,
@@ -168,7 +168,8 @@ final readonly class ToolInstaller
             return false;
         }
 
-        return $validation->code === 'validation_failed'
+        return $validation instanceof ToolRegistryFailure
+            && $validation->code === 'validation_failed'
             && ($validation->meta['field'] ?? null) === 'node';
     }
 }
