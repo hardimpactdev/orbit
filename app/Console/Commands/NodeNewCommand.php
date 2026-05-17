@@ -976,6 +976,13 @@ class NodeNewCommand extends Command
             return $adoption;
         }
 
+        $wireguardAddress = $this->nextWireguardAddress();
+        $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($inputs['tld'], $wireguardAddress);
+
+        if (is_int($developmentDnsMappingFailure)) {
+            return $developmentDnsMappingFailure;
+        }
+
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
         $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
 
@@ -998,7 +1005,6 @@ class NodeNewCommand extends Command
             return $sshAuthorization;
         }
 
-        $wireguardAddress = $this->nextWireguardAddress();
         $gatewayEndpoint = $this->gatewayEndpoint();
 
         $node = $registryWriter->writeAppNode(
@@ -1118,6 +1124,14 @@ class NodeNewCommand extends Command
 
         $publicKey = $artifact->interfacePublicKey;
         $wireguardAddress = $artifact->wireguardAddress;
+
+        if (is_string($wireguardAddress) && $wireguardAddress !== '') {
+            $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($inputs['tld'], $wireguardAddress);
+
+            if (is_int($developmentDnsMappingFailure)) {
+                return $developmentDnsMappingFailure;
+            }
+        }
 
         try {
             $peerReality = is_string($publicKey) && $publicKey !== ''
@@ -2581,6 +2595,46 @@ class NodeNewCommand extends Command
             message: $message,
             meta: ['field' => $field],
         );
+    }
+
+    private function guardDevelopmentDnsMappingAvailable(?string $tld, string $target): ?int
+    {
+        if ($tld === null) {
+            return null;
+        }
+
+        $path = app(DevelopmentDnsMappingEnactor::class)->configDir()."/{$tld}.conf";
+
+        if (! File::exists($path)) {
+            return null;
+        }
+
+        $actualTarget = $this->developmentDnsTargetFrom(File::get($path), $tld);
+
+        if ($actualTarget === $target) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.incompatible',
+            message: "Development TLD '{$tld}' is already mapped to another gateway development DNS target.",
+            meta: [
+                'field' => 'tld',
+                'value' => $tld,
+                'target' => $target,
+                'actual_target' => $actualTarget,
+                'path' => $path,
+            ],
+        );
+    }
+
+    private function developmentDnsTargetFrom(string $content, string $tld): ?string
+    {
+        if (preg_match('/address=\/\\.'.preg_quote($tld, '/').'\/(.+)/', $content, $matches) !== 1) {
+            return null;
+        }
+
+        return trim($matches[1]);
     }
 
     /**

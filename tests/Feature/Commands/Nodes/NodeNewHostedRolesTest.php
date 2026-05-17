@@ -170,6 +170,40 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test']);
 });
 
+it('rejects existing gateway development dns mappings before provisioning side effects', function (): void {
+    $mappingPath = storage_path('app/orbit/node-development-dns.d/test.conf');
+    File::ensureDirectoryExists(dirname($mappingPath));
+    File::put($mappingPath, implode("\n", [
+        '# orbit-managed=node-development-dns',
+        '# node=other-dev',
+        '# bind-scope=orbit_network',
+        'address=/.test/10.6.0.99',
+        '',
+    ]));
+
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'dev-conflict',
+        '--role' => ['app-development'],
+        '--host' => '192.0.2.20',
+        '--tld' => 'test',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'node.incompatible',
+            'message' => "Development TLD 'test' is already mapped to another gateway development DNS target.",
+        ])
+        ->and($payload['error']['meta']['field'])->toBe('tld')
+        ->and($payload['error']['meta']['value'])->toBe('test')
+        ->and($payload['error']['meta']['actual_target'])->toBe('10.6.0.99')
+        ->and(Node::query()->where('name', 'dev-conflict')->exists())->toBeFalse()
+        ->and($this->fakeInstaller->calls)->toBe(0)
+        ->and(File::get($mappingPath))->toContain('address=/.test/10.6.0.99');
+});
+
 it('adopts a compatible existing app node for canonical app-development', function (): void {
     $node = Node::factory()->create([
         'name' => 'dev-adopt-1',

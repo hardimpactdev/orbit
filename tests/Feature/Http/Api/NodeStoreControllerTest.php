@@ -9,10 +9,19 @@ use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
+
+afterEach(function (): void {
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
 
 /**
  * @param  array<string, mixed>  $overrides
