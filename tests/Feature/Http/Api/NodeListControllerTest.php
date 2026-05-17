@@ -8,6 +8,8 @@ use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Testing\TestResponse;
+use Tests\TestCase;
 
 uses(RefreshDatabase::class);
 
@@ -52,6 +54,28 @@ function createCallerNode(): void
     ]);
 }
 
+/**
+ * @param  array<string, string>  $server
+ */
+function getApiNodesJson(string $uri, array $server = []): TestResponse
+{
+    /** @var TestCase $test */
+    // @phpstan-ignore-next-line varTag.nativeType
+    $test = test();
+
+    return $test->call(
+        'GET',
+        $uri,
+        [],
+        [],
+        [],
+        array_merge([
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+        ], $server),
+    );
+}
+
 describe('NodeListController', function (): void {
     beforeEach(function (): void {
         app()->instance(RemoteShell::class, new NodeListControllerRemoteShell);
@@ -67,7 +91,7 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk();
         $nodes = $response->json('success.data.nodes');
@@ -76,7 +100,7 @@ describe('NodeListController', function (): void {
     });
 
     it('returns only caller node when no other nodes exist', function (): void {
-        $response = $this->call('GET', '/api/nodes', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.nodes.0.name', 'caller');
@@ -89,7 +113,7 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes?role=app', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
@@ -102,7 +126,7 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'prod-app', 'environment' => 'production']),
         ]);
 
-        $response = $this->call('GET', '/api/nodes?environment=production', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?environment=production', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
@@ -110,7 +134,7 @@ describe('NodeListController', function (): void {
     });
 
     it('returns validation error for invalid role', function (): void {
-        $response = $this->call('GET', '/api/nodes?role=invalid', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?role=invalid', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertStatus(400)
             ->assertJson([
@@ -127,7 +151,7 @@ describe('NodeListController', function (): void {
     });
 
     it('returns validation error for invalid environment', function (): void {
-        $response = $this->call('GET', '/api/nodes?environment=invalid', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?environment=invalid', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertStatus(400)
             ->assertJson([
@@ -153,7 +177,7 @@ describe('NodeListController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $gatewayNode = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'gateway-1');
@@ -169,7 +193,7 @@ describe('NodeListController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $appNode = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'app-1');
@@ -188,7 +212,7 @@ describe('NodeListController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $appNode = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'app-1');
@@ -200,11 +224,12 @@ describe('NodeListController', function (): void {
             'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
+            'roles' => [],
         ]);
     });
 
     it('rejects unauthenticated requests', function (): void {
-        $response = $this->getJson('/api/nodes');
+        $response = getApiNodesJson('/api/nodes');
 
         $response->assertForbidden()
             ->assertJson([
@@ -224,7 +249,7 @@ describe('NodeListController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes?doctor=1&role=app', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?doctor=1&role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.meta.doctor.checked', 1)

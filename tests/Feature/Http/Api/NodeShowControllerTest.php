@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
+use Tests\TestCase;
 
 uses(RefreshDatabase::class);
 
@@ -46,6 +48,28 @@ function createShowCallerNode(): void
     ]);
 }
 
+/**
+ * @param  array<string, string>  $server
+ */
+function getApiNodeJson(string $uri, array $server = []): TestResponse
+{
+    /** @var TestCase $test */
+    // @phpstan-ignore-next-line varTag.nativeType
+    $test = test();
+
+    return $test->call(
+        'GET',
+        $uri,
+        [],
+        [],
+        [],
+        array_merge([
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+        ], $server),
+    );
+}
+
 describe('NodeShowController', function (): void {
     beforeEach(function (): void {
         createShowCallerNode();
@@ -62,7 +86,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJson([
@@ -74,6 +98,7 @@ describe('NodeShowController', function (): void {
                             'status' => 'active',
                             'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
+                            'roles' => [],
                             'addresses' => [
                                 'wireguard' => '10.6.0.7',
                             ],
@@ -99,7 +124,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk();
 
@@ -116,7 +141,7 @@ describe('NodeShowController', function (): void {
     });
 
     it('returns 404 for non-existent node', function (): void {
-        $response = $this->call('GET', '/api/nodes/non-existent', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/non-existent', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertNotFound()
             ->assertJson([
@@ -139,7 +164,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/gateway-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.environment', null);
@@ -153,7 +178,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.platform', 'unknown');
@@ -168,7 +193,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.addresses.wireguard', '192.168.1.1');
@@ -186,7 +211,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/gateway-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJson([
@@ -198,6 +223,7 @@ describe('NodeShowController', function (): void {
                             'status' => 'active',
                             'environment' => null,
                             'platform' => 'ubuntu_24-04',
+                            'roles' => [],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -222,7 +248,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.agent_ide.adapter', 'polyscope')
@@ -257,7 +283,7 @@ describe('NodeShowController', function (): void {
             ['consumer_node_id' => $app1Id, 'serving_node_id' => $control1Id, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
-        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.grants.consuming_nodes', ['control-1', 'control-2'])
@@ -272,7 +298,7 @@ describe('NodeShowController', function (): void {
             ]),
         ]);
 
-        $response = $this->getJson('/api/nodes/existing-app');
+        $response = getApiNodeJson('/api/nodes/existing-app');
 
         $response->assertForbidden()
             ->assertJson([
