@@ -16,6 +16,7 @@ use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -399,6 +400,36 @@ describe('node role assignment service', function (): void {
             ->toBeNull()
             ->and($assignment->converged_at)
             ->not->toBeNull();
+    });
+
+    it('removes the previous development dns mapping after an app-development tld update', function (): void {
+        File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/old.conf'), 'stale mapping');
+
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu_24-04',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'old',
+            'wireguard_address' => '10.0.0.10',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'old'],
+        ]);
+
+        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-development', ['tld' => 'new']);
+
+        expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->settings)->toBe(['tld' => 'new'])
+            ->and(storage_path('app/orbit/node-development-dns.d/old.conf'))->not->toBeFile()
+            ->and(storage_path('app/orbit/node-development-dns.d/new.conf'))->toBeFile();
+
+        File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
     });
 
     it('rejects updates when a conflicting role is active', function (): void {

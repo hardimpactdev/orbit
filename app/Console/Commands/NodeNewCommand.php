@@ -2354,6 +2354,10 @@ class NodeNewCommand extends Command
             NodeRoleName::AppProduction->value,
         ]) !== [];
 
+        if (! $needsHost && $this->stringOption('host') !== null) {
+            return $this->validationFailed('host', 'Only app-development, app-production, and gateway use host provisioning.');
+        }
+
         $host = $needsHost ? $this->resolveHost('app') : null;
 
         if ($needsHost && $host === null) {

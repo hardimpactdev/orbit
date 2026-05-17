@@ -76,6 +76,8 @@ class NodeRoleAssignmentService
         $settingsData = $definition->settingsFromArray($settings)->toArray();
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
+        $previousAssignment = $assignment->replicate();
+
         $assignment->forceFill([
             'settings' => $settingsData,
             'status' => NodeRoleStatus::Pending->value,
@@ -83,7 +85,7 @@ class NodeRoleAssignmentService
             'converged_at' => null,
         ])->save();
 
-        return $this->converge($node, $assignment->fresh() ?? $assignment);
+        return $this->converge($node, $assignment->fresh() ?? $assignment, $previousAssignment);
     }
 
     public function remove(Node $node, string $role, bool $force = false, bool $purgeData = false): void
@@ -151,10 +153,11 @@ class NodeRoleAssignmentService
         }
     }
 
-    private function converge(Node $node, NodeRoleAssignment $assignment): NodeRoleAssignment
+    private function converge(Node $node, NodeRoleAssignment $assignment, ?NodeRoleAssignment $previousAssignment = null): NodeRoleAssignment
     {
         try {
             $this->converger->converge($node, $assignment);
+            $this->removePreviousDevelopmentDnsMapping($node, $assignment, $previousAssignment);
 
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Active->value,
@@ -175,6 +178,26 @@ class NodeRoleAssignmentService
         $freshAssignment = $assignment->fresh();
 
         return $freshAssignment;
+    }
+
+    private function removePreviousDevelopmentDnsMapping(Node $node, NodeRoleAssignment $assignment, ?NodeRoleAssignment $previousAssignment): void
+    {
+        if (! $previousAssignment instanceof NodeRoleAssignment) {
+            return;
+        }
+
+        if ($assignment->role !== NodeRoleName::AppDevelopment->value) {
+            return;
+        }
+
+        $previousTld = $previousAssignment->settings['tld'] ?? null;
+        $currentTld = $assignment->settings['tld'] ?? null;
+
+        if (! is_string($previousTld) || ! is_string($currentTld) || $previousTld === $currentTld) {
+            return;
+        }
+
+        $this->converger->remove($node, $previousAssignment, purgeData: false);
     }
 
     private function syncLegacyNodeFields(Node $node): void

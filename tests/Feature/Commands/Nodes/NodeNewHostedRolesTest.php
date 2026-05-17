@@ -344,6 +344,26 @@ it('creates a database hosted role without requiring host input', function (): v
         ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value);
 });
 
+it('rejects host input for database-only hosted roles before side effects', function (): void {
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'db-with-host',
+        '--role' => ['database'],
+        '--host' => '192.0.2.20',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'validation_failed',
+            'message' => 'Only app-development, app-production, and gateway use host provisioning.',
+            'meta' => ['field' => 'host'],
+        ])
+        ->and(Node::query()->where('name', 'db-with-host')->exists())->toBeFalse()
+        ->and($this->fakeInstaller->calls)->toBe(0);
+});
+
 it('rejects conflicting hosted roles before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'bad',
