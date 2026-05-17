@@ -223,6 +223,33 @@ describe('node role assignment service', function (): void {
             ->not->toBeNull();
     });
 
+    it('rejects updates when a conflicting role is active', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu_24-04',
+            'role' => 'control',
+            'wireguard_address' => '10.0.0.10',
+        ]);
+
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['tld' => 'old'],
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-production',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-development', ['tld' => 'new']))
+            ->toThrow(InvalidArgumentException::class, "Role 'app-development' conflicts with active role 'app-production'.");
+
+        expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->last_error)->toBeNull();
+    });
+
     it('rejects unsupported platforms', function (): void {
         $node = Node::factory()->create([
             'platform' => 'macos_15',

@@ -65,6 +65,7 @@ class NodeRoleAssignmentService
         }
 
         $this->guardSupportedPlatform($node, $definition);
+        $this->guardAgainstConflicts($node, $definition);
 
         $assignment->forceFill([
             'settings' => $definition->settingsFromArray($settings)->toArray(),
