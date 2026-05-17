@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -46,13 +47,21 @@ function createRemoveCallerNode(string $role = 'control'): int
 
 function createRemoveGatewayNode(): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
+    $gatewayId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gatewayId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $gatewayId;
 }
 
 function grantRemoveGatewayAccess(int $callerId, int $gatewayId): void
@@ -198,6 +207,37 @@ describe('NodeRemoveController', function (): void {
             ->assertJsonPath('success.data.grants_removed', 0);
 
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
+    });
+
+    it('rejects removal for nodes with an assigned gateway role before mutation', function (): void {
+        $callerId = createRemoveCallerNode();
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+
+        $target = Node::query()->create(apiRemoveNodeRow([
+            'name' => 'gateway-shadow-stale',
+            'role' => 'control',
+            'host' => '10.6.0.44',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.44',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $target->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        $response = deleteRemoveNodeJson('/api/nodes/gateway-shadow-stale', [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.gateway_removal_denied')
+            ->assertJsonPath('error.meta.role', 'gateway');
+
+        expect(DB::table('nodes')->where('name', 'gateway-shadow-stale')->exists())->toBeTrue();
     });
 
     it('rejects unauthenticated requests', function (): void {

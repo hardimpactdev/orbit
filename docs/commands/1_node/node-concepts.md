@@ -46,7 +46,8 @@ Active role assignments must satisfy this matrix:
 | `app-production` | `database` | `gateway`, `app-development` |
 | `database` | `app-development`, `app-production` | `gateway` |
 
-Compatibility checks ignore assignments in `pending`, `error`, or `removing`.
+Compatibility checks treat assignments in `active`, `pending`, or `error` as
+unresolved conflicts. Assignments already in `removing` are ignored.
 
 ## Role Settings
 

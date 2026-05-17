@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -92,12 +93,18 @@ function setupNodeRemoveDnsGatewayCaller(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeRemoveDnsRow([
+    $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
         'tld' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gatewayId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 }
 
 function setupNodeRemoveDnsControlCaller(): void
@@ -159,6 +166,12 @@ function setupNodeRemoveDnsGatewayApiCaller(): void
         'environment' => null,
         'tld' => null,
     ]));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gatewayId,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
 
     DB::table('node_access')->insert([
         'consumer_node_id' => $callerId,

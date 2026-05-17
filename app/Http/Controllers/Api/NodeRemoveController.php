@@ -9,6 +9,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\RemoveNodeApiRequest;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,10 @@ final class NodeRemoveController implements Loggable
 
     private bool $activityWireGuardPeerRemoved = false;
 
-    public function __construct(private readonly RemoveNode $removeNode) {}
+    public function __construct(
+        private readonly RemoveNode $removeNode,
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
 
     public function __invoke(RemoveNodeApiRequest $request, string $name): JsonResponse
     {
@@ -39,7 +43,9 @@ final class NodeRemoveController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if ($caller->role === 'app') {
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+
+        if (! $callerIsGateway && $caller->role === 'app') {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
@@ -48,7 +54,7 @@ final class NodeRemoveController implements Loggable
             );
         }
 
-        if ($caller->role === 'control') {
+        if (! $callerIsGateway && $caller->role === 'control') {
             $authorization = $this->authorizeControlCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
@@ -56,7 +62,7 @@ final class NodeRemoveController implements Loggable
             }
         }
 
-        if (! in_array($caller->role, ['control', 'gateway'], true)) {
+        if (! $callerIsGateway && ! in_array($caller->role, ['control', 'gateway'], true)) {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
@@ -81,7 +87,7 @@ final class NodeRemoveController implements Loggable
 
         $this->activitySubject = $node;
 
-        if ($node->role === 'gateway') {
+        if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
             return $this->error(
                 code: 'node.gateway_removal_denied',
                 message: 'The gateway node cannot be removed with this command.',
@@ -123,9 +129,8 @@ final class NodeRemoveController implements Loggable
 
     private function authorizeControlCaller(Node $caller): ?JsonResponse
     {
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
+        $gateway = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
             ->orderBy('name')
             ->first();
 
