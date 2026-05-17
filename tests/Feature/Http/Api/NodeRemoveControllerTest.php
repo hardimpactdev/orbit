@@ -64,6 +64,15 @@ function createRemoveGatewayNode(): int
     return $gatewayId;
 }
 
+function assignRemoveNodeRole(int $nodeId, string $role, string $status = 'active'): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+    ]);
+}
+
 function grantRemoveGatewayAccess(int $callerId, int $gatewayId): void
 {
     DB::table('node_access')->insert([
@@ -195,7 +204,7 @@ describe('NodeRemoveController', function (): void {
     });
 
     it('removes a node directly for a gateway caller', function (): void {
-        createRemoveCallerNode('gateway');
+        assignRemoveNodeRole(createRemoveCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
         $response = deleteRemoveNodeJson('/api/nodes/app-1', [
@@ -207,6 +216,41 @@ describe('NodeRemoveController', function (): void {
             ->assertJsonPath('success.data.grants_removed', 0);
 
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
+    });
+
+    it('rejects stale gateway role shadows before mutation', function (): void {
+        createRemoveCallerNode('gateway');
+        DB::table('nodes')->insert(apiRemoveNodeRow());
+
+        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'gateway');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
+    });
+
+    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+        $callerId = createRemoveCallerNode();
+        assignRemoveNodeRole($callerId, 'database');
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiRemoveNodeRow());
+
+        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });
 
     it('rejects removal for nodes with an assigned gateway role before mutation', function (): void {

@@ -104,10 +104,8 @@ describe('AppStoreController', function (): void {
             ->and($remoteShell->runs)->toBe([]);
     });
 
-    it('rejects database callers before remote work even when they have target access', function (): void {
-        $caller = createAppStoreCallerNode([
-            'role' => 'database',
-        ]);
+    it('rejects database callers before remote work even when the legacy role shadow is control', function (): void {
+        $caller = createAppStoreCallerNode();
         assignAppStoreRole($caller, 'database');
         $targetNode = Node::factory()->create([
             'name' => 'app-1',

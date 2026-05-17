@@ -44,31 +44,23 @@ final class NodeRemoveController implements Loggable
         }
 
         $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
 
-        if (! $callerIsGateway && $caller->role === 'app') {
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
+                meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 status: 403,
             );
         }
 
-        if (! $callerIsGateway && $caller->role === 'control') {
+        if (! $callerIsGateway) {
             $authorization = $this->authorizeControlCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
             }
-        }
-
-        if (! $callerIsGateway && ! in_array($caller->role, ['control', 'gateway'], true)) {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $caller->role],
-                status: 403,
-            );
         }
 
         $node = Node::query()

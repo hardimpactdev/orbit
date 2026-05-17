@@ -37,7 +37,9 @@ The node probe reads gateway node records and checks these layers:
 1. **Registry configuration:** every selected node record has valid role
    assignments, assignment statuses, platform-version identifier such as
    `ubuntu_24-04`, required host/endpoint metadata, and WireGuard address.
-   Only active role assignments participate in compatibility and eligibility.
+   Eligibility checks use only active role assignments. Compatibility checks
+   treat `active`, `pending`, and `error` assignments as unresolved conflicts
+   and ignore `removing`.
 2. **Access policy integrity:** every node access grant references active node
    records. Stale grant rows that point at missing or non-active nodes are node
    family drift.

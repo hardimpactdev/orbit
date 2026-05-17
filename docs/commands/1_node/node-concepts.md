@@ -29,8 +29,9 @@ Each term below has a precise meaning in the node command family.
   Role-local desired configuration lives on the role assignment, not on the
   generic node record.
 - **Role assignment status:** Lifecycle state of one role assignment:
-  `pending`, `active`, `error`, or `removing`. Eligibility and compatibility
-  checks use only active assignments.
+  `pending`, `active`, `error`, or `removing`. Eligibility checks use only
+  active assignments. Compatibility checks treat `active`, `pending`, and
+  `error` assignments as unresolved conflicts and ignore `removing`.
 - **Caller identity:** The gateway-known WireGuard identity that authenticates a
   CLI request. Operation is WireGuard identity plus gateway grants, not an
   operator role. The CLI does not store or check a caller role locally.

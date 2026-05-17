@@ -102,8 +102,9 @@ final readonly class AdoptResult
 | `Error` | `error` | Last synchronous convergence attempt failed; restore may retry after blockers are addressed. |
 | `Removing` | `removing` | Cleanup is in progress or failed; the role is not eligible for new resources. |
 
-Eligibility checks only use active assignments. Compatibility checks ignore
-assignments that are not active, but the probe still reports non-active
+Eligibility checks only use active assignments. Compatibility checks treat
+assignments in `active`, `pending`, or `error` as unresolved conflicts and
+ignore assignments already in `removing`. The probe still reports non-active
 assignments that block the selected node's desired state.
 
 ## Probe Layers

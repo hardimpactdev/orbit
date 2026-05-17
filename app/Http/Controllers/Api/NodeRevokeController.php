@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\RevokeNodeApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,10 @@ final class NodeRevokeController implements Loggable
     private ?Node $activitySubject = null;
 
     private bool $activitySelfLockout = false;
+
+    public function __construct(
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+    ) {}
 
     public function __invoke(RevokeNodeApiRequest $request): JsonResponse
     {
@@ -29,30 +34,24 @@ final class NodeRevokeController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if ($caller->role === 'app') {
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
+
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->error(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
+                meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 status: 403,
             );
         }
 
-        if ($caller->role === 'control') {
+        if (! $callerIsGateway) {
             $authorization = $this->authorizeControlCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
             }
-        }
-
-        if (! in_array($caller->role, ['control', 'gateway'], true)) {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $caller->role],
-                status: 403,
-            );
         }
 
         $consumerName = $request->consumingNodeName();
@@ -77,9 +76,9 @@ final class NodeRevokeController implements Loggable
             ->where('serving_node_id', $serving->id)
             ->delete() > 0;
 
-        $this->activitySelfLockout = $caller->role === 'control'
+        $this->activitySelfLockout = ! $callerIsGateway
             && $caller->id === $consumer->id
-            && $serving->role === 'gateway';
+            && $this->nodeRoleAssignments->nodeIsGateway($serving);
 
         return response()->json([
             'success' => [
@@ -96,9 +95,8 @@ final class NodeRevokeController implements Loggable
 
     private function authorizeControlCaller(Node $caller): ?JsonResponse
     {
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
+        $gateway = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
             ->orderBy('name')
             ->first();
 

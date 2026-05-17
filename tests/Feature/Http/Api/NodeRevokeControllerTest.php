@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -45,13 +46,26 @@ function createRevokeCallerNode(string $role = 'control'): int
 
 function createRevokeGatewayNode(): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+    $gatewayId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+
+    assignRevokeNodeRole($gatewayId, 'gateway');
+
+    return $gatewayId;
+}
+
+function assignRevokeNodeRole(int $nodeId, string $role, string $status = 'active'): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+    ]);
 }
 
 function grantRevokeAccess(int $consumerId, int $servingId): void
@@ -164,7 +178,7 @@ describe('NodeRevokeController', function (): void {
     });
 
     it('revokes directly for a gateway caller', function (): void {
-        createRevokeCallerNode('gateway');
+        assignRevokeNodeRole(createRevokeCallerNode('gateway'), 'gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -191,6 +205,109 @@ describe('NodeRevokeController', function (): void {
             ->where('consumer_node_id', $consumingId)
             ->where('serving_node_id', $servingId)
             ->exists())->toBeFalse();
+    });
+
+    it('rejects stale gateway role shadows before mutation', function (): void {
+        createRevokeCallerNode('gateway');
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        grantRevokeAccess($consumingId, $servingId);
+
+        $response = postNodeRevokeJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'gateway');
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeTrue();
+    });
+
+    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+        $callerId = createRevokeCallerNode();
+        assignRevokeNodeRole($callerId, 'database');
+        $gatewayId = createRevokeGatewayNode();
+        grantRevokeAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        grantRevokeAccess($consumingId, $servingId);
+
+        $response = postNodeRevokeJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeTrue();
+    });
+
+    it('checks control caller authorization against active gateway assignments', function (): void {
+        $callerId = createRevokeCallerNode();
+        $staleGatewayId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'alpha-gateway',
+            'role' => 'gateway',
+            'host' => '10.6.0.3',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.3',
+        ]));
+        grantRevokeAccess($callerId, $staleGatewayId);
+        createRevokeGatewayNode();
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        grantRevokeAccess($consumingId, $servingId);
+
+        $response = postNodeRevokeJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.required_node', 'gateway-1')
+            ->assertJsonPath('error.meta.caller_role', 'control');
+
+        expect(DB::table('node_access')
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->exists())->toBeTrue();
     });
 
     it('returns idempotent success when the grant is already absent', function (): void {

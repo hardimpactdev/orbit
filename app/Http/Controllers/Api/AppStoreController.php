@@ -38,12 +38,13 @@ final class AppStoreController implements Loggable
         }
 
         $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
 
-        if (! $callerIsGateway && $caller->role !== 'control') {
+        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->error(
                 'caller_role_not_allowed',
                 'This command may only be run from a control or gateway node.',
-                ['caller_role' => $this->nodeRoleAssignments->assignmentRoleLabel($caller)],
+                ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 403,
             );
         }
