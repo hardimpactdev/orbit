@@ -364,7 +364,7 @@ class NodeNewCommand extends Command
                     role: $this->firstRole($roles),
                     roles: $roles,
                     host: $inputs['host'],
-                    environment: $this->legacyEnvironmentForRoles($roles),
+                    environment: null,
                     tld: $inputs['tld'],
                     user: $inputs['sshUser'],
                 ))

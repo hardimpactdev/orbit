@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
+use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
@@ -235,6 +238,63 @@ it('rejects environment for canonical hosted-role input', function (): void {
             'meta' => ['field' => 'environment'],
         ])
         ->and(Node::query()->where('name', 'canonical-env')->exists())->toBeFalse();
+});
+
+it('forwards canonical hosted app roles without legacy environment metadata', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+
+    $mock = new MockClient([
+        CreateNodeRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'canonical-dev-1',
+                        'role' => 'app',
+                        'environment' => 'development',
+                        'tld' => 'test',
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.40',
+                        'status' => 'complete',
+                    ],
+                    'next_steps' => [],
+                ],
+            ],
+        ]),
+    ]);
+
+    $connector = new GatewayConnector;
+    $connector->withMockClient($mock);
+    app()->instance(GatewayConnector::class, $connector);
+
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'canonical-dev-1',
+        '--role' => ['app-development'],
+        '--host' => '192.0.2.40',
+        '--tld' => 'test',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->body()->all() === [
+        'name' => 'canonical-dev-1',
+        'role' => 'app-development',
+        'roles' => ['app-development'],
+        'host' => '192.0.2.40',
+        'environment' => null,
+        'tld' => 'test',
+        'user' => 'root',
+    ]);
 });
 
 it('maps the legacy app role to app-development', function (): void {
