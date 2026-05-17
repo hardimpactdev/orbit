@@ -6,11 +6,14 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Schedule;
+use App\Models\WireGuardPeer;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -185,6 +188,85 @@ describe('DoctorReportRunner', function (): void {
                 'details' => [
                     'error' => 'supervisor update failed',
                 ],
+            ]);
+    });
+
+    it('restores supported node role drift through node family dispatch', function (): void {
+        File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+
+        $node = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'control',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'host' => '10.0.0.1',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'node',
+                'node' => 'app-1',
+                'key' => 'node.role_baseline_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and(storage_path('app/orbit/node-development-dns.d/test.conf'))->toBeFile();
+    });
+
+    it('skips unsupported node role drift during restore', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'control',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'host' => '10.0.0.1',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);
+
+        expect($report['healthy'])->toBeFalse()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 1,
+                'fixed' => 0,
+                'skipped' => 1,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'node',
+                'node' => 'app-1',
+                'key' => 'node.role_settings_invalid',
+                'mode' => 'restore',
+                'status' => 'skipped',
             ]);
     });
 });

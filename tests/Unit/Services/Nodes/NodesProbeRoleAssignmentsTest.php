@@ -184,7 +184,10 @@ it('reports convergence failures for error assignments', function (): void {
 
     expect($roleDrift)->toHaveCount(1)
         ->and($roleDrift[0]->key)->toBe('node.role_convergence_failed')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent);
+        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent)
+        ->and($roleDrift[0]->detail)->toMatchArray([
+            'role' => 'database',
+        ]);
 });
 
 it('reports baseline mismatches for active role-owned artifacts', function (): void {
@@ -208,7 +211,11 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
 
     expect($roleDrift)->toHaveCount(1)
         ->and($roleDrift[0]->key)->toBe('node.role_baseline_mismatch')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Missing);
+        ->and($roleDrift[0]->kind)->toBe(DriftKind::Missing)
+        ->and($roleDrift[0]->detail)->toMatchArray([
+            'role' => 'app-development',
+            'tld' => 'test',
+        ]);
 });
 
 it('does not require legacy environment when active role assignments provide the required facts', function (): void {
@@ -290,6 +297,9 @@ it('retries baseline convergence for error assignments during reconcile', functi
         key: 'node.role_convergence_failed',
         kind: DriftKind::Divergent,
         summary: 'retry role convergence',
+        detail: [
+            'role' => 'app-development',
+        ],
     ));
 
     expect($assignment->fresh())
@@ -320,8 +330,69 @@ it('restores role-owned settings-derived artifacts during reconcile', function (
         key: 'node.role_baseline_mismatch',
         kind: DriftKind::Missing,
         summary: 'restore role baseline',
+        detail: [
+            'role' => 'app-development',
+            'tld' => 'test',
+        ],
     ));
 
     expect(storage_path('app/orbit/node-development-dns.d/test.conf'))
         ->toBeFile();
+});
+
+it('only re-converges the role assignment that owns a baseline mismatch', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'test',
+        'role' => 'app',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '10.0.0.1',
+        'wireguard_address' => '10.6.0.5',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => NodeRoleStatus::Active->value,
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'database',
+        'status' => NodeRoleStatus::Active->value,
+        'settings' => [],
+    ]);
+
+    $converger = new class extends NodeRoleBaselineConverger
+    {
+        public array $convergedRoles = [];
+
+        public function __construct() {}
+
+        public function converge(Node $node, NodeRoleAssignment $assignment): void
+        {
+            $this->convergedRoles[] = $assignment->role;
+        }
+
+        public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+        {
+            throw new RuntimeException('not used');
+        }
+    };
+
+    $this->app->instance(NodeRoleBaselineConverger::class, $converger);
+
+    $this->probe->reconcile($node, new DriftEntry(
+        family: 'nodes',
+        key: 'node.role_baseline_mismatch',
+        kind: DriftKind::Missing,
+        summary: 'restore role baseline',
+        detail: [
+            'role' => 'app-development',
+            'tld' => 'test',
+        ],
+    ));
+
+    expect($converger->convergedRoles)->toBe(['app-development']);
 });

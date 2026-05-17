@@ -1097,6 +1097,10 @@ describe('reconciliation', function (): void {
             key: 'node.role_baseline_mismatch',
             kind: DriftKind::Divergent,
             summary: 'test',
+            detail: [
+                'role' => 'app-development',
+                'tld' => 'test',
+            ],
         );
 
         $this->probe->reconcile($node, $entry);

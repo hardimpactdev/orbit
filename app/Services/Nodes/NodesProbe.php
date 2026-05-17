@@ -154,6 +154,9 @@ final readonly class NodesProbe
                     key: 'node.role_settings_invalid',
                     kind: DriftKind::Divergent,
                     summary: "Role assignment '{$assignment->role}' on node {$node->name} has invalid settings.",
+                    detail: [
+                        'role' => $assignment->role,
+                    ],
                 );
 
                 continue;
@@ -165,6 +168,9 @@ final readonly class NodesProbe
                     key: 'node.role_convergence_failed',
                     kind: DriftKind::Divergent,
                     summary: "Role assignment '{$assignment->role}' on node {$node->name} failed convergence.",
+                    detail: [
+                        'role' => $assignment->role,
+                    ],
                 );
 
                 continue;
@@ -314,7 +320,11 @@ final readonly class NodesProbe
                 key: 'node.role_baseline_mismatch',
                 kind: DriftKind::Missing,
                 summary: "Role baseline for '{$assignment->role}' on node {$node->name} is incomplete.",
-                detail: $mapping,
+                detail: [
+                    ...$mapping,
+                    'role' => $assignment->role,
+                    'tld' => $tld,
+                ],
             );
         }
 
@@ -329,7 +339,11 @@ final readonly class NodesProbe
                 key: 'node.role_baseline_mismatch',
                 kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
                 summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
-                detail: $mapping,
+                detail: [
+                    ...$mapping,
+                    'role' => $assignment->role,
+                    'tld' => $tld,
+                ],
             );
         }
 
@@ -774,8 +788,8 @@ final readonly class NodesProbe
             'node.gateway_runtime_unready' => $this->reconcileGatewayRuntime($node),
             'node.app_runtime_missing' => $this->reconcileAppRuntime($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
-            'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node),
-            'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node),
+            'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
+            'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node, $entry),
         };
     }
 
@@ -816,32 +830,40 @@ final readonly class NodesProbe
             ->delete();
     }
 
-    private function reconcileRoleConvergenceFailures(Node $node): void
+    private function reconcileRoleConvergenceFailures(Node $node, DriftEntry $entry): void
     {
-        foreach ($node->roleAssignments()->where('status', NodeRoleStatus::Error->value)->get() as $assignment) {
-            try {
-                $this->nodeRoleBaselineConverger()->converge($node, $assignment);
+        $assignment = $this->roleAssignmentForRepair($node, $entry, NodeRoleStatus::Error->value);
 
-                $assignment->forceFill([
-                    'status' => NodeRoleStatus::Active->value,
-                    'last_error' => null,
-                    'converged_at' => now(),
-                ])->save();
-            } catch (Throwable $throwable) {
-                $assignment->forceFill([
-                    'status' => NodeRoleStatus::Error->value,
-                    'last_error' => $throwable->getMessage(),
-                    'converged_at' => null,
-                ])->save();
-            }
+        if (! $assignment instanceof NodeRoleAssignment) {
+            return;
+        }
+
+        try {
+            $this->nodeRoleBaselineConverger()->converge($node, $assignment);
+
+            $assignment->forceFill([
+                'status' => NodeRoleStatus::Active->value,
+                'last_error' => null,
+                'converged_at' => now(),
+            ])->save();
+        } catch (Throwable $throwable) {
+            $assignment->forceFill([
+                'status' => NodeRoleStatus::Error->value,
+                'last_error' => $throwable->getMessage(),
+                'converged_at' => null,
+            ])->save();
         }
     }
 
-    private function reconcileRoleBaselineMismatch(Node $node): void
+    private function reconcileRoleBaselineMismatch(Node $node, DriftEntry $entry): void
     {
-        foreach ($node->roleAssignments()->where('status', NodeRoleStatus::Active->value)->get() as $assignment) {
-            $this->nodeRoleBaselineConverger()->converge($node, $assignment);
+        $assignment = $this->roleAssignmentForRepair($node, $entry, NodeRoleStatus::Active->value);
+
+        if (! $assignment instanceof NodeRoleAssignment) {
+            return;
         }
+
+        $this->nodeRoleBaselineConverger()->converge($node, $assignment);
     }
 
     private function nodeRoleRegistry(): NodeRoleRegistry
@@ -852,6 +874,20 @@ final readonly class NodesProbe
     private function nodeRoleBaselineConverger(): NodeRoleBaselineConverger
     {
         return $this->nodeRoleBaselineConverger ?? app(NodeRoleBaselineConverger::class);
+    }
+
+    private function roleAssignmentForRepair(Node $node, DriftEntry $entry, string $status): ?NodeRoleAssignment
+    {
+        $role = is_string($entry->detail['role'] ?? null) ? $entry->detail['role'] : null;
+
+        if ($role === null) {
+            return null;
+        }
+
+        return $node->roleAssignments()
+            ->where('role', $role)
+            ->where('status', $status)
+            ->first();
     }
 
     /**

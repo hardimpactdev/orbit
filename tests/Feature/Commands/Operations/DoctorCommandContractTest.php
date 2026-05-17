@@ -11,6 +11,7 @@ use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -45,7 +46,7 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
 {
     config(['orbit.is_gateway' => $role === 'gateway']);
 
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
@@ -53,6 +54,48 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
         'platform' => 'linux',
         'environment' => $role === 'app' ? 'development' : null,
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    if ($role === 'app') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-development',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+    }
+
+    return $node;
+}
+
+function createDoctorHostedAppNode(string $name = 'app-1'): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'role' => 'app',
+        'status' => 'active',
+        'environment' => 'development',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'platform' => 'ubuntu_24-04',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
 }
 
 describe('doctor command contract', function (): void {
@@ -242,7 +285,7 @@ describe('doctor command contract', function (): void {
 
     it('reports app family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createDoctorHostedAppNode('app-1');
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
@@ -256,7 +299,7 @@ describe('doctor command contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('drift_detected')
-            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+            ->and(collect($payload['error']['data']['doctor']['issues'])->firstWhere('key', 'app.path_missing'))->toMatchArray([
                 'family' => 'app',
                 'node' => 'app-1',
                 'key' => 'app.path_missing',

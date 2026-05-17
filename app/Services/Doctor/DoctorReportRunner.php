@@ -445,6 +445,7 @@ final readonly class DoctorReportRunner
         }
 
         return match ($family) {
+            'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($key, $detail),
@@ -452,6 +453,45 @@ final readonly class DoctorReportRunner
             'schedule' => $this->applyScheduleIssue($key, $detail),
             default => null,
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>
+     */
+    private function applyNodeIssue(Node $node, string $key, array $detail, array $issue): array
+    {
+        $targetNode = $this->nodeFromIssue($issue) ?? $node;
+        $entry = $this->driftEntryFromStoredParts('node', $key, $detail, $issue);
+
+        try {
+            $this->nodesProbe->reconcile($targetNode, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'node',
+                'node' => $targetNode->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'node',
+            'node' => $targetNode->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$key}.",
+            'details' => $detail,
+        ];
     }
 
     /**
@@ -618,13 +658,15 @@ final readonly class DoctorReportRunner
     /**
      * @param  array<string, mixed>  $detail
      */
-    private function driftEntryFromStoredParts(string $family, string $key, array $detail): DriftEntry
+    private function driftEntryFromStoredParts(string $family, string $key, array $detail, array $issue = []): DriftEntry
     {
+        $kind = is_string($issue['kind'] ?? null) ? DriftKind::tryFrom($issue['kind']) : null;
+
         return new DriftEntry(
             family: $family,
             key: $key,
-            kind: DriftKind::Divergent,
-            summary: '',
+            kind: $kind ?? DriftKind::Divergent,
+            summary: is_string($issue['summary'] ?? null) ? $issue['summary'] : '',
             detail: $detail,
         );
     }
@@ -675,6 +717,8 @@ final readonly class DoctorReportRunner
             'schedule.run_history_hook_missing',
             'schedule.run_history_hook_mismatch',
             'schedule.lock_stuck',
+            'node.role_convergence_failed',
+            'node.role_baseline_mismatch',
         ];
 
         return [
