@@ -47,7 +47,7 @@ Compose path: `~/.config/orbit/wg-easy/docker-compose.yaml`.
 
 Required envs / settings:
 
-- `WG_HOST` — the gateway's public IPv4 (read from `nodes.public_ipv4`).
+- `WG_HOST` — the gateway's public IPv4 (read from `node.public_ipv4`).
 - `PASSWORD_HASH` — generated at bootstrap time, persisted in the gateway's
   `.env` as `WG_EASY_PASSWORD_HASH=...` so future runs are idempotent and so
   `tool:credentials wg-easy` can later expose it.
@@ -121,11 +121,11 @@ second call.
 
 | Drift kind                  | Detection                                                          | Restorable | Adoptable |
 | --------------------------- | ------------------------------------------------------------------ | ---------- | --------- |
-| `dns.container_missing`     | `orbit-dns` not in `docker ps -a`.                                 | Yes (rerun installer). | No |
-| `dns.port_not_listening`    | `orbit-dns` running but no listener on `53` inside wg-easy's netns. | Yes (restart container). | No |
-| `dns.config_drift`          | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + SIGHUP). | Yes (record observed content as intent). |
+| `tool.dns_container_missing`  | `orbit-dns` not in `docker ps -a`.                                 | Yes (rerun installer). | No |
+| `tool.dns_port_not_listening` | `orbit-dns` running but no listener on `53` inside wg-easy's netns. | Yes (restart container). | No |
+| `tool.dns_config_drift`       | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + SIGHUP). | Yes (record observed content as intent). |
 
-`dns.config_drift` is the only adoptable drift, and the use case is narrow:
+`tool.dns_config_drift` is the only adoptable drift, and the use case is narrow:
 an operator hand-edited the file for an emergency and now wants Orbit to
 adopt the new content as the source of truth. Adoption persists the observed
 content into the corresponding DB state so future builds match.

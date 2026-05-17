@@ -97,7 +97,7 @@ Gateway bootstrap also installs the gateway-side DNS substrate:
 - `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
   sharing wg-easy's network namespace, so it answers DNS for fleet TLDs on
   the wg-easy WG IP. The initial `dnsmasq.conf` reflects the current
-  `nodes.tld` + `nodes.wireguard_address` state and is kept in sync by later
+  `node.tld` + `node.wireguard_address` state and is kept in sync by later
   `node:new`, `node:update`, and `node:remove` calls.
 
 The full contract for the DNS substrate is
