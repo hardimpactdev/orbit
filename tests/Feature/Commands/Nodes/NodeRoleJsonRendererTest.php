@@ -28,7 +28,11 @@ describe('node role json renderer', function (): void {
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect(array_keys($payload))->toBe(['success'])
-            ->and($payload)->not->toHaveKey('error');
+            ->and($payload)->not->toHaveKey('error')
+            ->and($payload['success']['data']['node'])->toBe('client-1')
+            ->and($payload['success']['data']['roles'][0]['role'])->toBe('database')
+            ->and($payload['success']['data']['roles'][0]['status'])->toBe('active')
+            ->and($payload['success']['data']['roles'][0]['settings'])->toBe([]);
     });
 
     it('uses exactly one top-level success key on add success', function (): void {
@@ -49,7 +53,9 @@ describe('node role json renderer', function (): void {
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect(array_keys($payload))->toBe(['success'])
-            ->and($payload)->not->toHaveKey('error');
+            ->and($payload)->not->toHaveKey('error')
+            ->and($payload['success']['data']['assignment']['role'])->toBe('app-development')
+            ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
     });
 
     it('uses exactly one top-level success key on update success', function (): void {
@@ -72,7 +78,9 @@ describe('node role json renderer', function (): void {
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect(array_keys($payload))->toBe(['success'])
-            ->and($payload)->not->toHaveKey('error');
+            ->and($payload)->not->toHaveKey('error')
+            ->and($payload['success']['data']['assignment']['role'])->toBe('app-development')
+            ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
     });
 
     it('uses exactly one top-level success key on remove success', function (): void {
@@ -95,7 +103,9 @@ describe('node role json renderer', function (): void {
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect(array_keys($payload))->toBe(['success'])
-            ->and($payload)->not->toHaveKey('error');
+            ->and($payload)->not->toHaveKey('error')
+            ->and($payload['success']['data']['role'])->toBe('database')
+            ->and($payload['success']['data']['purged_data'])->toBeFalse();
     });
 
     it('uses exactly one top-level error key on remove failure', function (): void {
@@ -117,7 +127,9 @@ describe('node role json renderer', function (): void {
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect(array_keys($payload))->toBe(['error'])
-            ->and($payload)->not->toHaveKey('success');
+            ->and($payload)->not->toHaveKey('success')
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('force');
     });
 
     it('uses exactly one top-level error key on validation failure', function (): void {

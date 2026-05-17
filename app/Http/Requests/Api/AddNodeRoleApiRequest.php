@@ -42,6 +42,11 @@ class AddNodeRoleApiRequest extends FormRequest
         return is_array($settings) ? $settings : [];
     }
 
+    protected function validationFailureFields(): array
+    {
+        return ['role', 'settings'];
+    }
+
     protected function validationMessageFor(string $field): string
     {
         return match ($field) {

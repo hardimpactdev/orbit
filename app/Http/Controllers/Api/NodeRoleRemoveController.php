@@ -57,7 +57,7 @@ final class NodeRoleRemoveController implements Loggable
         $this->activitySubject = $node;
 
         if ($request->purgeData() && ! $request->force()) {
-            return $this->error('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge-data'], 422);
+            return $this->error('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge_data'], 422);
         }
 
         $assignment = NodeRoleAssignment::query()

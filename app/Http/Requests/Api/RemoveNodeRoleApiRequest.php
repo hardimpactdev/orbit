@@ -37,6 +37,11 @@ class RemoveNodeRoleApiRequest extends FormRequest
         return (bool) $this->boolean('purge_data');
     }
 
+    protected function validationFailureFields(): array
+    {
+        return ['force', 'purge_data'];
+    }
+
     protected function validationMessageFor(string $field): string
     {
         return match ($field) {

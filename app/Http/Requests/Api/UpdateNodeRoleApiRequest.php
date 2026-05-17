@@ -36,6 +36,11 @@ class UpdateNodeRoleApiRequest extends FormRequest
         return is_array($settings) ? $settings : [];
     }
 
+    protected function validationFailureFields(): array
+    {
+        return ['settings'];
+    }
+
     protected function validationMessageFor(string $field): string
     {
         return match ($field) {

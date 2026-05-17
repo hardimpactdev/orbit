@@ -12,7 +12,7 @@ trait HandlesOrbitApiValidationFailure
     #[\Override]
     protected function failedValidation(ValidationContract $validator): void
     {
-        $field = (string) array_key_first($validator->errors()->messages());
+        $field = $this->validationFailureField($validator);
 
         throw new HttpResponseException(response()->json([
             'error' => [
@@ -25,8 +25,26 @@ trait HandlesOrbitApiValidationFailure
         ], 422));
     }
 
+    protected function validationFailureFields(): array
+    {
+        return [];
+    }
+
     protected function validationMessageFor(string $field): string
     {
         return 'Validation failed.';
+    }
+
+    private function validationFailureField(ValidationContract $validator): string
+    {
+        $messages = $validator->errors()->messages();
+
+        foreach ($this->validationFailureFields() as $field) {
+            if (array_key_exists($field, $messages)) {
+                return $field;
+            }
+        }
+
+        return (string) array_key_first($messages);
     }
 }
