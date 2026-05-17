@@ -31,12 +31,12 @@ class AppProductionRoleBaseline implements RoleBaseline
             throw new RuntimeException('The app-production role requires a reachable host record.');
         }
 
-        $this->convergeTools($node, ['caddy', 'php']);
+        $this->convergeTools($node, ['caddy', 'php', 'supervisor']);
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $this->removeTools($node, ['caddy', 'php']);
+        $this->removeTools($node, ['caddy', 'php', 'supervisor']);
     }
 
     protected function toolCatalog(): ToolCatalog
