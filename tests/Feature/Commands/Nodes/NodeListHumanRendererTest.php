@@ -77,7 +77,7 @@ describe('node:list human renderer contract', function (): void {
             ->and($output)->not->toContain('"error"');
     });
 
-    it('renders table with ROLE NAME ENVIRONMENT PLATFORM STATUS columns', function (): void {
+    it('renders table with ROLE ROLES NAME ENVIRONMENT PLATFORM STATUS columns', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
@@ -97,6 +97,7 @@ describe('node:list human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
 
         expect($output)->toContain('ROLE')
+            ->and($output)->toContain('ROLES')
             ->and($output)->toContain('NAME')
             ->and($output)->toContain('ENVIRONMENT')
             ->and($output)->toContain('PLATFORM')
@@ -188,6 +189,36 @@ describe('node:list human renderer contract', function (): void {
 
         expect($gatewayLine)->not->toBeNull();
         expect($gatewayLine)->toContain('—');
+    });
+
+    it('renders legacy role separately from empty composable roles', function (): void {
+        DB::table('nodes')->insert([
+            nodeListHumanRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:list');
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0);
+
+        $lines = explode("\n", $output);
+        $controlLine = null;
+
+        foreach ($lines as $line) {
+            if (str_contains($line, 'control-1')) {
+                $controlLine = $line;
+
+                break;
+            }
+        }
+
+        expect($controlLine)->not->toBeNull()
+            ->and($controlLine)->toContain('control')
+            ->and($controlLine)->toContain('—');
     });
 
     it('renders invalid filter error prose', function (): void {

@@ -81,7 +81,7 @@ describe('node:list composable roles', function (): void {
             ->and($rawOutput)->toContain('"tld":"orbit.test"');
     });
 
-    it('renders composable role assignments in the human role column', function (): void {
+    it('renders legacy role and composable roles in separate human columns', function (): void {
         $node = Node::factory()->create([
             'name' => 'host-1',
             'role' => 'app',
@@ -110,6 +110,9 @@ describe('node:list composable roles', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
+            ->and($output)->toContain('ROLE')
+            ->and($output)->toContain('ROLES')
+            ->and($output)->toContain('app')
             ->and($output)->toContain('app-development, database (error)')
             ->and($output)->toContain('host-1')
             ->and($output)->toContain('development');

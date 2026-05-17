@@ -202,8 +202,9 @@ class NodeListCommand extends Command
         }
 
         table(
-            headers: ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
+            headers: ['ROLE', 'ROLES', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
             rows: array_map(fn (array $node): array => [
+                $node['role'],
                 $this->humanRolesLabel($node),
                 $node['name'],
                 $node['environment'] ?? '—',
@@ -267,7 +268,7 @@ class NodeListCommand extends Command
         $roles = $node['roles'] ?? null;
 
         if (! is_array($roles) || $roles === []) {
-            return (string) $node['role'];
+            return '—';
         }
 
         $labels = [];
@@ -284,7 +285,7 @@ class NodeListCommand extends Command
                 : "{$role['role']} ({$status})";
         }
 
-        return $labels === [] ? (string) $node['role'] : implode(', ', $labels);
+        return $labels === [] ? '—' : implode(', ', $labels);
     }
 
     /**
