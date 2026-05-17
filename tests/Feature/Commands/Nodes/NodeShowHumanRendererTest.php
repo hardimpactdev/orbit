@@ -119,6 +119,7 @@ describe('node:show human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: app-1')
             ->and($output)->toContain('Role: app')
+            ->and($output)->not->toContain('Roles:')
             ->and($output)->toContain('Environment: development')
             ->and($output)->toContain('Platform: ubuntu_24-04')
             ->and($output)->toContain('WireGuard: 10.6.0.7')
