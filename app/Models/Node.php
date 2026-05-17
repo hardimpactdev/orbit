@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $orbit_path
  * @property string $status
  * @property-read Collection<int, NodeTool> $nodeTools
+ * @property-read Collection<int, NodeRoleAssignment> $roleAssignments
  * @property-read Collection<int, FirewallRule> $firewallRules
  * @property-read SchedulerState|null $schedulerState
  * @property-read Collection<int, Schedule> $schedules
@@ -103,6 +104,27 @@ class Node extends Model
     public function nodeTools(): HasMany
     {
         return $this->hasMany(NodeTool::class)->orderBy('name');
+    }
+
+    /**
+     * @return HasMany<NodeRoleAssignment, $this>
+     */
+    public function roleAssignments(): HasMany
+    {
+        return $this->hasMany(NodeRoleAssignment::class)->orderBy('role');
+    }
+
+    public function hasActiveRole(string $role): bool
+    {
+        if (! $this->relationLoaded('roleAssignments')) {
+            return $this->roleAssignments()
+                ->where('role', $role)
+                ->where('status', 'active')
+                ->exists();
+        }
+
+        return $this->roleAssignments
+            ->contains(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role && $assignment->status === 'active');
     }
 
     /**
