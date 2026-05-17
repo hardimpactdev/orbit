@@ -65,19 +65,9 @@ final readonly class ToolShowLiveInspector
 
 final class ToolShowLiveInspectionFailed extends RuntimeException
 {
-    public readonly string $tool;
-
-    public readonly string $node;
-
-    public readonly string $reason;
-
-    private function __construct(string $message, string $tool, string $node, string $reason, ?Throwable $previous = null)
+    private function __construct(string $message, public readonly string $tool, public readonly string $node, public readonly string $reason, ?Throwable $previous = null)
     {
         parent::__construct($message, previous: $previous);
-
-        $this->tool = $tool;
-        $this->node = $node;
-        $this->reason = $reason;
     }
 
     public static function forTool(NodeTool $tool, string $reason, string $message, ?Throwable $previous = null): self

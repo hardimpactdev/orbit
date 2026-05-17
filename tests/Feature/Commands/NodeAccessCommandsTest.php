@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -33,11 +34,12 @@ function setupNodeAccessGrantNodes(): array
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeAccessCommandRow([
+    $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
     ]));
+    assignNodeAccessCommandRole($gatewayId, 'gateway');
 
     $consumerId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'control-1',
@@ -54,6 +56,15 @@ function setupNodeAccessGrantNodes(): array
     return [$consumerId, $servingId];
 }
 
+function assignNodeAccessCommandRole(int $nodeId, string $role, string $status = 'active'): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+    ]);
+}
+
 function setupNodeAccessRevokeNodes(): array
 {
     config(['orbit.is_gateway' => true]);
@@ -64,6 +75,7 @@ function setupNodeAccessRevokeNodes(): array
         'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
+    assignNodeAccessCommandRole($gatewayId, 'gateway');
 
     $consumerId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'control-1',
@@ -139,11 +151,12 @@ describe('node access grant integration', function (): void {
     it('enforces the self-grant policy without writing access', function (): void {
         config(['orbit.is_gateway' => true]);
 
-        DB::table('nodes')->insert(nodeAccessCommandRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'environment' => null,
         ]));
+        assignNodeAccessCommandRole($gatewayId, 'gateway');
 
         DB::table('nodes')->insert(nodeAccessCommandRow([
             'name' => 'control-1',

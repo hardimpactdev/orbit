@@ -13,7 +13,7 @@ use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 
 final readonly class RemoveNode
 {
-    public const DevelopmentDnsWarningCode = 'node.role_baseline_mismatch';
+    public const string DevelopmentDnsWarningCode = 'node.role_baseline_mismatch';
 
     public function __construct(
         private DevelopmentDnsMappingEnactor $developmentDnsMappingEnactor,

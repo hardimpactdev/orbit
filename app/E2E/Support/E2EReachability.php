@@ -44,7 +44,7 @@ final readonly class E2EReachability
             ));
         }
 
-        $answers = array_filter(array_map('trim', explode("\n", $answer)));
+        $answers = array_filter(array_map(trim(...), explode("\n", $answer)));
 
         if (! in_array($expectedIp, $answers, true)) {
             throw new RuntimeException(sprintf(

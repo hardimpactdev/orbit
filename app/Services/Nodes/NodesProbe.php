@@ -302,7 +302,7 @@ final readonly class NodesProbe
             fn (NodeRoleAssignment $assignment): string => $assignment->role,
             array_filter(
                 $assignments,
-                fn (NodeRoleAssignment $assignment): bool => $this->assignmentStatusIsUnresolved($assignment),
+                $this->assignmentStatusIsUnresolved(...),
             ),
         )));
 

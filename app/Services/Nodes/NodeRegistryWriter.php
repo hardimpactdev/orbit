@@ -7,10 +7,10 @@ namespace App\Services\Nodes;
 use App\Models\Node;
 use App\Services\Dns\DnsmasqReconciler;
 
-final class NodeRegistryWriter
+final readonly class NodeRegistryWriter
 {
     public function __construct(
-        private readonly DnsmasqReconciler $dnsmasqReconciler,
+        private DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     public function writeNodeIdentity(

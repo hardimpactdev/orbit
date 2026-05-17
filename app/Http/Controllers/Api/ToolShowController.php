@@ -124,11 +124,7 @@ final class ToolShowController implements Loggable
             return $appNode;
         }
 
-        if (isset($nodeFilter)) {
-            return $nodeFilter;
-        }
-
-        return $this->validationFailed('target', '', 'A node or app filter is required.');
+        return $nodeFilter ?? $this->validationFailed('target', '', 'A node or app filter is required.');
     }
 
     /**
