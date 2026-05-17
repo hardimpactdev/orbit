@@ -41,6 +41,57 @@ describe('node role assignment service', function (): void {
             ->toBe([]);
     });
 
+    it('rejects duplicate role assignment before hitting the unique index', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'database', []))
+            ->toThrow(InvalidArgumentException::class, "Role 'database' is already assigned to node '{$node->name}'.");
+    });
+
+    it('updates legacy node shadows when roles are added and removed', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'environment' => null,
+            'tld' => null,
+            'wireguard_address' => '10.0.0.10',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']);
+
+        $node->refresh();
+
+        expect($node->role)->toBe('app')
+            ->and($node->environment)->toBe('development')
+            ->and($node->tld)->toBe('test');
+
+        app(NodeRoleAssignmentService::class)->add($node, 'database', []);
+        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-development', force: true);
+
+        $node->refresh();
+
+        expect($node->role)->toBe('database')
+            ->and($node->environment)->toBeNull()
+            ->and($node->tld)->toBeNull();
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
+
+        $node->refresh();
+
+        expect($node->role)->toBe('control')
+            ->and($node->environment)->toBeNull()
+            ->and($node->tld)->toBeNull();
+    });
+
     it('materializes docker as a desired tool for database roles', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',

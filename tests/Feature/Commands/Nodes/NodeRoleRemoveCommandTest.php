@@ -150,6 +150,43 @@ describe('node role:remove', function (): void {
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
+    it('refreshes legacy shadows so node update rejects app-only fields after removing the last app role', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'client-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'test',
+        ]);
+
+        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+
+        $removeExitCode = Artisan::call('node role:remove', [
+            'node' => 'client-1',
+            'role' => 'app-development',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $updateExitCode = Artisan::call('node:update', [
+            'name' => 'client-1',
+            '--tld' => 'new',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $node->refresh();
+
+        expect($removeExitCode)->toBe(0)
+            ->and($node->role)->toBe('control')
+            ->and($node->environment)->toBeNull()
+            ->and($node->tld)->toBeNull()
+            ->and($updateExitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node.field_role_incompatible')
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and($payload['error']['meta']['role'])->toBe('control');
+    });
+
     it('force with purge-data removes role dependents', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([

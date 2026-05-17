@@ -181,6 +181,28 @@ describe('node role:add', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
+    it('rejects duplicate role assignment with a validation error', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'db-1',
+        ]);
+
+        assignNodeRole($node, 'database');
+
+        $exitCode = Artisan::call('node role:add', [
+            'node' => 'db-1',
+            'role' => 'database',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe("Role 'database' is already assigned to node 'db-1'.")
+            ->and($node->roleAssignments()->where('role', 'database')->count())->toBe(1);
+    });
+
     it('forwards control callers to the gateway', function (): void {
         setupNodeRoleControlCaller();
 

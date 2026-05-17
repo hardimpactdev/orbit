@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles;
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -29,6 +30,10 @@ class NodeRoleAssignmentService
 
         if (! $definition->assignableByCommand) {
             throw new InvalidArgumentException("Role '{$role}' cannot be assigned through this service.");
+        }
+
+        if ($this->assignments->find($node, $role) instanceof NodeRoleAssignment) {
+            throw new InvalidArgumentException("Role '{$role}' is already assigned to node '{$node->name}'.");
         }
 
         $this->guardSupportedPlatform($node, $definition);
@@ -125,6 +130,8 @@ class NodeRoleAssignmentService
                 }
 
                 $transactionAssignment->delete();
+
+                $this->syncLegacyNodeFields($node);
             });
         } catch (InvalidArgumentException $exception) {
             throw $exception;
@@ -150,6 +157,8 @@ class NodeRoleAssignmentService
                 'converged_at' => now(),
                 'last_error' => null,
             ])->save();
+
+            $this->syncLegacyNodeFields($node);
         } catch (Throwable $throwable) {
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Error->value,
@@ -162,6 +171,46 @@ class NodeRoleAssignmentService
         $freshAssignment = $assignment->fresh();
 
         return $freshAssignment;
+    }
+
+    private function syncLegacyNodeFields(Node $node): void
+    {
+        $activeAssignments = $node->roleAssignments()
+            ->where('status', NodeRoleStatus::Active->value)
+            ->orderBy('role')
+            ->get();
+
+        $role = 'control';
+        $environment = null;
+        $tld = null;
+
+        $gateway = $activeAssignments->firstWhere('role', NodeRoleName::Gateway->value);
+        $appDevelopment = $activeAssignments->firstWhere('role', NodeRoleName::AppDevelopment->value);
+        $appProduction = $activeAssignments->firstWhere('role', NodeRoleName::AppProduction->value);
+        $database = $activeAssignments->firstWhere('role', NodeRoleName::Database->value);
+
+        if ($gateway instanceof NodeRoleAssignment) {
+            $role = NodeRoleName::Gateway->value;
+        } elseif ($appDevelopment instanceof NodeRoleAssignment) {
+            $role = 'app';
+            $environment = 'development';
+
+            $developmentTld = $appDevelopment->settings['tld'] ?? null;
+            $tld = is_string($developmentTld) ? $developmentTld : null;
+        } elseif ($appProduction instanceof NodeRoleAssignment) {
+            $role = 'app';
+            $environment = 'production';
+        } elseif ($database instanceof NodeRoleAssignment) {
+            $role = NodeRoleName::Database->value;
+        }
+
+        $node->forceFill([
+            'role' => $role,
+            'environment' => $environment,
+            'tld' => $tld,
+        ])->save();
+
+        $node->unsetRelation('roleAssignments');
     }
 
     private function guardSupportedPlatform(Node $node, NodeRoleDefinition $definition): void

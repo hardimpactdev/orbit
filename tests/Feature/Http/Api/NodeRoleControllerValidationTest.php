@@ -223,6 +223,27 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
+    it('rejects duplicate role assignment with a validation error on add', function (): void {
+        $targetId = (int) DB::table('nodes')
+            ->where('name', 'target-1')
+            ->value('id');
+
+        assignNodeRoleApiRole($targetId, 'database');
+
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'database',
+            'settings' => [],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "Role 'database' is already assigned to node 'target-1'.")
+            ->assertJsonPath('error.meta.role', 'database')
+            ->assertJsonMissingPath('success');
+
+        expect(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
+    });
+
     it('returns the orbit error envelope for invalid force on remove', function (): void {
         $response = deleteNodeRoleApiJson('/api/nodes/target-1/roles/database', [
             'force' => 'invalid',
