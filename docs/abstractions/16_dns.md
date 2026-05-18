@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing DNS
 command ports.
 
-Product behavior remains owned by `docs/commands/16_dns/**` and the top-level
+Product behavior remains owned by `docs/domains/16_dns/**` and the top-level
 product docs.
 
 ## Layer Separation
@@ -16,7 +16,7 @@ DNS in Orbit lives at two layers that must not be confused:
 - **Gateway-side DNS infrastructure** (`wg-easy` + `orbit-dns` + `dnsmasq.conf`)
   — runtime VPN-served DNS owned by the **tool family** and **bootstrap**,
   specified in
-  [`docs/commands/3_tool/dns-bootstrap-contract.md`](../commands/3_tool/dns-bootstrap-contract.md).
+  [`docs/domains/3_tool/dns-bootstrap-contract.md`](../domains/3_tool/dns-bootstrap-contract.md).
   DNS *commands* must not call into that layer. That layer must not call into
   DNS commands.
 
@@ -47,10 +47,10 @@ DNS in Orbit lives at two layers that must not be confused:
 
 ## Evidence Pointers
 
-- `docs/commands/16_dns/README.md`
-- `docs/commands/16_dns/1_dns-resolve-tld`
-- `docs/commands/16_dns/2_dns-list`
-- `docs/commands/3_tool/dns-bootstrap-contract.md` (gateway DNS layer, out of scope here)
+- `docs/domains/16_dns/README.md`
+- `docs/domains/16_dns/1_dns-resolve-tld`
+- `docs/domains/16_dns/2_dns-list`
+- `docs/domains/3_tool/dns-bootstrap-contract.md` (gateway DNS layer, out of scope here)
 - `app/Console/Commands/DnsResolveTldCommand.php`
 - `app/Console/Commands/DnsListCommand.php`
 - `app/Services/Dns/LocalResolver.php`

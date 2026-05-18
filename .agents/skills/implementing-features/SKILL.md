@@ -19,7 +19,7 @@ tests, code, and old-repo evidence consistent.
 
 ## Workflow
 
-1. Read the handoff, updated product docs, relevant `docs/commands/**`, and `AGENTS.md`.
+1. Read the handoff, updated product docs, relevant `docs/domains/**`, and `AGENTS.md`.
 2. Read relevant `../orbit-old-may/**` evidence for behavior that existed before the rebuild.
 3. Confirm owned files or domains and existing dirty work before editing.
 4. Write or update the narrowest useful Pest test first when behavior changes.

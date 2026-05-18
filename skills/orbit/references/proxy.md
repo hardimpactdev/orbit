@@ -1,6 +1,6 @@
 # Proxy Commands
 
-Manage **custom** proxy routes (Caddy site intent) — for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`docs/commands/8_proxy/`](../../../docs/commands/8_proxy/).
+Manage **custom** proxy routes (Caddy site intent) — for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`docs/domains/8_proxy/`](../../../docs/domains/8_proxy/).
 
 The `proxy` state family also covers app, workspace, gateway, and tool-owned routes — `proxy:list` shows all of them, but you can only mutate **custom** ones with `proxy:add` / `proxy:remove`. Drift in the other route kinds is repaired through `doctor --fix --family=proxy --restore`.
 

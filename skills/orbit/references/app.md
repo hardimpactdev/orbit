@@ -1,6 +1,6 @@
 # App Commands
 
-Manage Orbit apps. Apps live on app nodes; gateway and control nodes are never valid app targets. All app commands flow through the gateway. Spec: [`docs/commands/5_app/`](../../../docs/commands/5_app/).
+Manage Orbit apps. Apps live on app nodes; gateway and control nodes are never valid app targets. All app commands flow through the gateway. Spec: [`docs/domains/5_app/`](../../../docs/domains/5_app/).
 
 Development apps are served at `{name}.{node-tld}` (e.g. `myapp.beast`). Production apps are served at the configured `--domain`, which must be globally unique across the fleet.
 

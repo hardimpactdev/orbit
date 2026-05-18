@@ -283,7 +283,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     private function commandSpecificEntityFields(string $path, string $entity, string $label): array
     {
         if (
-            $path === 'docs/commands/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
+            $path === 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
             && $entity === 'app'
             && str_starts_with($label, 'success.data.apps[')
         ) {

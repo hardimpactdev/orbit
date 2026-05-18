@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing PHP
 runtime command ports.
 
-Product behavior remains owned by `docs/commands/14_php/**` and the top-level
+Product behavior remains owned by `docs/domains/14_php/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -52,10 +52,10 @@ product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/14_php/README.md`
-- `docs/commands/14_php/php-concepts.md`
-- `docs/commands/14_php/1_php-list`
-- `docs/commands/14_php/2_php-use`
+- `docs/domains/14_php/README.md`
+- `docs/domains/14_php/php-concepts.md`
+- `docs/domains/14_php/1_php-list`
+- `docs/domains/14_php/2_php-use`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Settings/PhpSettings.php`
 - Old evidence: `../orbit-old-may/app/Support/PhpVersion.php`

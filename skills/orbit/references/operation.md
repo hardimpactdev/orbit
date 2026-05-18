@@ -1,6 +1,6 @@
 # Operation Commands
 
-Cross-family or local commands. Spec: [`docs/commands/11_operation/`](../../../docs/commands/11_operation/).
+Cross-family or local commands. Spec: [`docs/domains/11_operation/`](../../../docs/domains/11_operation/).
 
 ## `orbit doctor`
 

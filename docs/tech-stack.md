@@ -1,6 +1,6 @@
 # Tech Stack
 
-This document describes the implementation behind the [Architecture](architecture.md). The architecture covers the conceptual model — what Orbit is and how the parts relate. This document covers what's actually running. Command behavior is defined in [commands/](commands/README.md); concept ownership is indexed in [Concepts](concepts.md).
+This document describes the implementation behind the [Architecture](architecture.md). The architecture covers the conceptual model — what Orbit is and how the parts relate. This document covers what's actually running. Command behavior is defined in [domains/](domains/README.md); concept ownership is indexed in [Concepts](concepts.md).
 
 The pieces fit together like this:
 

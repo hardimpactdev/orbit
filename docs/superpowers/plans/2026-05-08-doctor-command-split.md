@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the unified `orbit doctor` command with integrated verify, interactive, restore, and adopt modes as documented in `docs/commands/11_operation/3_doctor/`.
+**Goal:** Implement the unified `orbit doctor` command with integrated verify, interactive, restore, and adopt modes as documented in `docs/domains/11_operation/3_doctor/`.
 
 **Architecture:** Extend `DoctorCommand` to support `--fix`, `--restore`, and `--adopt` options. Annotate issue payloads with `restorable` / `adoptable` flags so the command can filter findings without family knowledge. Split `DoctorReportRunner` into a `probe()` step (read-only) and an `apply()` step (mutating) so interactive mode can probe first and apply per-finding choices later. Build a framed-panel human renderer matching `6.1_doctor_output-render_human.md`. Update all runtime `next_command` producers to emit `doctor --fix --family=… --restore` or `doctor --fix --family=… --adopt`.
 
@@ -560,7 +560,7 @@ Expected: PASS.
 
 ### Task 7: Build Framed Panel Human Renderer
 
-**Goal:** Replace the current line-based human renderer with the framed panel format defined in `docs/commands/11_operation/3_doctor/technical/6.1_doctor_output-render_human.md`.
+**Goal:** Replace the current line-based human renderer with the framed panel format defined in `docs/domains/11_operation/3_doctor/technical/6.1_doctor_output-render_human.md`.
 
 **Files:**
 - Modify: `app/Console/Commands/DoctorCommand.php` (rewrite `renderHuman` and supporting methods)
@@ -954,7 +954,7 @@ Expected: PASS.
 **Goal:** Replace stale documentation references to the reverted `doctor:fix` command with the unified `doctor --fix` forms, while preserving the distinction between verify, restore, and adopt behavior.
 
 **Files:**
-- Modify: `docs/commands/README.md`
+- Modify: `docs/domains/README.md`
 - Modify: every family doctor doc and command doc found by the audit below.
 - Modify: `config/librarian-command-docs/shared_options.php` and `config/librarian-command-docs/warning_codes.php` if they still register `doctor:fix` command references.
 
@@ -972,7 +972,7 @@ Expected: PASS.
 - [ ] **Step 1: Run the stale-doc audit**
 
 ```bash
-rg -n 'doctor:fix|4_doctor-fix' docs/commands config/librarian-command-docs -g '*.md' -g '*.php'
+rg -n 'doctor:fix|4_doctor-fix' docs/domains config/librarian-command-docs -g '*.md' -g '*.php'
 ```
 
 Expected before implementation: matches exist in family doctor docs and registry files.
@@ -984,7 +984,7 @@ Use the migration table above. Preserve existing family, node, app, and workspac
 - [ ] **Step 3: Run command-doc lint**
 
 ```bash
-composer docs-lint -- --path=docs/commands
+composer docs-lint -- --path=docs/domains
 ```
 
 Expected: PASS.
@@ -992,7 +992,7 @@ Expected: PASS.
 - [ ] **Step 4: Verify stale references are gone**
 
 ```bash
-rg -n 'doctor:fix|4_doctor-fix' docs/commands config/librarian-command-docs -g '*.md' -g '*.php'
+rg -n 'doctor:fix|4_doctor-fix' docs/domains config/librarian-command-docs -g '*.md' -g '*.php'
 ```
 
 Expected: no output.
@@ -1129,7 +1129,7 @@ php artisan test --compact tests/Feature/Commands/Operations tests/Feature/Http/
 - [ ] **Step 3: Lint docs**
 
 ```bash
-composer docs-lint -- --path=docs/commands/11_operation/3_doctor
+composer docs-lint -- --path=docs/domains/11_operation/3_doctor
 ```
 
 - [ ] **Step 4: Run full quality check**
@@ -1143,7 +1143,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app tests routes docs/commands/11_operation docs/superpowers/plans/2026-05-08-doctor-command-split.md
+git add app tests routes docs/domains/11_operation docs/superpowers/plans/2026-05-08-doctor-command-split.md
 git commit -m "feat: implement unified doctor command with fix modes"
 ```
 

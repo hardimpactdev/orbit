@@ -58,6 +58,10 @@ use HardImpact\Librarian\Linting\Rules\TableProseComplexityRule;
 return [
     'path' => base_path('docs'),
 
+    'generated_docs' => [
+        'enforce' => false,
+    ],
+
     'rules' => [
         ConvertedFamilyStructureRule::class,
         CommandDirectoryStructureRule::class,

@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing proxy
 command ports.
 
-Product behavior remains owned by `docs/commands/8_proxy/**` and the top-level
+Product behavior remains owned by `docs/domains/8_proxy/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -67,7 +67,7 @@ config arrays into renderers.
   local database state and the gateway-owned `RemoteShell` edge for node-side
   enactment.
 - Human/JSON output should use the proxy route JSON entity from
-  `docs/commands/8_proxy/README.md`.
+  `docs/domains/8_proxy/README.md`.
 
 ## Backend Rendering Pattern
 
@@ -98,12 +98,12 @@ config arrays into renderers.
 
 ## Evidence Pointers
 
-- `docs/commands/8_proxy/README.md`
-- `docs/commands/8_proxy/proxy-concepts.md`
-- `docs/commands/8_proxy/proxy-doctor.md`
-- `docs/commands/8_proxy/1_proxy-list`
-- `docs/commands/8_proxy/2_proxy-add`
-- `docs/commands/8_proxy/3_proxy-remove`
+- `docs/domains/8_proxy/README.md`
+- `docs/domains/8_proxy/proxy-concepts.md`
+- `docs/domains/8_proxy/proxy-doctor.md`
+- `docs/domains/8_proxy/1_proxy-list`
+- `docs/domains/8_proxy/2_proxy-add`
+- `docs/domains/8_proxy/3_proxy-remove`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Services/ProxyRoutes/ProxyRouteProbe.php`
 - Old evidence: `../orbit-old-may/app/Services/ProxyRoutes/ProxyRouteRenderer.php`

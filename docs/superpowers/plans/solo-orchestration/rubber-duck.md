@@ -9,7 +9,7 @@ You are one rubber duck in a two-agent blocker review.
    - the blocked todo and comments
    - the blocker comment named by the orchestrator
    - product docs named by the todo
-   - relevant `docs/commands/**` authoritive on how features need to work
+   - relevant `docs/domains/**` authoritive on how features need to work
    - `docs/porting/PORTING.md`
    - relevant `../orbit-old-may` evidence
    - current code/tests touching the blocker.

@@ -18,7 +18,7 @@ Orbit's current product contract lives in this repo:
 - `docs/mission.md`
 - `docs/concepts.md`
 - `docs/tech-stack.md`
-- `docs/commands/**`
+- `docs/domains/**`
 
 Use `../orbit-old-may` for historical implementation and pre-clean-rebuild
 context. Do not copy old behavior blindly. When current code and old repo

@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing
 Agent IDE command ports.
 
-Product behavior remains owned by `docs/commands/15_agent-ide/**` and the
+Product behavior remains owned by `docs/domains/15_agent-ide/**` and the
 top-level product docs.
 
 ## Domain Constraints
@@ -135,11 +135,11 @@ top-level product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/15_agent-ide/README.md`
-- `docs/commands/15_agent-ide/agent-ide-concepts.md`
-- `docs/commands/15_agent-ide/1_agent-ide-message`
-- `docs/commands/1_node/10_node-agent-ide`
-- `docs/commands/5_app/9_app-agent-ide`
+- `docs/domains/15_agent-ide/README.md`
+- `docs/domains/15_agent-ide/agent-ide-concepts.md`
+- `docs/domains/15_agent-ide/1_agent-ide-message`
+- `docs/domains/1_node/10_node-agent-ide`
+- `docs/domains/5_app/9_app-agent-ide`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Contracts/AgentIdeAdapterRegistry.php`
 - Old evidence: `../orbit-old-may/app/Services/AgentIde/CoreAgentIdeAdapterRegistry.php`

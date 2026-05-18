@@ -1,6 +1,6 @@
 # Process Commands
 
-Long-running app-owned processes (queue workers, websocket servers, vite dev server, …). Each process definition renders as one Supervisor program per app/workspace target. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`. Spec: [`docs/commands/7_process/`](../../../docs/commands/7_process/).
+Long-running app-owned processes (queue workers, websocket servers, vite dev server, …). Each process definition renders as one Supervisor program per app/workspace target. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`. Spec: [`docs/domains/7_process/`](../../../docs/domains/7_process/).
 
 ## `orbit process:add [name] [command]`
 

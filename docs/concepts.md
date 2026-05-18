@@ -20,15 +20,15 @@ owning family concept document.
 - **Node access grant** — gateway-stored permission that lets one node operate on another after WireGuard identity is authenticated. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Operator node** — any joined node acting through gateway-known WireGuard identity plus grants. It is a capability term, not a hosted role, and can coexist with hosted roles. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
-- **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](commands/7_process/process-concepts.md).
-- **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](commands/7_process/process-concepts.md).
-- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway and on hosted nodes with local schedules under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch, overlap policy, run history, and heartbeat. See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
+- **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway and on hosted nodes with local schedules under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch, overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager that keeps Supervisor alive. systemd on Ubuntu. Not Orbit's process manager.
 - **RemoteShell** — gateway-to-hosted-node execution primitive. See [Tech Stack: Gateway To Hosted Node](tech-stack.md#gateway-to-hosted-node).
 - **CLI caller** — an Orbit CLI invocation from a joined client, hosted node, or the gateway host. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
-- **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](commands/README.md).
+- **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
 
 ## Product Families
 
@@ -47,13 +47,14 @@ See [Architecture: State Families](architecture.md#state-families).
 
 ## Node Concepts
 
-Source: [Node Concepts](commands/1_node/node-concepts.md).
+Source: [Node Concepts](domains/1_node/node-concepts.md).
 
-<!-- concept-index:commands/1_node/node-concepts.md -->
+<!-- concept-index:domains/1_node/node-concepts.md -->
 - **Node**
 - **Gateway**
 - **Joined client**
 - **Hosted node**
+- **Operator node**
 - **Hosted role**
 - **Role assignment**
 - **Hosted role settings**
@@ -77,9 +78,9 @@ Source: [Node Concepts](commands/1_node/node-concepts.md).
 
 ## Gateway Concepts
 
-Source: [Gateway Concepts](commands/2_gateway/gateway-concepts.md).
+Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 
-<!-- concept-index:commands/2_gateway/gateway-concepts.md -->
+<!-- concept-index:domains/2_gateway/gateway-concepts.md -->
 - **Gateway command domain**
 - **Gateway relationship**
 - **Configured gateway endpoint**
@@ -100,9 +101,9 @@ Source: [Gateway Concepts](commands/2_gateway/gateway-concepts.md).
 
 ## App Concepts
 
-Source: [App Concepts](commands/5_app/app-concepts.md).
+Source: [App Concepts](domains/5_app/app-concepts.md).
 
-<!-- concept-index:commands/5_app/app-concepts.md -->
+<!-- concept-index:domains/5_app/app-concepts.md -->
 - **App**
 - **App identity slug**
 - **App name argument**
@@ -121,9 +122,9 @@ Source: [App Concepts](commands/5_app/app-concepts.md).
 
 ## Workspace Concepts
 
-Source: [Workspace Concepts](commands/6_workspace/workspace-concepts.md).
+Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 
-<!-- concept-index:commands/6_workspace/workspace-concepts.md -->
+<!-- concept-index:domains/6_workspace/workspace-concepts.md -->
 - **Workspace**
 - **Workspace identity slug**
 - **Workspace hostname**
@@ -142,9 +143,9 @@ Source: [Workspace Concepts](commands/6_workspace/workspace-concepts.md).
 
 ## Process Concepts
 
-Source: [Process Concepts](commands/7_process/process-concepts.md).
+Source: [Process Concepts](domains/7_process/process-concepts.md).
 
-<!-- concept-index:commands/7_process/process-concepts.md -->
+<!-- concept-index:domains/7_process/process-concepts.md -->
 - **Process definition**
 - **Process identity slug**
 - **Process order**
@@ -162,9 +163,9 @@ Source: [Process Concepts](commands/7_process/process-concepts.md).
 
 ## Proxy Concepts
 
-Source: [Proxy Concepts](commands/8_proxy/proxy-concepts.md).
+Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 
-<!-- concept-index:commands/8_proxy/proxy-concepts.md -->
+<!-- concept-index:domains/8_proxy/proxy-concepts.md -->
 - **Proxy route**
 - **Route owner**
 - **Route kind**
@@ -186,9 +187,9 @@ Source: [Proxy Concepts](commands/8_proxy/proxy-concepts.md).
 
 ## Schedule Concepts
 
-Source: [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
+Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 
-<!-- concept-index:commands/9_schedule/schedule-concepts.md -->
+<!-- concept-index:domains/9_schedule/schedule-concepts.md -->
 - **Schedule**
 - **Schedule scope**
 - **App-scoped schedule**
@@ -207,9 +208,9 @@ Source: [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
 
 ## Deploy Concepts
 
-Source: [Deploy Concepts](commands/10_deploy/deploy-concepts.md).
+Source: [Deploy Concepts](domains/10_deploy/deploy-concepts.md).
 
-<!-- concept-index:commands/10_deploy/deploy-concepts.md -->
+<!-- concept-index:domains/10_deploy/deploy-concepts.md -->
 - **Deploy command domain**
 - **Production app deployment**
 - **Deployment policy**
@@ -234,9 +235,9 @@ Source: [Deploy Concepts](commands/10_deploy/deploy-concepts.md).
 
 ## Operation Concepts
 
-Source: [Operation Concepts](commands/11_operation/operation-concepts.md).
+Source: [Operation Concepts](domains/11_operation/operation-concepts.md).
 
-<!-- concept-index:commands/11_operation/operation-concepts.md -->
+<!-- concept-index:domains/11_operation/operation-concepts.md -->
 - **Operation command domain**
 - **Cross-family workflow**
 - **Local operation command**
@@ -267,9 +268,9 @@ Source: [Operation Concepts](commands/11_operation/operation-concepts.md).
 
 ## Cloudflare Concepts
 
-Source: [Cloudflare Concepts](commands/12_cf/cf-concepts.md).
+Source: [Cloudflare Concepts](domains/12_cf/cf-concepts.md).
 
-<!-- concept-index:commands/12_cf/cf-concepts.md -->
+<!-- concept-index:domains/12_cf/cf-concepts.md -->
 - **Cloudflare command domain**
 - **Cloudflare provider integration**
 - **Provider administration**
@@ -294,9 +295,9 @@ Source: [Cloudflare Concepts](commands/12_cf/cf-concepts.md).
 
 ## VPN Concepts
 
-Source: [VPN Concepts](commands/13_vpn/vpn-concepts.md).
+Source: [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 
-<!-- concept-index:commands/13_vpn/vpn-concepts.md -->
+<!-- concept-index:domains/13_vpn/vpn-concepts.md -->
 - **VPN command domain**
 - **Gateway-local VPN administration**
 - **Gateway-local execution path**
@@ -319,9 +320,9 @@ Source: [VPN Concepts](commands/13_vpn/vpn-concepts.md).
 
 ## PHP Concepts
 
-Source: [PHP Concepts](commands/14_php/php-concepts.md).
+Source: [PHP Concepts](domains/14_php/php-concepts.md).
 
-<!-- concept-index:commands/14_php/php-concepts.md -->
+<!-- concept-index:domains/14_php/php-concepts.md -->
 - **PHP runtime command domain**
 - **PHP runtime selection**
 - **Supported PHP version set**
@@ -343,9 +344,9 @@ Source: [PHP Concepts](commands/14_php/php-concepts.md).
 
 ## Tool Concepts
 
-Source: [Tool Concepts](commands/3_tool/tool-concepts.md).
+Source: [Tool Concepts](domains/3_tool/tool-concepts.md).
 
-<!-- concept-index:commands/3_tool/tool-concepts.md -->
+<!-- concept-index:domains/3_tool/tool-concepts.md -->
 - **Tool**
 - **Tool catalog**
 - **Tool definition**
@@ -363,9 +364,9 @@ Source: [Tool Concepts](commands/3_tool/tool-concepts.md).
 
 ## Firewall Concepts
 
-Source: [Firewall Concepts](commands/4_firewall/firewall-concepts.md).
+Source: [Firewall Concepts](domains/4_firewall/firewall-concepts.md).
 
-<!-- concept-index:commands/4_firewall/firewall-concepts.md -->
+<!-- concept-index:domains/4_firewall/firewall-concepts.md -->
 - **Firewall rule**
 - **Rule name**
 - **Direction**
@@ -382,9 +383,9 @@ Source: [Firewall Concepts](commands/4_firewall/firewall-concepts.md).
 
 ## Agent IDE Concepts
 
-Source: [Agent IDE Concepts](commands/15_agent-ide/agent-ide-concepts.md).
+Source: [Agent IDE Concepts](domains/15_agent-ide/agent-ide-concepts.md).
 
-<!-- concept-index:commands/15_agent-ide/agent-ide-concepts.md -->
+<!-- concept-index:domains/15_agent-ide/agent-ide-concepts.md -->
 - **Agent IDE integration**
 - **Agent IDE adapter**
 - **Agent IDE adapter registry**
@@ -404,9 +405,9 @@ Source: [Agent IDE Concepts](commands/15_agent-ide/agent-ide-concepts.md).
 
 ## DNS Concepts
 
-Source: [DNS Concepts](commands/16_dns/dns-concepts.md).
+Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
 
-<!-- concept-index:commands/16_dns/dns-concepts.md -->
+<!-- concept-index:domains/16_dns/dns-concepts.md -->
 - **DNS command domain**
 - **Caller-local DNS administration**
 - **Caller-local resolver override**
@@ -429,9 +430,9 @@ Source: [DNS Concepts](commands/16_dns/dns-concepts.md).
 
 ## Activity Concepts
 
-Source: [Activity Concepts](commands/17_activity/activity-concepts.md).
+Source: [Activity Concepts](domains/17_activity/activity-concepts.md).
 
-<!-- concept-index:commands/17_activity/activity-concepts.md -->
+<!-- concept-index:domains/17_activity/activity-concepts.md -->
 - **Activity command domain**
 - **Gateway activity history**
 - **Activity entry**

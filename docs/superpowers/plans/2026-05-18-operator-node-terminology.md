@@ -29,7 +29,7 @@ This plan is intentionally added on `main` so it does not contaminate the dirty 
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `docs/BUILDING-BLOCKS.md`
 - Modify: `docs/CONCEPTS.md`
-- Modify: `docs/commands/**`
+- Modify: `docs/domains/**`
 - Modify: `docs/abstractions/**`
 - Modify: `docs/superpowers/specs/**` only where active specs are still used by current E2E work.
 

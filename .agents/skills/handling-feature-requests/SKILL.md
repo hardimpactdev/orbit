@@ -20,7 +20,7 @@ documentation and implementation work through Solo MCP.
    - `docs/architecture.md`
    - `docs/tech-stack.md`
    - `docs/concepts.md`
-   - relevant `docs/commands/**`
+   - relevant `docs/domains/**`
    - relevant `docs/superpowers/**`
 4. Check `../orbit-old-may` for prior behavior when the request touches behavior Orbit may already have solved.
 5. Flag missing or contradictory docs before implementation and record unresolved decisions explicitly.
@@ -130,7 +130,7 @@ Required context:
 - `docs/architecture.md`
 - `docs/tech-stack.md`
 - `docs/concepts.md`
-- relevant `docs/commands/**`
+- relevant `docs/domains/**`
 - relevant `docs/superpowers/**`
 - relevant `../orbit-old-may/**` evidence
 
@@ -150,7 +150,7 @@ Task:
 Required context:
 - `AGENTS.md`
 - updated product docs named in the handoff
-- relevant `docs/commands/**`
+- relevant `docs/domains/**`
 - relevant `../orbit-old-may/**` evidence
 - current code and tests in owned scope
 

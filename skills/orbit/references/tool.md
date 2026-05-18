@@ -1,6 +1,6 @@
 # Tool Commands
 
-Generic surface for installable and observational node tools. The catalog is fixed and lives in [`docs/commands/3_tool/catalog/`](../../../docs/commands/3_tool/catalog/).
+Generic surface for installable and observational node tools. The catalog is fixed and lives in [`docs/domains/3_tool/catalog/`](../../../docs/domains/3_tool/catalog/).
 
 ## Catalog
 

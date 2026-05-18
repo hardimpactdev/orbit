@@ -244,18 +244,18 @@ Audit on 2026-05-16. 12 of 14 measures absent or partial.
 - Update `docs/abstractions/4_firewall.md`:
   - Add `owner`, `protected`, `address_family`, `interface` to the schema.
   - Add: "User-facing `firewall:*` commands cannot mutate rules with `owner != 'user'`. Mutation flows through `orbit doctor --family=security --fix` or operator re-bake."
-- Update `docs/commands/11_operation/3_doctor/`:
+- Update `docs/domains/11_operation/3_doctor/`:
   - Document `security` family + per-key adopt map.
   - Document `--key` and `--dry-run` flags.
   - Add: "`tool:*` and `firewall:*` families can report node-security-owned state but cannot mutate it."
   - Update JSON contract at `technical/6.2_doctor_output-render_json.md` and human render at `6.1_doctor_output-render_human.md`.
-- Update `docs/commands/1_node/1_node-new/node-new.md`:
+- Update `docs/domains/1_node/1_node-new/node-new.md`:
   - Replace line 141 with: "node:new configures node-owned security policy by default (see `docs/abstractions/17_security.md`). It does not configure tools, user-facing firewall rules, apps, or workspaces."
   - Document `--host-key-fingerprint`.
   - Reframe `--user` as the **bootstrap** SSH user; `nodes.user` is always `'orbit'` after bake. Mark non-`orbit` values as deprecated.
   - Document `'provisioning'` as a transient bake-time `Node.status`; failed provisioning deletes the row.
 - Update `docs/tech-stack.md` — SSH transport identity, sudoers wrappers, canonical `orbit` user, provisioning lifecycle.
-- Update `docs/commands/README.md:160` — add `security` to the family list.
+- Update `docs/domains/README.md:160` — add `security` to the family list.
 - Create `docs/working/2026-05-16-existing-app-node-security-migration.md` — operator checklist for the deployed fleet.
 
 ---
@@ -269,7 +269,7 @@ Audit on 2026-05-16. 12 of 14 measures absent or partial.
 - [ ] **Task 0c.** Migration `owner` + `protected` on `firewall_rules`. Invariant enforced in model.
 - [ ] **Task 0d.** Migration documenting `'provisioning'` as a valid `Node.status` value.
 - [ ] **Task 0e.** `app/Services/Security/` namespace + `SecurityInstaller` interface.
-- [ ] **Task 0f.** Register `security` in `DoctorReportRunner::SUPPORTED_FAMILIES` and `APP_CATEGORIES`. Update `docs/commands/README.md` and the doctor JSON/human output specs.
+- [ ] **Task 0f.** Register `security` in `DoctorReportRunner::SUPPORTED_FAMILIES` and `APP_CATEGORIES`. Update `docs/domains/README.md` and the doctor JSON/human output specs.
 - [ ] **Task 0g.** **Doctor `--key` and `--dry-run` contract** — extends `DoctorCommand`, `DoctorReportRunner::run`/`probe`, Saloon API shapes, JSON+human render docs, Pest tests.
 - [ ] **Task 0h.** **`SshCommandBuilder` refactor** — introduce builder; consolidate all 7+ SSH call sites; default to `accept-new` to preserve fleet behavior.
 - [ ] **Task 0i.** **Env-caller audit doc** — `docs/working/2026-05-17-remoteshell-env-callers.md` lists every current env caller across `SshRemoteShell::run`, `SshRemoteShellStream::stream`, `StartsRemoteShellProcesses::start`, classifies each as `non-secret` (target `withMetadata`) or `secret` (target `RemoteSecretFile`), and identifies any that don't fit and need code change. Doc-only delivery; no code change. Drives Tasks 2a and 2b.

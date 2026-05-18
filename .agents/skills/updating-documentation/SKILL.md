@@ -19,7 +19,7 @@ legacy evidence, and implementation handoff needs aligned before code changes.
    - `docs/architecture.md`
    - `docs/tech-stack.md`
    - `docs/concepts.md`
-   - relevant `docs/commands/**`
+   - relevant `docs/domains/**`
    - relevant `docs/superpowers/**`
 3. Read relevant `../orbit-old-may/**` evidence when the behavior may already have existed.
 4. Keep this pass focused on documentation; PHP and JavaScript implementation belongs to a separate implementation pass.

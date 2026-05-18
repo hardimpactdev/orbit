@@ -6,11 +6,11 @@ future implementation and tests can follow without guessing.
 
 ## Directory Shape
 
-Use the [`node:new`](../../../../docs/commands/1_node/1_node-new/) shape for
+Use the [`node:new`](../../../../docs/domains/1_node/1_node-new/) shape for
 commands with non-trivial behavior:
 
 ```text
-docs/commands/N_family-singular/
+docs/domains/N_family-singular/
 ├── README.md
 ├── N_command-name/
 │   ├── command-name.md
@@ -165,7 +165,7 @@ same domain, copy that wording instead of creating a fresh local formulation.
 ## Caller Role Matrix
 
 Commands with node-topology behavior should use the shared node caller-role
-vocabulary from `docs/commands/1_node/README.md`: `control`, `gateway`, `app`,
+vocabulary from `docs/domains/1_node/README.md`: `control`, `gateway`, `app`,
 and `unknown`.
 
 The canonical contract may summarize the caller-role matrix, but role-specific

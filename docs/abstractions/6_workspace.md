@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing
 workspace command ports.
 
-Product behavior remains owned by `docs/commands/6_workspace/**` and the
+Product behavior remains owned by `docs/domains/6_workspace/**` and the
 top-level product docs.
 
 ## Domain Constraints
@@ -80,7 +80,7 @@ workspace names directly and should not reintroduce removed `branch` or
   PHP version first, then the parent app PHP version.
 - `Workspace` should expose canonical entity data through a small formatter or
   method only when a command needs it; keep the canonical JSON entity aligned
-  with `docs/commands/6_workspace/README.md#workspace-json-entity`.
+  with `docs/domains/6_workspace/README.md#workspace-json-entity`.
 - `WorkspaceStep` belongs to `App`, casts `phase`, and owns ordered insertion
   and compaction helpers for setup/teardown policy commands.
 - `WorkspaceRun` belongs to `Workspace`, has many ordered run steps, and casts
@@ -120,13 +120,13 @@ workspace names directly and should not reintroduce removed `branch` or
 
 ## Evidence Pointers
 
-- `docs/commands/6_workspace/README.md`
-- `docs/commands/6_workspace/workspace-concepts.md`
-- `docs/commands/6_workspace/workspace-doctor.md`
-- `docs/commands/6_workspace/1_workspace-new`
-- `docs/commands/6_workspace/3_workspace-list`
-- `docs/commands/6_workspace/4_workspace-show`
-- `docs/commands/6_workspace/5_workspace-remove`
+- `docs/domains/6_workspace/README.md`
+- `docs/domains/6_workspace/workspace-concepts.md`
+- `docs/domains/6_workspace/workspace-doctor.md`
+- `docs/domains/6_workspace/1_workspace-new`
+- `docs/domains/6_workspace/3_workspace-list`
+- `docs/domains/6_workspace/4_workspace-show`
+- `docs/domains/6_workspace/5_workspace-remove`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Models/Workspace.php`
 - Old evidence: `../orbit-old-may/app/Models/WorkspaceStep.php`

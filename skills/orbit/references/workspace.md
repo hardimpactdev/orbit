@@ -1,6 +1,6 @@
 # Workspace Commands
 
-Workspaces are isolated working copies of an app for parallel development (per branch, per agent, per task). Each workspace gets its own Caddy vhost (`{workspace}.{app}.{tld}`), PHP-FPM pool, and certificate. Spec: [`docs/commands/6_workspace/`](../../../docs/commands/6_workspace/).
+Workspaces are isolated working copies of an app for parallel development (per branch, per agent, per task). Each workspace gets its own Caddy vhost (`{workspace}.{app}.{tld}`), PHP-FPM pool, and certificate. Spec: [`docs/domains/6_workspace/`](../../../docs/domains/6_workspace/).
 
 ## `orbit workspace:new [name]`
 

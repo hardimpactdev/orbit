@@ -225,7 +225,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
 
     // Every role gets a backgrounded copy with a captured pid.
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        expect($script)->toContain("incus copy 'orbit-template-{$role}/clean-control-gateway-dev-prod' 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain("incus copy 'orbit-template-{$role}/clean-operator-gateway-appdev-appprod' 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
         expect($script)->toContain("incus config device override 'orbit-e2e-runX-{$role}' eth0 hwaddr=");
@@ -236,7 +236,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
     $firstStartPos = strpos($script, 'incus start');
     $firstIdentityPos = strpos($script, 'incus config device override');
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        $copyPos = strpos($script, "incus copy 'orbit-template-{$role}/clean-control-gateway-dev-prod'");
+        $copyPos = strpos($script, "incus copy 'orbit-template-{$role}/clean-operator-gateway-appdev-appprod'");
         expect($copyPos)->toBeLessThan($firstStartPos);
     }
 
@@ -254,8 +254,8 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
     );
 
-    expect($script)->toContain("incus copy 'orbit-template-control/clean-control-gateway' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
-        ->and($script)->toContain("incus copy 'orbit-template-gateway/clean-control-gateway' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+    expect($script)->toContain("incus copy 'orbit-template-control/clean-operator-gateway' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
+        ->and($script)->toContain("incus copy 'orbit-template-gateway/clean-operator-gateway' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
 it('does not use synthetic provider-interface routes for prepared gateway clones', function (): void {

@@ -1,6 +1,6 @@
 # Activity Commands
 
-Gateway-owned activity history. Records every CLI/API command's type, effect, subject, causer, and correlation id so you can trace who did what. Spec: [`docs/commands/17_activity/`](../../../docs/commands/17_activity/).
+Gateway-owned activity history. Records every CLI/API command's type, effect, subject, causer, and correlation id so you can trace who did what. Spec: [`docs/domains/17_activity/`](../../../docs/domains/17_activity/).
 
 Activity is **history**, not metrics and not live state. Use `doctor` for live state.
 

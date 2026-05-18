@@ -1,6 +1,6 @@
 # Local DNS Commands
 
-Caller-local Orbit DNS resolver overrides. Used on a control node so wildcard development hostnames under a TLD resolve to the development app node's WireGuard address. Spec: [`docs/commands/16_dns/`](../../../docs/commands/16_dns/).
+Caller-local Orbit DNS resolver overrides. Used on a control node so wildcard development hostnames under a TLD resolve to the development app node's WireGuard address. Spec: [`docs/domains/16_dns/`](../../../docs/domains/16_dns/).
 
 Public DNS for production apps is **not** managed here — Orbit uses Cloudflare integration (when configured) for that.
 

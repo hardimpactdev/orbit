@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing app
 command ports.
 
-Product behavior remains owned by `docs/commands/5_app/**` and the top-level
+Product behavior remains owned by `docs/domains/5_app/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -76,11 +76,11 @@ product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/5_app/README.md`
-- `docs/commands/5_app/app-concepts.md`
-- `docs/commands/5_app/app-doctor.md`
-- `docs/commands/5_app/3_app-list`
-- `docs/commands/5_app/4_app-show`
+- `docs/domains/5_app/README.md`
+- `docs/domains/5_app/app-concepts.md`
+- `docs/domains/5_app/app-doctor.md`
+- `docs/domains/5_app/3_app-list`
+- `docs/domains/5_app/4_app-show`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Models/App.php`
 - Old evidence: `../orbit-old-may/app/Actions/Apps/ListApps.php`

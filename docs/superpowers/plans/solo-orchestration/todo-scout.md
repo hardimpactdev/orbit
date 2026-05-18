@@ -13,7 +13,7 @@ You are the one-shot scout for exactly one draft Solo todo.
    - the assigned todo and comments
    - `docs/porting/PORTING.md`
    - product docs named by the todo
-   - relevant `docs/commands/**`
+   - relevant `docs/domains/**`
    - relevant `../orbit-old-may` evidence
    - nearby open/completed todos and active related processes.
 

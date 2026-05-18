@@ -30,7 +30,7 @@ it('reports command docs lint severities in agent format', function (): void {
     expect($composer['scripts']['docs-lint'])
         ->toContain('artisan librarian:lint')
         ->toContain('--format=agent')
-        ->toContain('--path=docs/commands')
+        ->toContain('--path=docs/domains')
         ->not->toContain('--strict');
 });
 

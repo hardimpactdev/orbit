@@ -3,7 +3,7 @@
 One-time cleanup steps for the already-deployed gateway after the gateway DNS
 provisioning plan has landed (see
 `docs/superpowers/plans/2026-05-16-gateway-dns-provisioning.md` and
-`docs/commands/3_tool/dns-bootstrap-contract.md`).
+`docs/domains/3_tool/dns-bootstrap-contract.md`).
 
 These steps remove the hand-rolled `/opt/vpn-stack/` compose, the
 `sync-tlds.sh` cron, and let Orbit re-converge the DNS layer through the

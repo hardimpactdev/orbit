@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing
 firewall command ports.
 
-Product behavior remains owned by `docs/commands/4_firewall/**` and the
+Product behavior remains owned by `docs/domains/4_firewall/**` and the
 top-level product docs.
 
 ## Domain Constraints
@@ -45,7 +45,7 @@ top-level product docs.
   - `source_hash`
 
 `FirewallRule` belongs to `Node`. Command and API code should expose the JSON
-entity from `docs/commands/4_firewall/README.md`; old implementation names such
+entity from `docs/domains/4_firewall/README.md`; old implementation names such
 as `destination_port` and `comment` are evidence, not the public contract for
 the rebuilt codebase.
 
@@ -85,7 +85,7 @@ shown directly to users.
   firewall-family warnings and repaired by doctor once fix handlers are
   available.
 - Human and JSON output should use the firewall rule JSON entity from
-  `docs/commands/4_firewall/README.md`.
+  `docs/domains/4_firewall/README.md`.
 
 ## Backend Rendering Pattern
 
@@ -121,12 +121,12 @@ shown directly to users.
 
 ## Evidence Pointers
 
-- `docs/commands/4_firewall/README.md`
-- `docs/commands/4_firewall/firewall-doctor.md`
-- `docs/commands/4_firewall/1_firewall-list`
-- `docs/commands/4_firewall/2_firewall-allow`
-- `docs/commands/4_firewall/3_firewall-deny`
-- `docs/commands/4_firewall/4_firewall-remove`
+- `docs/domains/4_firewall/README.md`
+- `docs/domains/4_firewall/firewall-doctor.md`
+- `docs/domains/4_firewall/1_firewall-list`
+- `docs/domains/4_firewall/2_firewall-allow`
+- `docs/domains/4_firewall/3_firewall-deny`
+- `docs/domains/4_firewall/4_firewall-remove`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Console/Commands/FirewallListCommand.php`
 - Old evidence: `../orbit-old-may/app/Console/Commands/FirewallAllowCommand.php`

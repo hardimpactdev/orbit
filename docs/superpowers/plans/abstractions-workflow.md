@@ -2,12 +2,12 @@
 
 ## Current Repo Findings
 
-`docs/commands/**` has already been structurally converted for all legacy
+`docs/domains/**` has already been structurally converted for all legacy
 families. The remaining risk is implementation divergence: solo workers can port
 commands one at a time and miss proven shapes from already-implemented node,
 gateway, operation, DNS, and Gateway API slices.
 
-`docs/commands/README.md` already owns the product command-documentation
+`docs/domains/README.md` already owns the product command-documentation
 contract: caller-role slots, input-mode boundaries, renderer contracts, shared
 JSON failure vocabulary, and progress-tree rules. The abstractions workflow
 should not duplicate those product rules. It should be an implementation-pattern
@@ -51,7 +51,7 @@ Add `docs/abstractions/` as a small implementation-pattern index that:
   starts.
 
 These docs are not product authority. Product behavior remains in
-`docs/commands/**`, `docs/architecture.md`, `docs/mission.md`,
+`docs/domains/**`, `docs/architecture.md`, `docs/mission.md`,
 `docs/concepts.md`, and `docs/tech-stack.md`.
 
 ## Approaches Considered
@@ -80,7 +80,7 @@ docs/abstractions/
   11_operation.md   - operation-domain implementation constraints
 ```
 
-Per-family files use the same numeric prefix as `docs/commands/<n>_<family>`,
+Per-family files use the same numeric prefix as `docs/domains/<n>_<family>`,
 for example `5_app.md`, `6_workspace.md`, and `7_process.md`. Add new family
 files just before implementation begins for that family, not merely because
 command docs were converted.
@@ -94,7 +94,7 @@ Seed `cross-cutting.md` with terse entries. Each entry must include:
 - current implementation pointers;
 - invariants workers must preserve;
 - explicit "not a product contract" reminder when the behavior is already
-  owned by `docs/commands/**`.
+  owned by `docs/domains/**`.
 
 Initial cross-cutting candidates:
 
@@ -132,7 +132,7 @@ Invariants:
 
 Pointers:
 
-- `docs/commands/README.md`
+- `docs/domains/README.md`
 - `tests/Feature/Commands/Nodes/*HumanRendererTest.php`
 - `tests/Feature/Commands/Nodes/*JsonRendererTest.php`
 - `tests/Feature/Commands/Gateway/*HumanRendererTest.php`
@@ -145,7 +145,7 @@ Pointers:
 Invariants:
 
 - Do not restate renderer product rules in abstractions docs; link to
-  `docs/commands/README.md`.
+  `docs/domains/README.md`.
 - Implementation tests should mirror the command-doc `6.1` human renderer and
   `6.2` JSON renderer ownership when those files exist.
 - Human and JSON paths must be tested independently when behavior differs.
@@ -155,7 +155,7 @@ Invariants:
 
 Pointers:
 
-- `docs/commands/1_node/README.md`
+- `docs/domains/1_node/README.md`
 - `app/Console/Commands/GatewayAddCommand.php`
 - `app/Console/Commands/NodeNewCommand.php`
 - `app/Console/Commands/NodeGrantCommand.php`
@@ -185,7 +185,7 @@ Pointers:
 - `docs/mission.md`
 - `docs/architecture.md`
 - `docs/tech-stack.md`
-- `docs/commands/1_node/README.md`
+- `docs/domains/1_node/README.md`
 - `docs/porting/PORTING.md`
 
 Decision matrix:
@@ -258,7 +258,7 @@ Capture node-specific constraints beyond the cross-cutting entries:
 
 Evidence pointers:
 
-- `docs/commands/1_node/README.md`
+- `docs/domains/1_node/README.md`
 - `app/Models/Node.php`
 - `app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php`
 - `app/Console/Commands/NodeNewCommand.php`
@@ -281,7 +281,7 @@ Capture gateway-command constraints beyond the cross-cutting entries:
 
 Evidence pointers:
 
-- `docs/commands/2_gateway/README.md`
+- `docs/domains/2_gateway/README.md`
 - `app/Models/LocalGatewaySettings.php`
 - `app/Services/Gateway/FetchGatewayRootCa.php`
 - `app/Services/Trust/TrustStoreInstaller.php`
@@ -298,7 +298,7 @@ Capture operation-domain constraints beyond the cross-cutting entries:
 - Local operation commands affect only the caller unless the command documents
   a gateway-mediated fleet path.
 - `update:all` fleet target selection is product behavior owned by
-  `docs/commands/11_operation/2_update-all/technical/1_update-all.md`; link to
+  `docs/domains/11_operation/2_update-all/technical/1_update-all.md`; link to
   that contract instead of restating the control-node exclusion.
 - Idempotent operation commands may be verified with focused in-memory Pest plus
   the correct ephemeral E2E gate decision; they do not use persistent live-node
@@ -308,7 +308,7 @@ Capture operation-domain constraints beyond the cross-cutting entries:
 
 Evidence pointers:
 
-- `docs/commands/11_operation/README.md`
+- `docs/domains/11_operation/README.md`
 - `app/Console/Commands/UpdateCommand.php`
 - `app/Console/Commands/UpdateAllCommand.php`
 - `tests/Feature/Commands/Operations/UpdateCommandTest.php`
@@ -411,7 +411,7 @@ and `implementer.md` includes the read-first step.
   auto-promoting it.
 - **Product-contract drift.** These docs could accidentally become a second
   command contract system. Mitigation: abstractions docs link to
-  `docs/commands/**` for behavior and only own implementation reuse guidance.
+  `docs/domains/**` for behavior and only own implementation reuse guidance.
 - **Stale per-family docs.** Per-family files can decay after promotion.
   Mitigation: promotion deletes or rewrites the family note instead of
   duplicating it.

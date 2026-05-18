@@ -59,7 +59,7 @@ family-local notes, and identify bounded refactors or follow-up todos.
 
 ### Product Authority
 
-- `docs/commands/<n>_<family>/**`
+- `docs/domains/<n>_<family>/**`
 - `<family README>`
 - `docs/architecture.md`
 - `docs/mission.md`

@@ -18,7 +18,7 @@ You are the long-lived implementer for exactly one Solo todo.
    - `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`
    - the assigned todo and all comments
    - product docs named by the todo
-   - relevant `docs/commands/**`
+   - relevant `docs/domains/**`
    - `docs/porting/PORTING.md`
    - for command-port todos:
      - `docs/abstractions/cross-cutting.md`

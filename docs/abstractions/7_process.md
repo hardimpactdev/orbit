@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing process
 command ports.
 
-Product behavior remains owned by `docs/commands/7_process/**` and the top-level
+Product behavior remains owned by `docs/domains/7_process/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -106,17 +106,17 @@ even when actions target a workspace runtime context.
 
 ## Evidence Pointers
 
-- `docs/commands/7_process/README.md`
-- `docs/commands/7_process/process-concepts.md`
-- `docs/commands/7_process/process-doctor.md`
-- `docs/commands/7_process/1_process-add`
-- `docs/commands/7_process/2_process-edit`
-- `docs/commands/7_process/3_process-remove`
-- `docs/commands/7_process/4_process-list`
-- `docs/commands/7_process/5_process-start`
-- `docs/commands/7_process/6_process-stop`
-- `docs/commands/7_process/7_process-restart`
-- `docs/commands/7_process/8_process-logs`
+- `docs/domains/7_process/README.md`
+- `docs/domains/7_process/process-concepts.md`
+- `docs/domains/7_process/process-doctor.md`
+- `docs/domains/7_process/1_process-add`
+- `docs/domains/7_process/2_process-edit`
+- `docs/domains/7_process/3_process-remove`
+- `docs/domains/7_process/4_process-list`
+- `docs/domains/7_process/5_process-start`
+- `docs/domains/7_process/6_process-stop`
+- `docs/domains/7_process/7_process-restart`
+- `docs/domains/7_process/8_process-logs`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Services/Processes/ProcessProbe.php`
 - Old evidence: `../orbit-old-may/app/Services/Processes/ProcessEnactor.php`

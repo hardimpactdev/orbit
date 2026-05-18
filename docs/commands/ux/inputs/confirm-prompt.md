@@ -18,7 +18,7 @@ Choose a different primitive in the following situations.
 
 - The choice has more than two options. Use [`select`](select-prompt.md).
 - The command is non-interactive. Do not synthesize a confirm; apply the shared
-  destructive consent rules from `docs/commands/README.md`.
+  destructive consent rules from `docs/domains/README.md`.
 
 ## Contract
 
@@ -70,4 +70,4 @@ See also these related resources.
 
 - [Laravel Prompts: confirm](https://laravel.com/docs/13.x/prompts#confirm)
 - [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
-- `docs/commands/README.md` "Destructive Confirmation" section
+- `docs/domains/README.md` "Destructive Confirmation" section

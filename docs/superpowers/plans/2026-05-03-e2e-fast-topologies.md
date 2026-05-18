@@ -787,7 +787,7 @@ Expected: pass.
 
 - Modify: `TESTING.md`
 - Modify: `docs/porting/PORTING.md`
-- Modify: `docs/commands/README.md` if command testing guidance mentions E2E lanes.
+- Modify: `docs/domains/README.md` if command testing guidance mentions E2E lanes.
 
 Document:
 

@@ -1,6 +1,6 @@
 # PHP Runtime Commands
 
-Select PHP runtime intent for apps, workspaces, and the node CLI default. The actual PHP runtime is installed via the [`php` catalog tool](../../../docs/commands/3_tool/catalog/php.md). Spec: [`docs/commands/14_php/`](../../../docs/commands/14_php/).
+Select PHP runtime intent for apps, workspaces, and the node CLI default. The actual PHP runtime is installed via the [`php` catalog tool](../../../docs/domains/3_tool/catalog/php.md). Spec: [`docs/domains/14_php/`](../../../docs/domains/14_php/).
 
 Supported versions: `8.3`, `8.4`, `8.5` (default for new apps).
 

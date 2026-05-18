@@ -11,7 +11,7 @@ reviewer-approved implementation todo.
    - the assigned todo and comments
    - `TESTING.md`
    - `docs/porting/PORTING.md`
-   - relevant `docs/commands/**`
+   - relevant `docs/domains/**`
    - assigned worktree path and branch from the todo's `Worktree Assignment`.
 
 2. Confirm the todo declares `lane=e2e-provision`, `lane=e2e-feature`, or

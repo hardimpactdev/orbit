@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing deploy
 command ports.
 
-Product behavior remains owned by `docs/commands/10_deploy/**` and the
+Product behavior remains owned by `docs/domains/10_deploy/**` and the
 top-level product docs.
 
 ## Domain Constraints
@@ -55,14 +55,14 @@ not a second source of truth.
 
 ## Evidence Pointers
 
-- `docs/commands/10_deploy/README.md`
-- `docs/commands/10_deploy/deploy-concepts.md`
-- `docs/commands/10_deploy/1_deploy-step-add`
-- `docs/commands/10_deploy/2_deploy-step-list`
-- `docs/commands/10_deploy/3_deploy-step-remove`
-- `docs/commands/10_deploy/4_deploy-run`
-- `docs/commands/10_deploy/5_deploy-history`
-- `docs/commands/10_deploy/6_deploy-log`
+- `docs/domains/10_deploy/README.md`
+- `docs/domains/10_deploy/deploy-concepts.md`
+- `docs/domains/10_deploy/1_deploy-step-add`
+- `docs/domains/10_deploy/2_deploy-step-list`
+- `docs/domains/10_deploy/3_deploy-step-remove`
+- `docs/domains/10_deploy/4_deploy-run`
+- `docs/domains/10_deploy/5_deploy-history`
+- `docs/domains/10_deploy/6_deploy-log`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Console/Commands/DeployCommand.php`
 - Old evidence: `../orbit-old-may/app/Services/DeploymentRunner.php`

@@ -1,6 +1,6 @@
 # Node Commands
 
-Manage the fleet: gateway, app, and control nodes. Spec: [`docs/commands/1_node/`](../../../docs/commands/1_node/).
+Manage the fleet: gateway, app, and control nodes. Spec: [`docs/domains/1_node/`](../../../docs/domains/1_node/).
 
 ## `orbit node:new [name]`
 

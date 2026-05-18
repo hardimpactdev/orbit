@@ -12,7 +12,7 @@
 
 ## Status
 
-**Current docs contradict this plan.** `docs/commands/1_node/README.md`, `node-concepts.md`, `node-doctor.md`, and many command contracts still define exactly three mutually exclusive roles: `control`, `gateway`, and `app`. Implementation must update docs before changing behavior.
+**Current docs contradict this plan.** `docs/domains/1_node/README.md`, `node-concepts.md`, `node-doctor.md`, and many command contracts still define exactly three mutually exclusive roles: `control`, `gateway`, and `app`. Implementation must update docs before changing behavior.
 
 **Out of scope for this plan:**
 - `database:*` resource commands.
@@ -81,39 +81,39 @@
 - `app/Http/Controllers/Api/NodeRoleAddController.php`
 - `app/Http/Controllers/Api/NodeRoleUpdateController.php`
 - `app/Http/Controllers/Api/NodeRoleRemoveController.php`
-- `docs/commands/1_node/11_node-role-list/node-role-list.md`
-- `docs/commands/1_node/11_node-role-list/technical/1_node-role-list.md`
-- `docs/commands/1_node/11_node-role-list/technical/6.1_node-role-list_output-render_human.md`
-- `docs/commands/1_node/11_node-role-list/technical/6.2_node-role-list_output-render_json.md`
-- `docs/commands/1_node/12_node-role-add/node-role-add.md`
-- `docs/commands/1_node/12_node-role-add/technical/1_node-role-add.md`
-- `docs/commands/1_node/12_node-role-add/technical/5.1_node-role-add_input-mode_interactive.md`
-- `docs/commands/1_node/12_node-role-add/technical/5.2_node-role-add_input-mode_non-interactive.md`
-- `docs/commands/1_node/12_node-role-add/technical/6.1_node-role-add_output-render_human.md`
-- `docs/commands/1_node/12_node-role-add/technical/6.2_node-role-add_output-render_json.md`
-- `docs/commands/1_node/13_node-role-update/node-role-update.md`
-- `docs/commands/1_node/13_node-role-update/technical/1_node-role-update.md`
-- `docs/commands/1_node/13_node-role-update/technical/5.1_node-role-update_input-mode_interactive.md`
-- `docs/commands/1_node/13_node-role-update/technical/5.2_node-role-update_input-mode_non-interactive.md`
-- `docs/commands/1_node/13_node-role-update/technical/6.1_node-role-update_output-render_human.md`
-- `docs/commands/1_node/13_node-role-update/technical/6.2_node-role-update_output-render_json.md`
-- `docs/commands/1_node/14_node-role-remove/node-role-remove.md`
-- `docs/commands/1_node/14_node-role-remove/technical/1_node-role-remove.md`
-- `docs/commands/1_node/14_node-role-remove/technical/5.1_node-role-remove_input-mode_interactive.md`
-- `docs/commands/1_node/14_node-role-remove/technical/5.2_node-role-remove_input-mode_non-interactive.md`
-- `docs/commands/1_node/14_node-role-remove/technical/6.1_node-role-remove_output-render_human.md`
-- `docs/commands/1_node/14_node-role-remove/technical/6.2_node-role-remove_output-render_json.md`
+- `docs/domains/1_node/11_node-role-list/node-role-list.md`
+- `docs/domains/1_node/11_node-role-list/technical/1_node-role-list.md`
+- `docs/domains/1_node/11_node-role-list/technical/6.1_node-role-list_output-render_human.md`
+- `docs/domains/1_node/11_node-role-list/technical/6.2_node-role-list_output-render_json.md`
+- `docs/domains/1_node/12_node-role-add/node-role-add.md`
+- `docs/domains/1_node/12_node-role-add/technical/1_node-role-add.md`
+- `docs/domains/1_node/12_node-role-add/technical/5.1_node-role-add_input-mode_interactive.md`
+- `docs/domains/1_node/12_node-role-add/technical/5.2_node-role-add_input-mode_non-interactive.md`
+- `docs/domains/1_node/12_node-role-add/technical/6.1_node-role-add_output-render_human.md`
+- `docs/domains/1_node/12_node-role-add/technical/6.2_node-role-add_output-render_json.md`
+- `docs/domains/1_node/13_node-role-update/node-role-update.md`
+- `docs/domains/1_node/13_node-role-update/technical/1_node-role-update.md`
+- `docs/domains/1_node/13_node-role-update/technical/5.1_node-role-update_input-mode_interactive.md`
+- `docs/domains/1_node/13_node-role-update/technical/5.2_node-role-update_input-mode_non-interactive.md`
+- `docs/domains/1_node/13_node-role-update/technical/6.1_node-role-update_output-render_human.md`
+- `docs/domains/1_node/13_node-role-update/technical/6.2_node-role-update_output-render_json.md`
+- `docs/domains/1_node/14_node-role-remove/node-role-remove.md`
+- `docs/domains/1_node/14_node-role-remove/technical/1_node-role-remove.md`
+- `docs/domains/1_node/14_node-role-remove/technical/5.1_node-role-remove_input-mode_interactive.md`
+- `docs/domains/1_node/14_node-role-remove/technical/5.2_node-role-remove_input-mode_non-interactive.md`
+- `docs/domains/1_node/14_node-role-remove/technical/6.1_node-role-remove_output-render_human.md`
+- `docs/domains/1_node/14_node-role-remove/technical/6.2_node-role-remove_output-render_json.md`
 
 ### Modified Files
 
 - `docs/architecture.md` — replace control/app role language with gateway, joined client identity, hosted node roles, and grants.
 - `docs/concepts.md` — add new node concepts to the concept index.
 - `docs/tech-stack.md` — update platform/role and Docker Compose backing-service language.
-- `docs/commands/1_node/README.md` — authoritative role model rewrite.
-- `docs/commands/1_node/node-concepts.md` — new vocabulary and platform support matrix.
-- `docs/commands/1_node/node-doctor.md` — role assignment, settings, status, and baseline drift contract.
-- `docs/commands/1_node/technical/node-doctor.md` — technical mirror of doctor behavior.
-- Existing node command docs under `docs/commands/1_node/**` — replace `control/app` caller-role product language where the command behavior changes.
+- `docs/domains/1_node/README.md` — authoritative role model rewrite.
+- `docs/domains/1_node/node-concepts.md` — new vocabulary and platform support matrix.
+- `docs/domains/1_node/node-doctor.md` — role assignment, settings, status, and baseline drift contract.
+- `docs/domains/1_node/technical/node-doctor.md` — technical mirror of doctor behavior.
+- Existing node command docs under `docs/domains/1_node/**` — replace `control/app` caller-role product language where the command behavior changes.
 - `database/migrations/*nodes*` — leave existing columns in place for compatibility during v1; add follow-up migration to backfill `node_roles`.
 - `app/Models/Node.php` — add relationships and helpers.
 - `database/factories/NodeFactory.php` — no longer implies app hosting by default.
@@ -160,10 +160,10 @@
 - Modify: `docs/architecture.md`
 - Modify: `docs/concepts.md`
 - Modify: `docs/tech-stack.md`
-- Modify: `docs/commands/1_node/README.md`
-- Modify: `docs/commands/1_node/node-concepts.md`
-- Modify: `docs/commands/1_node/node-doctor.md`
-- Modify: `docs/commands/1_node/technical/node-doctor.md`
+- Modify: `docs/domains/1_node/README.md`
+- Modify: `docs/domains/1_node/node-concepts.md`
+- Modify: `docs/domains/1_node/node-doctor.md`
+- Modify: `docs/domains/1_node/technical/node-doctor.md`
 
 - [ ] **Step 1: Rewrite node role vocabulary**
 
@@ -188,8 +188,8 @@ Orbit distinguishes three concepts:
 
 - [ ] **Step 2: Document role compatibility**
 
-Add the compatibility matrix from this plan to `docs/commands/1_node/README.md`
-and `docs/commands/1_node/node-concepts.md`.
+Add the compatibility matrix from this plan to `docs/domains/1_node/README.md`
+and `docs/domains/1_node/node-concepts.md`.
 
 - [ ] **Step 3: Document role settings**
 
@@ -240,7 +240,7 @@ specific concept index entries that must be updated in this task.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/architecture.md docs/concepts.md docs/tech-stack.md docs/commands/1_node
+git add docs/architecture.md docs/concepts.md docs/tech-stack.md docs/domains/1_node
 git commit -m "docs: define composable node roles"
 ```
 
@@ -1076,7 +1076,7 @@ git commit -m "feat: expose node role assignments"
 ## Task 7: Add `node role:*` Commands
 
 **Files:**
-- Create: command docs under `docs/commands/1_node/11_node-role-list`, `12_node-role-add`, `13_node-role-update`, `14_node-role-remove`
+- Create: command docs under `docs/domains/1_node/11_node-role-list`, `12_node-role-add`, `13_node-role-update`, `14_node-role-remove`
 - Create: command classes and gateway request/response/controller classes listed in File Map
 - Modify: `routes/api.php`
 - Test: `tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php`
@@ -1161,7 +1161,7 @@ Expected: pass.
 
 ```bash
 vendor/bin/pint --dirty --format agent
-git add docs/commands/1_node/11_node-role-list docs/commands/1_node/12_node-role-add docs/commands/1_node/13_node-role-update docs/commands/1_node/14_node-role-remove app/Console/Commands/NodeRole* app/Http/Gateway/Requests/Nodes/*NodeRole* app/Http/Gateway/Responses/Nodes/*NodeRole* app/Http/Controllers/Api/NodeRole* routes/api.php tests/Feature/Commands/Nodes/NodeRole*CommandTest.php tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php
+git add docs/domains/1_node/11_node-role-list docs/domains/1_node/12_node-role-add docs/domains/1_node/13_node-role-update docs/domains/1_node/14_node-role-remove app/Console/Commands/NodeRole* app/Http/Gateway/Requests/Nodes/*NodeRole* app/Http/Gateway/Responses/Nodes/*NodeRole* app/Http/Controllers/Api/NodeRole* routes/api.php tests/Feature/Commands/Nodes/NodeRole*CommandTest.php tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php
 git commit -m "feat: add node role commands"
 ```
 
@@ -1329,8 +1329,8 @@ git commit -m "refactor: use active app host roles"
 **Files:**
 - Modify: `app/Services/Tools/ToolInstaller.php`
 - Modify: `app/Console/Commands/ToolInstallCommand.php`
-- Modify: `docs/commands/3_tool/catalog/postgres.md`
-- Modify: `docs/commands/3_tool/catalog/mysql.md`
+- Modify: `docs/domains/3_tool/catalog/postgres.md`
+- Modify: `docs/domains/3_tool/catalog/mysql.md`
 - Test: `tests/Feature/Commands/Tools/ToolInstallNodeRoleEligibilityTest.php`
 
 - [ ] **Step 1: Write failing tests**
@@ -1419,7 +1419,7 @@ Expected: pass.
 
 ```bash
 vendor/bin/pint --dirty --format agent
-git add app/Services/Tools app/Tools app/Console/Commands/ToolInstallCommand.php docs/commands/3_tool/catalog/postgres.md docs/commands/3_tool/catalog/mysql.md tests/Feature/Commands/Tools/ToolInstallNodeRoleEligibilityTest.php
+git add app/Services/Tools app/Tools app/Console/Commands/ToolInstallCommand.php docs/domains/3_tool/catalog/postgres.md docs/domains/3_tool/catalog/mysql.md tests/Feature/Commands/Tools/ToolInstallNodeRoleEligibilityTest.php
 git commit -m "feat: require database role for database tools"
 ```
 
@@ -1429,8 +1429,8 @@ git commit -m "feat: require database role for database tools"
 
 **Files:**
 - Modify: `app/Services/Nodes/NodesProbe.php`
-- Modify: `docs/commands/1_node/node-doctor.md`
-- Modify: `docs/commands/1_node/technical/node-doctor.md`
+- Modify: `docs/domains/1_node/node-doctor.md`
+- Modify: `docs/domains/1_node/technical/node-doctor.md`
 - Test: `tests/Unit/Services/Nodes/NodesProbeRoleAssignmentsTest.php`
 
 - [ ] **Step 1: Write failing probe tests**
@@ -1490,7 +1490,7 @@ Expected: pass.
 
 ```bash
 vendor/bin/pint --dirty --format agent
-git add app/Services/Nodes/NodesProbe.php docs/commands/1_node/node-doctor.md docs/commands/1_node/technical/node-doctor.md tests/Unit/Services/Nodes/NodesProbeRoleAssignmentsTest.php
+git add app/Services/Nodes/NodesProbe.php docs/domains/1_node/node-doctor.md docs/domains/1_node/technical/node-doctor.md tests/Unit/Services/Nodes/NodesProbeRoleAssignmentsTest.php
 git commit -m "feat: check node role drift"
 ```
 

@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing
 schedule command ports.
 
-Product behavior remains owned by `docs/commands/9_schedule/**` and the
+Product behavior remains owned by `docs/domains/9_schedule/**` and the
 top-level product docs.
 
 ## Domain Constraints
@@ -93,15 +93,15 @@ durable observations reported through gateway-owned authenticated endpoints.
 
 ## Evidence Pointers
 
-- `docs/commands/9_schedule/README.md`
-- `docs/commands/9_schedule/schedule-concepts.md`
-- `docs/commands/9_schedule/schedule-doctor.md`
-- `docs/commands/9_schedule/1_schedule-add`
-- `docs/commands/9_schedule/2_schedule-list`
-- `docs/commands/9_schedule/3_schedule-show`
-- `docs/commands/9_schedule/4_schedule-remove`
-- `docs/commands/9_schedule/5_schedule-run`
-- `docs/commands/9_schedule/6_schedule-logs`
+- `docs/domains/9_schedule/README.md`
+- `docs/domains/9_schedule/schedule-concepts.md`
+- `docs/domains/9_schedule/schedule-doctor.md`
+- `docs/domains/9_schedule/1_schedule-add`
+- `docs/domains/9_schedule/2_schedule-list`
+- `docs/domains/9_schedule/3_schedule-show`
+- `docs/domains/9_schedule/4_schedule-remove`
+- `docs/domains/9_schedule/5_schedule-run`
+- `docs/domains/9_schedule/6_schedule-logs`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Services/AppSchedulers/AppSchedulerProbe.php`
 - Old evidence: `../orbit-old-may/app/Services/AppSchedulers/AppSchedulerRenderer.php`

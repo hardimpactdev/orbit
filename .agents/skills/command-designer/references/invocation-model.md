@@ -124,7 +124,7 @@ When a command family defines a canonical JSON entity DTO, every renderer in
 that family that returns that entity must embed the canonical object unchanged
 under the documented key. Command-specific state belongs beside the entity in
 another object, not as ad hoc fields on the entity. The app family defines its
-canonical `success.data.app` DTO in `docs/commands/4_app/README.md#app-json-entity`.
+canonical `success.data.app` DTO in `docs/domains/5_app/README.md#app-json-entity`.
 
 All commands that return data must support `--json`. `OrbitCommand` already
 includes `wantsJson()`, `outputJsonSuccess()`, and `respondWithSuccess()`.

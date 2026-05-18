@@ -1,6 +1,6 @@
 # Gateway Commands
 
-Onboard a control node onto an existing gateway. Spec: [`docs/commands/2_gateway/`](../../../docs/commands/2_gateway/).
+Onboard a control node onto an existing gateway. Spec: [`docs/domains/2_gateway/`](../../../docs/domains/2_gateway/).
 
 For first-gateway bootstrap (no gateway yet), use `node:new --role=gateway` instead — that path also onboards the initiating control node so you should **not** run `gateway:add` afterward on that machine.
 

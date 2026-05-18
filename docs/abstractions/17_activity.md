@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing
 activity command ports or activity gateway API endpoints.
 
-Product behavior remains owned by `docs/commands/17_activity/**`,
+Product behavior remains owned by `docs/domains/17_activity/**`,
 especially `activity-concepts.md`.
 
 ## Domain Constraints
@@ -64,10 +64,10 @@ especially `activity-concepts.md`.
 
 ## Evidence Pointers
 
-- `docs/commands/17_activity/README.md`
-- `docs/commands/17_activity/activity-concepts.md`
-- `docs/commands/17_activity/1_activity-list`
-- `docs/commands/17_activity/2_activity-show`
+- `docs/domains/17_activity/README.md`
+- `docs/domains/17_activity/activity-concepts.md`
+- `docs/domains/17_activity/1_activity-list`
+- `docs/domains/17_activity/2_activity-show`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Console/Commands/ActivityLogListCommand.php`
 - Old evidence: `../orbit-old-may/app/Console/Commands/ActivityLogShowCommand.php`

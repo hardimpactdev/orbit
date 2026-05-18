@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing node
 command ports.
 
-Product behavior remains owned by `docs/commands/1_node/**` and the top-level
+Product behavior remains owned by `docs/domains/1_node/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -17,7 +17,7 @@ product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/1_node/README.md`
+- `docs/domains/1_node/README.md`
 - `app/Models/Node.php`
 - `app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php`
 - `app/Console/Commands/NodeNewCommand.php`

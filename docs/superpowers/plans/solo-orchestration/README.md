@@ -337,7 +337,7 @@ prompt at
 `docs/superpowers/plans/solo-orchestration/references/worktree/setup.md`.
 
 Product authority docs are read-only for normal implementation todos. If the
-assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,
+assigned behavior conflicts with `docs/domains/**`, `docs/abstractions/**`,
 `docs/architecture.md`, `docs/mission.md`, or `docs/concepts.md`, the worker marks
 the todo `needs-direction` instead of changing the contract locally. Product
 authority docs may change only through an explicit docs/design todo or direct

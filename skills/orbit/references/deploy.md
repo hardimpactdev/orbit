@@ -1,6 +1,6 @@
 # Deploy Commands
 
-Run the deployment pipeline for production apps. Pipeline steps are stored on the gateway and executed in order on the app node. Spec: [`docs/commands/10_deploy/`](../../../docs/commands/10_deploy/).
+Run the deployment pipeline for production apps. Pipeline steps are stored on the gateway and executed in order on the app node. Spec: [`docs/domains/10_deploy/`](../../../docs/domains/10_deploy/).
 
 Production-only — development apps use `workspace:setup` instead.
 

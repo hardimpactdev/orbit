@@ -2,7 +2,7 @@
 
 This file captures implementation patterns shared by two or more concrete
 callers. It is not product authority; command behavior remains in
-`docs/commands/**` and the top-level product docs.
+`docs/domains/**` and the top-level product docs.
 
 ## E2E runtime reachability assertions
 
@@ -45,7 +45,7 @@ responses* the way an operator on a operator node would experience them.
 - `tests/E2E/AppDeployedReachableTest.php`
 - `tests/E2E/AppRemoveReachabilityTest.php`
 - Source plan: `docs/superpowers/plans/2026-05-16-e2e-http-reachability.md`
-- Prerequisite: `docs/commands/3_tool/dns-bootstrap-contract.md`
+- Prerequisite: `docs/domains/3_tool/dns-bootstrap-contract.md`
 
 **Locked-in contracts:**
 
@@ -112,7 +112,7 @@ the command-doc renderer ownership.
 
 **Current pointers:**
 
-- `docs/commands/README.md`
+- `docs/domains/README.md`
 - `tests/Feature/Commands/Nodes/*HumanRendererTest.php`
 - `tests/Feature/Commands/Nodes/*JsonRendererTest.php`
 - `tests/Feature/Commands/Gateway/*HumanRendererTest.php`
@@ -125,7 +125,7 @@ the command-doc renderer ownership.
 **Invariants:**
 
 - Do not restate renderer product rules here; link to
-  `docs/commands/README.md`.
+  `docs/domains/README.md`.
 - Implementation tests should mirror the command-doc `6.1` human renderer and
   `6.2` JSON renderer ownership when those files exist.
 - Human and JSON paths must be tested independently when behavior differs.
@@ -138,7 +138,7 @@ and repeated private helpers can diverge.
 
 **Current pointers:**
 
-- `docs/commands/1_node/README.md`
+- `docs/domains/1_node/README.md`
 - `app/Console/Commands/NodeListCommand.php`
 - `app/Console/Commands/NodeShowCommand.php`
 - `app/Console/Commands/GatewayAddCommand.php`
@@ -225,7 +225,7 @@ the product topology before implementing forwarding or node-side execution.
 - `docs/mission.md`
 - `docs/architecture.md`
 - `docs/tech-stack.md`
-- `docs/commands/1_node/README.md`
+- `docs/domains/1_node/README.md`
 - `docs/porting/PORTING.md`
 
 **Decision matrix:**
@@ -272,8 +272,8 @@ intent/reality differences into report issues and action payloads.
 
 **Current pointers:**
 
-- `docs/commands/11_operation/3_doctor/technical/1_doctor.md`
-- `docs/commands/*/*-doctor.md`
+- `docs/domains/11_operation/3_doctor/technical/1_doctor.md`
+- `docs/domains/*/*-doctor.md`
 - `app/Services/Doctor/DoctorReportRunner.php`
 - `app/Data/Doctor/DriftEntry.php`
 - `app/Data/Doctor/ProbeSnapshot.php`

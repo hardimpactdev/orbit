@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing
 operation command ports.
 
-Product behavior remains owned by `docs/commands/11_operation/**` and the
+Product behavior remains owned by `docs/domains/11_operation/**` and the
 top-level product docs.
 
 ## Domain Constraints
@@ -12,7 +12,7 @@ top-level product docs.
 - Local operation commands affect only the caller unless the command documents
   a gateway-mediated fleet path.
 - `update:all` fleet target selection is product behavior owned by
-  `docs/commands/11_operation/2_update-all/technical/1_update-all.md`; link to
+  `docs/domains/11_operation/2_update-all/technical/1_update-all.md`; link to
   that contract instead of restating target selection rules here.
 - Idempotent operation commands may be verified with focused in-memory Pest plus
   the correct ephemeral E2E gate decision; they do not use persistent live-node
@@ -22,7 +22,7 @@ top-level product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/11_operation/README.md`
+- `docs/domains/11_operation/README.md`
 - `app/Console/Commands/UpdateCommand.php`
 - `app/Console/Commands/UpdateAllCommand.php`
 - `tests/Feature/Commands/Operations/UpdateCommandTest.php`

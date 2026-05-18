@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing tool
 command ports.
 
-Product behavior remains owned by `docs/commands/3_tool/**` and the top-level
+Product behavior remains owned by `docs/domains/3_tool/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -107,12 +107,12 @@ duplicating tool-specific secret columns.
 
 ## Evidence Pointers
 
-- `docs/commands/3_tool/README.md`
-- `docs/commands/3_tool/tool-concepts.md`
-- `docs/commands/3_tool/tool-doctor.md`
-- `docs/commands/3_tool/catalog/README.md`
-- `docs/commands/3_tool/1_tool-list`
-- `docs/commands/3_tool/2_tool-show`
+- `docs/domains/3_tool/README.md`
+- `docs/domains/3_tool/tool-concepts.md`
+- `docs/domains/3_tool/tool-doctor.md`
+- `docs/domains/3_tool/catalog/README.md`
+- `docs/domains/3_tool/1_tool-list`
+- `docs/domains/3_tool/2_tool-show`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Models/NodeTool.php`
 - Old evidence: `../orbit-old-may/app/Enums/Tool.php`

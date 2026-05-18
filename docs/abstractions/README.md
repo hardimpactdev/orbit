@@ -5,7 +5,7 @@ captures proven shapes that Solo workers should read before porting commands so
 new implementations reuse evidence instead of inventing local variants.
 
 These files are not product authority. Product behavior remains in
-`docs/commands/**`, `docs/architecture.md`, `docs/mission.md`,
+`docs/domains/**`, `docs/architecture.md`, `docs/mission.md`,
 `docs/concepts.md`, and `docs/tech-stack.md`.
 
 ## Files
@@ -15,7 +15,7 @@ These files are not product authority. Product behavior remains in
 - `<n>_<family>.md` captures non-obvious family-specific implementation
   constraints that sit on top of the cross-cutting patterns.
 
-Per-family files use the same numeric prefix as `docs/commands/<n>_<family>`.
+Per-family files use the same numeric prefix as `docs/domains/<n>_<family>`.
 Add a family file just before implementation begins for that family, not merely
 because its command docs were converted.
 

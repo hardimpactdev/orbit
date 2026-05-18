@@ -11,7 +11,7 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
    - the assigned todo and all comments
    - latest `WORKER_DONE`
    - product docs named by the todo
-   - relevant `docs/commands/**`
+   - relevant `docs/domains/**`
    - `docs/porting/PORTING.md`
    - relevant `../orbit-old-may` evidence
    - assigned worktree path and branch from the todo's `Worktree Assignment`

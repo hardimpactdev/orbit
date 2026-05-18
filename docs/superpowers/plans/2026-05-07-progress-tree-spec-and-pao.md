@@ -81,71 +81,71 @@ in a command is a regression. The architecture test layer enforces this.
 
 Replace the redrawn tree in each `6.1_*_output-render_human.md` with:
 
-1. A reference link: `See [progress tree anatomy](../../../ux/progress/progress-tree.md).`
+1. A reference link: `See [progress tree anatomy](../../commands/ux/progress/progress-tree.md).`
 2. A "Step List" subsection: title text, ordered step labels, lifecycle
    rule (single label vs per-stage), success and failure footer text.
 
-- Modify: `docs/commands/11_operation/1_update/technical/6.1_update_output-render_human.md`
-- Modify: `docs/commands/11_operation/2_update-all/technical/6.1_update-all_output-render_human.md`
-- Modify: `docs/commands/2_gateway/1_gateway-add/technical/6.1_gateway-add_output-render_human.md`
-- Modify: `docs/commands/2_gateway/2_gateway-trust/technical/6.1_gateway-trust_output-render_human.md`
-- Modify: `docs/commands/1_node/1_node-new/technical/6.1_node-new_output-render_human.md`
-- Modify: `docs/commands/1_node/5_node-grant/technical/6.1_node-grant_output-render_human.md`
-- Modify: `docs/commands/1_node/6_node-revoke/technical/6.1_node-revoke_output-render_human.md`
-- Modify: `docs/commands/1_node/7_node-update/technical/6.1_node-update_output-render_human.md`
-- Modify: `docs/commands/1_node/8_node-remove/technical/6.1_node-remove_output-render_human.md`
-- Modify: `docs/commands/1_node/9_node-default/technical/6.1_node-default_output-render_human.md`
-- Modify: `docs/commands/1_node/10_node-agent-ide/technical/6.1_node-agent-ide_output-render_human.md`
-- Modify: `docs/commands/3_tool/3_tool-install/technical/6.1_tool-install_output-render_human.md`
-- Modify: `docs/commands/3_tool/4_tool-remove/technical/6.1_tool-remove_output-render_human.md`
-- Modify: `docs/commands/3_tool/5_tool-start/technical/6.1_tool-start_output-render_human.md`
-- Modify: `docs/commands/3_tool/6_tool-stop/technical/6.1_tool-stop_output-render_human.md`
-- Modify: `docs/commands/3_tool/7_tool-restart/technical/6.1_tool-restart_output-render_human.md`
-- Modify: `docs/commands/3_tool/9_tool-update/technical/6.1_tool-update_output-render_human.md`
-- Modify: `docs/commands/3_tool/11_tool-reload/technical/6.1_tool-reload_output-render_human.md`
-- Modify: `docs/commands/3_tool/12_tool-reconfigure/technical/6.1_tool-reconfigure_output-render_human.md`
-- Modify: `docs/commands/4_firewall/2_firewall-allow/technical/6.1_firewall-allow_output-render_human.md`
-- Modify: `docs/commands/4_firewall/3_firewall-deny/technical/6.1_firewall-deny_output-render_human.md`
-- Modify: `docs/commands/4_firewall/4_firewall-remove/technical/6.1_firewall-remove_output-render_human.md`
-- Modify: `docs/commands/5_app/1_app-new/technical/6.1_app-new_output-render_human.md`
-- Modify: `docs/commands/5_app/2_app-register/technical/6.1_app-register_output-render_human.md`
-- Modify: `docs/commands/5_app/6_app-remove/technical/6.1_app-remove_output-render_human.md`
-- Modify: `docs/commands/5_app/7_app-prune/technical/6.1_app-prune_output-render_human.md`
-- Modify: `docs/commands/5_app/9_app-agent-ide/technical/6.1_app-agent-ide_output-render_human.md`
-- Modify: `docs/commands/6_workspace/1_workspace-new/technical/6.1_workspace-new_output-render_human.md`
-- Modify: `docs/commands/6_workspace/2_workspace-setup/technical/6.1_workspace-setup_output-render_human.md`
-- Modify: `docs/commands/6_workspace/5_workspace-remove/technical/6.1_workspace-remove_output-render_human.md`
-- Modify: `docs/commands/7_process/1_process-add/technical/6.1_process-add_output-render_human.md`
-- Modify: `docs/commands/7_process/2_process-edit/technical/6.1_process-edit_output-render_human.md`
-- Modify: `docs/commands/7_process/3_process-remove/technical/6.1_process-remove_output-render_human.md`
-- Modify: `docs/commands/7_process/5_process-start/technical/6.1_process-start_output-render_human.md`
-- Modify: `docs/commands/7_process/6_process-stop/technical/6.1_process-stop_output-render_human.md`
-- Modify: `docs/commands/7_process/7_process-restart/technical/6.1_process-restart_output-render_human.md`
-- Modify: `docs/commands/8_proxy/2_proxy-add/technical/6.1_proxy-add_output-render_human.md`
-- Modify: `docs/commands/8_proxy/3_proxy-remove/technical/6.1_proxy-remove_output-render_human.md`
-- Modify: `docs/commands/9_schedule/1_schedule-add/technical/6.1_schedule-add_output-render_human.md`
-- Modify: `docs/commands/9_schedule/4_schedule-remove/technical/6.1_schedule-remove_output-render_human.md`
-- Modify: `docs/commands/9_schedule/5_schedule-run/technical/6.1_schedule-run_output-render_human.md`
-- Modify: `docs/commands/10_deploy/4_deploy-run/technical/6.1_deploy-run_output-render_human.md`
-- Modify: `docs/commands/11_operation/3_doctor/technical/6.1_doctor_output-render_human.md`
-- Modify: `docs/commands/12_cf/3_cf-dns-add/technical/6.1_cf-dns-add_output-render_human.md`
-- Modify: `docs/commands/12_cf/4_cf-dns-remove/technical/6.1_cf-dns-remove_output-render_human.md`
-- Modify: `docs/commands/12_cf/5_cf-cache-flush/technical/6.1_cf-cache-flush_output-render_human.md`
-- Modify: `docs/commands/12_cf/6_cf-cache-rule-add/technical/6.1_cf-cache-rule-add_output-render_human.md`
-- Modify: `docs/commands/12_cf/7_cf-cache-rule-remove/technical/6.1_cf-cache-rule-remove_output-render_human.md`
-- Modify: `docs/commands/12_cf/8_cf-ssl-enable/technical/6.1_cf-ssl-enable_output-render_human.md`
-- Modify: `docs/commands/12_cf/9_cf-ssl-disable/technical/6.1_cf-ssl-disable_output-render_human.md`
-- Modify: `docs/commands/13_vpn/2_vpn-client-new/technical/6.1_vpn-client-new_output-render_human.md`
-- Modify: `docs/commands/13_vpn/3_vpn-client-enable/technical/6.1_vpn-client-enable_output-render_human.md`
-- Modify: `docs/commands/13_vpn/4_vpn-client-disable/technical/6.1_vpn-client-disable_output-render_human.md`
-- Modify: `docs/commands/13_vpn/5_vpn-client-remove/technical/6.1_vpn-client-remove_output-render_human.md`
-- Modify: `docs/commands/13_vpn/6_vpn-web-ui-change-password/technical/6.1_vpn-web-ui-change-password_output-render_human.md`
-- Modify: `docs/commands/14_php/2_php-use/technical/6.1_php-use_output-render_human.md`
-- Modify: `docs/commands/15_agent-ide/1_agent-ide-message/technical/6.1_agent-ide-message_output-render_human.md`
-- Modify: `docs/commands/16_dns/1_dns-resolve-tld/technical/6.1_dns-resolve-tld_output-render_human.md`
+- Modify: `docs/domains/11_operation/1_update/technical/6.1_update_output-render_human.md`
+- Modify: `docs/domains/11_operation/2_update-all/technical/6.1_update-all_output-render_human.md`
+- Modify: `docs/domains/2_gateway/1_gateway-add/technical/6.1_gateway-add_output-render_human.md`
+- Modify: `docs/domains/2_gateway/2_gateway-trust/technical/6.1_gateway-trust_output-render_human.md`
+- Modify: `docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md`
+- Modify: `docs/domains/1_node/5_node-grant/technical/6.1_node-grant_output-render_human.md`
+- Modify: `docs/domains/1_node/6_node-revoke/technical/6.1_node-revoke_output-render_human.md`
+- Modify: `docs/domains/1_node/7_node-update/technical/6.1_node-update_output-render_human.md`
+- Modify: `docs/domains/1_node/8_node-remove/technical/6.1_node-remove_output-render_human.md`
+- Modify: `docs/domains/1_node/9_node-default/technical/6.1_node-default_output-render_human.md`
+- Modify: `docs/domains/1_node/10_node-agent-ide/technical/6.1_node-agent-ide_output-render_human.md`
+- Modify: `docs/domains/3_tool/3_tool-install/technical/6.1_tool-install_output-render_human.md`
+- Modify: `docs/domains/3_tool/4_tool-remove/technical/6.1_tool-remove_output-render_human.md`
+- Modify: `docs/domains/3_tool/5_tool-start/technical/6.1_tool-start_output-render_human.md`
+- Modify: `docs/domains/3_tool/6_tool-stop/technical/6.1_tool-stop_output-render_human.md`
+- Modify: `docs/domains/3_tool/7_tool-restart/technical/6.1_tool-restart_output-render_human.md`
+- Modify: `docs/domains/3_tool/9_tool-update/technical/6.1_tool-update_output-render_human.md`
+- Modify: `docs/domains/3_tool/11_tool-reload/technical/6.1_tool-reload_output-render_human.md`
+- Modify: `docs/domains/3_tool/12_tool-reconfigure/technical/6.1_tool-reconfigure_output-render_human.md`
+- Modify: `docs/domains/4_firewall/2_firewall-allow/technical/6.1_firewall-allow_output-render_human.md`
+- Modify: `docs/domains/4_firewall/3_firewall-deny/technical/6.1_firewall-deny_output-render_human.md`
+- Modify: `docs/domains/4_firewall/4_firewall-remove/technical/6.1_firewall-remove_output-render_human.md`
+- Modify: `docs/domains/5_app/1_app-new/technical/6.1_app-new_output-render_human.md`
+- Modify: `docs/domains/5_app/2_app-register/technical/6.1_app-register_output-render_human.md`
+- Modify: `docs/domains/5_app/6_app-remove/technical/6.1_app-remove_output-render_human.md`
+- Modify: `docs/domains/5_app/7_app-prune/technical/6.1_app-prune_output-render_human.md`
+- Modify: `docs/domains/5_app/9_app-agent-ide/technical/6.1_app-agent-ide_output-render_human.md`
+- Modify: `docs/domains/6_workspace/1_workspace-new/technical/6.1_workspace-new_output-render_human.md`
+- Modify: `docs/domains/6_workspace/2_workspace-setup/technical/6.1_workspace-setup_output-render_human.md`
+- Modify: `docs/domains/6_workspace/5_workspace-remove/technical/6.1_workspace-remove_output-render_human.md`
+- Modify: `docs/domains/7_process/1_process-add/technical/6.1_process-add_output-render_human.md`
+- Modify: `docs/domains/7_process/2_process-edit/technical/6.1_process-edit_output-render_human.md`
+- Modify: `docs/domains/7_process/3_process-remove/technical/6.1_process-remove_output-render_human.md`
+- Modify: `docs/domains/7_process/5_process-start/technical/6.1_process-start_output-render_human.md`
+- Modify: `docs/domains/7_process/6_process-stop/technical/6.1_process-stop_output-render_human.md`
+- Modify: `docs/domains/7_process/7_process-restart/technical/6.1_process-restart_output-render_human.md`
+- Modify: `docs/domains/8_proxy/2_proxy-add/technical/6.1_proxy-add_output-render_human.md`
+- Modify: `docs/domains/8_proxy/3_proxy-remove/technical/6.1_proxy-remove_output-render_human.md`
+- Modify: `docs/domains/9_schedule/1_schedule-add/technical/6.1_schedule-add_output-render_human.md`
+- Modify: `docs/domains/9_schedule/4_schedule-remove/technical/6.1_schedule-remove_output-render_human.md`
+- Modify: `docs/domains/9_schedule/5_schedule-run/technical/6.1_schedule-run_output-render_human.md`
+- Modify: `docs/domains/10_deploy/4_deploy-run/technical/6.1_deploy-run_output-render_human.md`
+- Modify: `docs/domains/11_operation/3_doctor/technical/6.1_doctor_output-render_human.md`
+- Modify: `docs/domains/12_cf/3_cf-dns-add/technical/6.1_cf-dns-add_output-render_human.md`
+- Modify: `docs/domains/12_cf/4_cf-dns-remove/technical/6.1_cf-dns-remove_output-render_human.md`
+- Modify: `docs/domains/12_cf/5_cf-cache-flush/technical/6.1_cf-cache-flush_output-render_human.md`
+- Modify: `docs/domains/12_cf/6_cf-cache-rule-add/technical/6.1_cf-cache-rule-add_output-render_human.md`
+- Modify: `docs/domains/12_cf/7_cf-cache-rule-remove/technical/6.1_cf-cache-rule-remove_output-render_human.md`
+- Modify: `docs/domains/12_cf/8_cf-ssl-enable/technical/6.1_cf-ssl-enable_output-render_human.md`
+- Modify: `docs/domains/12_cf/9_cf-ssl-disable/technical/6.1_cf-ssl-disable_output-render_human.md`
+- Modify: `docs/domains/13_vpn/2_vpn-client-new/technical/6.1_vpn-client-new_output-render_human.md`
+- Modify: `docs/domains/13_vpn/3_vpn-client-enable/technical/6.1_vpn-client-enable_output-render_human.md`
+- Modify: `docs/domains/13_vpn/4_vpn-client-disable/technical/6.1_vpn-client-disable_output-render_human.md`
+- Modify: `docs/domains/13_vpn/5_vpn-client-remove/technical/6.1_vpn-client-remove_output-render_human.md`
+- Modify: `docs/domains/13_vpn/6_vpn-web-ui-change-password/technical/6.1_vpn-web-ui-change-password_output-render_human.md`
+- Modify: `docs/domains/14_php/2_php-use/technical/6.1_php-use_output-render_human.md`
+- Modify: `docs/domains/15_agent-ide/1_agent-ide-message/technical/6.1_agent-ide-message_output-render_human.md`
+- Modify: `docs/domains/16_dns/1_dns-resolve-tld/technical/6.1_dns-resolve-tld_output-render_human.md`
 
 Final list to be confirmed by `grep -rn "## Progress Tree"
-docs/commands/**/technical/6.1_*_human.md` so we touch every doc that
+docs/domains/**/technical/6.1_*_human.md` so we touch every doc that
 currently redraws the tree and skip those that legitimately have no
 progress UI.
 
@@ -208,7 +208,7 @@ escape hatch is the safer approach because it survives composer updates.
 
 ### Phase 2 — Per-command doc dedupe
 
-- [ ] Run `grep -rn "## Progress Tree" docs/commands/**/technical/` to
+- [ ] Run `grep -rn "## Progress Tree" docs/domains/**/technical/` to
       generate the authoritative list of files redrawing the tree.
       Reconcile against the File Map above; remove any docs that have no
       progress UI.
@@ -292,6 +292,6 @@ escape hatch is the safer approach because it survives composer updates.
   streams from a remote gateway.
 - `tests/Feature/Commands/Operations/UpdateDecoratedRenderingTest.php`
   and `UpdateAllDecoratedRenderingTest.php` pass.
-- `grep -rn "## Progress Tree" docs/commands/` returns no matches that
+- `grep -rn "## Progress Tree" docs/domains/` returns no matches that
   redraw the tree; every match is replaced by a reference link to the
   canonical anatomy.

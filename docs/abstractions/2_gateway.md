@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing gateway
 command ports.
 
-Product behavior remains owned by `docs/commands/2_gateway/**` and the top-level
+Product behavior remains owned by `docs/domains/2_gateway/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -20,7 +20,7 @@ product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/2_gateway/README.md`
+- `docs/domains/2_gateway/README.md`
 - `app/Models/LocalGatewaySettings.php`
 - `app/Services/Gateway/FetchGatewayRootCa.php`
 - `app/Services/Trust/TrustStoreInstaller.php`

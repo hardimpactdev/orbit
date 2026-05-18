@@ -86,7 +86,7 @@ final readonly class CommandPageStructureRule implements GroupedRule
 
     private function isPublicCommandPage(string $relativePath): bool
     {
-        if (preg_match('#^docs/commands/[1-9]\d*_[a-z0-9-]+/[1-9]\d*_[a-z0-9-]+/[^/]+\.md$#', $relativePath) !== 1) {
+        if (preg_match('#^docs/domains/[1-9]\d*_[a-z0-9-]+/[1-9]\d*_[a-z0-9-]+/[^/]+\.md$#', $relativePath) !== 1) {
             return false;
         }
 

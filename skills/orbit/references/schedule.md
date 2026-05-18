@@ -1,6 +1,6 @@
 # Schedule Commands
 
-Recurring tasks evaluated by the Orbit Scheduler daemon (one Supervisor program per gateway / app node). Minute-resolution. Spec: [`docs/commands/9_schedule/`](../../../docs/commands/9_schedule/).
+Recurring tasks evaluated by the Orbit Scheduler daemon (one Supervisor program per gateway / app node). Minute-resolution. Spec: [`docs/domains/9_schedule/`](../../../docs/domains/9_schedule/).
 
 Schedule scopes:
 
@@ -23,7 +23,7 @@ orbit schedule:add [<name>] [--command='<shell>' | --script=<path>]
 | `name` | — | Schedule slug. |
 | `--command` | — | Inline shell command. |
 | `--script` | — | Managed script path (alternative to `--command`). One of the two is required. |
-| `--interval` | required | Portable interval expression (e.g. `every 5 minutes`, `daily at 03:00`, `cron(*/15 * * * *)`). See [`docs/commands/9_schedule/schedule-concepts.md`](../../../docs/commands/9_schedule/schedule-concepts.md). |
+| `--interval` | required | Portable interval expression (e.g. `every 5 minutes`, `daily at 03:00`, `cron(*/15 * * * *)`). See [`docs/domains/9_schedule/schedule-concepts.md`](../../../docs/domains/9_schedule/schedule-concepts.md). |
 | `--app` | — | App scope. |
 | `--node` | — | Node scope. |
 | `--timezone` | `UTC` | IANA timezone. |

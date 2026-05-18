@@ -159,7 +159,7 @@ Orbit commands are the stable contract. Each one has documented inputs, outputs,
 
 The CLI is what you call. The typed HTTPS API is just the transport: the CLI gathers input, calls the gateway, and renders the result. The gateway does the real work directly.
 
-Command contracts live under [docs/commands/](commands/), one folder per family.
+Command contracts live under [docs/domains/](domains/), one folder per family.
 
 ## State
 
@@ -188,14 +188,14 @@ Orbit has eight state families:
 
 | Family | Owns | Concept doc |
 |---|---|---|
-| `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](commands/1_node/node-concepts.md) |
-| `app` | App config, process config, deploy steps, app health | [App Concepts](commands/5_app/app-concepts.md) |
-| `workspace` | Workspace config, URL, PHP pool, inherited process config | [Workspace Concepts](commands/6_workspace/workspace-concepts.md) |
-| `process` | Long-running processes for apps and workspaces | [Process Concepts](commands/7_process/process-concepts.md) |
-| `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](commands/8_proxy/proxy-concepts.md) |
-| `schedule` | Recurring tasks for apps, nodes, and Orbit | [Schedule Concepts](commands/9_schedule/schedule-concepts.md) |
-| `tool` | Tools installed on each node | [Tool Concepts](commands/3_tool/tool-concepts.md) |
-| `firewall_rule` | What network traffic each node allows | [Firewall Concepts](commands/4_firewall/firewall-concepts.md) |
+| `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
+| `app` | App config, process config, deploy steps, app health | [App Concepts](domains/5_app/app-concepts.md) |
+| `workspace` | Workspace config, URL, PHP pool, inherited process config | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
+| `process` | Long-running processes for apps and workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
+| `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
+| `schedule` | Recurring tasks for apps, nodes, and Orbit | [Schedule Concepts](domains/9_schedule/schedule-concepts.md) |
+| `tool` | Tools installed on each node | [Tool Concepts](domains/3_tool/tool-concepts.md) |
+| `firewall_rule` | What network traffic each node allows | [Firewall Concepts](domains/4_firewall/firewall-concepts.md) |
 
 These names are how Orbit thinks about each thing. The tools behind them — Caddy for proxy routes, UFW for firewall rules, Supervisor for processes — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
@@ -265,4 +265,4 @@ orbit_docs_feature-docs_vite
 
 ### Next
 
-For backend implementations — WireGuard, Caddy, Supervisor, the SQLite schema, and the gateway-to-node `RemoteShell` primitive — see [tech-stack.md](tech-stack.md). Command contracts live under [docs/commands/](commands/).
+For backend implementations — WireGuard, Caddy, Supervisor, the SQLite schema, and the gateway-to-node `RemoteShell` primitive — see [tech-stack.md](tech-stack.md). Command contracts live under [docs/domains/](domains/).

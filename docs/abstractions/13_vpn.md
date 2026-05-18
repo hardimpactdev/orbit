@@ -3,7 +3,7 @@
 Read this with `docs/abstractions/cross-cutting.md` before implementing VPN
 command ports.
 
-Product behavior remains owned by `docs/commands/13_vpn/**` and the top-level
+Product behavior remains owned by `docs/domains/13_vpn/**` and the top-level
 product docs.
 
 ## Domain Constraints
@@ -54,14 +54,14 @@ product docs.
 
 ## Evidence Pointers
 
-- `docs/commands/13_vpn/README.md`
-- `docs/commands/13_vpn/vpn-concepts.md`
-- `docs/commands/13_vpn/1_vpn-client-list`
-- `docs/commands/13_vpn/2_vpn-client-new`
-- `docs/commands/13_vpn/3_vpn-client-enable`
-- `docs/commands/13_vpn/4_vpn-client-disable`
-- `docs/commands/13_vpn/5_vpn-client-remove`
-- `docs/commands/13_vpn/6_vpn-web-ui-change-password`
+- `docs/domains/13_vpn/README.md`
+- `docs/domains/13_vpn/vpn-concepts.md`
+- `docs/domains/13_vpn/1_vpn-client-list`
+- `docs/domains/13_vpn/2_vpn-client-new`
+- `docs/domains/13_vpn/3_vpn-client-enable`
+- `docs/domains/13_vpn/4_vpn-client-disable`
+- `docs/domains/13_vpn/5_vpn-client-remove`
+- `docs/domains/13_vpn/6_vpn-web-ui-change-password`
 - `docs/abstractions/cross-cutting.md`
 - Old evidence: `../orbit-old-may/app/Actions/Vpn`
 - Old evidence: `../orbit-old-may/app/Console/Commands/VpnListCommand.php`
