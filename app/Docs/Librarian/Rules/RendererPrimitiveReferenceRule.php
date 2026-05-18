@@ -260,7 +260,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
         $line = trim($line, '|');
         $cells = explode('|', $line);
 
-        return array_values(array_map('trim', $cells));
+        return array_values(array_map(trim(...), $cells));
     }
 
     /**

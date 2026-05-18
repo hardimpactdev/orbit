@@ -3,7 +3,7 @@
 This document defines the activity-command-domain vocabulary, the cross-cutting
 logging contract, and the per-command requirements for emitting activity. It
 supports the activity command contracts; it does not override the
-[Architecture](../../ARCHITECTURE.md).
+[Architecture](../../architecture.md).
 
 ## Domain and scope
 

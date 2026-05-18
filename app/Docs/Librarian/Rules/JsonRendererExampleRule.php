@@ -295,13 +295,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
 
     private function matchesType(mixed $value, string $type): bool
     {
-        foreach (explode('|', $type) as $candidate) {
-            if ($this->matchesSingleType($value, $candidate)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(explode('|', $type), fn ($candidate) => $this->matchesSingleType($value, $candidate));
     }
 
     private function matchesSingleType(mixed $value, string $type): bool

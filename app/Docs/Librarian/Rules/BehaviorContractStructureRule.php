@@ -54,7 +54,7 @@ final readonly class BehaviorContractStructureRule implements GroupedRule
 
         $placeholderHeadings = array_values(array_filter(
             $headings,
-            fn (string $heading): bool => $this->isPlaceholderHeading($heading),
+            $this->isPlaceholderHeading(...),
         ));
 
         $meaningfulHeadings = array_values(array_filter(
@@ -103,7 +103,7 @@ final readonly class BehaviorContractStructureRule implements GroupedRule
         preg_match_all('/^###\s+(?<heading>.+?)\s*$/m', $section, $matches);
 
         return array_map(
-            fn (string $heading): string => trim($heading),
+            trim(...),
             $matches['heading'],
         );
     }

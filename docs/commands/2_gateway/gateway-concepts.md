@@ -2,7 +2,7 @@
 
 This document defines gateway-command-domain vocabulary and invariants. It
 supports the gateway command contracts and the [node doctor](../1_node/node-doctor.md);
-it does not override the [Architecture](../../ARCHITECTURE.md).
+it does not override the [Architecture](../../architecture.md).
 
 ## Domain and relationship
 

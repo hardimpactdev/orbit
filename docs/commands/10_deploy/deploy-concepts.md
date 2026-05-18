@@ -2,7 +2,7 @@
 
 This document defines deploy-command-domain vocabulary and invariants. It
 supports the deploy command contracts and the [app doctor](../5_app/app-doctor.md);
-it does not override the [Architecture](../../ARCHITECTURE.md).
+it does not override the [Architecture](../../architecture.md).
 
 ## Domain and ownership
 

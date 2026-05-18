@@ -14,7 +14,7 @@ orbit node role:update [node] [role] [--tld=] [--json]
 
 - `gateway` cannot be updated through this command.
 - Updating role settings triggers convergence again.
-- Human output renders a progress tree.
+- Human output shows progress while convergence runs.
 
 ## Technical Contract
 

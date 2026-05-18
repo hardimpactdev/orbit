@@ -618,17 +618,9 @@ class AppNewCommand extends Command
             return false;
         }
 
-        foreach ($roles as $assignment) {
-            if (
-                is_array($assignment)
-                && ($assignment['role'] ?? null) === $role
-                && ($assignment['status'] ?? null) === 'active'
-            ) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($roles, fn ($assignment) => is_array($assignment)
+        && ($assignment['role'] ?? null) === $role
+        && ($assignment['status'] ?? null) === 'active');
     }
 
     private function failAppNameCollision(string $name, string $node): int

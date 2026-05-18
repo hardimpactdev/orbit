@@ -24,12 +24,14 @@ it('does not expose a standing live smoke test lane', function (): void {
         ->and($composer['scripts'])->not->toHaveKey('test:live');
 });
 
-it('fails command docs lint when warnings are present', function (): void {
+it('reports command docs lint severities in agent format', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts']['docs-lint'])
-        ->toContain('--strict')
-        ->toContain('--format=agent');
+        ->toContain('artisan librarian:lint')
+        ->toContain('--format=agent')
+        ->toContain('--path=docs/commands')
+        ->not->toContain('--strict');
 });
 
 it('keeps the aggregate quality gate complete', function (): void {

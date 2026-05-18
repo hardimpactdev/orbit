@@ -1,6 +1,6 @@
 # Process Concepts
 
-This document defines process-family vocabulary and invariants. It supports the process command contracts and the [process doctor](process-doctor.md). It does not override the [Architecture](../../ARCHITECTURE.md).
+This document defines process-family vocabulary and invariants. It supports the process command contracts and the [process doctor](process-doctor.md). It does not override the [Architecture](../../architecture.md).
 
 ## Identity
 

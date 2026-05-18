@@ -5,8 +5,8 @@ captures proven shapes that Solo workers should read before porting commands so
 new implementations reuse evidence instead of inventing local variants.
 
 These files are not product authority. Product behavior remains in
-`docs/commands/**`, `docs/ARCHITECTURE.md`, `docs/MISSION.md`,
-`docs/CONCEPTS.md`, and `docs/BUILDING-BLOCKS.md`.
+`docs/commands/**`, `docs/architecture.md`, `docs/mission.md`,
+`docs/concepts.md`, and `docs/tech-stack.md`.
 
 ## Files
 

@@ -3,7 +3,7 @@
 This document defines workspace-family vocabulary and invariants. It supports
 the workspace command contracts and the
 [workspace doctor](workspace-doctor.md); it does not override the
-[Architecture](../../ARCHITECTURE.md).
+[Architecture](../../architecture.md).
 
 ## Identity
 

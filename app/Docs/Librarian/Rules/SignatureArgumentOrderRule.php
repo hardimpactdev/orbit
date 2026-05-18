@@ -172,7 +172,7 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
         }
 
         $ranks = array_map(
-            fn (string $name): int => $this->optionRank($name),
+            $this->optionRank(...),
             $matches['name'],
         );
 

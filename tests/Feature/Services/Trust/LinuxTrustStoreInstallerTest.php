@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Process;
 beforeEach(function (): void {
     $this->installer = new LinuxTrustStoreInstaller;
     $this->tempStorage = sys_get_temp_dir().'/orbit-trust-test-'.uniqid();
+    $this->label = 'orbit-test-'.uniqid();
     mkdir($this->tempStorage.'/app/orbit/gateway-ca', 0777, true);
     app()->useStoragePath($this->tempStorage);
 
@@ -25,7 +26,7 @@ afterEach(function (): void {
 
 describe('LinuxTrustStoreInstaller', function (): void {
     it('checks if CA is trusted via file existence', function (): void {
-        expect($this->installer->isCaTrusted($this->caPath, 'orbit'))->toBeFalse();
+        expect($this->installer->isCaTrusted($this->caPath, $this->label))->toBeFalse();
     });
 
     it('trusts CA via sudo cp and update-ca-certificates', function (): void {
@@ -33,7 +34,7 @@ describe('LinuxTrustStoreInstaller', function (): void {
             '*' => Process::result(''),
         ]);
 
-        $this->installer->trustCa($this->caPath, 'orbit');
+        $this->installer->trustCa($this->caPath, $this->label);
 
         Process::assertRan(fn ($process) => str_contains($process->command, 'sudo cp')
             && str_contains($process->command, 'sudo update-ca-certificates'));
@@ -48,7 +49,7 @@ describe('LinuxTrustStoreInstaller', function (): void {
             ),
         ]);
 
-        expect(fn () => $this->installer->trustCa($this->caPath, 'orbit'))
+        expect(fn () => $this->installer->trustCa($this->caPath, $this->label))
             ->toThrow(TrustStoreInstallException::class);
     });
 
@@ -58,7 +59,7 @@ describe('LinuxTrustStoreInstaller', function (): void {
         ]);
 
         $logs = [];
-        $this->installer->trustCa($this->caPath, 'orbit', function (string $message) use (&$logs): void {
+        $this->installer->trustCa($this->caPath, $this->label, function (string $message) use (&$logs): void {
             $logs[] = $message;
         });
 

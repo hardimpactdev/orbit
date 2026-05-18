@@ -50,7 +50,7 @@ This command follows the shared
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=app`.
    - **Forbidden:** project-file inspection (`composer.json`, `package.json`,
-     `.php-version`, `.env`, lockfiles, or framework manifests). This matches `ARCHITECTURE.md` "Workspaces"
+     `.php-version`, `.env`, lockfiles, or framework manifests). This matches `architecture.md` "Workspaces"
      project-file inspection prohibition.
 2. **Resolve `step`.** Required from `--step` or interactive prompt.
    - In interactive mode, prompt when `--step` is missing.

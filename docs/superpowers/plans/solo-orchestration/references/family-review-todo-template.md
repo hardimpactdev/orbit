@@ -61,10 +61,10 @@ family-local notes, and identify bounded refactors or follow-up todos.
 
 - `docs/commands/<n>_<family>/**`
 - `<family README>`
-- `docs/ARCHITECTURE.md`
-- `docs/MISSION.md`
-- `docs/CONCEPTS.md`
-- `docs/BUILDING-BLOCKS.md`
+- `docs/architecture.md`
+- `docs/mission.md`
+- `docs/concepts.md`
+- `docs/tech-stack.md`
 
 ### Pattern Evidence
 
@@ -97,7 +97,7 @@ family-local notes, and identify bounded refactors or follow-up todos.
 git diff --check
 ```
 
-Run `composer docs-lint` when command docs or docs-linter-owned docs change.
+Run `composer docs-lint` when command docs or Librarian-owned docs change.
 Run focused tests and `vendor/bin/pint --dirty --format agent` when PHP changes.
 
 ### E2E Lane

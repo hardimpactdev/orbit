@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -180,6 +181,16 @@ function createTestGatewayNode(array $attributes = []): Node
     ]);
 
     return $node;
+}
+
+function fakeHomebrewPrefix(): string
+{
+    $prefix = storage_path('framework/testing/homebrew');
+
+    File::ensureDirectoryExists("{$prefix}/bin");
+    File::ensureDirectoryExists("{$prefix}/etc");
+
+    return $prefix;
 }
 
 /**

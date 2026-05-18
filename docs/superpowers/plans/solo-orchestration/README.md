@@ -338,7 +338,7 @@ prompt at
 
 Product authority docs are read-only for normal implementation todos. If the
 assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,
-`docs/ARCHITECTURE.md`, `docs/MISSION.md`, or `docs/CONCEPTS.md`, the worker marks
+`docs/architecture.md`, `docs/mission.md`, or `docs/concepts.md`, the worker marks
 the todo `needs-direction` instead of changing the contract locally. Product
 authority docs may change only through an explicit docs/design todo or direct
 human instruction. Progress and accounting docs such as `docs/porting/PORTING.md` may be

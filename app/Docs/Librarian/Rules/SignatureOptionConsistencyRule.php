@@ -191,13 +191,7 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
     {
         $allowedContexts = $options[$option]['allowed_contexts'] ?? [];
 
-        foreach ($referenceContexts as $referenceContext) {
-            if (in_array($referenceContext, $allowedContexts, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($referenceContexts, fn ($referenceContext) => in_array($referenceContext, $allowedContexts, true));
     }
 
     private function finding(string $path, string $message, int $line): Finding

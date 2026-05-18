@@ -2,7 +2,7 @@
 
 This document defines tool-family vocabulary and invariants. It supports the
 tool command contracts and the [tool doctor](tool-doctor.md); it does not
-override the [Architecture](../../ARCHITECTURE.md).
+override the [Architecture](../../architecture.md).
 
 ## Identity
 

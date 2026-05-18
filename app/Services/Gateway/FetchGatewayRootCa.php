@@ -57,11 +57,11 @@ final readonly class FetchGatewayRootCa
 
     private function fetchRootCa(string $gatewayIp): Response
     {
-        $response = (new GatewayConnector(
+        $response = new GatewayConnector(
             baseUrl: "http://{$gatewayIp}",
             caPemPath: false,
             timeout: self::TIMEOUT,
-        ))->send(new ShowGatewayCaRootRequest);
+        )->send(new ShowGatewayCaRootRequest);
 
         if (! in_array($response->status(), [301, 302, 307, 308], true)) {
             return $response;
@@ -73,11 +73,11 @@ final readonly class FetchGatewayRootCa
             return $response;
         }
 
-        return (new GatewayConnector(
+        return new GatewayConnector(
             baseUrl: "https://{$gatewayIp}",
             caPemPath: false,
             timeout: self::TIMEOUT,
-        ))->send(new ShowGatewayCaRootRequest);
+        )->send(new ShowGatewayCaRootRequest);
     }
 
     private function isSameGatewayCaLocation(string $location, string $gatewayIp): bool

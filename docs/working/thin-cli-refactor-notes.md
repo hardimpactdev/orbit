@@ -2,7 +2,7 @@
 
 ## 2026-05-13
 
-- Read the canonical model docs: `MISSION.md`, `ARCHITECTURE.md`, `BUILDING-BLOCKS.md`, `CONCEPTS.md`, and node concepts.
+- Read the canonical model docs: `mission.md`, `architecture.md`, `tech-stack.md`, `concepts.md`, and node concepts.
 - Started with the config/schema slice.
 - Existing migrations already added a nullable `nodes.user` beside `nodes.ssh_user`; the cleanup migration therefore copies missing `user` values from `ssh_user`, then drops `ssh_user` and `is_local`.
 

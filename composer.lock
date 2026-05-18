@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "fa4c2ff518bc011038da8d48851b549f",
+    "content-hash": "bff69a4822e2139e1b839d401ce7b0a7",
     "packages": [
         {
             "name": "beyondcode/polyscope",
@@ -1159,6 +1159,82 @@
                 }
             ],
             "time": "2025-08-22T14:27:06+00:00"
+        },
+        {
+            "name": "hardimpactdev/librarian",
+            "version": "0.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/hardimpactdev/librarian.git",
+                "reference": "550a812c8bd05ae7a11eac8833dffa55219ba068"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/hardimpactdev/librarian/zipball/550a812c8bd05ae7a11eac8833dffa55219ba068",
+                "reference": "550a812c8bd05ae7a11eac8833dffa55219ba068",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/contracts": "^11.0||^12.0||^13.0",
+                "php": "^8.4",
+                "spatie/laravel-package-tools": "^1.16"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/boost": "^2.4",
+                "laravel/pint": "^1.14",
+                "nunomaduro/collision": "^8.8",
+                "orchestra/testbench": "^11.0.0||^10.0.0||^9.0.0",
+                "pestphp/pest": "^4.0",
+                "pestphp/pest-plugin-arch": "^4.0",
+                "pestphp/pest-plugin-laravel": "^4.0",
+                "phpstan/extension-installer": "^1.4",
+                "phpstan/phpstan-deprecation-rules": "^2.0",
+                "phpstan/phpstan-phpunit": "^2.0",
+                "spatie/guidelines-skills": "dev-main"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "HardImpact\\Librarian\\LibrarianServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "HardImpact\\Librarian\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Hard Impact",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Structured documentation tooling for Laravel projects",
+            "homepage": "https://github.com/hardimpactdev/librarian",
+            "keywords": [
+                "documentation",
+                "hardimpactdev",
+                "laravel",
+                "librarian"
+            ],
+            "support": {
+                "issues": "https://github.com/hardimpactdev/librarian/issues",
+                "source": "https://github.com/hardimpactdev/librarian/tree/0.0.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/:vendor_name",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-05-18T13:51:22+00:00"
         },
         {
             "name": "hardimpactdev/opencode-sdk-laravel",
@@ -10429,7 +10505,7 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
-        "php": "^8.3"
+        "php": "^8.4"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"

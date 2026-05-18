@@ -2,7 +2,7 @@
 
 This document describes Orbit's architecture at a high level.
 
-## Hub and spoke
+## Components
 
 Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the
 singleton authority role, owns fleet configuration, serves a typed API,
@@ -81,7 +81,7 @@ nodes, and events hosted nodes send back. Development nodes and database-only
 nodes do not need a public face. Hosted nodes with `app-production` expose only
 ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable
 only over the VPN. The current VPN implementation is WireGuard; see
-[BUILDING-BLOCKS.md](BUILDING-BLOCKS.md).
+[tech-stack.md](tech-stack.md).
 
 ### CLI
 
@@ -91,24 +91,9 @@ command takes the same path: gather local input, call the gateway typed API
 over the VPN, and render output. Commands that return structured data expose
 `--json`.
 
-## State model
+## Relationships
 
-The gateway database is Orbit's source of truth. It stores four kinds of records:
-
-- **Registry** — what exists (nodes, apps).
-- **Configuration** — how things should be set up (processes, schedules, proxy routes, tools, firewall rules).
-- **Policy** — repeatable workflows (deployment step definitions).
-- **History** — what happened (deployment runs, activity logs).
-
-For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a PHP-FPM pool that should exist, a proxy route that should resolve, a process that should be running. The node-side artifact is the *applied* representation of that row.
-
-The core invariant:
-
-> Gateway configuration must converge with node reality.
-
-When the two diverge, one of these happened: an apply step failed or only partially completed, someone manually changed the node, a migration changed configuration without reconciling artifacts, or a restored gateway database no longer matches the fleet.
-
-## Trust and transport
+### Trust and transport
 
 Orbit has two network edges, and only two.
 
@@ -134,9 +119,9 @@ and scheduler run history — but they never accept inbound RPC.
 
 The SSH primitive the gateway uses to act on hosted nodes is called
 `RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives
-in [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md#gateway-to-hosted-node).
+in [tech-stack.md](tech-stack.md#gateway-to-hosted-node).
 
-## Authentication and authorization
+### Authentication and authorization
 
 Every Orbit command needs two things: an identity and permission.
 
@@ -163,7 +148,7 @@ Permissions are revocable from the gateway. Removing a grant immediately
 revokes access — no key rotation, no hosted-node config edit, no SSH key
 removal needed.
 
-## Command and API model
+### Command and API model
 
 Orbit commands are the stable contract. Each one has documented inputs, outputs, JSON shape, and failure modes — the same surface humans, AI agents, and CI all depend on.
 
@@ -171,7 +156,26 @@ The CLI is what you call. The typed HTTPS API is just the transport: the CLI gat
 
 Command contracts live under [docs/commands/](commands/), one folder per family.
 
-## State families
+## State
+
+### State model
+
+The gateway database is Orbit's source of truth. It stores four kinds of records:
+
+- **Registry** — what exists (nodes, apps).
+- **Configuration** — how things should be set up (processes, schedules, proxy routes, tools, firewall rules).
+- **Policy** — repeatable workflows (deployment step definitions).
+- **History** — what happened (deployment runs, activity logs).
+
+For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a PHP-FPM pool that should exist, a proxy route that should resolve, a process that should be running. The node-side artifact is the *applied* representation of that row.
+
+The core invariant:
+
+> Gateway configuration must converge with node reality.
+
+When the two diverge, one of these happened: an apply step failed or only partially completed, someone manually changed the node, a migration changed configuration without reconciling artifacts, or a restored gateway database no longer matches the fleet.
+
+### State families
 
 A **state family** is one type of thing Orbit tracks — like apps, processes, or schedules. For each one, the gateway stores how it should be set up, and applies that to the right node.
 
@@ -188,9 +192,9 @@ Orbit has eight state families:
 | `tool` | Tools installed on each node | [Tool Concepts](commands/3_tool/tool-concepts.md) |
 | `firewall_rule` | What network traffic each node allows | [Firewall Concepts](commands/4_firewall/firewall-concepts.md) |
 
-These names are how Orbit thinks about each thing. The tools behind them — Caddy for proxy routes, UFW for firewall rules, Supervisor for processes — are implementation choices. The family names stay stable even when the backend changes. See [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md) for the backends in use today.
+These names are how Orbit thinks about each thing. The tools behind them — Caddy for proxy routes, UFW for firewall rules, Supervisor for processes — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
-## Keeping nodes in sync
+### Keeping nodes in sync
 
 Reality drifts. The gateway tracks configuration; a node is meant to match it; over time those can fall apart. **Drift** can be a config mismatch (a proxy route is missing on the node, a process definition has changed), a pending update (security patches the node hasn't installed), or a runtime problem (an app that should be responding isn't).
 
@@ -208,7 +212,11 @@ Restore is the common case: you fix a node by pushing the gateway's version of t
 
 Doctor is safe to run often, and safe to scope. Running it after every deploy and on a daily schedule is the simplest way to catch problems early.
 
-## Agent IDE integration
+## Boundaries
+
+Orbit's extension points and identity rules keep product concepts stable while implementations can change underneath them.
+
+### Agent IDE integration
 
 AI agents that work on apps typically run inside an agent IDE — PolyScope, OpenCode, or similar. Orbit can integrate with those IDEs so that the agent has a smooth experience: opening a workspace by name, getting notified when a process crashes, receiving messages from the gateway when something needs the agent's attention.
 
@@ -216,7 +224,7 @@ The agent IDE adapter is configured per node, with optional override per app. Wh
 
 Agent IDE adapters are extension points. New IDEs can be supported by writing an adapter without touching the rest of Orbit.
 
-## Identity names
+### Identity names
 
 Apps, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. A future presentation label may add spaces or capitalization, but the slug stays canonical.
 
@@ -250,6 +258,6 @@ orbit_docs_feature-docs_vite
 
 `orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug.
 
-## Next
+### Next
 
-For backend implementations — WireGuard, Caddy, Supervisor, the SQLite schema, and the gateway-to-node `RemoteShell` primitive — see [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md). Command contracts live under [docs/commands/](commands/).
+For backend implementations — WireGuard, Caddy, Supervisor, the SQLite schema, and the gateway-to-node `RemoteShell` primitive — see [tech-stack.md](tech-stack.md). Command contracts live under [docs/commands/](commands/).

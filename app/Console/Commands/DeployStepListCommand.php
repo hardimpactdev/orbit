@@ -86,7 +86,7 @@ class DeployStepListCommand extends Command
             return self::SUCCESS;
         }
 
-        (new Table($this->output))
+        new Table($this->output)
             ->setHeaders(['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'])
             ->setRows($this->deployStepTableRows($result['steps']))
             ->setStyle($this->deployStepTableStyle())

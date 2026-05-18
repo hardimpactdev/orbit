@@ -14,10 +14,10 @@ preserved at `../orbit-old-may` and is reference material only.
 
 Orbit's current product contract lives in this repo:
 
-- `docs/ARCHITECTURE.md`
-- `docs/MISSION.md`
-- `docs/CONCEPTS.md`
-- `docs/BUILDING-BLOCKS.md`
+- `docs/architecture.md`
+- `docs/mission.md`
+- `docs/concepts.md`
+- `docs/tech-stack.md`
 - `docs/commands/**`
 
 Use `../orbit-old-may` for historical implementation and pre-clean-rebuild

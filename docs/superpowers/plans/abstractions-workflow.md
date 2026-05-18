@@ -51,8 +51,8 @@ Add `docs/abstractions/` as a small implementation-pattern index that:
   starts.
 
 These docs are not product authority. Product behavior remains in
-`docs/commands/**`, `docs/ARCHITECTURE.md`, `docs/MISSION.md`,
-`docs/CONCEPTS.md`, and `docs/BUILDING-BLOCKS.md`.
+`docs/commands/**`, `docs/architecture.md`, `docs/mission.md`,
+`docs/concepts.md`, and `docs/tech-stack.md`.
 
 ## Approaches Considered
 
@@ -182,9 +182,9 @@ Invariants:
 
 Pointers:
 
-- `docs/MISSION.md`
-- `docs/ARCHITECTURE.md`
-- `docs/BUILDING-BLOCKS.md`
+- `docs/mission.md`
+- `docs/architecture.md`
+- `docs/tech-stack.md`
 - `docs/commands/1_node/README.md`
 - `docs/porting/PORTING.md`
 
@@ -194,8 +194,8 @@ Decision matrix:
   define the bootstrap path.
 - Steady-state CLI-to-gateway work: use the gateway API shape documented by the
   command and implemented through the Gateway API transport pattern.
-- Gateway-to-node work: follow the product topology in `MISSION`, `ARCHITECTURE`,
-  `BUILDING-BLOCKS`, and the relevant command docs.
+- Gateway-to-node work: follow the product topology in `mission.md`,
+  `architecture.md`, `tech-stack.md`, and the relevant command docs.
 - Do not use this abstractions entry as topology authority. It is a pointer that
   prevents workers from missing the product docs before adding transport edges.
 
@@ -387,7 +387,7 @@ refactor scope.
    that is `5_app.md` after node-family review; if the Solo queue promotes a
    different family first, create that family seed instead.
 12. Run documentation verification relevant to touched files. If command docs or
-   docs-linter-owned structures change, run `composer docs-lint`; otherwise a
+   Librarian-owned structures change, run `composer docs-lint`; otherwise a
    focused text review is enough for this planning-doc slice.
 
 Done when `docs/abstractions/README.md`,
@@ -424,7 +424,7 @@ and `implementer.md` includes the read-first step.
 - Refactoring already-ported commands as part of the initial docs slice.
 - Creating a doctor/state-family abstraction layer before doctor implementation
   work makes the shape concrete.
-- Adding docs-linter rules for abstractions. Start with prose; automate only
+- Adding Librarian rules for abstractions. Start with prose; automate only
   after the loop repeatedly violates a stable pattern.
 - Backfilling abstraction files for every converted but unimplemented command
   family in one pass.

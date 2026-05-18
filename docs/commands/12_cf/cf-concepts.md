@@ -2,7 +2,7 @@
 
 This document defines Cloudflare-command-domain vocabulary and invariants. It
 supports the Cloudflare command contracts; it does not override the
-[Architecture](../../ARCHITECTURE.md).
+[Architecture](../../architecture.md).
 
 ## Domain and provider authority
 

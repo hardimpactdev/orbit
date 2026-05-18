@@ -9,25 +9,25 @@ owning family concept document.
 
 ## Global Concepts
 
-- **Gateway configuration** — the durable state stored on the gateway. See [Architecture: State Model](ARCHITECTURE.md#state-model).
-- **Node reality** — observed runtime state on a node. See [Architecture: State Model](ARCHITECTURE.md#state-model).
-- **State family** — one area Orbit tracks, with gateway configuration, node reality probes, and drift handling. See [Architecture: State Families](ARCHITECTURE.md#state-families).
-- **Drift** — a difference between gateway configuration and node reality: a config mismatch, a pending update, or a runtime problem. See [Architecture: Keeping Nodes In Sync](ARCHITECTURE.md#keeping-nodes-in-sync).
-- **Restore** — doctor direction that re-applies gateway configuration on the node. Flag: `--restore`. See [Architecture: Keeping Nodes In Sync](ARCHITECTURE.md#keeping-nodes-in-sync).
-- **Adopt** — doctor direction that records observed node reality into gateway configuration. Flag: `--adopt`. See [Architecture: Keeping Nodes In Sync](ARCHITECTURE.md#keeping-nodes-in-sync).
-- **Fix** — interactive doctor resolution flow that asks per drifted item whether to restore or adopt. Flag: `--fix`. See [Architecture: Keeping Nodes In Sync](ARCHITECTURE.md#keeping-nodes-in-sync).
-- **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](ARCHITECTURE.md#authentication-and-authorization).
-- **Node access grant** — gateway-stored permission that lets one node operate on another after WireGuard identity is authenticated. See [Architecture: Authentication And Authorization](ARCHITECTURE.md#authentication-and-authorization).
-- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Building Blocks: Process Manager](BUILDING-BLOCKS.md#process-manager).
+- **Gateway configuration** — the durable state stored on the gateway. See [Architecture: State Model](architecture.md#state-model).
+- **Node reality** — observed runtime state on a node. See [Architecture: State Model](architecture.md#state-model).
+- **State family** — one area Orbit tracks, with gateway configuration, node reality probes, and drift handling. See [Architecture: State Families](architecture.md#state-families).
+- **Drift** — a difference between gateway configuration and node reality: a config mismatch, a pending update, or a runtime problem. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
+- **Restore** — doctor direction that re-applies gateway configuration on the node. Flag: `--restore`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
+- **Adopt** — doctor direction that records observed node reality into gateway configuration. Flag: `--adopt`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
+- **Fix** — interactive doctor resolution flow that asks per drifted item whether to restore or adopt. Flag: `--fix`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
+- **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
+- **Node access grant** — gateway-stored permission that lets one node operate on another after WireGuard identity is authenticated. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
+- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](commands/7_process/process-concepts.md).
 - **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](commands/7_process/process-concepts.md).
 - **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway and on hosted nodes with local schedules under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch, overlap policy, run history, and heartbeat. See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager that keeps Supervisor alive. systemd on Ubuntu. Not Orbit's process manager.
-- **RemoteShell** — gateway-to-hosted-node execution primitive. See [Building Blocks: Gateway To Hosted Node](BUILDING-BLOCKS.md#gateway-to-hosted-node).
-- **CLI caller** — an Orbit CLI invocation from a joined client, hosted node, or the gateway host. See [Architecture: Trust And Transport](ARCHITECTURE.md#trust-and-transport).
-- **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Building Blocks: Gateway API](BUILDING-BLOCKS.md#gateway-api).
-- **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](ARCHITECTURE.md#agent-ide-integration).
-- **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](ARCHITECTURE.md#command-and-api-model) and [Command Contracts](commands/README.md).
+- **RemoteShell** — gateway-to-hosted-node execution primitive. See [Tech Stack: Gateway To Hosted Node](tech-stack.md#gateway-to-hosted-node).
+- **CLI caller** — an Orbit CLI invocation from a joined client, hosted node, or the gateway host. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
+- **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
+- **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
+- **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](commands/README.md).
 
 ## Product Families
 
@@ -42,7 +42,7 @@ Permanent state-family keys are singular product names:
 - `tool`
 - `firewall_rule`
 
-See [Architecture: State Families](ARCHITECTURE.md#state-families).
+See [Architecture: State Families](architecture.md#state-families).
 
 ## Node Concepts
 

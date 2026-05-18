@@ -8,8 +8,8 @@ replace structural linting.
 
 Find product-level mismatches that a linter cannot know:
 
-- conflicts with `docs/ARCHITECTURE.md`, `docs/MISSION.md`,
-  `docs/CONCEPTS.md`, `docs/BUILDING-BLOCKS.md`, or a family concept document;
+- conflicts with `docs/mission.md`, `docs/architecture.md`,
+  `docs/tech-stack.md`, `docs/concepts.md`, or a family concept document;
 - command behavior that assigns ownership to the wrong node, state family, or
   transport edge;
 - caller-role behavior that contradicts the shared role model;
@@ -23,8 +23,8 @@ Find product-level mismatches that a linter cannot know:
 For a target command file or command directory, read only what is needed:
 
 1. The target public page and technical files.
-2. `docs/ARCHITECTURE.md`, `docs/MISSION.md`, `docs/CONCEPTS.md`, and
-   `docs/BUILDING-BLOCKS.md` sections relevant to the command's domain.
+2. `docs/mission.md`, `docs/architecture.md`, `docs/tech-stack.md`, and
+   `docs/concepts.md` sections relevant to the command's domain.
 3. The family `README.md`, family concept document, and family doctor file,
    when present.
 4. Sibling command docs only when the target appears to inherit or diverge from

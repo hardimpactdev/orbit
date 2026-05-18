@@ -41,7 +41,7 @@ class E2EReapIncusCommand extends Command
             return $this->failCommand($exception->getMessage());
         }
 
-        $hosts = (new \ReflectionClass($pool))->getProperty('hosts')->getValue($pool);
+        $hosts = new \ReflectionClass($pool)->getProperty('hosts')->getValue($pool);
 
         if (! is_array($hosts) || $hosts === []) {
             return $this->failCommand('No Incus hosts configured.');

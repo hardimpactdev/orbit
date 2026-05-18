@@ -114,8 +114,8 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -139,8 +139,8 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -172,7 +172,7 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         File::put(storage_path('app/orbit/dnsmasq.d/test.conf'), "address=/.test/10.6.0.7\n");
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -197,7 +197,7 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         File::put(storage_path('app/orbit/dnsmasq.d/test.conf'), "address=/.test/10.6.0.7\n");
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             'test -f /etc/resolver/test' => Process::result(output: '', errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
@@ -223,7 +223,7 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             'test -f /etc/resolver/test' => Process::result(output: '', errorOutput: '', exitCode: 1),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
@@ -247,8 +247,8 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             'sudo mkdir -p /etc/resolver *' => Process::result(output: '', errorOutput: '', exitCode: 0),
             'brew services restart dnsmasq' => Process::result(output: '', errorOutput: 'dnsmasq not running', exitCode: 1),
         ]);
@@ -289,7 +289,7 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
 
@@ -329,8 +329,8 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             'sudo mkdir -p /etc/resolver *' => Process::result(output: '', errorOutput: 'permission denied', exitCode: 1),
         ]);
         Process::preventStrayProcesses();
@@ -353,8 +353,8 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
         setupDnsResolveTldJsonMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();

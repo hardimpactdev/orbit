@@ -640,13 +640,7 @@ class E2ETestCommand extends Command
      */
     private function resultsSuccessful(array $results): bool
     {
-        foreach ($results as $result) {
-            if ($result->failed()) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($results, fn ($result) => ! $result->failed());
     }
 
     /**

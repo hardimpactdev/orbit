@@ -279,7 +279,7 @@ it('reports broken relative markdown links inside Orbit command docs', function 
 });
 
 it('reports family concept documents missing from the top-level concept index', function (): void {
-    writeOrbitDocsFile($this->docsRoot, 'docs/CONCEPTS.md', "# Concepts\n");
+    writeOrbitDocsFile($this->docsRoot, 'docs/concepts.md', "# Concepts\n");
     writeOrbitDocsFile($this->docsRoot, 'docs/commands/1_node/node-concepts.md', "# Node Concepts\n\n- **Node intent:** Desired node state.\n");
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -291,7 +291,7 @@ it('reports family concept documents missing from the top-level concept index', 
 
     expect($exitCode)->toBe(1)
         ->and($payload['findings'][0])->toMatchArray([
-            'path' => 'docs/CONCEPTS.md',
+            'path' => 'docs/concepts.md',
             'severity' => 'error',
             'rule' => 'command_docs.concept_index',
             'message' => 'Top-level concepts index must include a `## Node Concepts` section for docs/commands/1_node/node-concepts.md.',
@@ -1195,9 +1195,9 @@ function makeOrbitLibrarianDocsFixture(): string
     $path = sys_get_temp_dir().'/orbit-librarian-'.bin2hex(random_bytes(6));
 
     mkdir($path, 0777, true);
-    writeOrbitDocsFile($path, 'tool/docs-linter/registries/state_families.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'node' => [\n        'singular' => 'node',\n        'doctor_doc' => 'docs/commands/1_node/node-doctor.md',\n    ],\n];\n");
-    writeOrbitDocsFile($path, 'tool/docs-linter/registries/error_codes.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'enforced_families' => [\n        'node',\n    ],\n    'shared' => [\n        'validation_failed',\n    ],\n    'products' => [\n        'node' => [\n            'not_found',\n        ],\n    ],\n];\n");
-    writeOrbitDocsFile($path, 'tool/docs-linter/registries/warning_codes.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [];\n");
+    writeOrbitDocsFile($path, 'config/librarian-command-docs/state_families.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'node' => [\n        'singular' => 'node',\n        'doctor_doc' => 'docs/commands/1_node/node-doctor.md',\n    ],\n];\n");
+    writeOrbitDocsFile($path, 'config/librarian-command-docs/error_codes.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'enforced_families' => [\n        'node',\n    ],\n    'shared' => [\n        'validation_failed',\n    ],\n    'products' => [\n        'node' => [\n            'not_found',\n        ],\n    ],\n];\n");
+    writeOrbitDocsFile($path, 'config/librarian-command-docs/warning_codes.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [];\n");
 
     return $path;
 }

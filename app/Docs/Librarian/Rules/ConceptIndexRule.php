@@ -22,7 +22,7 @@ final readonly class ConceptIndexRule implements GroupedRule
 
     public function check(): array
     {
-        $conceptsPath = "{$this->docs->repositoryRoot()}/docs/CONCEPTS.md";
+        $conceptsPath = "{$this->docs->repositoryRoot()}/docs/concepts.md";
 
         if (! is_file($conceptsPath)) {
             return [];
@@ -52,7 +52,7 @@ final readonly class ConceptIndexRule implements GroupedRule
             return [
                 $this->finding(
                     $relativeConceptFile,
-                    'Family concept documents must define concepts with `- **Term:**` bullets so docs/CONCEPTS.md can index them.',
+                    'Family concept documents must define concepts with `- **Term:**` bullets so docs/concepts.md can index them.',
                 ),
             ];
         }
@@ -62,7 +62,7 @@ final readonly class ConceptIndexRule implements GroupedRule
         if ($section === null) {
             return [
                 $this->finding(
-                    'docs/CONCEPTS.md',
+                    'docs/concepts.md',
                     "Top-level concepts index must include a `## {$sectionHeading}` section for {$relativeConceptFile}.",
                 ),
             ];
@@ -73,7 +73,7 @@ final readonly class ConceptIndexRule implements GroupedRule
 
         if (! str_contains($section['contents'], "({$sourceLink})")) {
             $findings[] = $this->finding(
-                'docs/CONCEPTS.md',
+                'docs/concepts.md',
                 "Top-level {$sectionHeading} section must link its source as {$sourceLink}.",
                 $section['line'],
             );
@@ -83,7 +83,7 @@ final readonly class ConceptIndexRule implements GroupedRule
 
         if ($block === null) {
             $findings[] = $this->finding(
-                'docs/CONCEPTS.md',
+                'docs/concepts.md',
                 "Top-level {$sectionHeading} section must contain a concept-index block for {$sourceLink}.",
                 $section['line'],
             );
@@ -95,7 +95,7 @@ final readonly class ConceptIndexRule implements GroupedRule
 
         if ($actualTerms !== $expectedTerms) {
             $findings[] = $this->finding(
-                'docs/CONCEPTS.md',
+                'docs/concepts.md',
                 "Top-level {$sectionHeading} index must match {$relativeConceptFile}. Expected: {$this->termList($expectedTerms)}. Found: {$this->termList($actualTerms)}.",
                 $section['line'],
             );
@@ -204,7 +204,7 @@ final readonly class ConceptIndexRule implements GroupedRule
         preg_match_all('/^\s*-\s+\*\*(?<term>[^*\n]+)\*\*\s*$/m', $block, $matches);
 
         return array_values(array_map(
-            fn (string $term): string => trim($term),
+            trim(...),
             $matches['term'],
         ));
     }

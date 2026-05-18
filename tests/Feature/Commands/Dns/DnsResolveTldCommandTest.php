@@ -71,8 +71,8 @@ describe('dns:resolve-tld base contract', function (): void {
         setupDnsResolveTldMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -91,8 +91,8 @@ describe('dns:resolve-tld base contract', function (): void {
         setupDnsResolveTldMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -125,7 +125,7 @@ describe('dns:resolve-tld base contract', function (): void {
         File::put(storage_path('app/orbit/dnsmasq.d/test.conf'), "address=/.test/10.6.0.7\n");
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -151,7 +151,7 @@ describe('dns:resolve-tld base contract', function (): void {
         File::put(storage_path('app/orbit/dnsmasq.d/test.conf'), "address=/.test/10.6.0.7\n");
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             'test -f /etc/resolver/test' => Process::result(output: '', errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
@@ -184,7 +184,7 @@ describe('dns:resolve-tld base contract', function (): void {
         setupDnsResolveTldMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             'test -f /etc/resolver/test' => Process::result(output: '', errorOutput: '', exitCode: 1),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
@@ -311,8 +311,8 @@ describe('dns:resolve-tld base contract', function (): void {
         setupDnsResolveTldMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();
@@ -337,8 +337,8 @@ describe('dns:resolve-tld safety', function (): void {
         File::put(storage_path('app/orbit/dnsmasq.d/other.conf'), "address=/.other/10.6.0.8\n");
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
-            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: fakeHomebrewPrefix(), errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
         Process::preventStrayProcesses();

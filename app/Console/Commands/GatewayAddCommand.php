@@ -391,10 +391,10 @@ class GatewayAddCommand extends Command implements Loggable
     private function verifyGatewayApi(string $gatewayIp, string $pemPath): array
     {
         try {
-            $response = (new GatewayConnector(
+            $response = new GatewayConnector(
                 baseUrl: "https://{$gatewayIp}",
                 caPemPath: $pemPath,
-            ))->send(new ShowGatewayIdentityRequest);
+            )->send(new ShowGatewayIdentityRequest);
         } catch (\Throwable) {
             return [
                 'code' => 'gateway_unavailable',

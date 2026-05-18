@@ -21,7 +21,7 @@
 **Tech Stack:** Laravel 13 console commands, Pest tests, Process facade via a consolidated SSH command builder for all remote work, file rendering through `~/.config/orbit/`-style staged paths, then atomic installation through root-owned wrapper scripts.
 
 **Reference material:**
-- `docs/ARCHITECTURE.md`, `docs/BUILDING-BLOCKS.md`, `docs/abstractions/4_firewall.md`.
+- `docs/architecture.md`, `docs/tech-stack.md`, `docs/abstractions/4_firewall.md`.
 - `docs/superpowers/plans/2026-05-16-gateway-dns-provisioning.md` — installer/probe pattern.
 - `app/Console/Commands/NodeNewCommand.php:648` (`provisionAppNode`) → `app/Services/OrbitHostInstaller.php::install()` — the actual production app-node provisioning path. `BakeAppNodeCommand` is `protected $hidden = true` ("Bake an app-node registry row for prepared E2E topology images") and out of scope.
 - 7+ SSH call sites using `accept-new` today: `SshRemoteShell.php:146`, `SshRemoteShellStream.php:75`, `OrbitHostInstaller.php:53/83/122/151`, `NodeNewCommand.php:1004/1140/1505`. Consolidation through a single `SshCommandBuilder` is prerequisite work.
@@ -254,7 +254,7 @@ Audit on 2026-05-16. 12 of 14 measures absent or partial.
   - Document `--host-key-fingerprint`.
   - Reframe `--user` as the **bootstrap** SSH user; `nodes.user` is always `'orbit'` after bake. Mark non-`orbit` values as deprecated.
   - Document `'provisioning'` as a transient bake-time `Node.status`; failed provisioning deletes the row.
-- Update `docs/BUILDING-BLOCKS.md` — SSH transport identity, sudoers wrappers, canonical `orbit` user, provisioning lifecycle.
+- Update `docs/tech-stack.md` — SSH transport identity, sudoers wrappers, canonical `orbit` user, provisioning lifecycle.
 - Update `docs/commands/README.md:160` — add `security` to the family list.
 - Create `docs/working/2026-05-16-existing-app-node-security-migration.md` — operator checklist for the deployed fleet.
 
@@ -299,7 +299,7 @@ Audit on 2026-05-16. 12 of 14 measures absent or partial.
     - `WithMetadataShellInertnessTest` — passes a value containing every shell metacharacter (`; | & $ ( ) < > ' " \\` ` ` space`) and asserts the remote process reads `$KEY` back as the exact literal value, byte-for-byte, with no side-effect (e.g., no `ls` runs).
     - `WithMetadataCommandShapeTest` — asserts the final SSH-arg shape is `export KEY1='...'; export KEY2='...'; <user-body>` with the user-body being a verbatim, untouched copy of what the caller passed (proves prologue/body separation; catches any accidental string concatenation into the body).
   - Migrate every existing non-secret env caller (from the Task 0i audit doc) to use `withMetadata`. The old `env` API still works in parallel (deprecated, logs a deprecation warning).
-- **Docs in this PR:** Stub `docs/abstractions/17_security.md` with the host-key section; update `docs/BUILDING-BLOCKS.md` SSH transport paragraph.
+- **Docs in this PR:** Stub `docs/abstractions/17_security.md` with the host-key section; update `docs/tech-stack.md` SSH transport paragraph.
 
 ### Phase 2 — Wrappers, sudoers, secret transport, sysctl, home *(ships as PR 3)*
 
@@ -336,7 +336,7 @@ Audit on 2026-05-16. 12 of 14 measures absent or partial.
   kernel.randomize_va_space=2
   ```
 - [ ] **Task 9.** **`HomeDirectoryLockdownInstaller`** — `chmod 0700 /home/orbit && /home/orbit/.ssh`. Bake-time only; doctor reports drift as info but does not restore (no `orbit-lockdown-home` wrapper — drift = out-of-band tamper, warrants operator re-bake).
-- **Docs in this PR:** Grow `17_security.md` with wrappers + sudoers + sysctl + home sections; update `BUILDING-BLOCKS.md`.
+- **Docs in this PR:** Grow `17_security.md` with wrappers + sudoers + sysctl + home sections; update `tech-stack.md`.
 - **Tests in this PR:** `WrapperEmitTest`, `WrapperLockdownTest`, `DynamicWrapperFloorTest` (including legacy `99-orbit` removal assertion), `WithMetadataShellInertnessTest`, per-wrapper argument validation, `RemoteShellNoEnvTest`.
 
 ### Phase 3 — SSH surface + protected firewall rules *(ships as PR 4)*

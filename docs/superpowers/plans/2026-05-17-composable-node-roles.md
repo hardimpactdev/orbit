@@ -106,9 +106,9 @@
 
 ### Modified Files
 
-- `docs/ARCHITECTURE.md` — replace control/app role language with gateway, joined client identity, hosted node roles, and grants.
-- `docs/CONCEPTS.md` — add new node concepts to the concept index.
-- `docs/BUILDING-BLOCKS.md` — update platform/role and Docker Compose backing-service language.
+- `docs/architecture.md` — replace control/app role language with gateway, joined client identity, hosted node roles, and grants.
+- `docs/concepts.md` — add new node concepts to the concept index.
+- `docs/tech-stack.md` — update platform/role and Docker Compose backing-service language.
 - `docs/commands/1_node/README.md` — authoritative role model rewrite.
 - `docs/commands/1_node/node-concepts.md` — new vocabulary and platform support matrix.
 - `docs/commands/1_node/node-doctor.md` — role assignment, settings, status, and baseline drift contract.
@@ -157,9 +157,9 @@
 ## Task 1: Align Product Docs
 
 **Files:**
-- Modify: `docs/ARCHITECTURE.md`
-- Modify: `docs/CONCEPTS.md`
-- Modify: `docs/BUILDING-BLOCKS.md`
+- Modify: `docs/architecture.md`
+- Modify: `docs/concepts.md`
+- Modify: `docs/tech-stack.md`
 - Modify: `docs/commands/1_node/README.md`
 - Modify: `docs/commands/1_node/node-concepts.md`
 - Modify: `docs/commands/1_node/node-doctor.md`
@@ -240,7 +240,7 @@ specific concept index entries that must be updated in this task.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/ARCHITECTURE.md docs/CONCEPTS.md docs/BUILDING-BLOCKS.md docs/commands/1_node
+git add docs/architecture.md docs/concepts.md docs/tech-stack.md docs/commands/1_node
 git commit -m "docs: define composable node roles"
 ```
 

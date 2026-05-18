@@ -39,7 +39,7 @@ final readonly class CommandDocsRegistry
      */
     public function entitySchemas(): array
     {
-        $directory = "{$this->docs->repositoryRoot()}/tool/docs-linter/registries/entities";
+        $directory = "{$this->registryRoot()}/entities";
 
         if (! is_dir($directory)) {
             return [];
@@ -75,7 +75,7 @@ final readonly class CommandDocsRegistry
      */
     private function load(string $file): array
     {
-        $path = "{$this->docs->repositoryRoot()}/tool/docs-linter/registries/{$file}";
+        $path = "{$this->registryRoot()}/{$file}";
 
         if (! is_file($path)) {
             return [];
@@ -88,5 +88,10 @@ final readonly class CommandDocsRegistry
         }
 
         return $registry;
+    }
+
+    private function registryRoot(): string
+    {
+        return "{$this->docs->repositoryRoot()}/config/librarian-command-docs";
     }
 }

@@ -40,8 +40,8 @@ Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
 belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
 gateway-to-app-node application and process managers live in
-[BUILDING-BLOCKS.md#gateway-to-app-node](../../BUILDING-BLOCKS.md#gateway-to-app-node) and
-[BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager).
+[tech-stack.md#gateway-to-app-node](../../tech-stack.md#gateway-to-app-node) and
+[tech-stack.md#process-manager](../../tech-stack.md#process-manager).
 
 ## App Identity Arguments
 
@@ -110,7 +110,7 @@ registration/adoption, destructive cleanup, source-of-truth pruning, or
 preference changes unless a command explicitly documents a narrow exception.
 The current local workflow exception is
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node) and owned by the
+defined by [architecture.md#app-node](../../architecture.md#app-node) and owned by the
 workspace command contract.
 
 ## Commands

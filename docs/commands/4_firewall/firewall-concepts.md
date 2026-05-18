@@ -1,6 +1,6 @@
 # Firewall Concepts
 
-This document defines firewall-family vocabulary and invariants. It supports the firewall command contracts and the [firewall doctor](firewall-doctor.md); it does not override the [Architecture](../../ARCHITECTURE.md).
+This document defines firewall-family vocabulary and invariants. It supports the firewall command contracts and the [firewall doctor](firewall-doctor.md); it does not override the [Architecture](../../architecture.md).
 
 ## Identity
 

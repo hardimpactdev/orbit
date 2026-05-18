@@ -2,7 +2,7 @@
 
 This document defines node-family vocabulary and invariants. It supports the
 node command contracts and the [node doctor](node-doctor.md); it does not
-override the [Architecture](../../ARCHITECTURE.md).
+override the [Architecture](../../architecture.md).
 
 ## Role Vocabulary
 

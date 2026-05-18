@@ -114,25 +114,25 @@ trait WithStepTree
      */
     protected function stepTreeSpinner(string $frame, string $label, int $labelWidth): string
     {
-        return (new LifecycleSummaryRenderer($this->output->isDecorated()))
+        return new LifecycleSummaryRenderer($this->output->isDecorated())
             ->spinnerLine($frame, $label, $labelWidth);
     }
 
     protected function stepSuccess(string $label, int $labelWidth, string $message): string
     {
-        return (new LifecycleSummaryRenderer($this->output->isDecorated()))
+        return new LifecycleSummaryRenderer($this->output->isDecorated())
             ->success($label, $labelWidth, $message);
     }
 
     protected function stepFailed(string $label, int $labelWidth, string $message): string
     {
-        return (new LifecycleSummaryRenderer($this->output->isDecorated()))
+        return new LifecycleSummaryRenderer($this->output->isDecorated())
             ->failure($label, $labelWidth, $message);
     }
 
     protected function stepSkipped(string $label, int $labelWidth, string $message): string
     {
-        return (new LifecycleSummaryRenderer($this->output->isDecorated()))
+        return new LifecycleSummaryRenderer($this->output->isDecorated())
             ->skipped($label, $labelWidth, $message);
     }
 

@@ -215,9 +215,9 @@ escape hatch is the safer approach because it survives composer updates.
 - [ ] For each file: replace the redrawn tree with a reference link plus
       a "Step List" subsection containing only command-specific labels and
       footer text.
-- [ ] Confirm the docs-linter still passes after the dedupe.
-      `tool/docs-linter/baseline.json` may need regeneration if the linter
-      keyed off the redrawn tree shape.
+- [ ] Confirm Librarian still passes after the dedupe.
+      If the lint output changes, update the relevant rule or Orbit registry
+      before changing the command docs further.
 
 ### Phase 3 — Pao removal
 

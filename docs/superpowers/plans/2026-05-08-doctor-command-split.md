@@ -956,7 +956,7 @@ Expected: PASS.
 **Files:**
 - Modify: `docs/commands/README.md`
 - Modify: every family doctor doc and command doc found by the audit below.
-- Modify: `tool/docs-linter/registries/shared_options.php` and `tool/docs-linter/registries/warning_codes.php` if they still register `doctor:fix` command references.
+- Modify: `config/librarian-command-docs/shared_options.php` and `config/librarian-command-docs/warning_codes.php` if they still register `doctor:fix` command references.
 
 **Migration patterns:**
 
@@ -972,7 +972,7 @@ Expected: PASS.
 - [ ] **Step 1: Run the stale-doc audit**
 
 ```bash
-rg -n 'doctor:fix|4_doctor-fix' docs/commands tool/docs-linter -g '*.md' -g '*.php'
+rg -n 'doctor:fix|4_doctor-fix' docs/commands config/librarian-command-docs -g '*.md' -g '*.php'
 ```
 
 Expected before implementation: matches exist in family doctor docs and registry files.
@@ -992,7 +992,7 @@ Expected: PASS.
 - [ ] **Step 4: Verify stale references are gone**
 
 ```bash
-rg -n 'doctor:fix|4_doctor-fix' docs/commands tool/docs-linter -g '*.md' -g '*.php'
+rg -n 'doctor:fix|4_doctor-fix' docs/commands config/librarian-command-docs -g '*.md' -g '*.php'
 ```
 
 Expected: no output.

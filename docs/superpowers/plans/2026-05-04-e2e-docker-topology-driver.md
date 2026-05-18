@@ -387,7 +387,6 @@ Add the helper file to `composer.json` autoload-dev `files`:
 ```json
 "autoload-dev": {
     "psr-4": {
-        "OrbitDocsLinter\\": "tool/docs-linter/src/",
         "Tests\\": "tests/"
     },
     "files": [

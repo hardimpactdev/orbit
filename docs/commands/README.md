@@ -7,19 +7,20 @@ The architecture defines the world commands operate in. Command contracts define
 
 Before adding or changing a command:
 
-1. Update `docs/ARCHITECTURE.md` if the change affects Orbit's architecture or
+1. Update `docs/architecture.md` if the change affects Orbit's architecture or
    domain model.
-2. Update `docs/BUILDING-BLOCKS.md` for changes to implementation shape, backend boundaries, process manager behavior, transport edges, or scheduler mechanics.
+2. Update `docs/tech-stack.md` for changes to implementation shape, backend boundaries, process manager behavior, transport edges, or scheduler mechanics.
 3. Update the relevant command contract in this directory.
 4. Confirm the command contracts remain consistent with each other.
 5. Implement code to match the contract.
 
 After changing converted command documentation, run `composer docs-lint`. Use a
 scoped path such as `composer docs-lint -- --path=docs/commands/1_node` while a
-different domain is still mid-conversion. The linter lives in
-`tool/docs-linter/` and is the executable structure contract for converted
-command docs. When the documentation structure changes, update the linter first,
-then migrate docs until it passes.
+different domain is still mid-conversion. Librarian is the executable structure
+contract for converted command docs, with Orbit-specific registries under
+`config/librarian-command-docs/`. When the documentation structure changes,
+update the Librarian rule or Orbit registry first, then migrate docs until it
+passes.
 
 ## Contract Rules
 

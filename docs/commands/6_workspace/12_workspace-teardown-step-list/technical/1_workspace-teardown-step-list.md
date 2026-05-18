@@ -58,7 +58,7 @@ read.
      `composer.json`, `package.json`, `.php-version`, or any other project
      file content during parent-app inference. This matches the
      `workspace:new` and `workspace-teardown-step:add` contracts and the
-     `ARCHITECTURE.md` "Workspaces" project-file inspection prohibition.
+     `architecture.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
    Unknown apps fail with `error.code=workspace.app_not_found` before any
    read.

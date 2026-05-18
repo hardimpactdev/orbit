@@ -53,7 +53,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    - **Forbidden**: `workspace-teardown-step:add` must not read
      `composer.json`, `package.json`, `.php-version`, or any other project
      file content during parent-app inference. This matches the
-     `workspace:new` contract and `ARCHITECTURE.md` "Workspaces" project-file
+     `workspace:new` contract and `architecture.md` "Workspaces" project-file
      inspection prohibition.
 3. **Validate Position**:
    - `--before` and `--after` are mutually exclusive. Supplying both fails

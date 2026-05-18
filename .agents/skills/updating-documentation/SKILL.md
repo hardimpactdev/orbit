@@ -15,9 +15,10 @@ legacy evidence, and implementation handoff needs aligned before code changes.
 1. Read the request and identify the documentation surface: architecture, concept docs, command contracts, orchestration docs, or feature handoff.
 2. Read current product authority:
    - `AGENTS.md`
-   - `docs/ARCHITECTURE.md`
-   - `docs/MISSION.md`
-   - `docs/CONCEPTS.md`
+   - `docs/mission.md`
+   - `docs/architecture.md`
+   - `docs/tech-stack.md`
+   - `docs/concepts.md`
    - relevant `docs/commands/**`
    - relevant `docs/superpowers/**`
 3. Read relevant `../orbit-old-may/**` evidence when the behavior may already have existed.

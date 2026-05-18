@@ -222,9 +222,9 @@ the product topology before implementing forwarding or node-side execution.
 
 **Current pointers:**
 
-- `docs/MISSION.md`
-- `docs/ARCHITECTURE.md`
-- `docs/BUILDING-BLOCKS.md`
+- `docs/mission.md`
+- `docs/architecture.md`
+- `docs/tech-stack.md`
 - `docs/commands/1_node/README.md`
 - `docs/porting/PORTING.md`
 
@@ -234,8 +234,8 @@ the product topology before implementing forwarding or node-side execution.
   define the bootstrap path.
 - Steady-state CLI-to-gateway work: use the gateway API shape documented by the
   command and implemented through the Gateway API transport pattern.
-- Gateway-to-node work: follow the product topology in `MISSION`, `ARCHITECTURE`,
-  `BUILDING-BLOCKS`, and the relevant command docs.
+- Gateway-to-node work: follow the product topology in `mission.md`,
+  `architecture.md`, `tech-stack.md`, and the relevant command docs.
 - Do not use this entry as topology authority. It is a pointer that prevents
   workers from missing the product docs before adding transport edges.
 

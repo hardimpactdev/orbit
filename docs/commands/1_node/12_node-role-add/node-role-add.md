@@ -15,7 +15,7 @@ orbit node role:add [node] [role] [--tld=] [--json]
 - `gateway` cannot be added through this command.
 - `app-development` requires `--tld`.
 - `app-production` and `database` reject unsupported role-local options.
-- Human output renders a progress tree because convergence can be slow.
+- Human output shows progress because convergence can be slow.
 - Joined callers forward through the typed gateway API.
 
 ## Technical Contract

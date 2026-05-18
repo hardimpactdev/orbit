@@ -1,6 +1,6 @@
-# Building Blocks
+# Tech Stack
 
-This document describes the implementation behind the [Architecture](ARCHITECTURE.md). The architecture covers the conceptual model — what Orbit is and how the parts relate. This document covers what's actually running. Command behavior is defined in [commands/](commands/README.md); concept ownership is indexed in [Concepts](CONCEPTS.md).
+This document describes the implementation behind the [Architecture](architecture.md). The architecture covers the conceptual model — what Orbit is and how the parts relate. This document covers what's actually running. Command behavior is defined in [commands/](commands/README.md); concept ownership is indexed in [Concepts](concepts.md).
 
 The pieces fit together like this:
 
@@ -38,7 +38,7 @@ The pieces fit together like this:
 
 The sections below walk through each layer of the stack in the same order as the table.
 
-## Technology stack
+## Runtime
 
 | Layer | Current implementation |
 |---|---|
@@ -59,7 +59,11 @@ The sections below walk through each layer of the stack in the same order as the
 
 Cloudflare is the current first-party DNS/CDN provider integration. Agent IDE adapters and workspace source adapters may be first-party or extension-provided, but the gateway always owns the stored configuration and command behavior.
 
-## Application
+## Frameworks
+
+Laravel is Orbit's application framework, while command behavior remains documented separately from framework mechanics.
+
+### Application
 
 Orbit is a single Laravel 13 codebase that runs in two execution contexts. On
 the gateway, the full Laravel app serves the typed HTTPS API and runs the
@@ -69,13 +73,15 @@ over the VPN, and renders the result.
 
 Orbit runs from source. There is no PHAR or container image to install — the installer checks out the repo, installs dependencies through Composer, and links `orbit` into the local executable path.
 
-## Persistent state
+## Storage
+
+### Persistent state
 
 The gateway holds Orbit's only durable store: a single SQLite database at
 `~/orbit/database/database.sqlite`. Every state family writes here. Hosted
 nodes do not have their own Orbit database.
 
-See [Architecture: State Model](ARCHITECTURE.md#state-model) and [Architecture: State Families](ARCHITECTURE.md#state-families) for the conceptual model. A few implementation notes:
+See [Architecture: State Model](architecture.md#state-model) and [Architecture: State Families](architecture.md#state-families) for the conceptual model. A few implementation notes:
 
 - A configuration row describes a desired physical fact on a node; the node-side artifact is the applied representation of that row.
 - Process lifecycle events are stored as durable history, not as a separate process-state table.
@@ -83,7 +89,9 @@ See [Architecture: State Model](ARCHITECTURE.md#state-model) and [Architecture: 
 - Renderers turn gateway-tracked configuration into the artifacts a node should hold. They must take target-specific inputs from gateway data or explicit probe results, never from gateway-local host state, when rendering for another node.
 - Implementation-specific names (Caddy sites, UFW rules, Supervisor programs, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
 
-## Gateway API
+## Infrastructure
+
+### Gateway API
 
 Caddy serves the gateway's HTTPS API only on the gateway's WireGuard address. It is not a public internet vhost.
 
@@ -93,7 +101,7 @@ The gateway API listener must not trust client-supplied forwarding identity. Cad
 
 Streaming and non-streaming gateway API traffic use separate PHP-FPM sockets. Stream and log endpoints route to the stream socket; ordinary command/API execution routes to the exec socket. This prevents long-lived streams from consuming the same execution lane as short command requests.
 
-### Remote command progress
+#### Remote command progress
 
 Long-running CLI-to-gateway commands stream structured progress over Server-Sent Events when they need live feedback. The gateway emits Orbit progress events, not arbitrary stdout:
 
@@ -104,9 +112,9 @@ Long-running CLI-to-gateway commands stream structured progress over Server-Sent
 
 The CLI consumes these events and renders the normal Orbit progress tree locally. If the stream closes without a `complete` or `error` event, the command is treated as failed. This progress stream is distinct from log streaming and from local process line streaming.
 
-## Gateway to hosted node
+### Gateway to hosted node
 
-See [Architecture: Trust And Transport](ARCHITECTURE.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
+See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
 
 VPN administration is the one gateway-local exception. Commands that administer
 VPN clients (`vpn-client:*`) or the VPN web UI (`vpn-web-ui:*`) execute on the
@@ -130,7 +138,7 @@ place. Writes under managed system paths (`/etc`, `/usr`, `/opt`, `/var`,
 `/root`, `/boot`, `/srv`) use the hosted-node SSH user's passwordless sudo
 contract. User-owned paths are written as the SSH user.
 
-## Proxy
+### Proxy
 
 Caddy is the proxy on every node. It terminates TLS, serves the gateway API on
 the gateway, and serves app and workspace routes on hosted nodes with
@@ -138,7 +146,7 @@ application roles. App-route certificates are issued by the Orbit root CA, so
 hosted nodes serve HTTPS without ever holding the root CA private key or any
 general signing authority.
 
-### Caddy include boundaries
+#### Caddy include boundaries
 
 Caddy configuration is split by exposure boundary, not by who happens to write the file. The global `/etc/caddy/Caddyfile` imports both managed include trees:
 
@@ -151,7 +159,7 @@ Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, 
 
 Installer and doctor repair code must be additive: ensure required imports and managed include files exist, but never replace unrelated site blocks or remove existing imports.
 
-## PHP runtime
+### PHP runtime
 
 PHP-FPM runs natively on the gateway and on hosted nodes with application roles
 — not in a container. Native execution keeps request latency predictable and
@@ -159,7 +167,7 @@ avoids container overhead in the request path.
 
 Each workspace gets its own PHP-FPM pool so workspaces are isolated from one another. Production apps get a dedicated pool as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it re-renders the affected PHP-FPM pool on the owning node through `RemoteShell`.
 
-## Process manager
+### Process manager
 
 Supervisor (`supervisord`) supervises Orbit-managed long-running processes on
 every gateway and on hosted nodes that run processes. Each process Orbit tracks
@@ -170,7 +178,7 @@ Host init keeps Supervisor itself alive. On Ubuntu, the distro `supervisor.servi
 
 Other host services — Caddy, PHP-FPM, Docker, and Supervisor itself — run directly under host init, not under Supervisor. Supervisor manages Orbit-defined processes only, not the host service stack.
 
-## Scheduler
+### Scheduler
 
 The Orbit Scheduler is a long-running PHP process invoked as
 `php artisan orbit:scheduler:run`. It is supervised by Supervisor as the
@@ -193,7 +201,7 @@ Periodic execution comes from the daemon's internal sleep loop, not from Supervi
 
 The daemon's per-tick logic is shared with the `orbit schedule:run` command. The daemon is the steady-state path; `schedule:run` is the on-demand path used for testing, troubleshooting, and recovery.
 
-## Service containers
+### Service containers
 
 Docker Compose runs supporting services on hosted nodes that need them —
 databases, caches, mail servers, websocket utilities, and similar backing
@@ -202,19 +210,19 @@ configuration and applied through `RemoteShell`. Docker is reserved for
 services that aren't part of the PHP request path; PHP-FPM and Caddy run on the
 host directly.
 
-## Network
+### Network
 
 WireGuard is the VPN. The gateway is the WireGuard hub: every other node joins as a peer with its own identity, and that identity is what the gateway uses to authenticate API calls. There is no separate auth token; the WireGuard handshake is the credential.
 
 The gateway also acts as the Orbit root certificate authority. It issues TLS certificates for the gateway API and for app/workspace proxy routes, so HTTPS works across the fleet without an external CA.
 
-## Public DNS/CDN
+### Public DNS/CDN
 
 Production domains are managed through Orbit's first-party Cloudflare integration. The gateway calls the Cloudflare API to set up DNS records and to coordinate origin and edge certificates for proxied domains.
 
 Other DNS/CDN providers can be added as extension points without changing core Orbit. The gateway always owns the stored domain configuration and command behavior, even when a provider is plugged in.
 
-## Installation
+### Installation
 
 Orbit runs from source.
 
@@ -246,7 +254,7 @@ local gateway API endpoint, the gateway WireGuard IP, and the trust material,
 installs local gateway CA trust when missing, and makes that gateway the
 default endpoint for subsequent Orbit commands.
 
-## Platform and roles
+### Platform and roles
 
 The gateway role is Ubuntu-only. Hosted roles run on Ubuntu. Joined clients are
 macOS or Ubuntu. macOS is not a hosted-role platform.

@@ -96,7 +96,7 @@ If `dry_run` is `false`:
     family warning vocabulary and `next_command` handoffs as
     `workspace:remove`.
   - **Database Cleanup Current Limitation:** Databases are not removed by this
-    contract revision. Per `ARCHITECTURE.md` §Apps, database cleanup is allowed only
+    contract revision. Per `architecture.md` §Apps, database cleanup is allowed only
     for databases explicitly tracked by Orbit as workspace-owned, and no
     such tracking mechanism exists in gateway configuration today. Every database
     encountered must be reported as `skipped` (manual cleanup) regardless

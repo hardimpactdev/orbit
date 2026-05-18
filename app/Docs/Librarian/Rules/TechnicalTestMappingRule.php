@@ -121,13 +121,7 @@ final readonly class TechnicalTestMappingRule implements GroupedRule
             return true;
         }
 
-        foreach ($errorCodes as $errorCode) {
-            if (! str_contains($coverage, strtolower($errorCode))) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($errorCodes, fn ($errorCode) => str_contains($coverage, strtolower((string) $errorCode)));
     }
 
     private function documentsWarningPayload(string $contents): bool

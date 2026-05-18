@@ -1,6 +1,6 @@
 # Orbit Concepts
 
-Authoritative source: [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md), [`docs/CONCEPTS.md`](../../../docs/CONCEPTS.md), [`docs/BUILDING-BLOCKS.md`](../../../docs/BUILDING-BLOCKS.md). This file is a quick reference for the parts that matter when calling the CLI.
+Authoritative source: [`docs/architecture.md`](../../../docs/architecture.md), [`docs/concepts.md`](../../../docs/concepts.md), [`docs/tech-stack.md`](../../../docs/tech-stack.md). This file is a quick reference for the parts that matter when calling the CLI.
 
 ## Node roles
 

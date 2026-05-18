@@ -153,13 +153,7 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
 
     private function hasBehaviorSection(string $contents): bool
     {
-        foreach (self::BEHAVIOR_HEADINGS as $heading) {
-            if (str_contains($contents, $heading)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(self::BEHAVIOR_HEADINGS, fn ($heading) => str_contains($contents, (string) $heading));
     }
 
     private function describesAppNodePath(string $contents): bool

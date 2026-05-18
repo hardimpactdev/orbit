@@ -128,7 +128,7 @@ final readonly class HumanRendererProgressTreeRule implements GroupedRule
     private function treeStyleFinding(string $file, string $block, int $line): ?Finding
     {
         $lines = array_values(array_filter(
-            array_map(static fn (string $line): string => rtrim($line), preg_split('/\R/', trim($block)) ?: []),
+            array_map(rtrim(...), preg_split('/\R/', trim($block)) ?: []),
             static fn (string $line): bool => trim($line) !== '',
         ));
 

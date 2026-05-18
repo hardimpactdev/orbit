@@ -16,8 +16,8 @@ The stable node-family vocabulary is defined in
 [`node-concepts.md`](node-concepts.md). The node-family drift, restore, and adopt
 contract is defined in [`node-doctor.md`](node-doctor.md). Implementation-shape
 details for runtime roles, transport edges, and gateway-to-hosted-node applying
-live in [BUILDING-BLOCKS.md](../../BUILDING-BLOCKS.md#platform-and-roles) and
-[BUILDING-BLOCKS.md#gateway-to-hosted-node](../../BUILDING-BLOCKS.md#gateway-to-hosted-node).
+live in [tech-stack.md](../../tech-stack.md#platform-and-roles) and
+[tech-stack.md#gateway-to-hosted-node](../../tech-stack.md#gateway-to-hosted-node).
 
 ## Role Model
 
@@ -49,7 +49,7 @@ gateway-applied changes over SSH.
 Hosted-node CLI availability is not general write permission. The current
 hosted-node write exception is
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [ARCHITECTURE.md#hosted-node](../../ARCHITECTURE.md#hosted-node); it remains a
+defined by [architecture.md#hosted-node](../../architecture.md#hosted-node); it remains a
 gateway-mediated local workflow, not local hosted-node ownership of
 configuration.
 
@@ -103,7 +103,7 @@ Failure Semantics.
 ## Hub and spoke model
 
 Orbit uses the
-[hub-and-spoke topology](../../ARCHITECTURE.md#hub-and-spoke) defined by the
+[hub-and-spoke topology](../../architecture.md#hub-and-spoke) defined by the
 architecture. The gateway is the hub. Joined clients and hosted nodes are spokes
 connected to the gateway; they do not coordinate Orbit work with each other
 directly.

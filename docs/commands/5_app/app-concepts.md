@@ -2,7 +2,7 @@
 
 This document defines app-family vocabulary and invariants. It supports the
 app command contracts and the [app doctor](app-doctor.md); it does not override
-the [Architecture](../../ARCHITECTURE.md).
+the [Architecture](../../architecture.md).
 
 ## Identity
 

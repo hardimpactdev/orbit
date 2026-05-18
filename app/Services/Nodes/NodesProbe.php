@@ -272,16 +272,7 @@ final readonly class NodesProbe
             return false;
         }
 
-        foreach ($assignments as $assignment) {
-            if (
-                $assignment->status === NodeRoleStatus::Active->value
-                && in_array($assignment->role, $expectedRoles, true)
-            ) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($assignments, fn ($assignment) => ! ($assignment->status === NodeRoleStatus::Active->value && in_array($assignment->role, $expectedRoles, true)));
     }
 
     private function assignmentSettingsAreValid(NodeRoleDefinition $definition, NodeRoleAssignment $assignment): bool

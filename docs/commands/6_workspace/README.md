@@ -81,9 +81,9 @@ unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
 Implementation-shape details for the process manager, Supervisor programs, and
 gateway-to-app-node application live in
-[BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager),
-[BUILDING-BLOCKS.md#scheduler](../../BUILDING-BLOCKS.md#scheduler), and
-[BUILDING-BLOCKS.md#gateway-to-app-node](../../BUILDING-BLOCKS.md#gateway-to-app-node).
+[tech-stack.md#process-manager](../../tech-stack.md#process-manager),
+[tech-stack.md#scheduler](../../tech-stack.md#scheduler), and
+[tech-stack.md#gateway-to-app-node](../../tech-stack.md#gateway-to-app-node).
 
 Workspace registry-only reads — `workspace:show`, `workspace:history`,
 `workspace:list`, and `workspace:log` for stored history — do not require a

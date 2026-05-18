@@ -44,7 +44,7 @@ These rules govern process configuration ownership, naming, and runtime unit der
 - Create commands use positional arguments for required fields. Edit commands use named options so omitted fields preserve their current value.
 - This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
 
-Implementation-shape details for Supervisor and the Orbit Scheduler live in [BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager) and [BUILDING-BLOCKS.md#scheduler](../../BUILDING-BLOCKS.md#scheduler).
+Implementation-shape details for Supervisor and the Orbit Scheduler live in [tech-stack.md#process-manager](../../tech-stack.md#process-manager) and [tech-stack.md#scheduler](../../tech-stack.md#scheduler).
 
 ## Caller Role Rule
 

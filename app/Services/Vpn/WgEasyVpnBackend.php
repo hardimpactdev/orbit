@@ -65,16 +65,7 @@ final class WgEasyVpnBackend implements VpnBackend
         if (! $response->successful()) {
             throw new RuntimeException('VPN backend unavailable.');
         }
-
-        $client = null;
-
-        foreach ($this->clients($totp) as $candidate) {
-            if ($candidate->name === $name) {
-                $client = $candidate;
-
-                break;
-            }
-        }
+        $client = array_find($this->clients($totp), fn ($candidate) => $candidate->name === $name);
 
         if ($client === null) {
             throw new RuntimeException('VPN client creation could not be verified.');

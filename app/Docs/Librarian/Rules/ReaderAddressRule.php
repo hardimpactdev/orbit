@@ -160,12 +160,6 @@ final readonly class ReaderAddressRule implements GroupedRule
             return true;
         }
 
-        foreach (self::IMPERATIVE_OPENERS as $verb) {
-            if (preg_match('/(?:^|\n|\.\s)'.preg_quote($verb, '/').'\b/', $stripped) === 1) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(self::IMPERATIVE_OPENERS, fn ($verb) => preg_match('/(?:^|\n|\.\s)'.preg_quote((string) $verb, '/').'\b/', $stripped) === 1);
     }
 }

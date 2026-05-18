@@ -150,7 +150,7 @@ describe('dns:resolve-tld non-interactive input mode', function (): void {
         setupDnsResolveTldNiMacosResolver();
 
         Process::fake([
-            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'which dnsmasq' => Process::result(output: fakeHomebrewPrefix().'/bin/dnsmasq', errorOutput: '', exitCode: 0),
             '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
         ]);
 

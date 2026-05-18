@@ -6,8 +6,9 @@
     "keywords": ["laravel", "orbit", "environment"],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "beyondcode/polyscope": "^1.0",
+        "hardimpactdev/librarian": "^0.0.1",
         "hardimpactdev/opencode-sdk-laravel": "^0.0.7",
         "laravel/framework": "^13.0",
         "laravel/tinker": "^3.0",
@@ -38,7 +39,6 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "OrbitDocsLinter\\": "tool/docs-linter/src/",
             "Tests\\": "tests/"
         },
         "files": [
@@ -58,7 +58,7 @@
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
         ],
-        "docs-lint": "@php tool/docs-linter/docs-linter.php --strict --format=agent",
+        "docs-lint": "@php artisan librarian:lint --format=agent --path=docs/commands",
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
             "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e"

@@ -16,9 +16,10 @@ documentation and implementation work through Solo MCP.
 2. Identify the affected product surface: command, service, API, docs-only behavior, orchestration flow, E2E lane, or project tooling.
 3. Read current product authority before proposing implementation:
    - `AGENTS.md`
-   - `docs/ARCHITECTURE.md`
-   - `docs/MISSION.md`
-   - `docs/CONCEPTS.md`
+   - `docs/mission.md`
+   - `docs/architecture.md`
+   - `docs/tech-stack.md`
+   - `docs/concepts.md`
    - relevant `docs/commands/**`
    - relevant `docs/superpowers/**`
 4. Check `../orbit-old-may` for prior behavior when the request touches behavior Orbit may already have solved.
@@ -125,9 +126,10 @@ Request:
 
 Required context:
 - `AGENTS.md`
-- `docs/ARCHITECTURE.md`
-- `docs/MISSION.md`
-- `docs/CONCEPTS.md`
+- `docs/mission.md`
+- `docs/architecture.md`
+- `docs/tech-stack.md`
+- `docs/concepts.md`
 - relevant `docs/commands/**`
 - relevant `docs/superpowers/**`
 - relevant `../orbit-old-may/**` evidence

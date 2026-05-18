@@ -78,7 +78,7 @@ This command follows the shared
 ### Effective Adapter Rules
 
 - Resolve the effective adapter through the shared inheritance chain documented
-  in [Agent IDE Integration](../../../../ARCHITECTURE.md#agent-ide-integration).
+  in [Agent IDE Integration](../../../../architecture.md#agent-ide-integration).
 - `none` at app scope means the app explicitly disables Agent IDE messaging;
   fail with `no_effective_adapter`.
 - A missing node/app default also fails with `no_effective_adapter`.

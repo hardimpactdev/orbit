@@ -123,7 +123,10 @@ beforeEach(function (): void {
         }
 
         if (str_contains($command, 'orbit:internal:bootstrap-gateway-local')) {
-            return Process::result(output: testGatewayCaCertificate()."\n");
+            return Process::result(output: json_encode([
+                'ca_cert' => testGatewayCaCertificate(),
+                'wireguard_server_public_key' => 'gateway-public-key',
+            ], JSON_THROW_ON_ERROR)."\n");
         }
 
         if (str_contains($command, 'orbit:internal:detect-platform')) {

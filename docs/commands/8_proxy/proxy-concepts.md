@@ -1,6 +1,6 @@
 # Proxy Concepts
 
-This document defines proxy-family vocabulary and invariants. It supports the proxy command contracts and the [proxy doctor](proxy-doctor.md); it does not override the [Architecture](../../ARCHITECTURE.md).
+This document defines proxy-family vocabulary and invariants. It supports the proxy command contracts and the [proxy doctor](proxy-doctor.md); it does not override the [Architecture](../../architecture.md).
 
 ## Routes
 

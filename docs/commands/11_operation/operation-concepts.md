@@ -1,6 +1,6 @@
 # Operation Concepts
 
-This document defines operation-command-domain vocabulary and invariants. It supports the operation command contracts; it does not override the [Architecture](../../ARCHITECTURE.md).
+This document defines operation-command-domain vocabulary and invariants. It supports the operation command contracts; it does not override the [Architecture](../../architecture.md).
 
 ## Domain and scope
 
