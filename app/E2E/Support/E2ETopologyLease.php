@@ -40,6 +40,11 @@ final class E2ETopologyLease
         return $this->control;
     }
 
+    public function operator(): E2EInstance
+    {
+        return $this->control();
+    }
+
     public function gateway(): ?E2EInstance
     {
         return $this->gateway;

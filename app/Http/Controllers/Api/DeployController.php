@@ -28,7 +28,7 @@ final readonly class DeployController
         }
 
         if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
         }
 
         $app = $this->stringInput($request, 'app');
@@ -101,7 +101,7 @@ final readonly class DeployController
         }
 
         if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
         }
 
         if ($request->boolean('destructive_consent') !== true) {
@@ -138,7 +138,7 @@ final readonly class DeployController
         }
 
         if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
         }
 
         $app = $this->stringInput($request, 'app');

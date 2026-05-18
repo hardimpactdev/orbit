@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
 #[Signature('e2e:prepare-docker-hosts
-    {kind=control-gateway-dev-prod : Topology kind to prepare (control|control-gateway|control-gateway-dev|control-gateway-dev-prod)}
+    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod)}
     {--force : Build the Docker runtime and topology images}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
@@ -25,10 +25,10 @@ class E2EPrepareDockerHostsCommand extends Command
     public function handle(): int
     {
         $kindValue = (string) $this->argument('kind');
-        $kind = E2ETopologyKind::tryFrom($kindValue);
+        $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: control, control-gateway, control-gateway-dev, control-gateway-dev-prod.");
+            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.");
         }
 
         if ((bool) $this->option('runtime-only') && (bool) $this->option('topology-only')) {

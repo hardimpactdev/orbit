@@ -46,6 +46,7 @@ final readonly class E2EConfig
         public string $incusImageBuildHost = '',
         /** @var list<string> */
         public array $exclusiveHosts = [],
+        public string $operatorUser = 'control',
     ) {}
 
     public static function fromEnvironment(): self
@@ -63,7 +64,8 @@ final readonly class E2EConfig
             hcloudLocation: self::envString('ORBIT_E2E_HCLOUD_LOCATION', 'ash'),
             hcloudBlankImage: self::envString('ORBIT_E2E_HCLOUD_BLANK_IMAGE', 'ubuntu-24.04'),
             bootstrapUser: self::envString('ORBIT_E2E_BOOTSTRAP_USER', 'provisioner'),
-            controlUser: self::envString('ORBIT_E2E_CONTROL_USER', 'control'),
+            operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', self::envString('ORBIT_E2E_CONTROL_USER', 'control')),
+            controlUser: self::envString('ORBIT_E2E_CONTROL_USER', self::envString('ORBIT_E2E_OPERATOR_USER', 'control')),
             instancePrefix: self::envString('ORBIT_E2E_INSTANCE_PREFIX', 'orbit-e2e'),
             timeoutSeconds: self::envInt('ORBIT_E2E_TIMEOUT_SECONDS', 600),
             cpus: self::envString('ORBIT_E2E_CPUS', '2'),
@@ -226,6 +228,7 @@ final readonly class E2EConfig
             hcloudLocation: $this->hcloudLocation,
             hcloudBlankImage: $this->hcloudBlankImage,
             bootstrapUser: $this->bootstrapUser,
+            operatorUser: $this->operatorUser,
             controlUser: $this->controlUser,
             instancePrefix: $this->instancePrefix,
             timeoutSeconds: $this->timeoutSeconds,
@@ -263,6 +266,7 @@ final readonly class E2EConfig
             hcloudLocation: $location,
             hcloudBlankImage: $this->hcloudBlankImage,
             bootstrapUser: $this->bootstrapUser,
+            operatorUser: $this->operatorUser,
             controlUser: $this->controlUser,
             instancePrefix: $this->instancePrefix,
             timeoutSeconds: $this->timeoutSeconds,
@@ -306,6 +310,7 @@ final readonly class E2EConfig
             hcloudLocation: $location,
             hcloudBlankImage: $image,
             bootstrapUser: $this->bootstrapUser,
+            operatorUser: $this->operatorUser,
             controlUser: $this->controlUser,
             instancePrefix: $this->instancePrefix,
             timeoutSeconds: $this->timeoutSeconds,

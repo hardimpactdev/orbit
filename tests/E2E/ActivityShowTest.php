@@ -43,7 +43,7 @@ PHP;
 
 it('shows one activity entry on the gateway node as JSON', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
@@ -81,11 +81,11 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('shows one activity entry human output from a control caller', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
@@ -118,11 +118,11 @@ it('shows one activity entry human output from a control caller', function (): v
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('returns validation_failed when id is missing from a control caller', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGateway);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
 
     try {
         $topology->withCurrentCheckout(roles: ['control']);
@@ -146,11 +146,11 @@ it('returns validation_failed when id is missing from a control caller', functio
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator-gateway', 'e2e-feature-control-gateway');
 
 it('returns validation_failed for an invalid id from a control caller', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGateway);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
 
     try {
         $topology->withCurrentCheckout(roles: ['control']);
@@ -173,4 +173,4 @@ it('returns validation_failed for an invalid id from a control caller', function
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator-gateway', 'e2e-feature-control-gateway');

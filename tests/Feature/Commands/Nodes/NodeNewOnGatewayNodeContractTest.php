@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
-it('enrolls control nodes locally and writes gateway-owned node state', function (): void {
+it('enrolls operator nodes locally and writes gateway-owned node state', function (): void {
     config(['orbit.is_gateway' => true]);
 
     $gateway = Node::factory()->create([

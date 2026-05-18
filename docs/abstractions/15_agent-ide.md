@@ -34,16 +34,16 @@ top-level product docs.
   service for adapter descriptors and command-scoped choices.
 - Core descriptors for `opencode` and `polyscope` are always present.
 - Reserved command tokens such as `none` and `inherit` are never adapters.
-- Configured control and app callers query the gateway through typed
+- Configured operator and app callers query the gateway through typed
   `App\Http\Gateway\Requests\AgentIde` requests when command contracts require
   gateway-owned adapter choices or validation.
 - The registry response exposes descriptor metadata needed for prompts,
   validation, and capability checks: name, label, source, and capabilities.
-- The registry must not expose adapter credentials, local control-machine
+- The registry must not expose adapter credentials, local operator-machine
   manifests, active session state, or process output.
 - Extension-registered adapters must enter through a gateway-side registration
   surface before commands accept them. Do not scan local extension manifests on
-  control or app callers.
+  operator or app callers.
 
 ## Effective Adapter Pattern
 
@@ -69,7 +69,7 @@ top-level product docs.
 - When inferring from the current directory, workspace context takes precedence
   over parent app context.
 - Gateway callers resolve target visibility from gateway database state.
-- Control and app callers forward target-sensitive operations through the
+- Operator and app callers forward target-sensitive operations through the
   gateway API so authorization, hidden-target behavior, and adapter delivery
   are decided by gateway-owned state.
 - Hidden or unauthorized targets must return `authorization_failed` instead of

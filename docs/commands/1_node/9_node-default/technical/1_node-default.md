@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - For the `choose` or `set` sub-action: the CLI caller can reach the Orbit
-  gateway, passes the `/api/me` control-role preflight, and the target node is a
+  gateway, passes the `/api/me` operator-role preflight, and the target node is a
   visible development app node. Gateway and app callers are rejected before
   prompts or local default mutation.
 - For the `show` and `clear` sub-actions: no gateway reachability, `/api/me`
@@ -62,7 +62,7 @@ input:
    - Configured non-gateway callers must pass a `/api/me` preflight with
      `self.role=control` before prompts or local default writes.
    - Must resolve to a visible development app node.
-   - Must not be a gateway or control node.
+   - Must not be a gateway or operator node.
    - The caller must be authorized to see the target node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
@@ -146,7 +146,7 @@ sub-action is selected instead.
 
 ## Doctor Relationship
 
-- `node:default` is local control-node configuration, not gateway configuration.
+- `node:default` is local operator-node configuration, not gateway configuration.
 - `doctor --self` may warn when the configured default no longer resolves or is
   no longer authorized. See `node.local_default_invalid` in
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
@@ -178,7 +178,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract: interactive choose from authorized development app-node choices, show with and without default in non-interactive mode, set with positional `name`, set with invalid/non-development node, clear with and without existing default, mutually exclusive input rejection, gateway-unavailable and authorization failures for choose/set, app-caller denial, gateway-caller denial, and local write guarantee (no gateway mutation, no grant creation). |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Control-caller contract: show and clear local-only, `/api/me` preflight before configured choose/set, and gateway-local shortcut rejection. |
+| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Operator-caller contract: show and clear local-only, `/api/me` preflight before configured choose/set, and gateway-local shortcut rejection. |
 | `tests/Feature/Commands/Nodes/NodeDefaultOnAppNodeContractTest.php` | App-caller contract: choose/set rejection before prompts, node listing, or local writes; show and clear local-only. |
 | `tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
 | `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |

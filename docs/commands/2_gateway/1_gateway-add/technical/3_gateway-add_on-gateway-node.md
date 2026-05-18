@@ -17,7 +17,7 @@ identity resolves to a `gateway` node, before any local prompts or side effects.
 The gateway rejects gateway callers. The CLI surfaces the rejection before
 running any local prompts or side effects.
 
-The gateway is the control plane and the source of its own CA. It does not need
+The gateway is the operator capability layer and the source of its own CA. It does not need
 to fetch, trust, or store its own CA through the `gateway:add` flow. Gateway
 runtime readiness and local trust material belong to the `node` family and are
 verified through `doctor --family=node`.
@@ -27,7 +27,7 @@ verified through `doctor --family=node`.
 Fail before prompts or side effects with:
 
 ```
-This command may only be run from a control node.
+This command may only be run from a operator node.
 ```
 
 The JSON renderer returns the same message with `error.code:

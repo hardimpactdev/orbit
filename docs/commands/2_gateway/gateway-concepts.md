@@ -57,13 +57,13 @@ These terms describe how the gateway root CA is established, distributed, and ve
 
 These terms describe the two flows that establish or repair the local gateway relationship.
 
-- **Local gateway onboarding:** `gateway:add` flow for a control node that
+- **Local gateway onboarding:** `gateway:add` flow for an operator node that
   already has a gateway-issued WireGuard identity. It resolves the gateway,
   fetches trust material, installs or refreshes local trust, verifies the
   gateway API and local identity, and stores local gateway configuration.
 - **Gateway trust repair:** `gateway:trust` flow that refreshes caller-local
   gateway CA trust for an already configured gateway endpoint. It does not
-  select a new gateway, verify `/api/me`, or onboard a control-node identity.
+  select a new gateway, verify `/api/me`, or onboard an operator-node identity.
 - **Gateway API verification:** Trusted HTTPS request to `/api/me` that proves
   the configured gateway is reachable and the caller's WireGuard identity is
   known to gateway-owned access policy.
@@ -77,7 +77,7 @@ These boundaries define what gateway commands own and what they explicitly do no
 
 - **Gateway-domain boundaries:** Gateway commands own the `gateway:*` command
   prefix, caller-local gateway configuration, local gateway CA trust repair,
-  and explicit local onboarding for already issued control-node identities. They
-  do not own a state family, create gateway or control node records, mint
+  and explicit local onboarding for already issued operator-node identities. They
+  do not own a state family, create gateway or operator node records, mint
   WireGuard peer material, grant node access, provision hosts, repair broad node
   drift, or manage the lifecycle of TLS leaf certificates scoped to routes.

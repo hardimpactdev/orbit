@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('ingests authenticated crashed events from an app node through the gateway api', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $app = 'e2ecrash'.strtolower(bin2hex(random_bytes(3)));
     $appPath = "/home/orbit/apps/{$app}";
@@ -48,7 +48,7 @@ it('ingests authenticated crashed events from an app node through the gateway ap
         processCrashEventCleanup($topology, $app, $eventId);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function processCrashEventSeedIntent(E2ETopologyHarness $topology, string $app, string $path, string $process): void
 {

@@ -12,7 +12,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
     try {
         $lease = E2ETopologyFactory::fromEnvironment()
             ->requireCapabilities(E2ETopologyCapabilities::vm())
-            ->require(E2ETopologyKind::ControlGatewayDev);
+            ->require(E2ETopologyKind::OperatorGatewayAppdev);
     } catch (E2ETopologyUnavailable $exception) {
         test()->markTestSkipped($exception->getMessage());
     }
@@ -83,7 +83,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $topology->ssh('dev', 'if command -v ufw >/dev/null 2>&1; then sudo ufw --force reset && sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq ufw; fi', timeoutSeconds: 120);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function firewallDoctorAdoptWireGuardCidr(string $gatewayWireGuardIp): string
 {

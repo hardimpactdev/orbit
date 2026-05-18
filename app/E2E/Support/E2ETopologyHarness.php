@@ -78,6 +78,7 @@ final class E2ETopologyHarness
     public function instance(string $role): E2EInstance
     {
         return match ($role) {
+            'operator' => $this->lease->operator(),
             'control' => $this->lease->control(),
             'gateway' => $this->lease->gateway() ?? throw new RuntimeException('Topology does not include role [gateway].'),
             'dev' => $this->lease->devApp() ?? throw new RuntimeException('Topology does not include role [dev].'),
@@ -114,6 +115,7 @@ final class E2ETopologyHarness
     private function defaultUserFor(string $role): string
     {
         return match ($role) {
+            'operator' => E2EConfig::fromEnvironment()->operatorUser,
             'control' => E2EConfig::fromEnvironment()->controlUser,
             'gateway', 'dev', 'prod' => 'orbit',
             default => throw new RuntimeException("Unknown topology role [{$role}]."),

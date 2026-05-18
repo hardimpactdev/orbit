@@ -12,7 +12,7 @@ These terms define the scope of the DNS command domain and its relationship to t
   prefix. It manages the development DNS resolver overrides on the caller machine, but does
   not create a `dns` state family.
 - **Caller-local DNS administration:** Local-only DNS workflow allowed only for
-  control-node callers. It mutates or reads the caller machine's resolver
+  operator-node callers. It mutates or reads the caller machine's resolver
   configuration and never writes gateway configuration or node reality.
 - **Caller-local resolver override:** Resolver configuration that Orbit manages
   and that maps wildcard hostnames under a development TLD to a local
@@ -21,8 +21,8 @@ These terms define the scope of the DNS command domain and its relationship to t
   blocks written by Orbit on the caller machine. DNS commands may read or
   remove only this managed state, not arbitrary operator resolver entries.
 - **Local resolver backend:** Platform resolver implementation Orbit knows how
-  to inspect, write, refresh, or restart on a supported control-node platform.
-- **Supported local DNS platform:** Control-node platform with an Orbit-supported
+  to inspect, write, refresh, or restart on a supported operator-node platform.
+- **Supported local DNS platform:** Operator-node platform with an Orbit-supported
   local resolver backend. Unsupported platforms fail before local resolver
   reads or writes.
 

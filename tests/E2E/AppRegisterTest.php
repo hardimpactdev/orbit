@@ -41,7 +41,7 @@ PHP;
 
 it('registers an existing app path from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
     $name = 'e2e-reg-'.strtolower(bin2hex(random_bytes(3)));
     $path = "/home/orbit/apps/{$name}";
 
@@ -106,4 +106,4 @@ it('registers an existing app path from a control caller through the gateway api
         $topology->ssh('dev', 'rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');

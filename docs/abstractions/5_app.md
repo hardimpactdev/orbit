@@ -9,7 +9,7 @@ product docs.
 ## Domain Constraints
 
 - The gateway is the source of truth for app registry intent.
-- Apps belong to active app nodes. Control and gateway nodes are never valid app
+- Apps belong to active app nodes. Operator and gateway nodes are never valid app
   targets.
 - App identity slugs are globally unique in the gateway app registry.
 - Read commands are registry reads unless their command contract explicitly opts
@@ -17,7 +17,7 @@ product docs.
   probe runtime health, or repair drift.
 - Visibility and authorization are gateway-owned access-policy checks. App-node
   callers may run read commands only for apps they are authorized to see.
-- App write commands are gateway-owned writes. Control callers use the typed
+- App write commands are gateway-owned writes. Operator callers use the typed
   gateway API over WireGuard; gateway callers execute locally and may enact
   node-side artifacts through the gateway-owned `RemoteShell` edge when the
   command contract requires it.
@@ -47,7 +47,7 @@ product docs.
   resolve as `unknown` and fail before prompts or side effects when the command
   contract requires caller-role resolution.
 - Gateway callers read gateway database state locally.
-- Control and app callers forward reads through typed Saloon requests under
+- Operator and app callers forward reads through typed Saloon requests under
   `App\Http\Gateway\Requests\Apps` and consume DTOs under
   `App\Http\Gateway\Responses\Apps`.
 - App read API endpoints return the standard `success` / `error` envelope and

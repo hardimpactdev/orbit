@@ -10,7 +10,7 @@ callers. It is not product authority; command behavior remains in
 doctor reports, JSON command output. That doesn't catch failures where the
 state is correct but the runtime path is broken (DNS not actually resolving
 over WG, Caddy serving 502, etc.). Reachability tests assert *runtime HTTP
-responses* the way an operator on a control node would experience them.
+responses* the way an operator on a operator node would experience them.
 
 **When to use:**
 
@@ -24,8 +24,8 @@ responses* the way an operator on a control node would experience them.
 
 **Where reachability is verified from:**
 
-- Always from the **control node**, via SSH. That is the path a human or
-  agent on the control node would take. Verifying from the test host bypasses
+- Always from the **operator node**, via SSH. That is the path a human or
+  agent on the operator node would take. Verifying from the test host bypasses
   WG and proves nothing about the real flow.
 
 **TLS:**
@@ -177,7 +177,7 @@ and repeated private helpers can diverge.
 
 **Invariants:**
 
-- Role-path tests must cover gateway-local, control-forwarding, and app-forwarding
+- Role-path tests must cover gateway-local, operator-forwarding, and app-forwarding
   paths where the command contract defines them.
 - Each path must assert the correct transport edge (local DB vs. gateway API).
 - Setup helpers should create the local node row with `is_local=true` and the

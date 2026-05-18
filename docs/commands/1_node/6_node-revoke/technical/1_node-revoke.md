@@ -11,7 +11,7 @@
   caller's gateway-known role is `control` or `gateway`. App-role callers are
   rejected.
 - Gateway callers can read and write gateway-owned node configuration.
-- Control callers have configured gateway access as defined in
+- Operator callers have configured gateway access as defined in
 [`2_node-revoke_on-control-node.md`](2_node-revoke_on-control-node.md).
 - Both `consuming_node` and `serving_node` exist in gateway node configuration.
 
@@ -157,8 +157,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation, idempotent absent success, node-not-found validation, control-caller forwarding, app-node denial, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
-| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before prompts or side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation, idempotent absent success, node-not-found validation, operator-caller forwarding, app-node denial, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
+| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before prompts or side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
 

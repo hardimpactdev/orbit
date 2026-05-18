@@ -37,7 +37,7 @@ PHP;
 }
 
 it('manages and runs a production app deployment pipeline', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $path = '/tmp/orbit-deploy-e2e-'.strtolower(bin2hex(random_bytes(3)));
 
@@ -122,4 +122,4 @@ it('manages and runs a production app deployment pipeline', function (): void {
         $topology->ssh('dev', 'rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

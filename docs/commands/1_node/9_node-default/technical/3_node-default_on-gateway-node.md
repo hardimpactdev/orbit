@@ -25,7 +25,7 @@ current command contract.
 ## Error Contract
 
 ```text
-This command may only be run from a control node.
+This command may only be run from a operator node.
 ```
 
 ## Failure Semantics

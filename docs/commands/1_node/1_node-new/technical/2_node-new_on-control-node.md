@@ -21,11 +21,11 @@ bootstrap path where the gateway does not exist yet.
   - a gateway is configured locally;
   - the CLI has an active gateway-issued WireGuard identity;
   - the CLI can reach the gateway API over HTTPS through WireGuard;
-  - the gateway authorizes the control-role caller to request the selected
+  - the gateway authorizes the operator-role caller to request the selected
     node creation or enrollment operation.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, a control caller with no configured gateway and a
+are known. For example, a operator caller with no configured gateway and a
 resolved explicit requested role other than `gateway` fails before side effects,
 before prompting for app-node host, environment, TLD, or any later input.
 Omitted `--role` does not show a role prompt; it follows the joined/client
@@ -37,7 +37,7 @@ same blocker. All path eligibility must complete before side effects begin.
 
 | Requested role | Behavior |
 | --- | --- |
-| `gateway` | Bootstrap the first gateway and complete local control-node onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
+| `gateway` | Bootstrap the first gateway and complete local operator-node onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
 | omitted `--role` | Forward a joined/client identity request with no hosted roles to the configured gateway over HTTPS. |
 | `control` | Legacy compatibility alias for the no-role joined/client forwarding path. Human mode warns that `control` now maps to a client identity with no hosted roles. |
 | `app-development` | Resolve canonical hosted-role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
@@ -57,9 +57,9 @@ When no gateway is configured and `--role=gateway` is requested:
 4. Install the gateway runtime.
 5. Initialize gateway state.
 6. Register the gateway node as `node_new.name`.
-7. Mint an active control-node identity named `node_new.control_name` for the
-   initiating control machine.
-8. Install the initiating control node's WireGuard configuration locally.
+7. Mint an active operator-node identity named `node_new.control_name` for the
+   initiating operator machine.
+8. Install the initiating operator node's WireGuard configuration locally.
 9. Fetch and trust the gateway CA.
 10. Store `node_new.host` as the local gateway endpoint with the gateway trust
    material.
@@ -67,7 +67,7 @@ When no gateway is configured and `--role=gateway` is requested:
     WireGuard identity.
 
 No HTTPS gateway API call is required before the gateway exists. After this
-flow succeeds, the initiating control node is already onboarded and must not run
+flow succeeds, the initiating operator node is already onboarded and must not run
 `gateway:add` for the newly created gateway.
 
 ## Gateway-Connected Operation
@@ -109,6 +109,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Control-caller behavior: post-input path eligibility, first-gateway bootstrap eligibility, complete local onboarding for the initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded from `node_new.host`, gateway-connected forwarding for convergence/adoption/app-node creation/control-node enrollment, forwarded host and TLD input, missing-gateway failure for app/control requests, and no durable node state written locally outside first-gateway onboarding. |
-| `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from a control node with no gateway configured, including SSH bootstrap, explicit initiating control-node name, initiating control-node identity installation, gateway endpoint/trust storage from the bootstrap host, `/api/me` verification, and no follow-up `gateway:add` requirement. |
-| `tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for control-node execution after `gateway:add`, proving gateway convergence or adoption, app-node creation, and control-node enrollment are forwarded to the gateway over WireGuard instead of applied locally. |
+| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Operator-caller behavior: post-input path eligibility, first-gateway bootstrap eligibility, complete local onboarding for the initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded from `node_new.host`, gateway-connected forwarding for convergence/adoption/app-node creation/operator-node enrollment, forwarded host and TLD input, missing-gateway failure for app/control requests, and no durable node state written locally outside first-gateway onboarding. |
+| `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from a operator node with no gateway configured, including SSH bootstrap, explicit initiating operator-node name, initiating operator-node identity installation, gateway endpoint/trust storage from the bootstrap host, `/api/me` verification, and no follow-up `gateway:add` requirement. |
+| `tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for operator-node execution after `gateway:add`, proving gateway convergence or adoption, app-node creation, and operator-node enrollment are forwarded to the gateway over WireGuard instead of applied locally. |

@@ -76,7 +76,7 @@ SH,
 
 it('sets up an existing workspace path from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $workspaceName = 'e2e-ws-setup-'.strtolower(bin2hex(random_bytes(3)));
     $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
@@ -133,11 +133,11 @@ it('sets up an existing workspace path from a control caller through the gateway
         $topology->ssh('dev', 'rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('resolves an opencode worktree by adapter ownership when a stale registered path points at another app', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $workspaceName = 'e2e-opencode-'.strtolower(bin2hex(random_bytes(3)));
     $workspacePath = "/home/orbit/.local/share/opencode/worktree/docs/{$workspaceName}";
 
@@ -207,7 +207,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         $topology->ssh('dev', 'rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function workspaceSetupOpencodeSeed(E2ETopologyHarness $topology, string $workspaceName, string $workspacePath): void
 {

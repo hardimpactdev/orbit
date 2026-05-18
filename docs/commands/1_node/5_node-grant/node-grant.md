@@ -36,7 +36,7 @@ Run `node:grant` to write a new access relationship from one node to another.
 
 `node:grant` writes gateway-owned grant configuration in `node_access` from
 `consuming_node` to `serving_node`. Gateway callers execute locally; configured
-control callers forward the request to the gateway over HTTPS through WireGuard.
+operator callers forward the request to the gateway over HTTPS through WireGuard.
 
 The command:
 
@@ -63,8 +63,8 @@ newly created or already present.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured control node.
-- Control callers must be authorized to operate on the gateway node.
+- Must run on the gateway host or from a configured operator node.
+- Operator callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before side effects.
 - Both nodes must have active records in gateway node configuration. Records still
   in `provisioning` are rejected as not found; live reachability is not

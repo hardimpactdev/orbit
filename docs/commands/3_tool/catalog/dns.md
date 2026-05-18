@@ -34,7 +34,7 @@ infrastructure. DNS records, zones, provider configuration, and DNS command
 behavior remain owned by the DNS command family.
 
 In the current topology, the DNS runtime tool is gateway infrastructure. App and
-control nodes do not own DNS runtime rows unless a future DNS contract expands
+operator nodes do not own DNS runtime rows unless a future DNS contract expands
 node-local DNS support.
 
 The runtime layout — `wg-easy` plus `orbit-dns` sharing wg-easy's network

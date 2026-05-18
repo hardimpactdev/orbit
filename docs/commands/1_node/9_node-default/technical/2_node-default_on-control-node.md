@@ -18,7 +18,7 @@ authentication.
 
 | Context | Behavior |
 | --- | --- |
-| Configured CLI authenticated as a control caller | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` call `/api/me` before querying the gateway for node choices or validation. |
+| Configured CLI authenticated as a operator caller | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` call `/api/me` before querying the gateway for node choices or validation. |
 | Unconfigured CLI | `show` and `clear` work with local state if any. Interactive `choose` and direct `set` fail before side effects because gateway reachability is required. |
 
 ## Show Sub-action
@@ -100,5 +100,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Control-caller choose, show, set, and clear behavior; configured vs unconfigured CLI for choose/set; stale default handling. |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Control-caller local-only show/clear behavior, `/api/me` preflight before configured choose/set, gateway choices for choose, gateway validation for set, gateway-local shortcut rejection, and no gateway configuration mutation. |
+| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Operator-caller choose, show, set, and clear behavior; configured vs unconfigured CLI for choose/set; stale default handling. |
+| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Operator-caller local-only show/clear behavior, `/api/me` preflight before configured choose/set, gateway choices for choose, gateway validation for set, gateway-local shortcut rejection, and no gateway configuration mutation. |

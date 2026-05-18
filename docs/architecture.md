@@ -136,6 +136,11 @@ hosted nodes it has been granted access to. The same applies to gateway-owned
 data: only nodes granted access to the gateway can read gateway policy or
 activity history.
 
+An **operator node** is any joined node acting through that identity-and-grants
+path. Operator is a capability term, not a hosted role. A node can therefore be
+both a hosted node and an operator node at the same time when it has a
+gateway-known identity and the required grants.
+
 This grant model lets you scope access naturally:
 
 - A developer's joined client might have access to `app-development` nodes but

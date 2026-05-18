@@ -39,8 +39,8 @@ orbit update:all --json
 4. Report every per-installation result, including partial failures.
 
 `update:all` updates the local checkout, the gateway, and active app nodes.
-**Control nodes other than the caller are never remote update targets.** Each
-control node is an operator workstation and updates through `orbit update` on
+**Operator nodes other than the caller are never remote update targets.** Each
+operator node is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
 updates the gateway checkout and selected app nodes only.
 

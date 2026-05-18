@@ -12,7 +12,7 @@ product docs.
 - The local node identity is the `nodes.is_local=true` row.
 - Only one local node row may be marked local at a time.
 - Node access grants authorize Orbit operations; they do not grant SSH.
-- Control callers must not SSH directly to app nodes after bootstrap.
+- Operator callers must not SSH directly to app nodes after bootstrap.
 - `node:new` owns first-gateway and app-node bootstrap exceptions.
 
 ## Evidence Pointers

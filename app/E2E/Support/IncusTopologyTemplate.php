@@ -29,6 +29,20 @@ final readonly class IncusTopologyTemplate
         return "clean-{$kind->value}";
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function snapshotCandidates(E2ETopologyKind $kind): array
+    {
+        return [
+            self::snapshotName($kind),
+            ...array_map(
+                static fn (string $value): string => "clean-{$value}",
+                $kind->deprecatedValues(),
+            ),
+        ];
+    }
+
     public static function cloneName(string $runId, string $role): string
     {
         return "orbit-e2e-{$runId}-{$role}";
@@ -40,14 +54,18 @@ final readonly class IncusTopologyTemplate
 
         foreach (self::rolesFor($kind) as $role) {
             $template = self::templateName($kind, $role);
-            $snapshot = self::snapshotName($kind);
-
             $checks[] = 'incus info '.escapeshellarg($template).' >/dev/null 2>&1';
-            $checks[] = sprintf(
-                'incus info %s --show-log=false 2>/dev/null | grep -q %s',
-                escapeshellarg($template),
-                escapeshellarg($snapshot),
+
+            $snapshotChecks = array_map(
+                static fn (string $snapshot): string => sprintf(
+                    'incus info %s --show-log=false 2>/dev/null | grep -q %s',
+                    escapeshellarg($template),
+                    escapeshellarg($snapshot),
+                ),
+                self::snapshotCandidates($kind),
             );
+
+            $checks[] = '('.implode(' || ', $snapshotChecks).')';
         }
 
         return $host->run(implode("\n", $checks), timeoutSeconds: 30)->successful();
@@ -104,10 +122,9 @@ final readonly class IncusTopologyTemplate
         $statefulReset = getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
 
         $index = 0;
-        $snapshot = self::snapshotName($kind);
-
         foreach ($roles as $role) {
             $index++;
+            $snapshot = self::resolveSnapshotName($host, $kind, $role);
             $template = escapeshellarg(self::templateName($kind, $role)."/{$snapshot}");
             $clone = escapeshellarg(self::cloneName($runId, $role));
             $macAddress = escapeshellarg(self::cloneMacAddress($runId, $role));
@@ -142,5 +159,24 @@ final readonly class IncusTopologyTemplate
         $hash = substr(sha1("{$runId}:{$role}"), 0, 6);
 
         return '00:16:3e:'.implode(':', str_split($hash, 2));
+    }
+
+    private static function resolveSnapshotName(IncusHost $host, E2ETopologyKind $kind, string $role): string
+    {
+        $template = self::templateName($kind, $role);
+
+        foreach (self::snapshotCandidates($kind) as $snapshot) {
+            $result = $host->run(sprintf(
+                'incus info %s --show-log=false 2>/dev/null | grep -q %s',
+                escapeshellarg($template),
+                escapeshellarg($snapshot),
+            ), timeoutSeconds: 30);
+
+            if ($result->successful()) {
+                return $snapshot;
+            }
+        }
+
+        return self::snapshotName($kind);
     }
 }

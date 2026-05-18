@@ -28,7 +28,7 @@ orbit vpn-client:remove laptop --force --json
 Run this command to permanently delete an admin VPN client from the gateway backend.
 
 `vpn-client:remove` runs on the gateway host and deletes the named VPN backend
-client after destructive consent. From a control node, Orbit connects to the
+client after destructive consent. From a operator node, Orbit connects to the
 gateway over the Orbit/WireGuard SSH path and runs the gateway-local operation
 there.
 
@@ -44,8 +44,8 @@ output.
 
 ## Requirements
 
-- The caller is a gateway or authorized control node.
-- Control callers can SSH to the gateway over Orbit/WireGuard.
+- The caller is a gateway or authorized operator node.
+- Operator callers can SSH to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The named client exists and is not an active Orbit node peer.
 - Destructive consent is supplied interactively or with `--force`.

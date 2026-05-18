@@ -10,7 +10,7 @@ product docs.
 
 DNS in Orbit lives at two layers that must not be confused:
 
-- **Caller-local DNS commands** (`dns:resolve-tld`, `dns:list`) — control-node
+- **Caller-local DNS commands** (`dns:resolve-tld`, `dns:list`) — operator-node
   commands that mutate or read the local OS resolver only. They are the
   product surface this file documents.
 - **Gateway-side DNS infrastructure** (`wg-easy` + `orbit-dns` + `dnsmasq.conf`)
@@ -22,7 +22,7 @@ DNS in Orbit lives at two layers that must not be confused:
 
 ## Domain Constraints (caller-local commands)
 
-- DNS commands are caller-local control-node commands.
+- DNS commands are caller-local operator-node commands.
 - DNS commands must not query or mutate gateway intent, app routes, proxy
   routes, Cloudflare records, public DNS, or the development DNS mappings
   owned by the gateway.

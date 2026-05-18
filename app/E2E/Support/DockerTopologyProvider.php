@@ -55,7 +55,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             foreach ($roles as $role) {
                 $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
-                $image = $this->imageNameFor($kind, $role);
+                $image = $this->resolvedImageNameFor($host, $kind, $role);
                 $ip = $networkPlan->ipForRole($role);
 
                 $timer->measure("docker.start.{$role}", fn () => $this->startContainer($host, $name, $network, $ip, $image));
@@ -94,7 +94,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             foreach ($roles as $role) {
                 $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
-                $image = $this->imageNameFor($kind, $role);
+                $image = $this->resolvedImageNameFor($host, $kind, $role);
                 $ip = $networkPlan->ipForRole($role);
 
                 $cycleTimer->measure("reset.start.{$role}", fn () => $this->startContainer($host, $name, $network, $ip, $image));
@@ -149,13 +149,27 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     /**
      * @return list<string>
      */
+    private function imageNameCandidatesFor(E2ETopologyKind $kind, string $role): array
+    {
+        return [
+            $this->imageNameFor($kind, $role),
+            ...array_map(
+                fn (string $value): string => "orbit-e2e-topology:{$value}-{$role}-current",
+                $kind->deprecatedValues(),
+            ),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
     public function rolesFor(E2ETopologyKind $kind): array
     {
         return match ($kind) {
-            E2ETopologyKind::Control => ['control'],
-            E2ETopologyKind::ControlGateway => ['control', 'gateway'],
-            E2ETopologyKind::ControlGatewayDev => ['control', 'gateway', 'dev'],
-            E2ETopologyKind::ControlGatewayDevProd => ['control', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::Operator => ['control'],
+            E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
+            E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
         };
     }
 
@@ -243,14 +257,27 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     private function missingImage(DockerHost $host, E2ETopologyKind $kind): ?string
     {
         foreach ($this->rolesFor($kind) as $role) {
-            $image = $this->imageNameFor($kind, $role);
+            foreach ($this->imageNameCandidatesFor($kind, $role) as $image) {
+                if ($host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
+                    continue 2;
+                }
+            }
 
-            if (! $host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
+            return $this->imageNameFor($kind, $role);
+        }
+
+        return null;
+    }
+
+    private function resolvedImageNameFor(DockerHost $host, E2ETopologyKind $kind, string $role): string
+    {
+        foreach ($this->imageNameCandidatesFor($kind, $role) as $image) {
+            if ($host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
                 return $image;
             }
         }
 
-        return null;
+        return $this->imageNameFor($kind, $role);
     }
 
     private function runningE2EContainerCount(DockerHost $host): int

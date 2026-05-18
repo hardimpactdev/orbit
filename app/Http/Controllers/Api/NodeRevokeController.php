@@ -40,14 +40,14 @@ final class NodeRevokeController implements Loggable
         if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->error(
                 code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
+                message: 'This command may only be run from an operator or gateway node.',
                 meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 status: 403,
             );
         }
 
         if (! $callerIsGateway) {
-            $authorization = $this->authorizeControlCaller($caller);
+            $authorization = $this->authorizeOperatorCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
@@ -93,7 +93,7 @@ final class NodeRevokeController implements Loggable
         ]);
     }
 
-    private function authorizeControlCaller(Node $caller): ?JsonResponse
+    private function authorizeOperatorCaller(Node $caller): ?JsonResponse
     {
         $gateway = $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
@@ -102,7 +102,7 @@ final class NodeRevokeController implements Loggable
 
         if (! $gateway instanceof Node) {
             return $this->authorizationFailed(
-                message: 'This control node is not authorized to revoke grants.',
+                message: 'This operator node is not authorized to revoke grants.',
                 meta: [
                     'required_node' => null,
                     'caller_role' => 'control',
@@ -120,7 +120,7 @@ final class NodeRevokeController implements Loggable
         }
 
         return $this->authorizationFailed(
-            message: 'This control node is not authorized to revoke grants.',
+            message: 'This operator node is not authorized to revoke grants.',
             meta: [
                 'required_node' => $gateway->name,
                 'caller_role' => 'control',

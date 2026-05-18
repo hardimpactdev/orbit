@@ -141,4 +141,4 @@ Required split contract tests:
 | `tests/Feature/Commands/Dns/DnsResolveTldNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing input failures, forbidden target with `--reset`, `--reset` requiring `--force`, and invalid value failures. |
 | `tests/Feature/Commands/Dns/DnsResolveTldJsonRendererTest.php` | JSON renderer selection, success envelope, resolved/reset/already-converged statuses, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Dns/DnsResolveTldHumanRendererTest.php` | Human renderer progress trees, resolved success prose, already-resolved prose, reset prose, already-absent prose, validation failure prose, unsupported-platform prose, resolver failure prose, and absence of JSON envelopes in human mode. |
-| `tests/E2E/Ephemeral/DnsResolveTldTest.php` | Real local resolver configuration and reset against an ephemeral supported control-node platform. |
+| `tests/E2E/Ephemeral/DnsResolveTldTest.php` | Real local resolver configuration and reset against an ephemeral supported operator-node platform. |

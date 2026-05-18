@@ -6,7 +6,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is a control caller authorized to create apps on the
+- The current node identity is a operator caller authorized to create apps on the
   target app node, or the gateway itself.
 - The gateway can reach the target app node over SSH.
 - The resolved target node is an active `app` node.
@@ -143,7 +143,7 @@ If `--domain` is supplied:
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 - **Caller Role Not Allowed:** Fails before registry reads, prompts, SSH, or
-  app writes if the gateway-known caller is neither a control caller nor the
+  app writes if the gateway-known caller is neither a operator caller nor the
   gateway itself.
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
@@ -178,7 +178,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Emitted through the gateway API Loggable contract when the forwarded control
 path lands. The initial gateway-local implementation slice is tracked in
-`docs/porting/PORTING.md`; API activity emission remains part of the control-forwarding
+`docs/porting/PORTING.md`; API activity emission remains part of the operator-forwarding
 slice.
 
 | Field | Value |

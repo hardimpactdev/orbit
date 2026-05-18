@@ -11,7 +11,7 @@
   caller's gateway-known role is `control` or `gateway`. App-role callers are
   rejected.
 - Gateway callers can read and write gateway-owned node configuration.
-- Control callers have configured gateway access as defined in
+- Operator callers have configured gateway access as defined in
   [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md).
 
 **Post-input path eligibility:**
@@ -19,7 +19,7 @@
 - The target node name resolves to an existing active node record.
 - The resolved node record's role is not `gateway`. No gateway node is
   removable by `node:remove`, regardless of gateway count.
-- The target node may be the current control caller's own node record.
+- The target node may be the current operator caller's own node record.
 
 ## Signature
 
@@ -123,9 +123,9 @@ node that owns them. This is operational guidance, not a blocking precondition:
 `node:remove` remains scoped to node identity, grants, and WireGuard peer
 detach.
 
-When a control caller removes its own node record, the command removes the
+When a operator caller removes its own node record, the command removes the
 gateway-owned node record, access grants, and WireGuard peer like any other
-control-node removal. The command does not require an extra flag beyond the
+operator-node removal. The command does not require an extra flag beyond the
 shared destructive consent model. After success, future Orbit commands from
 that machine may fail until the machine is enrolled again or cleaned up through
 a future local cleanup command.
@@ -192,10 +192,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract: node removal, grant cleanup, WireGuard peer teardown, warning payload shape for partial detach, DNS mapping cleanup, control-caller forwarding, self-removal, app-node denial, node-not-found as validation failure, gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
-| `tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded control-node rendering paths. |
+| `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract: node removal, grant cleanup, WireGuard peer teardown, warning payload shape for partial detach, DNS mapping cleanup, operator-caller forwarding, self-removal, app-node denial, node-not-found as validation failure, gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
+| `tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded operator-node rendering paths. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
 

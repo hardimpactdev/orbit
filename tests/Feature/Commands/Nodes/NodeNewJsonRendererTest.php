@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
-it('emits the documented control-node enrollment next steps', function (): void {
+it('emits the documented operator-node enrollment next steps', function (): void {
     config(['orbit.is_gateway' => true]);
 
     $gateway = Node::factory()->create([
@@ -45,8 +45,8 @@ it('emits the documented control-node enrollment next steps', function (): void 
 
     expect($exitCode)->toBe(0)
         ->and($payload['success']['data']['next_steps'])->toBe([
-            'Install the WireGuard configuration on the control node.',
+            'Install the WireGuard configuration on the operator node.',
             'Join the Orbit WireGuard network.',
-            'Run `orbit gateway:add` on the control node.',
+            'Run `orbit gateway:add` on the operator node.',
         ]);
 });

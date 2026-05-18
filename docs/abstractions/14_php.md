@@ -40,7 +40,7 @@ product docs.
 - Writes should attempt the owning-family artifact refresh that is currently
   available, then emit structured partial-enactment warnings pointing to the
   owning doctor family for remaining drift.
-- Control and app callers use typed gateway API requests. Gateway callers use
+- Operator and app callers use typed gateway API requests. Gateway callers use
   local gateway state and gateway-owned enactment services.
 
 ## E2E Pattern

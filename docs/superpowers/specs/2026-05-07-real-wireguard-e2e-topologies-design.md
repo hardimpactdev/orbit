@@ -4,7 +4,7 @@
 
 Prepared E2E topologies that include a gateway must use real WireGuard
 interfaces, not synthetic `10.x` addresses on the default provider interface.
-Gateway, VPN, firewall, control-forwarding, and gateway-to-app SSH tests should
+Gateway, VPN, firewall, operator-forwarding, and gateway-to-app SSH tests should
 exercise the same network shape that production relies on.
 
 ## Current Problem
@@ -24,8 +24,9 @@ gateway host joins that VPN as a normal peer.
 Any topology containing a gateway is Incus-only and must bring up a real
 `wg-orbit` interface on every participating VM. Docker topology remains useful
 only for tests that do not involve gateway semantics. Provider selection must
-reject Docker for `control-gateway`, `control-gateway-dev`, and
-`control-gateway-dev-prod`.
+reject Docker for `operator-gateway`, `operator-gateway-appdev`, and
+`operator-gateway-appdev-appprod`. Legacy `control-*` topology selectors remain
+deprecated aliases only while the E2E migration window is open.
 
 Prepared topology creation may be slow. The work happens rarely and the
 resulting snapshots are reused by feature tests, so realism is more important
@@ -50,10 +51,10 @@ must not act as a second WireGuard server. It has the gateway VPN address
 (`10.6.0.2`) and connects to the local `wg-easy` server endpoint on the
 gateway provider IP at UDP `51820`, just like the live gateway.
 
-Control, development app, and production app VMs each install
+Operator, development app, and production app VMs each install
 `/etc/wireguard/wg-orbit.conf` and start `wg-quick@wg-orbit`. Peer endpoints
 target the gateway VM's current provider IP. Peer addresses are stable within
-the selected topology subnet: gateway `.2`, control `.3`, dev `.4`, prod `.5`.
+the selected topology subnet: gateway `.2`, operator `.3`, dev `.4`, prod `.5`.
 
 During clone acquisition the provider refreshes machine/network identity, then
 retargets WireGuard endpoint material to the clone gateway's provider IP and

@@ -49,7 +49,7 @@ use function Laravel\Prompts\text;
     {name? : Registry name for the node}
     {--role=* : Initial hosted role. Repeatable: app-development, app-production, database. Gateway bootstrap uses gateway internally.}
     {--host= : SSH/bootstrap endpoint for gateway or app nodes}
-    {--control-name= : Initiating control-node name for first-gateway bootstrap}
+        {--control-name= : Initiating operator-node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
     {--tld= : Development app-node TLD}
     {--user=root : SSH user for provisioning}
@@ -104,7 +104,7 @@ class NodeNewCommand extends Command
             if (! $gatewayConfigured) {
                 return $this->failCommand(
                     code: 'gateway_unavailable',
-                    message: 'Gateway connection is required before creating app or control nodes.',
+                    message: 'Gateway connection is required before creating app or operator nodes.',
                     meta: ['requested_role' => $requestedRoles['hosted'][0]],
                 );
             }
@@ -162,7 +162,7 @@ class NodeNewCommand extends Command
             if (! $gatewayConfigured) {
                 return $this->failCommand(
                     code: 'gateway_unavailable',
-                    message: 'Gateway connection is required before creating app or control nodes.',
+                    message: 'Gateway connection is required before creating app or operator nodes.',
                     meta: ['requested_role' => $role],
                 );
             }
@@ -189,7 +189,7 @@ class NodeNewCommand extends Command
         if ($callerRole === 'control' && ! $gatewayConfigured && $role === 'control') {
             return $this->failCommand(
                 code: 'gateway_unavailable',
-                message: 'Gateway connection is required before creating app or control nodes.',
+                message: 'Gateway connection is required before creating app or operator nodes.',
                 meta: ['requested_role' => $role],
             );
         }
@@ -198,7 +198,7 @@ class NodeNewCommand extends Command
             $forbiddenInput = $this->forbiddenControlInput();
 
             if ($forbiddenInput !== null) {
-                return $this->validationFailed($forbiddenInput, 'Control nodes do not use SSH/bootstrap-only input.');
+                return $this->validationFailed($forbiddenInput, 'Operator nodes do not use SSH/bootstrap-only input.');
             }
 
             if ($callerRole === 'control') {
@@ -278,11 +278,11 @@ class NodeNewCommand extends Command
         if (! $control instanceof Node) {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
-                message: "Local control node '{$controlName}' is not fully onboarded.",
+                message: "Local operator node '{$controlName}' is not fully onboarded.",
                 meta: [
                     'host' => $host,
                     'step' => 'local_control_identity',
-                    'error' => 'Local control node record is missing or inactive.',
+                    'error' => 'Local operator node record is missing or inactive.',
                 ],
             );
         }
@@ -787,7 +787,7 @@ class NodeNewCommand extends Command
             return $this->jsonSuccess($dto->data);
         }
 
-        $this->info("Enrolled control node {$name}.");
+        $this->info("Enrolled operator node {$name}.");
 
         return self::SUCCESS;
     }
@@ -909,9 +909,9 @@ class NodeNewCommand extends Command
                 'config' => $wireguardConfig,
             ],
             'next_steps' => [
-                'Install the WireGuard configuration on the control node.',
+                'Install the WireGuard configuration on the operator node.',
                 'Join the Orbit WireGuard network.',
-                'Run `orbit gateway:add` on the control node.',
+                'Run `orbit gateway:add` on the operator node.',
             ],
         ];
 
@@ -919,7 +919,7 @@ class NodeNewCommand extends Command
             return $this->jsonSuccess($payload);
         }
 
-        $this->info("Enrolled control node {$name}.");
+        $this->info("Enrolled operator node {$name}.");
 
         return self::SUCCESS;
     }
@@ -2252,6 +2252,10 @@ SCRIPT,
             return ['gateway' => false, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'control'];
         }
 
+        if ($roles === ['operator']) {
+            return ['gateway' => false, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'operator'];
+        }
+
         if ($roles === ['gateway']) {
             return ['gateway' => true, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'gateway'];
         }
@@ -2288,7 +2292,7 @@ SCRIPT,
 
         foreach ($roles as $role) {
             if (! in_array($role, $canonicalRoles, true)) {
-                return $this->validationFailed('role', 'Node role must be one of gateway, control, app-development, app-production, database, or legacy app.');
+                return $this->validationFailed('role', 'Node role must be one of gateway, operator, control, app-development, app-production, database, or legacy app.');
             }
         }
 

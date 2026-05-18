@@ -42,14 +42,14 @@ final class NodeAgentIdeController implements Loggable
         if ($caller->role === 'app') {
             return $this->error(
                 code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
+                message: 'This command may only be run from an operator or gateway node.',
                 meta: ['caller_role' => 'app'],
                 status: 403,
             );
         }
 
         if ($caller->role === 'control') {
-            $authorization = $this->authorizeControlCaller($caller);
+            $authorization = $this->authorizeOperatorCaller($caller);
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
@@ -94,7 +94,7 @@ final class NodeAgentIdeController implements Loggable
         ]);
     }
 
-    private function authorizeControlCaller(Node $caller): ?JsonResponse
+    private function authorizeOperatorCaller(Node $caller): ?JsonResponse
     {
         $gateway = Node::query()
             ->where('role', 'gateway')
@@ -104,7 +104,7 @@ final class NodeAgentIdeController implements Loggable
 
         if (! $gateway instanceof Node) {
             return $this->authorizationFailed(
-                message: 'This control node is not authorized to update node configuration.',
+                message: 'This operator node is not authorized to update node configuration.',
                 meta: [
                     'required_node' => null,
                     'caller_role' => 'control',
@@ -122,7 +122,7 @@ final class NodeAgentIdeController implements Loggable
         }
 
         return $this->authorizationFailed(
-            message: 'This control node is not authorized to update node configuration.',
+            message: 'This operator node is not authorized to update node configuration.',
             meta: [
                 'required_node' => $gateway->name,
                 'caller_role' => 'control',

@@ -191,7 +191,8 @@ When converting a command, state both the documentation domain that owns the use
 
 Authorization is gateway-owned and applies generically to every API call. The
 gateway authenticates the caller's WireGuard peer identity, resolves the
-caller's node role (`control`, `gateway`, `app`, or `unknown`), and applies
+caller's effective node identity for compatibility (`control`, `gateway`,
+`app`, or `unknown` in current transition-era payloads), and applies
 gateway-owned access policy. The CLI does not detect or branch on the caller's
 role.
 
@@ -210,7 +211,7 @@ When a command uses a `technical/` directory, reserve these slots:
 | Slot | Meaning |
 | --- | --- |
 | `1_command-name.md` | Canonical technical contract. |
-| `2_command-name_on-control-node.md` | Gateway authorization for `control` callers, when caller role changes command semantics. |
+| `2_command-name_on-control-node.md` | Gateway authorization for operator callers. Keep legacy `control` terminology only when the contract must document compatibility values or existing file names. |
 | `3_command-name_on-gateway-node.md` | Gateway authorization for `gateway` callers, when caller role changes command semantics. |
 | `4_command-name_on-app-node.md` | Gateway authorization for `app` callers, when caller role changes command semantics. |
 | `5.1_command-name_input-mode_interactive.md` | Interactive input-mode contract. |

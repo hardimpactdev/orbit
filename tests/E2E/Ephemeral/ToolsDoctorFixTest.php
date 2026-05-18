@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+pest()->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('repairs managed tool configuration drift from gateway intent', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $configPath = '/tmp/orbit-e2e-redis.conf';
     $configContent = "port 6379\nbind 127.0.0.1\n";

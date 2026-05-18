@@ -1,7 +1,7 @@
-# Technical Contract: `orbit workspace:setup` (Control Node)
+# Technical Contract: `orbit workspace:setup` (Operator Node)
 
 This contract defines behavior when `workspace:setup` is invoked from a
-**control-node peer**.
+**operator-node peer**.
 
 [Back to the canonical technical contract.](1_workspace-setup.md)
 
@@ -9,7 +9,7 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 - **Gateway proxy**: The command acts as a client to the Orbit gateway over
   HTTPS through WireGuard when configured and authorized.
-- **Identity**: Uses the control node's authorized identity to authenticate
+- **Identity**: Uses the operator node's authorized identity to authenticate
   with the gateway.
 - **Local context resolution**: Attempts to resolve the parent app and
   workspace identity from local Orbit configuration or current directory
@@ -23,11 +23,11 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 ## Authorization
 
-- Requires a valid control-node identity.
+- Requires a valid operator-node identity.
 - Identity must have `manage` or `write` permission for the parent app.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupOnControlNodeTest.php` | Control-caller forwarding to the gateway, identity propagation, local-context resolution before forwarding, and progress streaming back to the local TTY. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupOnControlNodeTest.php` | Operator-caller forwarding to the gateway, identity propagation, local-context resolution before forwarding, and progress streaming back to the local TTY. |

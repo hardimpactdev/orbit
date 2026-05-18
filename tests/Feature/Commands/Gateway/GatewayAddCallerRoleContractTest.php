@@ -119,6 +119,6 @@ it('rejects gateway-local callers before input prompts or side effects', functio
     expect($exitCode)->toBe(1)
         ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
         ->and($payload['error']['meta'])->toBe(['caller_role' => 'gateway'])
-        ->and($payload['error']['message'])->toBe('This command may only be run from a control node.')
+        ->and($payload['error']['message'])->toBe('This command may only be run from an operator node.')
         ->and($fakeInstaller->trustCalls)->toBe(0);
 });

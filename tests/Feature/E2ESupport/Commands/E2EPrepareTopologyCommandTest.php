@@ -40,33 +40,33 @@ function fakeBundleProcessing(): void
     ]);
 }
 
-it('defaults to control-gateway-dev-prod kind', function (): void {
+it('defaults to operator-gateway-appdev-appprod kind', function (): void {
     $this->artisan('e2e:prepare-topology')
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control-gateway-dev-prod)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-control-gateway-dev-prod)')
-        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-control-gateway-dev-prod)')
-        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-control-gateway-dev-prod)')
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway-appdev-appprod)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway-appdev-appprod)')
+        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator-gateway-appdev-appprod)')
+        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-operator-gateway-appdev-appprod)')
         ->assertSuccessful();
 });
 
-it('supports control kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'control'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control)')
+it('supports operator kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator'])
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator)')
         ->assertSuccessful();
 });
 
-it('supports control-gateway kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'control-gateway'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control-gateway)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-control-gateway)')
+it('supports operator-gateway kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator-gateway'])
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway)')
         ->assertSuccessful();
 });
 
-it('supports control-gateway-dev kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'control-gateway-dev'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control-gateway-dev)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-control-gateway-dev)')
-        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-control-gateway-dev)')
+it('supports operator-gateway-appdev kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator-gateway-appdev'])
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway-appdev)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway-appdev)')
+        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator-gateway-appdev)')
         ->assertSuccessful();
 });
 
@@ -99,7 +99,7 @@ it('outputs json for dry run with default kind', function (): void {
             'data' => [
                 'provider' => 'incus',
                 'dry_run' => true,
-                'kind' => 'control-gateway-dev-prod',
+                'kind' => 'operator-gateway-appdev-appprod',
                 'templates' => $templates,
             ],
         ],
@@ -111,7 +111,9 @@ it('outputs json for dry run with default kind', function (): void {
 });
 
 it('outputs json for each supported kind', function (string $kindValue, int $expectedRoleCount): void {
-    $kind = E2ETopologyKind::from($kindValue);
+    $kind = E2ETopologyKind::tryFromInput($kindValue);
+    expect($kind)->not->toBeNull();
+
     $templates = [];
 
     foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
@@ -127,7 +129,7 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
             'data' => [
                 'provider' => 'incus',
                 'dry_run' => true,
-                'kind' => $kindValue,
+                'kind' => $kind->value,
                 'templates' => $templates,
             ],
         ],
@@ -140,6 +142,10 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
         ->expectsOutput($expected)
         ->assertSuccessful();
 })->with([
+    ['operator', 1],
+    ['operator-gateway', 2],
+    ['operator-gateway-appdev', 3],
+    ['operator-gateway-appdev-appprod', 4],
     ['control', 1],
     ['control-gateway', 2],
     ['control-gateway-dev', 3],
@@ -150,7 +156,7 @@ it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: control, control-gateway, control-gateway-dev, control-gateway-dev-prod.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.',
         ],
     ], JSON_THROW_ON_ERROR);
 
@@ -391,7 +397,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
             'data' => [
                 'provider' => 'incus',
                 'dry_run' => false,
-                'kind' => 'control',
+                'kind' => 'operator',
                 'templates' => $manifest,
             ],
         ],

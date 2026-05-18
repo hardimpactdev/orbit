@@ -9,53 +9,63 @@ use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2ETopologyFactory;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\E2ETopologyUnavailable;
 use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-topology-contract');
 
 it('satisfies the prepared control topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::Control);
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::Operator);
 
     try {
         expectPreparedControlTopology($topology, $config);
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-control');
+})->group('e2e-topology-contract-operator', 'e2e-topology-contract-control');
 
 it('satisfies the prepared control-gateway topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::ControlGateway);
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGateway);
 
     try {
         expectPreparedGatewayTopology($topology, $config);
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-control-gateway');
+})->group('e2e-topology-contract-operator-gateway', 'e2e-topology-contract-control-gateway');
 
 it('satisfies the prepared control-gateway-dev topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::ControlGatewayDev);
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdev);
 
     try {
         expectPreparedDevTopology($topology, $config);
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-control-gateway-dev');
+})->group('e2e-topology-contract-operator-gateway-appdev', 'e2e-topology-contract-control-gateway-dev');
 
 it('satisfies the prepared control-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::ControlGatewayDevProd);
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 
     try {
         expectPreparedProdTopology($topology, $config);
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-control-gateway-dev-prod');
+})->group('e2e-topology-contract-operator-gateway-appdev-appprod', 'e2e-topology-contract-control-gateway-dev-prod');
+
+function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
+{
+    try {
+        return E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require($kind);
+    } catch (E2ETopologyUnavailable $exception) {
+        test()->markTestSkipped($exception->getMessage());
+    }
+}
 
 function expectPreparedControlTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {

@@ -21,7 +21,7 @@ top-level product docs.
   and not a live readiness probe.
 - Registry read commands must not SSH into app nodes, probe runtime health, or
   repair drift. Live workspace reality belongs to `doctor --family=workspace`.
-- Workspace writes are gateway-owned writes. Control callers use the typed
+- Workspace writes are gateway-owned writes. Operator callers use the typed
   gateway API over WireGuard; gateway callers execute locally and may enact
   node-side artifacts through the gateway-owned `RemoteShell` edge when the
   command contract requires it.
@@ -98,7 +98,7 @@ workspace names directly and should not reintroduce removed `branch` or
 - `workspace:history` and `workspace:log` read durable run history from the
   gateway database and do not inspect node-side logs.
 - Gateway callers read gateway database state locally.
-- Control and app callers forward reads through typed Saloon requests under
+- Operator and app callers forward reads through typed Saloon requests under
   `App\Http\Gateway\Requests\Workspaces` and consume DTOs under
   `App\Http\Gateway\Responses\Workspaces`.
 - Workspace read API endpoints return the standard `success` / `error` envelope

@@ -1,7 +1,7 @@
-# Technical Contract: `orbit app:register` From A Control Node
+# Technical Contract: `orbit app:register` From A Operator Node
 
 This contract defines gateway-side behavior when `app:register` is invoked from
-a peer the gateway identifies as a **control node**.
+a peer the gateway identifies as a **operator node**.
 
 [Back to the canonical contract.](1_app-register.md)
 
@@ -13,7 +13,7 @@ a peer the gateway identifies as a **control node**.
   configuration is written to the gateway database, and app-node artifacts are
   applied over SSH to the target app node via `RemoteShell`.
 - **No CLI shortcut:** The CLI forwards the request to the gateway API. There
-  is no client-side branch that performs SSH directly from the control peer.
+  is no client-side branch that performs SSH directly from the operator peer.
 
 ## Test Mapping
 

@@ -85,10 +85,10 @@ final readonly class DockerTopologyBuilder
     public static function rolesFor(E2ETopologyKind $kind): array
     {
         return match ($kind) {
-            E2ETopologyKind::Control => ['control'],
-            E2ETopologyKind::ControlGateway => ['control', 'gateway'],
-            E2ETopologyKind::ControlGatewayDev => ['control', 'gateway', 'dev'],
-            E2ETopologyKind::ControlGatewayDevProd => ['control', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::Operator => ['control'],
+            E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
+            E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
         };
     }
 

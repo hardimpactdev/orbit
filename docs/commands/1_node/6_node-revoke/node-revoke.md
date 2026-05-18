@@ -39,7 +39,7 @@ Run `node:revoke` to delete a specific access grant and confirm the result.
 
 `node:revoke` deletes a gateway-owned `node_access` grant configuration from
 `consuming_node` to `serving_node`. Gateway callers execute locally; configured
-control callers forward the request to the gateway over HTTPS through WireGuard.
+operator callers forward the request to the gateway over HTTPS through WireGuard.
 
 1. Validates that both nodes exist in gateway node configuration.
 2. Validates that the caller is authorized to manage node access grants.
@@ -48,7 +48,7 @@ control callers forward the request to the gateway over HTTPS through WireGuard.
 5. Reports success, including whether the grant was already absent and whether
    the revocation locks the caller out of the gateway.
 
-A configured control caller may revoke its own consuming→gateway grant. The
+A configured operator caller may revoke its own consuming→gateway grant. The
 interactive confirmation calls out that the machine will lose Orbit gateway
 access, and the JSON success payload sets `self_lockout=true`. Recovering
 gateway access afterwards requires running `node:grant <control> <gateway>`
@@ -77,8 +77,8 @@ status.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured control node.
-- Control callers must be authorized to operate on the gateway node.
+- Must run on the gateway host or from a configured operator node.
+- Operator callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before prompts or side effects.
 - Both target nodes must exist in gateway configuration.
 - Revoking a grant that is already absent succeeds idempotently when both nodes

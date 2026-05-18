@@ -14,7 +14,7 @@ These terms define the Cloudflare command domain and its relationship to the gat
   does not create a `cf` state family.
 - **Cloudflare provider integration:** External DNS/CDN provider integration used for real production domains. It supports app and proxy behavior. It does not replace gateway-owned Orbit app, proxy, TLS, or DNS configuration.
 - **Provider administration:** Gateway-admin workflow that reads or mutates
-  Cloudflare provider state through the gateway. Control callers must go through
+  Cloudflare provider state through the gateway. Operator callers must go through
   the gateway; app-node callers are denied before prompts or side effects.
 - **Cloudflare API token:** External provider secret stored on the gateway as
   `CLOUDFLARE_API_TOKEN` and used only by the gateway when calling the

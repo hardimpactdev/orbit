@@ -133,16 +133,15 @@ final class AppNewHumanRecordingRemoteShell implements RemoteShell
 
 final class AppNewHumanSequencedRemoteShell implements RemoteShell
 {
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results,
-    ) {}
+    public function __construct(array $results) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return array_shift($this->results) ?? new RemoteShellResult(
+        if (str_contains($script, 'sudo systemctl reload caddy')) {
+            return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1);
+        }
+
+        return new RemoteShellResult(
             exitCode: 0,
             stdout: '',
             stderr: '',

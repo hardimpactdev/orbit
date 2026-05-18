@@ -104,7 +104,7 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanC
 }
 
 it('renders finite registry prompts as data tables in a real terminal session', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev);
 
     try {
         $topology->withCurrentCheckout(roles: ['gateway']);
@@ -147,4 +147,4 @@ it('renders finite registry prompts as data tables in a real terminal session', 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

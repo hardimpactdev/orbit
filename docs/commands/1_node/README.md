@@ -42,7 +42,7 @@ assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
 Hosted nodes may run the Orbit CLI as a stateless gateway client, but they do
-not own fleet state or run a local Orbit control plane. They run workload
+not own fleet state or run a local Orbit operator capability layer. They run workload
 services, call the gateway when a local command is invoked, and receive
 gateway-applied changes over SSH.
 
@@ -203,7 +203,7 @@ Node transport has different rules before and after bootstrap:
   them needs SSH access to the gateway over Orbit/WireGuard.
 - The gateway uses SSH to communicate with hosted nodes. On-node work such as file
   writes, service control, log access, package installation, and shell execution
-  is simpler and more explicit over SSH than through an HTTP control plane on the hosted node.
+  is simpler and more explicit over SSH than through an HTTP operator capability layer on the hosted node.
 
 The steady-state paths are therefore:
 

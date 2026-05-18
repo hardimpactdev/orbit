@@ -27,7 +27,7 @@ node bootstrap, app-node readiness repair, and node-family doctor behavior.
 When a CLI command on an app node needs to reach the gateway, it uses the
 gateway-managed endpoint and trust available on the app node, then calls the
 gateway over HTTPS through WireGuard. App-node gateway-client configuration is a
-node bootstrap artifact, not a separate state family and not a control-node local
+node bootstrap artifact, not a separate state family and not a operator-node local
 onboarding flow.
 
 ## Failure Semantics
@@ -39,7 +39,7 @@ surfaced by the selected renderer.
 Gateway-local denial still uses:
 
 ```
-This command may only be run from a control node.
+This command may only be run from a operator node.
 ```
 
 The JSON renderer returns the same message with `error.code:

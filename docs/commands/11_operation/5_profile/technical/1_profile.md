@@ -56,8 +56,8 @@ This command follows the shared
    selection.
 6. The gateway authorizes the calling peer for the resolved app.
 7. Resolve request origin:
-   - `caller` when the CLI's calling peer is identified as a control peer and the resolved URL is reachable from that machine;
-   - `gateway` for gateway peers, app peers, and control peers whose environment cannot resolve or reach the route but whose gateway can.
+   - `caller` when the CLI's calling peer is identified as a operator peer and the resolved URL is reachable from that machine;
+   - `gateway` for gateway peers, app peers, and operator peers whose environment cannot resolve or reach the route but whose gateway can.
 8. Generate a per-run request id.
 9. Resolve Toolbar auth headers:
     - no auth flags: `X-TOOLBAR-AUTH: guest`;
@@ -75,7 +75,7 @@ This command follows the shared
 - Name matches win over hostname matches when both could resolve.
 - Workspace hostnames resolve to the workspace and parent app context; `--node`
   constrains target resolution but does not grant access.
-- Absolute path targets are local-context selectors. A control node that cannot
+- Absolute path targets are local-context selectors. A operator node that cannot
   map the supplied path to a gateway-known app must fail and ask for a domain
   target or `--app`; it must not guess which remote app-node path the user
   meant.

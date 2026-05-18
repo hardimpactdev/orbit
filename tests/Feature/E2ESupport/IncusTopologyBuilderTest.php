@@ -164,7 +164,7 @@ it('records phase timings while building topology templates', function (): void 
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('stopInstance')->with('orbit-template-control')->once()->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('snapshotInstance')->with('orbit-template-control', 'clean-control')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('snapshotInstance')->with('orbit-template-control', 'clean-operator')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null): ProcessResult {
         if (str_starts_with($command, 'mktemp -d ')) {
             return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
@@ -254,28 +254,28 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         [
             'role' => 'control',
             'name' => 'orbit-template-control',
-            'snapshot' => 'clean-control-gateway-dev-prod',
+            'snapshot' => 'clean-operator-gateway-appdev-appprod',
         ],
         [
             'role' => 'gateway',
             'name' => 'orbit-template-gateway',
-            'snapshot' => 'clean-control-gateway-dev-prod',
+            'snapshot' => 'clean-operator-gateway-appdev-appprod',
         ],
         [
             'role' => 'dev',
             'name' => 'orbit-template-dev',
-            'snapshot' => 'clean-control-gateway-dev-prod',
+            'snapshot' => 'clean-operator-gateway-appdev-appprod',
         ],
         [
             'role' => 'prod',
             'name' => 'orbit-template-prod',
-            'snapshot' => 'clean-control-gateway-dev-prod',
+            'snapshot' => 'clean-operator-gateway-appdev-appprod',
         ],
     ])->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-control'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-gateway'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-dev'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prod'")
-        ->and($commandOutput)->not->toContain('orbit-template-control-gateway-dev-prod-control')
+        ->and($commandOutput)->not->toContain('orbit-template-operator-gateway-appdev-appprod-control')
         ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
         ->and($commandOutput)->not->toContain('--role=gateway')
         ->and($commandOutput)->not->toContain('--control-name=control-1')

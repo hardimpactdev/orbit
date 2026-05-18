@@ -38,7 +38,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the selected app through gateway app configuration.
 - Uses one gateway API action, `POST /api/deploy/run`. JSON callers receive the
-  normal JSON response; interactive control-node callers request that same
+  normal JSON response; interactive operator-node callers request that same
   action with `Accept: text/event-stream` and render streamed progress locally.
 - Fails before side effects unless the selected app is production.
 - Reads the app's deployment steps ordered by `order` ascending.
@@ -119,5 +119,5 @@ deployment status when reporting `app.latest_deployment_failed` or
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering: production app lookup; app-node denial before prompts or side effects; authorization; empty pipeline failure; run creation; ordered step execution through the gateway from the app source path; timeout enforcement; metadata exposure; progress-tree rendering; streamed control-node progress; single-route stream negotiation; step-failure stop behavior; latest deployment status updates; detached handoff; failure codes; and app-doctor handoff behavior. |
+| `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering: production app lookup; app-node denial before prompts or side effects; authorization; empty pipeline failure; run creation; ordered step execution through the gateway from the app source path; timeout enforcement; metadata exposure; progress-tree rendering; streamed operator-node progress; single-route stream negotiation; step-failure stop behavior; latest deployment status updates; detached handoff; failure codes; and app-doctor handoff behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |

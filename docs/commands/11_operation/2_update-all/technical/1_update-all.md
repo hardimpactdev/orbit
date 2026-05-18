@@ -61,7 +61,7 @@ execution details live in the renderer contracts.
 
 The expected target shape per calling peer role:
 
-| Peer role identified by gateway | Local target | Gateway target | App-node targets | Other control-node targets |
+| Peer role identified by gateway | Local target | Gateway target | App-node targets | Other operator-node targets |
 | --- | --- | --- | --- | --- |
 | `control` peer | The control checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active app node selected by the rules above. | Never. |
 | `gateway` peer | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active app node selected by the rules above. | Never. |
@@ -71,7 +71,7 @@ The expected target shape per calling peer role:
 - Update each selected installation with the same local checkout update sequence
   documented by [`update`](../../1_update/technical/1_update.md).
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
-  Control nodes do not SSH directly to the gateway, app nodes, or other control
+  Operator nodes do not SSH directly to the gateway, app nodes, or other control
   nodes as part of the command contract. The gateway does not SSH to control
   nodes as part of the command contract.
 - Update the caller-local checkout and gateway-local checkout as independent

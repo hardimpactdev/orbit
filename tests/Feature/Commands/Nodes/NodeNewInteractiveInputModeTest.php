@@ -81,7 +81,7 @@ describe('node:new interactive input mode', function (): void {
 
         $this->artisan('node:new')
             ->expectsQuestion('Node name', 'control-2')
-            ->expectsOutputToContain('Gateway connection is required before creating app or control nodes.')
+            ->expectsOutputToContain('Gateway connection is required before creating app or operator nodes.')
             ->assertFailed();
     });
 
@@ -109,9 +109,9 @@ describe('node:new interactive input mode', function (): void {
                         'config' => "[Interface]\nPrivateKey = control-private-key\n",
                     ],
                     'next_steps' => [
-                        'Install the WireGuard configuration on the control node.',
+                        'Install the WireGuard configuration on the operator node.',
                         'Join the Orbit WireGuard network.',
-                        'Run `orbit gateway:add` on the control node.',
+                        'Run `orbit gateway:add` on the operator node.',
                     ],
                 ],
             ],
@@ -119,7 +119,7 @@ describe('node:new interactive input mode', function (): void {
 
         $this->artisan('node:new')
             ->expectsQuestion('Node name', 'control-2')
-            ->expectsOutputToContain('Enrolled control node control-2.')
+            ->expectsOutputToContain('Enrolled operator node control-2.')
             ->assertSuccessful();
     });
 

@@ -64,13 +64,14 @@ it('reports docker unavailable when prepared per-role image is missing', functio
     Process::fake([
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:operator-control-current' >/dev/null" => Process::result(exitCode: 1),
         "docker image inspect 'orbit-e2e-topology:control-control-current' >/dev/null" => Process::result(exitCode: 1),
     ]);
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
     expect($provider->availability(E2ETopologyKind::Control)->available)->toBeFalse()
-        ->and($provider->availability(E2ETopologyKind::Control)->message)->toContain('orbit-e2e-topology:control-control-current');
+        ->and($provider->availability(E2ETopologyKind::Control)->message)->toContain('orbit-e2e-topology:operator-control-current');
 });
 
 it('advertises container feature capabilities', function (): void {
@@ -150,7 +151,7 @@ it('allows slow remote docker metadata probes during host selection', function (
 
         expect($provider->availability(E2ETopologyKind::Control)->available)->toBeTrue()
             ->and($probeTimeouts['docker info >/dev/null'])->toBe(120)
-            ->and($probeTimeouts["docker image inspect 'orbit-e2e-topology:control-control-current' >/dev/null"])->toBe(120)
+            ->and($probeTimeouts["docker image inspect 'orbit-e2e-topology:operator-control-current' >/dev/null"])->toBe(120)
             ->and($probeTimeouts["docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"])->toBe(120);
     });
 });

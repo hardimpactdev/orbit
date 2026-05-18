@@ -25,7 +25,7 @@ Each firewall rule is defined by the following fields.
 
 This term defines which nodes firewall commands may target.
 
-- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway` or `app`. Control nodes, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
+- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway` or `app`. Operator nodes, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
 
 ## Policy Boundaries
 

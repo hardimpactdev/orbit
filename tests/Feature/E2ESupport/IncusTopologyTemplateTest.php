@@ -74,7 +74,7 @@ it('generates correct template and clone names', function (): void {
     expect(IncusTopologyTemplate::templateName(E2ETopologyKind::ControlGateway, 'gateway'))
         ->toBe('orbit-template-gateway')
         ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::ControlGateway))
-        ->toBe('clean-control-gateway')
+        ->toBe('clean-operator-gateway')
         ->and(IncusTopologyTemplate::cloneName('abc123', 'control'))
         ->toBe('orbit-e2e-abc123-control');
 });
@@ -88,8 +88,9 @@ it('returns true when all template instances and clean snapshots exist', functio
                 && str_contains($command, 'orbit-template-control')
                 && str_contains($command, 'orbit-template-gateway')
                 && str_contains($command, 'orbit-template-dev')
+                && str_contains($command, 'clean-operator-gateway-appdev')
                 && str_contains($command, 'clean-control-gateway-dev')
-                && substr_count($command, 'grep -q') === 3;
+                && substr_count($command, 'grep -q') === 6;
         })
         ->andReturn(successfulProcessResult());
 
@@ -335,5 +336,5 @@ it('throws when the batch script fails, surfacing the host error output', functi
     $host->shouldReceive('run')->andReturn($failure);
 
     expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runZ'))
-        ->toThrow(RuntimeException::class, 'Topology batch failed for control');
+        ->toThrow(RuntimeException::class, 'Topology batch failed for operator');
 });

@@ -8,7 +8,7 @@ use App\E2E\Support\E2ETopologyKind;
 
 it('grants node access from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
@@ -55,4 +55,4 @@ it('grants node access from a control caller through the gateway api', function 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');

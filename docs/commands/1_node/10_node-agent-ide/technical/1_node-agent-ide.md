@@ -15,7 +15,7 @@
   gateway write request unless another gateway request naturally returns the
   role denial first.
 - Gateway callers can read and write gateway-owned node configuration.
-- Control callers have configured gateway access.
+- Operator callers have configured gateway access.
 - The target node exists in gateway node configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
@@ -47,7 +47,7 @@ This command follows the shared
 3. Resolve `node_agent_ide.adapter` from `[agent_ide]`. The prompt presents
    the reserved `none` token followed by the list of supported adapters from
    the shared Agent IDE adapter registry. Gateway callers read the registry
-   locally; control callers query the gateway adapter choices API before
+   locally; operator callers query the gateway adapter choices API before
    rendering the prompt.
 4. Validate `node_agent_ide.adapter` immediately.
    - Must be `none` or appear in the gateway-owned adapter registry. The gateway is the sole
@@ -171,7 +171,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node denial, control-caller gateway forwarding, no downstream warning payloads, and read-only guarantees (no SSH, no session creation). |
+| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node denial, operator-caller gateway forwarding, no downstream warning payloads, and read-only guarantees (no SSH, no session creation). |
 
 Input-mode-specific test mapping lives in:
 

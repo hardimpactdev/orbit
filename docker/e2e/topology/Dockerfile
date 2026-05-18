@@ -31,6 +31,9 @@ RUN useradd -m -s /bin/bash control \
     && echo 'orbit ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/orbit \
     && chmod 440 /etc/sudoers.d/control /etc/sudoers.d/orbit
 
+# The prepared Docker topology still keeps the legacy "control" OS user for one
+# migration window because the fixture scripts and image layout still depend on it.
+
 RUN printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -e' \

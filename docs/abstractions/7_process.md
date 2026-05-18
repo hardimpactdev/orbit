@@ -20,7 +20,7 @@ product docs.
   events. They do not synchronously probe the runtime backend.
 - Runtime lifecycle commands and runtime-unit enactment are gateway-owned node
   work. Gateway callers use the local database plus the gateway-owned
-  `RemoteShell` edge to the owning app node. Control and app callers use typed
+  `RemoteShell` edge to the owning app node. Operator and app callers use typed
   gateway API requests.
 - App-node callers may run process reads, logs, and lifecycle actions when
   authorized. They may not mutate process intent.

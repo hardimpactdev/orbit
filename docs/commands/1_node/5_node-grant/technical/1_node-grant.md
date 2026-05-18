@@ -11,7 +11,7 @@
   caller's gateway-known role is `control` or `gateway`. App-role callers are
   rejected.
 - Gateway callers can read and write gateway-owned node configuration.
-- Control callers have configured gateway access as defined in
+- Operator callers have configured gateway access as defined in
   [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md).
 
 **Post-input path eligibility:**
@@ -136,9 +136,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, consuming/serving node not found, grant policy violation including self-grant, control-caller forwarding, app-node denial, and JSON envelope. |
+| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, consuming/serving node not found, grant policy violation including self-grant, operator-caller forwarding, app-node denial, and JSON envelope. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
-| `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Control-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Renderer-specific test mapping lives in:
 

@@ -156,4 +156,4 @@ rebuilds `dnsmasq.conf` from current state and `docker compose up -d`).
 - Old evidence: `../orbit-old-may/app/Services/RemoteProvisioner.php:947` — original `network_mode: container:wg-easy` rationale.
 - Old evidence: `../orbit-old-may/app/Services/DnsmasqConfigGenerator.php` — original generator shape.
 - Old evidence: `../orbit-old-may/app/Services/DoctorService.php:692` — original "orbit-dns container not found" failure.
-- Old evidence: `../orbit-old-may/app/Console/Commands/TldSyncCommand.php` — original lifecycle hook (the control-side fetcher we are *not* porting; gateway authoritative DB row replaces it).
+- Old evidence: `../orbit-old-may/app/Console/Commands/TldSyncCommand.php` — original lifecycle hook (the operator-side fetcher we are *not* porting; gateway authoritative DB row replaces it).

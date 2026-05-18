@@ -48,7 +48,7 @@ supplied `development` value.
   non-interactive input mode.
 - Fail before side effects when a field is supplied for an incompatible node
   role (`--environment` on a non-app node, or `--host`, `--public-ipv4`, or
-  `--public-ipv6` on a control node).
+  `--public-ipv6` on a operator node).
 - Fail before side effects when `--tld` is supplied for a gateway target,
   control target, or app target whose effective environment is `production`.
 - Fail before side effects with `node.tld_in_use` when `--tld` matches another

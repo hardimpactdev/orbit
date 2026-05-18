@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('reconfigures a managed tool on a node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
@@ -31,7 +31,7 @@ it('reconfigures a managed tool on a node', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function toolReconfigureSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

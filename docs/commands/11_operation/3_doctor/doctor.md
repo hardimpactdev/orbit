@@ -15,7 +15,7 @@ and does not by itself grant hosted-family probes:
 - `app-development` or `app-production` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`.
 
-A separate `DNS/TLD` row (control/app targets) and `DNS` row (gateway target)
+A separate `DNS/TLD` row (operator/app targets) and `DNS` row (gateway target)
 is planned as a slice of the `node` family. It will render once a DNS
 diagnostic source exists; until then, findings related to DNS stay inside the
 `Node` row.

@@ -107,8 +107,8 @@ for the envelope shape.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured control node.
-- Control callers must be authorized to operate on the gateway node.
+- Must run on the gateway host or from a configured operator node.
+- Operator callers must be authorized to operate on the gateway node.
 - App-node callers are gateway clients; the gateway rejects them before
   gateway-owned side effects.
 - The target node must exist in gateway configuration.

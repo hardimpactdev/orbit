@@ -50,7 +50,7 @@ orbit node:remove app-1 --force --json
 Use `node:remove` when you want to permanently unregister a node and detach its identity from the gateway.
 
 `node:remove` performs gateway-owned removal of a node identity. Gateway callers
-execute locally; configured control callers forward the request to the gateway
+execute locally; configured operator callers forward the request to the gateway
 over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 
 1. Validates that the target node exists in gateway configuration.
@@ -66,7 +66,7 @@ over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 8. Reports partial WireGuard detach or development DNS cleanup failures as
    structured warnings and remaining node-family drift.
 
-When a configured control node removes its own node record, the removal is
+When a configured operator node removes its own node record, the removal is
 allowed if the caller is authorized for the gateway node. The machine loses
 Orbit gateway access after the gateway removes its node record and WireGuard
 peer. Local settings and local WireGuard configuration are left untouched.
@@ -109,8 +109,8 @@ successful and reports repair guidance in machine-readable metadata.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured control node.
-- Control callers must be authorized to operate on the gateway node.
+- Must run on the gateway host or from a configured operator node.
+- Operator callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before prompts or side effects.
 - The target node must exist in gateway configuration.
 - The target node must not be any gateway node.

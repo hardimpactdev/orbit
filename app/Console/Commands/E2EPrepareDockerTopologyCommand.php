@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
 use RuntimeException;
 
 #[Signature('e2e:prepare-docker-topology
-    {kind=control-gateway-dev-prod : Topology kind to prepare (control|control-gateway|control-gateway-dev|control-gateway-dev-prod)}
+    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod)}
     {--force : Build the Docker prepared per-role images}
     {--json : Output as JSON}')]
 #[Description('Prepare per-role Docker images used by the Docker prepared topology provider')]
@@ -38,10 +38,10 @@ class E2EPrepareDockerTopologyCommand extends Command
     public function handle(): int
     {
         $kindValue = (string) $this->argument('kind');
-        $kind = E2ETopologyKind::tryFrom($kindValue);
+        $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: control, control-gateway, control-gateway-dev, control-gateway-dev-prod.");
+            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.");
         }
 
         $images = $this->imagesFor($kind);

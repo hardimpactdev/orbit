@@ -42,8 +42,8 @@ machine-readable output.
 
 ## Requirements
 
-- The caller is a gateway or authorized control node.
-- Control callers can SSH to the gateway over Orbit/WireGuard.
+- The caller is a gateway or authorized operator node.
+- Operator callers can SSH to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The named client exists and is not an active Orbit node peer.
 

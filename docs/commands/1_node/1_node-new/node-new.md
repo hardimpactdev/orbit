@@ -6,11 +6,11 @@ Register a new node identity in the Orbit fleet and optionally assign its
 initial hosted roles.
 
 Use `node:new` when adding capacity to the fleet. Gateway and app nodes are
-provisioned over SSH when needed. Control nodes are enrolled by the gateway so
+provisioned over SSH when needed. Operator nodes are enrolled by the gateway so
 they can join the Orbit WireGuard network and then run `gateway:add`.
-The first gateway bootstrap is the exception: when a control node with no
+The first gateway bootstrap is the exception: when a operator node with no
 configured gateway creates the first gateway, the command also onboards that
-initiating control node and stores the local gateway configuration.
+initiating operator node and stores the local gateway configuration.
 
 ## Usage
 
@@ -45,8 +45,8 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
 - `--host`: required for gateway bootstrap and for any initial hosted role that
   provisions a host. This is the SSH/bootstrap endpoint and never the canonical
   node address.
-- `--control-name`: initiating control-node name for first-gateway bootstrap
-  (a control node with no configured gateway running `--role=gateway`).
+- `--control-name`: initiating operator-node name for first-gateway bootstrap
+  (a operator node with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
 - `--environment`: legacy compatibility input only. `--role=app
@@ -97,11 +97,11 @@ role flow.
 Bootstraps or adopts the gateway node that owns fleet configuration, WireGuard
 identity, gateway APIs, and node access policy.
 
-When a control node with no configured gateway bootstraps the first gateway,
-`node:new --role=gateway` also mints and installs the initiating control node's
+When a operator node with no configured gateway bootstraps the first gateway,
+`node:new --role=gateway` also mints and installs the initiating operator node's
 WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
 local gateway endpoint, and verifies gateway API access. After that successful
-flow, the initiating control node does not run `gateway:add`.
+flow, the initiating operator node does not run `gateway:add`.
 
 Gateway bootstrap also installs the gateway-side DNS substrate:
 
@@ -170,7 +170,7 @@ or enrolls the node, writes gateway state, and verifies readiness.
 JSON output includes the command result action, node name, role, lifecycle
 status, platform-version identifier, environment when applicable, development
 TLD when applicable, provisioning status, explicit node addresses, and any
-returned WireGuard configuration for control-node enrollment. It distinguishes the SSH/bootstrap endpoint from the Orbit WireGuard address, the
+returned WireGuard configuration for operator-node enrollment. It distinguishes the SSH/bootstrap endpoint from the Orbit WireGuard address, the
 gateway endpoint used in generated peer configs, and the public IPv4/IPv6
 metadata that the operator recorded when already present.
 
@@ -182,11 +182,11 @@ metadata that the operator recorded when already present.
 
 For first-gateway bootstrap:
 
-- Requires local permission to install the initiating control node's WireGuard
+- Requires local permission to install the initiating operator node's WireGuard
   identity, trust the gateway CA, and store local gateway configuration. A
   successful first-gateway bootstrap completes local onboarding; do not run
-  `gateway:add` on that initiating control node afterward.
-- Requires a resolved initiating control-node name. Defaults to the
+  `gateway:add` on that initiating operator node afterward.
+- Requires a resolved initiating operator-node name. Defaults to the
   normalized local short hostname.
 - Installs Docker Engine and Docker Compose on Ubuntu gateway hosts when they
   are missing, because the gateway DNS substrate runs `wg-easy` and
@@ -197,11 +197,11 @@ For app-node creation:
 - Requires an existing gateway and a resolved SSH/bootstrap endpoint.
 - Development app-node creation requires a unique development TLD.
 
-For control-node enrollment:
+For operator-node enrollment:
 
 - Must run against the gateway so the gateway can mint the WireGuard identity
   and matching node record.
-- After enrolling a control node, install the returned WireGuard configuration,
+- After enrolling a operator node, install the returned WireGuard configuration,
   join the Orbit network, then run `orbit gateway:add`.
 
 ## Technical Contract

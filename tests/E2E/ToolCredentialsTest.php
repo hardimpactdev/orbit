@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('reads managed tool credentials from gateway intent', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
@@ -36,10 +36,10 @@ it('reads managed tool credentials from gateway intent', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('reads opencode-server credentials from gateway intent', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
@@ -70,7 +70,7 @@ it('reads opencode-server credentials from gateway intent', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function toolCredentialsSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

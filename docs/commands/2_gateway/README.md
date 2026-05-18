@@ -37,7 +37,7 @@ These rules apply to all gateway commands and define the invariants the family e
   and gateway-client metadata.
 - Gateway commands may install or refresh local trust for the gateway root CA,
   which is the root that Orbit-managed route certificates chain to.
-- Gateway commands must not create gateway node rows, control node rows, app
+- Gateway commands must not create gateway node rows, operator node rows, app
   node rows, WireGuard peer material, or node access grants.
 - Gateway commands must not issue, upload, renew, or clean up TLS leaf certificates
   that are scoped to a route; that belongs to the route-owning domain and its doctor
@@ -49,7 +49,7 @@ These rules apply to all gateway commands and define the invariants the family e
 
 ## Commands
 
-These are the two gateway-family commands available to control-node callers.
+These are the two gateway-family commands available to operator-node callers.
 
 1. Existing gateway onboarding:
    [`orbit gateway:add [gateway_ip]`](1_gateway-add/gateway-add.md)

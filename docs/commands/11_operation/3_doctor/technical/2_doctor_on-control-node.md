@@ -1,19 +1,19 @@
-# Technical Contract: `doctor` On A Control Node
+# Technical Contract: `doctor` On A Operator Node
 
 [Back to `doctor` technical contract.](1_doctor.md)
 
-This page describes behavior when `orbit doctor` is invoked from a control node — that is, when the gateway identifies the calling WireGuard peer as a control peer.
+This page describes behavior when `orbit doctor` is invoked from a operator node — that is, when the gateway identifies the calling WireGuard peer as a operator peer.
 
 **Effects:** `read`, `stream`.
 
 **Prerequisites:**
 - The CLI can reach the Orbit gateway.
-- The gateway identifies the calling peer as a control peer.
+- The gateway identifies the calling peer as a operator peer.
 - The gateway authorizes that peer to inspect the selected scope.
 
 ## Allowed Paths
 
-Control peers do not probe fleet reality directly. The CLI is a client of the gateway doctor endpoint.
+Operator peers do not probe fleet reality directly. The CLI is a client of the gateway doctor endpoint.
 
 | Mode | Behavior |
 | --- | --- |
@@ -22,7 +22,7 @@ Control peers do not probe fleet reality directly. The CLI is a client of the ga
 
 ## Single-Node Scope
 
-`doctor` always targets one node per run. When the calling peer is identified as a control peer, the default target is that peer's identified node (equivalent to `--self`). An operator may target a different node with `--node=<other>`; multi-node scopes are not supported.
+`doctor` always targets one node per run. When the calling peer is identified as a operator peer, the default target is that peer's identified node (equivalent to `--self`). An operator may target a different node with `--node=<other>`; multi-node scopes are not supported.
 
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
 - Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's active roles to derive the rendered category set.
@@ -47,7 +47,7 @@ A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
-slice for control/app targets and a `DNS` slice for gateway targets is
+slice for operator/app targets and a `DNS` slice for gateway targets is
 planned but not yet emitted; the row will be added when a DNS diagnostic
 source lands.
 
@@ -69,7 +69,7 @@ The CLI owns:
 - human or JSON rendering of the gateway result;
 - activity logging for the local CLI invocation.
 
-Control peers must not:
+Operator peers must not:
 
 - SSH to app or gateway nodes for doctor probes;
 - read or mutate gateway database state directly;

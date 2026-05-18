@@ -46,7 +46,7 @@ execution.
   the target host platform is supported for the gateway role.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, inputs that are forbidden for control-node provisioning fail as soon
+are known. For example, inputs that are forbidden for operator-node provisioning fail as soon
 as `node_new.role=control` and the forbidden supplied input are known, before
 prompting for unrelated later input. In interactive input mode, a correctable
 path blocker shows a validation message at the current corrective prompt so the
@@ -119,7 +119,7 @@ For omitted `--role` or legacy `--role=control`:
 2. Apply the canonical forbidden-input rules for a no-hosted-role identity,
    including SSH/bootstrap-only inputs.
 3. Mint a WireGuard peer.
-4. Create or converge the active control-node row with matching `wg_ip`.
+4. Create or converge the active operator-node row with matching `wg_ip`.
 5. Return the WireGuard configuration and next-step instructions.
 
 ## App-Hosted Role Provisioning
@@ -221,7 +221,7 @@ identity. It must not overwrite a proven but incompatible host.
 - Gateway reset and destructive reprovisioning are outside `node:new`.
 - Compatible but drifted or incomplete gateways are reported as node-family
   drift for `doctor --family=node --restore`.
-- Control-node enrollment fails if WireGuard peer minting cannot return a peer
+- Operator-node enrollment fails if WireGuard peer minting cannot return a peer
   address that matches the node record.
 - App-node provisioning reports partial provisioning when gateway configuration is
   written but node readiness verification fails.
@@ -237,6 +237,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior: active local gateway identity requirement, post-input path eligibility, path matrix behavior, `node_new.host` required for every gateway request, already-provisioned convergence without reprovisioning, missing gateway-row materialization outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --restore`, reset outside `node:new`, control-node enrollment without SSH, forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development TLD persistence, TLD mapping creation, compatible adoption, and incompatible record failures before side effects. Renderer tests own exact output shape. |
+| `tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior: active local gateway identity requirement, post-input path eligibility, path matrix behavior, `node_new.host` required for every gateway request, already-provisioned convergence without reprovisioning, missing gateway-row materialization outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --restore`, reset outside `node:new`, operator-node enrollment without SSH, forbidden-input behavior for operator-node enrollment, app-node provisioning over SSH, development TLD persistence, TLD mapping creation, compatible adoption, and incompatible record failures before side effects. Renderer tests own exact output shape. |
 | `tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-node provisioning and development TLD mapping. |
 | `tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-node provisioning without development TLD mapping. |

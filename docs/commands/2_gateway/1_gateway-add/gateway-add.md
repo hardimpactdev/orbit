@@ -33,7 +33,7 @@ orbit gateway:add 10.6.0.2 --json
 
 Run `gateway:add` after joining the Orbit WireGuard network to configure your local CLI to use the gateway.
 
-`gateway:add` performs local control-node onboarding for an already-issued
+`gateway:add` performs local operator-node onboarding for an already-issued
 gateway identity. It does not create gateway registry rows, local registry
 mirror rows, WireGuard peer material, identity, or access policy; those are
 owned by [`node:new`](../../1_node/1_node-new/node-new.md) and gateway configuration.
@@ -73,8 +73,8 @@ provision hosts, does not mint access grants, and does not repair unrelated node
 drift.
 
 First-gateway bootstrap via `node:new --role=gateway --host=<host>
---control-name=<control-name>` already completes the onboarding for the initiating control node;
-that initiating control node must not run `gateway:add` afterward.
+--control-name=<control-name>` already completes the onboarding for the initiating operator node;
+that initiating operator node must not run `gateway:add` afterward.
 
 ## Output
 

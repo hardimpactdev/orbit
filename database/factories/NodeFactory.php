@@ -23,4 +23,19 @@ class NodeFactory extends Factory
             'status' => 'active',
         ];
     }
+
+    public function operator(): static
+    {
+        return $this->state(fn (): array => [
+            // Persist the legacy role value during the terminology migration.
+            'role' => 'control',
+            'environment' => null,
+            'tld' => null,
+        ]);
+    }
+
+    public function control(): static
+    {
+        return $this->operator();
+    }
 }

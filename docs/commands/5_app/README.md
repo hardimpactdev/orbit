@@ -1,7 +1,7 @@
 # App Commands
 
 App commands manage gateway-owned app configuration and the app-node artifacts derived
-from that configuration. Apps belong to app nodes. Gateway and control nodes are not
+from that configuration. Apps belong to app nodes. Gateway and operator nodes are not
 valid app targets.
 
 ## Domain Rules

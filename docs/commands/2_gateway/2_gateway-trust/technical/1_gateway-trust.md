@@ -94,7 +94,7 @@ creation, upload, renewal, cleanup, and backend TLS drift repair.
 ### Scope Boundaries
 
 `gateway:trust` must not:
-- Create or update gateway node records, control node records, or app node
+- Create or update gateway node records, operator node records, or app node
   records.
 - Change the configured gateway endpoint.
 - Mint WireGuard identity, peer material, or node access grants.
@@ -108,7 +108,7 @@ creation, upload, renewal, cleanup, and backend TLS drift repair.
 It also must not issue, upload, renew, or remove app, workspace, proxy,
 gateway, or tool route leaf certificates, and it must never place gateway root
 private key material, intermediate CA material, or general certificate-signing
-authority on app nodes or control nodes.
+authority on app nodes or operator nodes.
 
 ## Renderer Contracts
 
@@ -187,4 +187,4 @@ Required split contract tests:
 | `tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php` | Local gateway settings read failures before network or trust-store side effects, including actionable `node.local_config_read_failed` reasons and human prose. |
 | `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
-| `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform, including local metadata persistence and idempotent convergence. |
+| `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported operator-node platform, including local metadata persistence and idempotent convergence. |

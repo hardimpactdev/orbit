@@ -122,7 +122,7 @@ final readonly class NodeDefaultController implements Loggable
         if ($caller->role !== 'control') {
             return $this->error(
                 code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control node.',
+                message: 'This command may only be run from an operator node.',
                 meta: ['caller_role' => $caller->role],
                 status: 403,
             );

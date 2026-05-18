@@ -44,7 +44,7 @@ A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
-slice for control/app targets and a `DNS` slice for gateway targets is
+slice for operator/app targets and a `DNS` slice for gateway targets is
 planned but not yet emitted; the row will be added when a DNS diagnostic
 source lands.
 

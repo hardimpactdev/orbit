@@ -14,14 +14,14 @@ request before gateway-owned side effects.
 
 **Post-input path eligibility:**
 - The CLI can reach the gateway API over HTTPS through WireGuard.
-- The control-role caller is authorized through gateway-owned node access
+- The operator-role caller is authorized through gateway-owned node access
   policy to operate on the gateway node.
 
 ## Allowed Paths
 
 | Context | Behavior |
 | --- | --- |
-| Configured CLI authenticated as a control caller with gateway-node access | Resolve input locally, then forward to the gateway over HTTPS through WireGuard. |
+| Configured CLI authenticated as a operator caller with gateway-node access | Resolve input locally, then forward to the gateway over HTTPS through WireGuard. |
 | No configured gateway | Fail before prompts or side effects. |
 | Gateway unavailable | Fail before side effects after input resolution and before gateway-owned mutation. |
 | Not authorized for gateway node | Gateway rejects before gateway-owned mutation. |
@@ -41,11 +41,11 @@ The forwarded request includes:
 - `node_update.public_ipv4` when present;
 - `node_update.public_ipv6` when present;
 - the selected output renderer;
-- the authenticated control-caller WireGuard identity.
+- the authenticated operator-caller WireGuard identity.
 
 The gateway authenticates the caller through WireGuard identity and authorizes
 the request through the node access policy it owns. Because `node:update`
-mutates fleet configuration that the gateway owns, the control-role caller must have
+mutates fleet configuration that the gateway owns, the operator-role caller must have
 access to the gateway node. Access to the target node alone does not authorize
 the update write.
 
@@ -58,13 +58,13 @@ Forwarded payload example for a development app TLD update:
 ```
 
 The control CLI does not resolve the target row locally. If a forwarded
-`node_update.tld` targets a gateway or control node, the gateway rejects the
+`node_update.tld` targets a gateway or operator node, the gateway rejects the
 request before gateway-owned side effects with `node.field_role_incompatible`,
 `meta.field=tld`, and the target role in metadata.
 
 ## Self-Update
 
-A control-role caller may update its own control-node record when it is
+A operator-role caller may update its own operator-node record when it is
 authorized for the gateway node. Self-update does not require an extra flag.
 
 ## Error Contract
@@ -82,14 +82,14 @@ When the gateway rejects the caller's access to the gateway node, the command
 must show:
 
 ```text
-This control node is not authorized to update nodes.
+This operator node is not authorized to update nodes.
 ```
 
 ## Failure Semantics
 
 - Fail before prompts or side effects when no gateway is configured.
 - Fail before gateway-owned side effects when the gateway is unreachable.
-- Fail before gateway-owned side effects when the control-role caller is not
+- Fail before gateway-owned side effects when the operator-role caller is not
   authorized to operate on the gateway node.
 - Fail before side effects when `node_update.name` is missing, invalid, or no
   supported field flags are provided in non-interactive mode.
@@ -102,4 +102,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Configured control caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded `tld` payload, gateway-preserved TLD role rejection, gateway-node access authorization, self-update detection, gateway-unavailable failure, authorization failure, and result rendering. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Configured operator caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded `tld` payload, gateway-preserved TLD role rejection, gateway-node access authorization, self-update detection, gateway-unavailable failure, authorization failure, and result rendering. |

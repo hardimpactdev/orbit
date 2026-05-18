@@ -28,7 +28,7 @@ final class AppRemoveController implements Loggable
         }
 
         if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
         }
 
         if ($request->boolean('destructive_consent') !== true) {
@@ -44,7 +44,7 @@ final class AppRemoveController implements Loggable
         $targetApp->loadMissing('node');
 
         if (! $targetApp->node instanceof Node || ! $this->callerCanRemoveApp($caller, $targetApp)) {
-            return $this->error('authorization_failed', 'This control node is not authorized to remove this app.', [
+            return $this->error('authorization_failed', 'This operator node is not authorized to remove this app.', [
                 'name' => $targetApp->name,
                 'caller_role' => $caller->role,
             ], 403);

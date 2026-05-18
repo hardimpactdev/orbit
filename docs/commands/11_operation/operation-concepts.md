@@ -16,7 +16,7 @@ These terms define the scope and structure of the operation command domain.
 These terms describe the update workflow and its components.
 
 - **Local update:** `update` sequence that changes only the current Orbit checkout: fast-forward source pull, dependency installation, and local Orbit migrations.
-- **Fleet update:** `update:all` sequence that updates the caller-local checkout and selected active non-local managed Orbit installations through gateway-owned authority. Remote execution uses gateway-to-app-node `RemoteShell`. Control nodes are never remote update targets.
+- **Fleet update:** `update:all` sequence that updates the caller-local checkout and selected active non-local managed Orbit installations through gateway-owned authority. Remote execution uses gateway-to-app-node `RemoteShell`. Operator nodes are never remote update targets.
 - **Update target:** One selected Orbit installation in an update workflow, such as the caller-local checkout, the gateway checkout, or an app-node checkout selected from gateway node configuration.
 - **Update step:** Ordered local checkout update action: source pull, dependency installation, or migration execution. A target succeeds only when all required update steps succeed.
 - **Target result:** Per-update-target outcome preserved for renderers. Includes both successful and failed targets when a fleet update partially fails.

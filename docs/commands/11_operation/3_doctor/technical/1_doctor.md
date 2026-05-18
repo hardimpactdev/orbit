@@ -51,7 +51,7 @@ identity and output, but hosted-family doctor eligibility comes from
 
 Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
-A future `DNS/TLD` row is reserved for control/app targets and a `DNS` row for gateway targets. They will render as a slice of the `node` family once a DNS diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside the `Node` row and produces no separate row.
+A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for gateway targets. They will render as a slice of the `node` family once a DNS diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside the `Node` row and produces no separate row.
 
 ## Input Resolution
 

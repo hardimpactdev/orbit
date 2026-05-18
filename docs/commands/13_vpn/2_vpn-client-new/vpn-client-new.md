@@ -28,7 +28,7 @@ orbit vpn-client:new laptop --totp=123456 --json
 Run this command to provision a new admin VPN peer on the gateway backend.
 
 `vpn-client:new` runs on the gateway host and creates a gateway VPN backend
-peer for the requested client name. From a control node, Orbit connects to the
+peer for the requested client name. From a operator node, Orbit connects to the
 gateway over the Orbit/WireGuard SSH path and runs the gateway-local operation
 there.
 
@@ -52,8 +52,8 @@ machine-readable output.
 
 ## Requirements
 
-- The caller is a gateway or authorized control node.
-- Control callers can SSH to the gateway over Orbit/WireGuard.
+- The caller is a gateway or authorized operator node.
+- Operator callers can SSH to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The operator can authenticate to the VPN backend when TOTP is required.
 

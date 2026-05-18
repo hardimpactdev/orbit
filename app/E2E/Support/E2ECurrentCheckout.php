@@ -192,7 +192,7 @@ final class E2ECurrentCheckout
      */
     private static function availableTopologyRoles(E2ETopologyLease $topology): array
     {
-        $roles = ['control'];
+        $roles = ['operator', 'control'];
 
         if ($topology->gateway() !== null) {
             $roles[] = 'gateway';
@@ -214,10 +214,12 @@ final class E2ECurrentCheckout
      */
     private static function topologyRoleTarget(E2ETopologyLease $topology, string $role, array $users): array
     {
-        $controlUser = $users['control'] ?? E2EConfig::fromEnvironment()->controlUser;
+        $operatorUser = $users['operator']
+            ?? $users['control']
+            ?? E2EConfig::fromEnvironment()->operatorUser;
 
         return match ($role) {
-            'control' => [$topology->control(), $controlUser, "/home/{$controlUser}/orbit"],
+            'operator', 'control' => [$topology->operator(), $operatorUser, "/home/{$operatorUser}/orbit"],
             'gateway' => self::requiredRole($topology->gateway(), $role, $users['gateway'] ?? 'orbit'),
             'dev' => self::requiredRole($topology->devApp(), $role, $users['dev'] ?? 'orbit'),
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),

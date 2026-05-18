@@ -127,6 +127,16 @@ class Node extends Model
             ->contains(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role && $assignment->status === 'active');
     }
 
+    public function isOperator(): bool
+    {
+        return $this->role === 'control';
+    }
+
+    public function displayRole(): string
+    {
+        return $this->isOperator() ? 'operator' : $this->role;
+    }
+
     /**
      * @return HasMany<FirewallRule, $this>
      */

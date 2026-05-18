@@ -25,7 +25,7 @@ These rules govern all VPN commands and their gateway-execution contract.
 - VPN commands execute on the gateway host because the VPN backend is
   gateway-local infrastructure.
 - Gateway callers execute the backend operation locally.
-- Control callers may initiate VPN commands only when they can SSH to the
+- Operator callers may initiate VPN commands only when they can SSH to the
   gateway over the Orbit/WireGuard path. This is a gateway infrastructure
   exception and does not create a general public SSH path from control to gateway.
 - App-node callers are denied before prompts or side effects.

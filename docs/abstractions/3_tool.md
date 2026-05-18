@@ -21,7 +21,7 @@ product docs.
   state.
 - App-node callers may read visible tool state when authorized. App-node CLI
   availability does not grant tool write permission.
-- Tool writes are gateway-owned writes and enactment flows. Control callers use
+- Tool writes are gateway-owned writes and enactment flows. Operator callers use
   typed gateway API requests. Gateway callers may enact node-side artifacts only
   through the node execution edge that the gateway owns.
 - Required baseline tools are materialized during node provisioning or host
@@ -81,7 +81,7 @@ duplicating tool-specific secret columns.
   resolve as `unknown` and fail before prompts or side effects when the command
   contract requires caller-role resolution.
 - Gateway callers read gateway database state locally.
-- Control and app callers forward reads through typed Saloon requests under
+- Operator and app callers forward reads through typed Saloon requests under
   `App\Http\Gateway\Requests\Tools` and consume DTOs under
   `App\Http\Gateway\Responses\Tools`.
 - Tool read API endpoints return the standard `success` / `error` envelope and
@@ -92,7 +92,7 @@ duplicating tool-specific secret columns.
 
 - Tool write commands mutate gateway intent first when the command creates or
   changes durable intent.
-- Node-side enactment is gateway-owned. Control callers must not open SSH
+- Node-side enactment is gateway-owned. Operator callers must not open SSH
   connections directly to app nodes or gateway nodes.
 - Long-running install, update, reconfigure, lifecycle, and log commands should
   reuse the shared gateway API transport and the future SSE/progress primitive

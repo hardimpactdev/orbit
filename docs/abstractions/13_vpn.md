@@ -14,9 +14,9 @@ product docs.
 - Orbit node WireGuard identity remains owned by the node family.
 - `vpn-client:*` writes must not mutate peers classified as active Orbit
   nodes.
-- Control callers may initiate VPN commands only through the documented
+- Operator callers may initiate VPN commands only through the documented
   gateway infrastructure execution exception. This does not create a generic
-  control-to-gateway SSH pattern for other families.
+  operator-to-gateway SSH pattern for other families.
 - App callers are denied before prompts or side effects.
 - Backend implementation details such as wg-easy API paths or storage layout
   are not product surface.
@@ -42,7 +42,7 @@ product docs.
   only on mutable admin clients.
 - `vpn-web-ui:change-password` rotates the backend admin credential and stores
   the new gateway-local credential for later VPN operations.
-- Control callers forward through the gateway-specific infrastructure path;
+- Operator callers forward through the gateway-specific infrastructure path;
   gateway callers use local backend services.
 
 ## E2E Pattern

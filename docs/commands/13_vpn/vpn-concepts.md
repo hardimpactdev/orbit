@@ -15,7 +15,7 @@ These terms define the VPN command domain and how commands reach the gateway.
 - **Gateway-local VPN administration:** The product exception where VPN
   commands must run on the gateway host because the VPN backend is
   gateway-local infrastructure.
-- **Gateway-local execution path:** Control-caller path that uses SSH to the
+- **Gateway-local execution path:** Operator-caller path that uses SSH to the
   gateway over Orbit/WireGuard, then runs the VPN command on the gateway.
   It is limited to VPN administration and is not a general public SSH path or
   an app-node orchestration path.

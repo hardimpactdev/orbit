@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('manages process intent runtime lifecycle and bounded logs on a prepared app node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $app = 'e2eproc'.strtolower(bin2hex(random_bytes(3)));
@@ -129,7 +129,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         processCommandCleanup($topology, $app, $appPath, $runtimeUnit);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string $path): void
 {

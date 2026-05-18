@@ -104,7 +104,7 @@ PHP;
 }
 
 it('sends a workspace message through the managed OpenCode transport', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $port = random_int(48100, 48999);
 
@@ -156,4 +156,4 @@ it('sends a workspace message through the managed OpenCode transport', function 
         );
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

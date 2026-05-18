@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('writes lists and removes firewall intent on a prepared app node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $rule = 'e2e-fw-'.strtolower(bin2hex(random_bytes(3)));
@@ -106,7 +106,7 @@ it('writes lists and removes firewall intent on a prepared app node', function (
         );
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function firewallCommandPrepareAppNode(E2ETopologyHarness $topology, string $checkout): void
 {

@@ -101,7 +101,7 @@ class GatewayAddCommand extends Command implements Loggable
         if ($callerRole !== 'control') {
             return $this->failCommand(
                 code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control node.',
+                message: 'This command may only be run from an operator node.',
                 meta: ['caller_role' => $callerRole],
             );
         }

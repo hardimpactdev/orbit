@@ -18,6 +18,7 @@ owning family concept document.
 - **Fix** — interactive doctor resolution flow that asks per drifted item whether to restore or adopt. Flag: `--fix`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
 - **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Node access grant** — gateway-stored permission that lets one node operate on another after WireGuard identity is authenticated. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
+- **Operator node** — any joined node acting through gateway-known WireGuard identity plus grants. It is a capability term, not a hosted role, and can coexist with hosted roles. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](commands/7_process/process-concepts.md).
 - **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](commands/7_process/process-concepts.md).

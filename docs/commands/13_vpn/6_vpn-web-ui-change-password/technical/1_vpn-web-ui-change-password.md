@@ -7,7 +7,7 @@
 **Effects:** `write`, `destructive`, `gateway-admin`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized control node with SSH access
+- The caller is a gateway node, or an authorized operator node with SSH access
   to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The operator can authenticate to the gateway VPN backend when TOTP is
@@ -71,7 +71,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway SSH unavailable | A control caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
+| Gateway SSH unavailable | A operator caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
 | VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 | Credential rotation failed | The backend credential, session secret, or Orbit-managed credential store cannot be updated. | `error.code=vpn_credential_rotation_failed` |
@@ -87,7 +87,7 @@ but it does not rotate the VPN web UI password.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, password validation, destructive consent, credential update, session invalidation, gateway-local credential-store update, secret redaction, and non-goals. |
+| `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: caller-role denial, operator-caller gateway-local SSH execution, gateway execution, TOTP handling, password validation, destructive consent, credential update, session invalidation, gateway-local credential-store update, secret redaction, and non-goals. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php` | Interactive password prompt, confirmation prompt, `--force` bypass, validation retry, declined confirmation failure before side effects, and prompt abort behavior. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php` | Non-interactive missing password failure, missing `--force` failure, `--json` forcing non-interactive mode, no prompts, and secret redaction in errors. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

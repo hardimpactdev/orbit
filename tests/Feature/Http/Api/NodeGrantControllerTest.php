@@ -306,7 +306,7 @@ describe('NodeGrantController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from a control or gateway node.')
+            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
             ->assertJsonPath('error.meta.caller_role', 'app');
 
         expect(DB::table('node_access')->count())->toBe(0);
@@ -398,7 +398,7 @@ describe('NodeGrantController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This control node is not authorized to grant node access.')
+            ->assertJsonPath('error.message', 'This operator node is not authorized to grant node access.')
             ->assertJsonPath('error.meta.required_node', 'gateway-1')
             ->assertJsonPath('error.meta.caller_role', 'control');
 

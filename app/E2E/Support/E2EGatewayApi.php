@@ -6,6 +6,17 @@ namespace App\E2E\Support;
 
 final readonly class E2EGatewayApi
 {
+    public static function seedOperatorIdentity(
+        E2EInstance $gateway,
+        string $operatorIp,
+        string $operatorUser,
+        string $gatewayIp = '10.6.0.2',
+        string $operatorWireGuardIp = '10.6.0.3',
+    ): void {
+        self::seedControlIdentity($gateway, $operatorIp, $operatorUser, $gatewayIp, $operatorWireGuardIp);
+    }
+
+    #[\Deprecated(message: 'Migration alias. Use seedOperatorIdentity() for product-facing terminology.')]
     public static function seedControlIdentity(
         E2EInstance $gateway,
         string $controlIp,

@@ -7,7 +7,7 @@ use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-control');
+pest()->group('e2e-feature', 'e2e-feature-operator', 'e2e-feature-control');
 
 function nodeDefaultSeedLocal(E2ETopologyHarness $topology): void
 {
@@ -102,7 +102,7 @@ PHP;
 }
 
 it('shows the current local default from a control node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -130,7 +130,7 @@ it('shows the current local default from a control node', function (): void {
 });
 
 it('shows human output for the current local default from a control node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -153,7 +153,7 @@ it('shows human output for the current local default from a control node', funct
 });
 
 it('shows null default when no default is set on a control node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -178,7 +178,7 @@ it('shows null default when no default is set on a control node', function (): v
 });
 
 it('sets a local default node by name on a control node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -205,7 +205,7 @@ it('sets a local default node by name on a control node', function (): void {
 });
 
 it('clears the local default node from a control node with was_set true', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -231,7 +231,7 @@ it('clears the local default node from a control node with was_set true', functi
 });
 
 it('clears with was_set false when no default was set on a control node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -257,7 +257,7 @@ it('clears with was_set false when no default was set on a control node', functi
 });
 
 it('rejects name not found on a control node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::Control)
+    $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
     try {
@@ -284,7 +284,7 @@ it('rejects name not found on a control node', function (): void {
 
 it('sets a default node through the gateway api from a control node', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
@@ -315,4 +315,4 @@ it('sets a default node through the gateway api from a control node', function (
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

@@ -1,12 +1,12 @@
-# Technical Contract: `orbit workspace:new` (Control Node)
+# Technical Contract: `orbit workspace:new` (Operator Node)
 
-**Caller peer:** Control node.
+**Caller peer:** Operator node.
 
 [Back to the canonical technical contract.](1_workspace-new.md)
 
 ## Behavior
 
-When run from a control node, `workspace:new` acts as a gateway client:
+When run from a operator node, `workspace:new` acts as a gateway client:
 
 - **Input Resolution:** Gathers all arguments and options. Resolves the
   parent app from `--app`, the `.orbit/config` marker, or the gateway
@@ -28,12 +28,12 @@ When run from a control node, `workspace:new` acts as a gateway client:
 
 ## Authorization
 
-- Requires a valid control-node identity authorized to manage the parent
+- Requires a valid operator-node identity authorized to manage the parent
   app and its app node.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Control-caller input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct app-node SSH from the control caller. |
-| `tests/E2E/Ephemeral/WorkspaceNewControlForwardingTest.php` | Real-environment smoke coverage: `workspace:new` invoked from a control node forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Operator-caller input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct app-node SSH from the operator caller. |
+| `tests/E2E/Ephemeral/WorkspaceNewControlForwardingTest.php` | Real-environment smoke coverage: `workspace:new` invoked from a operator node forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |

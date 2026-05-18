@@ -14,7 +14,7 @@ top-level product docs.
   model.
 - Firewall rules target registered active Ubuntu managed nodes with role
   `gateway` or `app`.
-- Control nodes, unsupported platforms, inactive nodes, unmanaged roles, and
+- Operator nodes, unsupported platforms, inactive nodes, unmanaged roles, and
   missing node identities are not firewall-rule targets.
 - Rules are expressed in Orbit terms: name, node, direction, action, source,
   destination, protocol, port, and reason.
@@ -78,7 +78,7 @@ shown directly to users.
 - `firewall:remove` removes only Orbit-owned firewall-rule intent, requires
   destructive consent, then removes the matching backend artifact when it can be
   identified safely.
-- Control and app callers use typed gateway API requests. Gateway callers use
+- Operator and app callers use typed gateway API requests. Gateway callers use
   local database state and the node execution services that the gateway owns
   for backend enactment.
 - Runtime backend failures after successful intent persistence are reported as

@@ -76,7 +76,7 @@ SH,
 
 it('creates and sets up a workspace from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $workspaceName = 'e2e-ws-new-'.strtolower(bin2hex(random_bytes(3)));
     $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
@@ -135,4 +135,4 @@ it('creates and sets up a workspace from a control caller through the gateway ap
         $topology->ssh('dev', 'rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

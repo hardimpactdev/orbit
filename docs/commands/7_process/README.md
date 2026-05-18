@@ -74,7 +74,7 @@ Derived process runtime units expose a runtime environment that is separate from
 
 ## Development Server Runtime
 
-Process commands store the operator-provided command and do not rewrite it for a specific frontend server. A development server that must be reachable from a control node browser or support HMR across the Orbit network must bind to a node-reachable interface instead of loopback. For Vite-backed processes, the expected command shape is:
+Process commands store the operator-provided command and do not rewrite it for a specific frontend server. A development server that must be reachable from a operator node browser or support HMR across the Orbit network must bind to a node-reachable interface instead of loopback. For Vite-backed processes, the expected command shape is:
 
 ```text
 npm run dev -- --host=0.0.0.0

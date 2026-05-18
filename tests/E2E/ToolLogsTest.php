@@ -14,7 +14,7 @@ it('reads finite managed system service tool logs from an app node through the g
     try {
         $lease = E2ETopologyFactory::fromEnvironment()
             ->requireCapabilities(E2ETopologyCapabilities::vm())
-            ->require(E2ETopologyKind::ControlGatewayDev);
+            ->require(E2ETopologyKind::OperatorGatewayAppdev);
     } catch (E2ETopologyUnavailable $exception) {
         test()->markTestSkipped($exception->getMessage());
     }
@@ -111,7 +111,7 @@ BASH),
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function toolLogsUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
 {

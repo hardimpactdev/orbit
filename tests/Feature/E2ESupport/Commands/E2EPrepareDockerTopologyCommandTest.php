@@ -18,11 +18,11 @@ afterEach(function (): void {
 it('documents docker topology image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'control-gateway-dev-prod'])
-        ->expectsOutputToContain('orbit-e2e-topology:control-gateway-dev-prod-control-current')
-        ->expectsOutputToContain('orbit-e2e-topology:control-gateway-dev-prod-gateway-current')
-        ->expectsOutputToContain('orbit-e2e-topology:control-gateway-dev-prod-dev-current')
-        ->expectsOutputToContain('orbit-e2e-topology:control-gateway-dev-prod-prod-current')
+    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator-gateway-appdev-appprod'])
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-control-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-dev-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-prod-current')
         ->expectsOutputToContain('Dry run')
         ->assertSuccessful();
 
@@ -47,12 +47,12 @@ it('outputs json for dry run with default kind', function (): void {
             'data' => [
                 'provider' => 'docker',
                 'dry_run' => true,
-                'kind' => 'control-gateway-dev-prod',
+                'kind' => 'operator-gateway-appdev-appprod',
                 'images' => [
-                    ['role' => 'control', 'image' => 'orbit-e2e-topology:control-gateway-dev-prod-control-current'],
-                    ['role' => 'gateway', 'image' => 'orbit-e2e-topology:control-gateway-dev-prod-gateway-current'],
-                    ['role' => 'dev', 'image' => 'orbit-e2e-topology:control-gateway-dev-prod-dev-current'],
-                    ['role' => 'prod', 'image' => 'orbit-e2e-topology:control-gateway-dev-prod-prod-current'],
+                    ['role' => 'control', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-control-current'],
+                    ['role' => 'gateway', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-current'],
+                    ['role' => 'dev', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-dev-current'],
+                    ['role' => 'prod', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-prod-current'],
                 ],
             ],
         ],
@@ -83,7 +83,7 @@ it('--force uses the docker topology builder and outputs json manifest', functio
             'data' => [
                 'provider' => 'docker',
                 'dry_run' => false,
-                'kind' => 'control',
+                'kind' => 'operator',
                 'images' => $manifest,
             ],
         ],

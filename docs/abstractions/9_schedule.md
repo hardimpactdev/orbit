@@ -71,7 +71,7 @@ durable observations reported through gateway-owned authenticated endpoints.
   `doctor --family=schedule`.
 - `schedule:run` creates a durable manual run record and executes through the
   target-node execution edge that the gateway owns.
-- Control and app callers use typed gateway API requests. Gateway callers may
+- Operator and app callers use typed gateway API requests. Gateway callers may
   use local gateway state plus the gateway-owned `RemoteShell` edge.
 
 ## Doctor Pattern

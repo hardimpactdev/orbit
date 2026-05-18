@@ -8,7 +8,7 @@ use App\E2E\Support\E2ETopologyKind;
 
 it('syncs app-node schedule intent and reports run history from a scheduler tick', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $scheduleName = 'e2e-scheduler-'.strtolower(bin2hex(random_bytes(3)));
     $scheduleKey = "app:e2e-scheduler:{$scheduleName}";
     $hookPath = '/opt/orbit/schedules/hooks/'.hash('sha256', $scheduleKey).'.sh';
@@ -56,7 +56,7 @@ it('syncs app-node schedule intent and reports run history from a scheduler tick
         $topology->ssh('dev', 'sudo rm -f '.escapeshellarg($hookPath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, string $scheduleKey): void
 {

@@ -30,7 +30,7 @@ it('creates a temporary hcloud docker host, runs docker e2e, and cleans up', fun
     $this->artisan('e2e:test-hcloud-docker', [
         '--force' => true,
         '--processes' => 3,
-        '--kind' => 'control-gateway',
+        '--kind' => 'operator-gateway',
     ])->assertSuccessful();
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'hcloud ssh-key create')
@@ -47,7 +47,7 @@ it('creates a temporary hcloud docker host, runs docker e2e, and cleans up', fun
         && str_contains($process->command, 'docker info'));
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'composer e2e:prepare-docker-hosts -- --force')
-        && str_contains($process->command, 'control-gateway')
+        && str_contains($process->command, 'operator-gateway')
         && ($process->environment['ORBIT_E2E_DOCKER_HOSTS'] ?? null) === 'root@203.0.113.42');
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'composer test:e2e:docker')

@@ -4,7 +4,7 @@
 
 Choose, show, set, or clear the local default development app node.
 
-Stores a control-node-local target preference so repeated development commands
+Stores a operator-node-local target preference so repeated development commands
 run against a chosen remote app node without requiring `--node` every time.
 This is the only command that sets or clears the local default; `node:new`
 never sets it automatically.
@@ -44,7 +44,7 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 
 Run `node:default` when you want to choose, set, or clear the development app node your local commands target by default.
 
-`node:default` reads and writes local control-node configuration only. It does
+`node:default` reads and writes local operator-node configuration only. It does
 not mutate gateway node configuration, grant access to the default node, or
 change the gateway endpoint configured by `gateway:add`.
 
@@ -103,7 +103,7 @@ and payload shapes.
 - The local CLI has an active gateway configuration for interactive `choose`
   and direct `set`; `show` and `clear` work with purely local state.
 - Choosing or setting a default requires the CLI caller to reach the Orbit
-  gateway and pass the `/api/me` control-role preflight before prompts or local
+  gateway and pass the `/api/me` operator-role preflight before prompts or local
   default mutation.
 - The target node must be a visible development app node.
 - App-node and gateway callers are rejected before prompts or side effects for

@@ -29,7 +29,7 @@ When the gateway authenticates an app-role caller, it returns this exact
 human error:
 
 ```text
-This command may only be run from a control or gateway node.
+This command may only be run from an operator or gateway node.
 ```
 
 JSON mode returns a structured error with the same message.

@@ -45,7 +45,7 @@ final class AppAgentIdeController implements Loggable
         if ($caller->role === 'app') {
             return $this->error(
                 code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
+                message: 'This command may only be run from an operator or gateway node.',
                 meta: ['caller_role' => 'app'],
                 status: 403,
             );

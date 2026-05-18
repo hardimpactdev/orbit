@@ -41,7 +41,7 @@ not a second source of truth.
 - `deploy:run` creates durable run history before executing the first step.
   Streaming human output should use the shared SSE progress primitives.
 - `deploy:history` and `deploy:log` read stored gateway history only.
-- Control and app callers use typed gateway API requests. Gateway callers use
+- Operator and app callers use typed gateway API requests. Gateway callers use
   local gateway state plus the gateway-owned `RemoteShell` edge.
 - Retention behavior is step metadata and app-owned deployment cleanup, not a
   standalone state family.

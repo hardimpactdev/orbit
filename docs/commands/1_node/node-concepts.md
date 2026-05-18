@@ -19,7 +19,10 @@ Each term below has a precise meaning in the node command family.
   is not a hosted role and does not orchestrate hosted nodes directly.
 - **Hosted node:** Workload host for apps, workspaces, databases, and managed
   runtime artifacts. A hosted node may run the Orbit CLI as a stateless gateway
-  client, but it is not a control plane.
+  client, but it does not become a second gateway.
+- **Operator node:** Joined node acting through gateway-known WireGuard
+  identity and gateway grants. Operator is a capability/identity term, not a
+  hosted role, so a hosted node can also be an operator node.
 - **Hosted role:** A fixed code-defined bundle attached through a role
   assignment. v1 hosted roles are `app-development`, `app-production`, and
   `database`.
@@ -35,6 +38,13 @@ Each term below has a precise meaning in the node command family.
 - **Caller identity:** The gateway-known WireGuard identity that authenticates a
   CLI request. Operation is WireGuard identity plus gateway grants, not an
   operator role. The CLI does not store or check a caller role locally.
+
+## Legacy Control Terminology
+
+Orbit now uses **operator node** for the product concept previously described as
+the control node. Legacy `control` remains only where migration compatibility
+still matters, such as persisted compatibility values, old CLI flags like
+`--control-name`, legacy JSON examples, or historical test and file names.
 
 ## Role Compatibility
 

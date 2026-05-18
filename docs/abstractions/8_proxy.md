@@ -63,7 +63,7 @@ config arrays into renderers.
   artifacts when the serving node is reachable.
 - `proxy:remove` removes only custom route intent, requires destructive consent,
   then removes backend/TLS artifacts when no remaining route shares them.
-- Control and app callers use typed gateway API requests. Gateway callers use
+- Operator and app callers use typed gateway API requests. Gateway callers use
   local database state and the gateway-owned `RemoteShell` edge for node-side
   enactment.
 - Human/JSON output should use the proxy route JSON entity from

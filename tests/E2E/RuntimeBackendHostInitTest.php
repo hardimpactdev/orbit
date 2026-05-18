@@ -22,7 +22,7 @@ function e2eVmTopology(E2ETopologyKind $kind): E2ETopologyHarness
 }
 
 it('verifies the VM runtime backend is managed by host init', function (): void {
-    $topology = e2eVmTopology(E2ETopologyKind::ControlGateway);
+    $topology = e2eVmTopology(E2ETopologyKind::OperatorGateway);
 
     try {
         $hostInit = $topology->ssh('gateway', 'systemctl is-active supervisor.service', timeoutSeconds: 60);
@@ -33,4 +33,4 @@ it('verifies the VM runtime backend is managed by host init', function (): void 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway', 'e2e-feature-control-gateway');

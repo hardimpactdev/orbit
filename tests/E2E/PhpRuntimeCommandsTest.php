@@ -103,7 +103,7 @@ PHP;
 }
 
 it('reads and changes PHP runtime intent without installing runtimes', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev);
 
     try {
         $topology->withCurrentCheckout(roles: ['gateway']);
@@ -209,4 +209,4 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

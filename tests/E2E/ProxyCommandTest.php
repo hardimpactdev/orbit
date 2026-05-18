@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('writes lists and removes custom proxy intent on a prepared app node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $domain = 'e2e-proxy-'.strtolower(bin2hex(random_bytes(3))).'.test';
@@ -85,7 +85,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
         );
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function proxyCommandPrepareAppNode(E2ETopologyHarness $topology, string $checkout): void
 {

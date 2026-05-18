@@ -16,10 +16,12 @@ afterEach(function (): void {
 });
 
 it('has correct enum string values', function (): void {
-    expect(E2ETopologyKind::Control->value)->toBe('control')
-        ->and(E2ETopologyKind::ControlGateway->value)->toBe('control-gateway')
-        ->and(E2ETopologyKind::ControlGatewayDev->value)->toBe('control-gateway-dev')
-        ->and(E2ETopologyKind::ControlGatewayDevProd->value)->toBe('control-gateway-dev-prod');
+    expect(E2ETopologyKind::Operator->value)->toBe('operator')
+        ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator-gateway')
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator-gateway-appdev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator-gateway-appdev-appprod')
+        ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
+        ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 });
 
 it('uses minimal strategy by default', function (): void {
@@ -66,7 +68,7 @@ it('reports unavailable topology when requiring a topology', function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
-            ->toThrow(E2ETopologyUnavailable::class, 'incus: prepared topology control is not available on any Incus host');
+            ->toThrow(E2ETopologyUnavailable::class, 'incus: prepared topology operator is not available on any Incus host');
     });
 });
 

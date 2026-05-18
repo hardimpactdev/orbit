@@ -30,7 +30,7 @@ it('fails app requests before side effects when no gateway is configured', funct
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'gateway_unavailable',
-            'message' => 'Gateway connection is required before creating app or control nodes.',
+            'message' => 'Gateway connection is required before creating app or operator nodes.',
             'meta' => ['requested_role' => 'app'],
         ])
         ->and(DB::table('nodes')->count())->toBe(0);

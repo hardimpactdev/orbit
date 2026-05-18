@@ -7,7 +7,7 @@ Repair local trust for the configured Orbit gateway root CA.
 `gateway:trust` is a local trust repair command. It fetches the configured
 gateway's root CA public certificate, installs it into the caller machine's OS
 trust store, and records local trust metadata for later verification. It does
-not onboard a control node, verify node identity, or mutate gateway fleet
+not onboard a operator node, verify node identity, or mutate gateway fleet
 configuration.
 
 The trusted root is the Orbit network trust anchor. The gateway owns the root
@@ -54,7 +54,7 @@ workspace, proxy, gateway, and tool route applying owns the gateway-issued
 leaf certificates and the serving-node TLS files they require.
 
 Use [`gateway:add`](../1_gateway-add/gateway-add.md) for first-time
-control-node onboarding. `gateway:add` uses the same trust behavior as part of
+operator-node onboarding. `gateway:add` uses the same trust behavior as part of
 the onboarding flow, then verifies `/api/me` and stores complete local gateway
 configuration. Use
 [`doctor --family=node --self`](../../1_node/node-doctor.md) when the operator
@@ -78,7 +78,7 @@ using the JSON output.
 
 Use these commands when you need to go beyond trust repair or diagnose deeper gateway drift.
 
-- [`gateway:add`](../1_gateway-add/gateway-add.md) - configure a control node
+- [`gateway:add`](../1_gateway-add/gateway-add.md) - configure a operator node
   for an already-issued gateway identity
 - [`doctor --family=node`](../../1_node/node-doctor.md) - verify local gateway
   trust and node identity drift

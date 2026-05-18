@@ -256,14 +256,14 @@ describe('NodeDefaultController', function (): void {
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });
 
-    it('rejects non-control callers', function (string $role): void {
+    it('rejects non-operator callers', function (string $role): void {
         createDefaultCallerNode($role);
 
         $response = nodeDefaultJson('GET', '/api/nodes/default', server: ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from a control node.')
+            ->assertJsonPath('error.message', 'This command may only be run from an operator node.')
             ->assertJsonPath('error.meta.caller_role', $role);
     })->with(['app', 'gateway']);
 

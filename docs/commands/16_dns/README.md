@@ -2,7 +2,7 @@
 
 DNS commands manage the resolver overrides that Orbit sets on the caller machine for development DNS.
 
-The DNS command domain is intentionally local. It helps a control machine route
+The DNS command domain is intentionally local. It helps a operator machine route
 development hostnames to Orbit-managed targets for browser and CLI use. It does
 not create gateway configuration, app routes, proxy routes, Cloudflare records, public
 DNS records, or development DNS mappings owned by the gateway.

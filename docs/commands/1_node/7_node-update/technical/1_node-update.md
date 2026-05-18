@@ -11,7 +11,7 @@
   caller's gateway-known role is `control` or `gateway`. App-role callers are
   rejected.
 - Gateway callers can read and write gateway-owned node configuration.
-- Control callers have configured gateway access as defined in
+- Operator callers have configured gateway access as defined in
   [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md).
 
 **Post-input path eligibility:**
@@ -59,7 +59,7 @@ metadata is valid only for gateway and app nodes. Concretely:
 | `--public-ipv4` | `gateway`, `app` | Target node role = `control`. |
 | `--public-ipv6` | `gateway`, `app` | Target node role = `control`. |
 
-Control nodes are CLI callers reached through WireGuard. They have no SSH
+Operator nodes are CLI callers reached through WireGuard. They have no SSH
 bootstrap endpoint and no public ingress, so `--host`, `--public-ipv4`, and
 `--public-ipv6` are all forbidden on control targets. Public IPv4 and IPv6
 metadata is supported on `gateway` and `app` target nodes; the gateway
@@ -257,8 +257,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, control-caller forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Control-caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, structured errors, unconfigured caller failures, gateway-node access, and no SSH-to-gateway path. |
+| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, operator-caller forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Operator-caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, structured errors, unconfigured caller failures, gateway-node access, and no SSH-to-gateway path. |
 | `tests/Feature/Commands/Nodes/NodeUpdateOnAppNodeContractTest.php` | App-caller behavior: app-role callers forward through the CLI gateway client, receive gateway-owned `caller_role_not_allowed`, and are not locally pre-rejected. |
 | `tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD role and effective-environment rejection, production-to-development plus `--tld` success, duplicate TLD conflict, and invalid TLD syntax. |
 

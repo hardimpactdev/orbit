@@ -29,7 +29,7 @@ it('builds a control topology and snapshots the template clean', function (): vo
         $this->markTestSkipped("Required blank image [{$config->blankImage}] missing on Incus host.");
     }
 
-    $kind = E2ETopologyKind::Control;
+    $kind = E2ETopologyKind::Operator;
     $templateName = IncusTopologyTemplate::templateName($kind, 'control');
 
     // Pre-cleanup in case a prior run left it behind.

@@ -31,7 +31,7 @@ final class ProcessUpdateController implements Loggable
         }
 
         if ($caller->role === 'app' || ! in_array($caller->role, ['control', 'gateway'], true)) {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => $caller->role], 403);
+            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => $caller->role], 403);
         }
 
         $input = $this->validatedInput($request);
