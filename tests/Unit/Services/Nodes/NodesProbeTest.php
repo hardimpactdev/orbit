@@ -113,6 +113,32 @@ describe('record completeness', function (): void {
         expect($recordIncomplete)->toHaveCount(0);
     });
 
+    it('does not run dependent app live checks when required transport metadata is missing', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'incomplete-prod',
+            'role' => 'app',
+            'host' => '46.225.89.66',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'production',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        assignNodesProbeAppHostRole($node, []);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $keys = array_map(fn (DriftEntry $entry): string => $entry->key, $drift);
+
+        expect($keys)->toContain('node.record_incomplete')
+            ->and($keys)->not->toContain('node.app_ssh_unreachable')
+            ->and($keys)->not->toContain('node.app_runtime_missing')
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
     it('reports a missing role assignment for app nodes without compatible active assignments', function (): void {
         $node = Node::create([
             'name' => 'app-no-env',

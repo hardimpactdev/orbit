@@ -70,7 +70,27 @@ final readonly class NodesDoctorSummary
             'code' => $entry->key,
             'message' => $entry->summary,
             'family' => 'node',
-            'next_command' => 'doctor --fix --family=node --restore',
+            'next_command' => $this->nextCommandFor($node, $entry),
+        ];
+    }
+
+    private function nextCommandFor(Node $node, DriftEntry $entry): string
+    {
+        if (in_array($entry->key, $this->restorableNodeIssueKeys(), true)) {
+            return "doctor --restore --family=node --node={$node->name}";
+        }
+
+        return "doctor --family=node --node={$node->name}";
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function restorableNodeIssueKeys(): array
+    {
+        return [
+            'node.role_convergence_failed',
+            'node.role_baseline_mismatch',
         ];
     }
 }

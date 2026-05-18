@@ -306,7 +306,47 @@ class NodeListCommand extends Command
             $this->line("  {$node}: {$message} ({$code})");
         }
 
-        $this->line('  Run `orbit doctor --fix --family=node --restore` to repair.');
+        $nextCommands = array_values(array_unique(array_filter(array_map(
+            fn (mixed $failure): ?string => is_array($failure)
+                ? $this->nextCommandForFailure($failure)
+                : null,
+            $failures,
+        ))));
+
+        foreach ($nextCommands as $nextCommand) {
+            $this->line("  Run `orbit {$nextCommand}` for details.");
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $failure
+     */
+    private function nextCommandForFailure(array $failure): ?string
+    {
+        $node = $failure['node'] ?? null;
+
+        if (! is_string($node) || $node === '') {
+            return null;
+        }
+
+        $code = is_string($failure['code'] ?? null) ? $failure['code'] : null;
+
+        if (in_array($code, $this->restorableNodeIssueKeys(), true)) {
+            return "doctor --restore --family=node --node={$node}";
+        }
+
+        return "doctor --family=node --node={$node}";
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function restorableNodeIssueKeys(): array
+    {
+        return [
+            'node.role_convergence_failed',
+            'node.role_baseline_mismatch',
+        ];
     }
 
     /**

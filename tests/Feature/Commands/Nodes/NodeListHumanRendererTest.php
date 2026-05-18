@@ -286,7 +286,7 @@ describe('node:list human renderer contract', function (): void {
             ->and($output)->toContain('Doctor: 1 issue found.')
             ->and($output)->toContain('incomplete-app')
             ->and($output)->toContain('node.record_incomplete')
-            ->and($output)->toContain('Run `orbit doctor --fix --family=node --restore` to repair.');
+            ->and($output)->toContain('Run `orbit doctor --family=node --node=incomplete-app` for details.');
     });
 });
 

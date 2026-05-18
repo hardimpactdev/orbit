@@ -86,17 +86,7 @@ final readonly class NodesProbe
      */
     private function checkRecordCompleteness(Node $node): array
     {
-        if (
-            ! is_string($node->role)
-            || $node->role === ''
-            || ! is_string($node->status)
-            || $node->status === ''
-            || ! is_string($node->platform)
-            || $node->platform === ''
-            || ! is_string($node->wireguard_address)
-            || $node->wireguard_address === ''
-            || $this->nodeIsMissingRequiredHost($node)
-        ) {
+        if ($this->nodeIsMissingRequiredRecordFields($node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -108,6 +98,19 @@ final readonly class NodesProbe
         }
 
         return [];
+    }
+
+    private function nodeIsMissingRequiredRecordFields(Node $node): bool
+    {
+        return ! is_string($node->role)
+            || $node->role === ''
+            || ! is_string($node->status)
+            || $node->status === ''
+            || ! is_string($node->platform)
+            || $node->platform === ''
+            || ! is_string($node->wireguard_address)
+            || $node->wireguard_address === ''
+            || $this->nodeIsMissingRequiredHost($node);
     }
 
     private function nodeIsMissingRequiredHost(Node $node): bool
@@ -652,7 +655,11 @@ final readonly class NodesProbe
      */
     private function checkSshReachability(Node $node): array
     {
-        if ($node->status !== 'active' || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
+        if (
+            $node->status !== 'active'
+            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
+            || $this->nodeIsMissingRequiredRecordFields($node)
+        ) {
             return [];
         }
 
@@ -706,7 +713,11 @@ final readonly class NodesProbe
      */
     private function checkAppRuntime(Node $node): array
     {
-        if ($node->status !== 'active' || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
+        if (
+            $node->status !== 'active'
+            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
+            || $this->nodeIsMissingRequiredRecordFields($node)
+        ) {
             return [];
         }
 

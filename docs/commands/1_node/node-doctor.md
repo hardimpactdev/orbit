@@ -155,9 +155,9 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 
 ## Node Fix Map
 
-This table describes what `doctor --fix --family=node --restore` does for each resolvable issue code.
+This table describes what `doctor --restore --family=node` does for each resolvable issue code.
 
-| Code | `doctor --fix --family=node --restore` behavior |
+| Code | `doctor --restore --family=node` behavior |
 | --- | --- |
 | `node.gateway_api_unreachable` | Restart or restore gateway runtime only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
