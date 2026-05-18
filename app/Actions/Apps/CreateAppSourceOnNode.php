@@ -22,8 +22,8 @@ final readonly class CreateAppSourceOnNode
     {
         $path = $this->appPath($node, $name, $domain);
         $script = $repository === null
-            ? sprintf('mkdir -p %s', escapeshellarg($path))
-            : GitRepositoryReference::cloneCommand($repository, $path);
+            ? $this->createDirectoryCommand($node, $path)
+            : $this->cloneRepositoryCommand($node, $repository, $path);
 
         return [
             'path' => $path,
@@ -41,5 +41,33 @@ final readonly class CreateAppSourceOnNode
         $home = $user === 'root' ? '/root' : "/home/{$user}";
 
         return "{$home}/apps/{$name}";
+    }
+
+    private function createDirectoryCommand(Node $node, string $path): string
+    {
+        $user = $node->user ?: 'orbit';
+        $group = $user;
+
+        return sprintf(
+            'sudo install -d -m 755 -o %s -g %s %s %s',
+            escapeshellarg($user),
+            escapeshellarg($group),
+            escapeshellarg(dirname($path)),
+            escapeshellarg($path),
+        );
+    }
+
+    private function cloneRepositoryCommand(Node $node, string $repository, string $path): string
+    {
+        $user = $node->user ?: 'orbit';
+        $group = $user;
+
+        return sprintf(
+            'sudo install -d -m 755 -o %s -g %s %s && %s',
+            escapeshellarg($user),
+            escapeshellarg($group),
+            escapeshellarg(dirname($path)),
+            GitRepositoryReference::cloneCommand($repository, $path),
+        );
     }
 }

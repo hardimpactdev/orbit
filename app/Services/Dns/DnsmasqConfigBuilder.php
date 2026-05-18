@@ -25,7 +25,7 @@ final class DnsmasqConfigBuilder
         foreach ($resolvable as $node) {
             $tld = (string) $node->tld;
             $address = (string) $node->wireguard_address;
-            $lines[] = "address=/.{$tld}/{$address}";
+            $lines[] = "address=/{$tld}/{$address}";
             $lines[] = "local=/{$tld}/";
         }
 

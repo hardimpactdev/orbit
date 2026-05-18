@@ -22,7 +22,7 @@ here by the **tool family** + **node family** + **bootstrap**.
 | Generating `dnsmasq.conf` from fleet state      | `DnsmasqConfigBuilder` (pure function over `Node` rows)               |
 | Reconciling `dnsmasq.conf` after fleet changes  | `DnsmasqReconciler` invoked from gateway-side `node:new/:update/:remove` actions |
 | Probing runtime drift                           | Doctor `dns` runtime probe under `doctor --family=tool`               |
-| Restoring / adopting `dns` drift                | The same probe's restore script (rewrite + SIGHUP) and adopt script   |
+| Restoring / adopting `dns` drift                | The same probe's restore script (rewrite + restart) and adopt script  |
 
 ## Bootstrap Step Order
 
@@ -87,7 +87,7 @@ The initial `dnsmasq.conf` is rendered from fleet state before
 Rendered by `DnsmasqConfigBuilder::build(Collection $nodes): string`. The
 output is deterministic and contains:
 
-- One `address=/.{tld}/{wireguard_address}` line per node with both
+- One `address=/{tld}/{wireguard_address}` line per node with both
   `tld` and `wireguard_address` set. Nodes missing either field are skipped.
 - Optional `local=/{tld}/` companions per TLD.
 - `no-resolv` + upstream resolvers (`server=1.1.1.1`, `server=8.8.8.8`).
@@ -104,10 +104,9 @@ on the same inputs produce byte-identical output.
 1. Reads current `Node` rows.
 2. Builds a candidate `dnsmasq.conf` via `DnsmasqConfigBuilder`.
 3. If different from the on-disk file, writes the new content.
-4. Sends `SIGHUP` to dnsmasq: `docker exec orbit-dns kill -HUP 1`. `SIGHUP`
-   is preferred over restart — dnsmasq re-reads the config file in place
-   without dropping in-flight queries.
-5. Skips the SIGHUP if the file was already up to date.
+4. Restarts dnsmasq with `docker restart orbit-dns`. dnsmasq reloads hosts on
+   `SIGHUP`, but address rules require a restart to take effect reliably.
+5. Skips the restart if the file was already up to date.
 
 Triggers (only on a gateway — `config('orbit.is_gateway')` must be true):
 
@@ -126,7 +125,7 @@ second call.
 | --------------------------- | ------------------------------------------------------------------ | ---------- | --------- |
 | `tool.dns_container_missing`  | `orbit-dns` not in `docker ps -a`.                                 | Yes (rerun installer). | No |
 | `tool.dns_port_not_listening` | `orbit-dns` running but no listener on `53` inside wg-easy's netns. | Yes (restart container). | No |
-| `tool.dns_config_drift`       | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + SIGHUP). | Yes (record observed content as intent). |
+| `tool.dns_config_drift`       | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + restart). | Yes (record observed content as intent). |
 
 `tool.dns_config_drift` is the only adoptable drift, and the use case is narrow:
 an operator hand-edited the file for an emergency and now wants Orbit to

@@ -26,9 +26,9 @@ it('emits one address line per node with both tld and wireguard address', functi
 
     $config = (new DnsmasqConfigBuilder)->build($nodes);
 
-    expect($config)->toContain('address=/.gateway/10.6.0.2')
+    expect($config)->toContain('address=/gateway/10.6.0.2')
         ->and($config)->toContain('local=/gateway/')
-        ->and($config)->toContain('address=/.app-1.test/10.6.0.3')
+        ->and($config)->toContain('address=/app-1.test/10.6.0.3')
         ->and($config)->toContain('local=/app-1.test/');
 });
 
@@ -40,7 +40,7 @@ it('skips nodes missing tld', function (): void {
 
     $config = (new DnsmasqConfigBuilder)->build($nodes);
 
-    expect($config)->toContain('address=/.gateway/10.6.0.2')
+    expect($config)->toContain('address=/gateway/10.6.0.2')
         ->and($config)->not->toContain('10.6.0.3');
 });
 
@@ -52,7 +52,7 @@ it('skips nodes missing wireguard address', function (): void {
 
     $config = (new DnsmasqConfigBuilder)->build($nodes);
 
-    expect($config)->toContain('address=/.app-1.test/10.6.0.3')
+    expect($config)->toContain('address=/app-1.test/10.6.0.3')
         ->and($config)->not->toContain('pending.test');
 });
 
@@ -65,9 +65,9 @@ it('emits address lines in stable alphabetical order by tld', function (): void 
 
     $config = (new DnsmasqConfigBuilder)->build($nodes);
 
-    $alphaPos = strpos($config, 'address=/.alpha/');
-    $muPos = strpos($config, 'address=/.mu/');
-    $zetaPos = strpos($config, 'address=/.zeta/');
+    $alphaPos = strpos($config, 'address=/alpha/');
+    $muPos = strpos($config, 'address=/mu/');
+    $zetaPos = strpos($config, 'address=/zeta/');
 
     expect($alphaPos)->toBeInt()
         ->and($muPos)->toBeInt()

@@ -146,7 +146,7 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
         '# orbit-managed=node-development-dns',
         '# node=test',
         '# bind-scope=orbit_network',
-        'address=/.test/10.6.0.5',
+        'address=/test/10.6.0.5',
         '',
     ]));
 
@@ -264,7 +264,7 @@ it('does not require legacy environment when active role assignments provide the
         '# orbit-managed=node-development-dns',
         '# node=test',
         '# bind-scope=orbit_network',
-        'address=/.test/10.6.0.5',
+        'address=/test/10.6.0.5',
         '',
     ]));
 

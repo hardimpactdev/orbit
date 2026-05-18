@@ -177,7 +177,7 @@ it('rejects existing gateway development dns mappings before provisioning side e
         '# orbit-managed=node-development-dns',
         '# node=other-dev',
         '# bind-scope=orbit_network',
-        'address=/.test/10.6.0.99',
+        'address=/test/10.6.0.99',
         '',
     ]));
 
@@ -201,7 +201,7 @@ it('rejects existing gateway development dns mappings before provisioning side e
         ->and($payload['error']['meta']['actual_target'])->toBe('10.6.0.99')
         ->and(Node::query()->where('name', 'dev-conflict')->exists())->toBeFalse()
         ->and($this->fakeInstaller->calls)->toBe(0)
-        ->and(File::get($mappingPath))->toContain('address=/.test/10.6.0.99');
+        ->and(File::get($mappingPath))->toContain('address=/test/10.6.0.99');
 });
 
 it('adopts a compatible existing app node for canonical app-development', function (): void {

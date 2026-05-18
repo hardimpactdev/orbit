@@ -23,7 +23,7 @@ afterEach(function (): void {
     }
 });
 
-it('writes dnsmasq.conf and sighups orbit-dns when state changes', function (): void {
+it('writes dnsmasq.conf and restarts orbit-dns when state changes', function (): void {
     Process::fake();
 
     Node::factory()->create([
@@ -39,11 +39,11 @@ it('writes dnsmasq.conf and sighups orbit-dns when state changes', function (): 
     ))->reconcile();
 
     expect(File::exists($this->confPath))->toBeTrue()
-        ->and(File::get($this->confPath))->toContain('address=/.gateway/10.6.0.2');
+        ->and(File::get($this->confPath))->toContain('address=/gateway/10.6.0.2');
 
     Process::assertRan(fn ($process): bool => str_contains(
         (string) $process->command,
-        'docker exec orbit-dns kill -HUP 1',
+        'docker restart orbit-dns',
     ));
 });
 
@@ -68,7 +68,7 @@ it('is a no-op when the on-disk config already matches state', function (): void
     Process::assertNothingRan();
 });
 
-it('rewrites the conf and sighups when fleet state changes', function (): void {
+it('rewrites the conf and restarts dns when fleet state changes', function (): void {
     Process::fake();
 
     Node::factory()->create([
@@ -94,5 +94,5 @@ it('rewrites the conf and sighups when fleet state changes', function (): void {
 
     $reconciler->reconcile();
 
-    expect(File::get($this->confPath))->toContain('address=/.app-1.test/10.6.0.3');
+    expect(File::get($this->confPath))->toContain('address=/app-1.test/10.6.0.3');
 });

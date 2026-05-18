@@ -15,7 +15,7 @@ use App\E2E\Support\ProviderPool;
 pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 
 /**
- * Asserts that an `app:new --environment=production` + `deploy` workflow lands
+ * Asserts that an `app:new --environment=production` + `deploy:run` workflow lands
  * a working application that responds with a 200 + marker string when
  * requested by hostname from the control node.
  *
@@ -49,9 +49,13 @@ it('serves a deployed production app from the control over its TLD hostname', fu
         $appIp = $app->waitForIpv4();
 
         E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
+        E2ENetwork::routeWireGuardPeer($control, '10.6.0.4', $appIp, '10.6.0.3');
         E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
         E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.4', $appIp, '10.6.0.2');
         E2ENetwork::routeWireGuardPeer($app, '10.6.0.2', $gatewayIp, '10.6.0.4');
+        E2ENetwork::routeWireGuardPeer($app, '10.6.0.3', $controlIp, '10.6.0.4');
+
+        e2eGrantNodeAccessOnGateway($gateway, $key, serving: 'app-prod-1');
 
         E2ECommand::ssh(
             $gateway,
@@ -61,7 +65,20 @@ it('serves a deployed production app from the control over its TLD hostname', fu
             timeoutSeconds: 600,
         );
 
-        $appPath = "/home/orbit/apps/{$appName}";
+        $appPath = "/home/{$appName}/app";
+
+        E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $key,
+            sprintf(
+                'cd /home/%s/orbit && orbit app:new %s --node=app-prod-1 --domain=%s --json',
+                $config->controlUser,
+                escapeshellarg($appName),
+                escapeshellarg("{$appName}.app"),
+            ),
+            timeoutSeconds: 600,
+        );
 
         E2ECommand::ssh(
             $app,
@@ -81,20 +98,6 @@ it('serves a deployed production app from the control over its TLD hostname', fu
             'orbit',
             $key,
             'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg(<<<PHP
-\$node = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
-\App\Models\App::query()->updateOrCreate(
-    ['name' => '{$appName}'],
-    [
-        'node_id' => \$node->id,
-        'environment' => 'production',
-        'domain' => '{$appName}.app',
-        'path' => '{$appPath}',
-        'document_root' => 'public',
-        'repository' => null,
-        'php_version' => '8.5',
-        'adopted' => true,
-    ],
-);
 \App\Models\Node::query()->where('name', 'app-prod-1')->update(['tld' => 'app']);
 app(\App\Services\Dns\DnsmasqReconciler::class)->reconcile();
 echo 'seeded';
@@ -106,7 +109,21 @@ PHP),
             $control,
             $config->controlUser,
             $key,
-            "cd /home/{$config->controlUser}/orbit && orbit deploy {$appName} --json",
+            sprintf(
+                'cd /home/%s/orbit && orbit deploy:step-add %s %s --title=%s --json',
+                $config->controlUser,
+                escapeshellarg($appName),
+                escapeshellarg('true'),
+                escapeshellarg('No-op deployment marker'),
+            ),
+            timeoutSeconds: 600,
+        );
+
+        E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $key,
+            "cd /home/{$config->controlUser}/orbit && orbit deploy:run {$appName} --json",
             timeoutSeconds: 600,
         );
 
@@ -114,7 +131,7 @@ PHP),
             control: $control,
             controlUser: $config->controlUser,
             key: $key,
-            url: 'https://app-prod-1.app/',
+            url: "https://{$appName}.app/",
             expectedStatus: 200,
         );
 
@@ -122,7 +139,7 @@ PHP),
             control: $control,
             controlUser: $config->controlUser,
             key: $key,
-            url: 'https://app-prod-1.app/',
+            url: "https://{$appName}.app/",
             marker: $marker,
         );
 

@@ -104,9 +104,9 @@ it('marks only config_drift as adoptable', function (): void {
         ->and($this->probe->isAdoptable('dns.port_not_listening'))->toBeFalse();
 });
 
-it('restores config drift by rewriting dnsmasq.conf and sighup-ing orbit-dns', function (): void {
+it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', function (): void {
     Process::fake([
-        'docker exec orbit-dns kill*' => Process::result(),
+        'docker restart orbit-dns' => Process::result(),
     ]);
 
     Node::factory()->create([
@@ -118,7 +118,7 @@ it('restores config drift by rewriting dnsmasq.conf and sighup-ing orbit-dns', f
     $result = $this->probe->restore('dns.config_drift');
 
     expect($result)->toBeTrue()
-        ->and(File::get($this->workdir.'/dnsmasq.conf'))->toContain('address=/.gateway/10.6.0.2');
+        ->and(File::get($this->workdir.'/dnsmasq.conf'))->toContain('address=/gateway/10.6.0.2');
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'kill -HUP 1'));
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart orbit-dns'));
 });

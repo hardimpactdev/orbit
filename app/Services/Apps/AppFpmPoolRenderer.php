@@ -45,7 +45,7 @@ group = {$user}
 
 listen = {$socketPath}
 listen.owner = {$user}
-listen.group = {$user}
+listen.group = caddy
 listen.mode = 0660
 
 pm = ondemand

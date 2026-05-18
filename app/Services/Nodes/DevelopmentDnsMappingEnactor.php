@@ -268,7 +268,7 @@ class DevelopmentDnsMappingEnactor
             '# orbit-managed=node-development-dns',
             "# node={$mapping['node']}",
             '# bind-scope=orbit_network',
-            "address=/.{$mapping['tld']}/{$mapping['target']}",
+            "address=/{$mapping['tld']}/{$mapping['target']}",
             '',
         ]);
     }

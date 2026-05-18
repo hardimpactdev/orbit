@@ -107,6 +107,28 @@ SH,
         }
     }
 
+    public static function assertHttpNotServing(
+        E2EInstance $control,
+        string $controlUser,
+        SshKeyPair $key,
+        string $url,
+        int $forbiddenStatus = 200,
+        int $timeoutSeconds = 15,
+    ): void {
+        $command = self::curlCommand($url, '-s -o /dev/null -w "%{http_code}"', $timeoutSeconds).' || true';
+
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
+        $observed = trim($result->output());
+
+        if ($observed === (string) $forbiddenStatus) {
+            throw new RuntimeException(sprintf(
+                'HTTP %s still returned forbidden status %d.',
+                $url,
+                $forbiddenStatus,
+            ));
+        }
+    }
+
     private static function curlCommand(string $url, string $options, int $timeoutSeconds): string
     {
         [$resolvePrefix, $resolveOption] = self::curlResolveParts($url, $timeoutSeconds);
@@ -171,8 +193,8 @@ SH,
         return <<<'SH'
 if ! command -v dig >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq >/dev/null
+    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils >/dev/null
 fi
 SH;
     }

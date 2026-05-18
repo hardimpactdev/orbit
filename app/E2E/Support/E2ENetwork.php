@@ -24,7 +24,9 @@ final readonly class E2ENetwork
         E2ECommand::exec(
             $instance,
             sprintf(
-                'iface="$(ip -o -4 route show default | awk \'{print $5; exit}\')"; test -n "$iface"; ip route replace %s via %s dev "$iface" src %s',
+                'iface="$(ip -o -4 route show default | awk \'{print $5; exit}\')"; test -n "$iface"; if ! ip -o -4 addr show | awk \'{print $4}\' | cut -d/ -f1 | grep -Fxq %s; then ip addr add %s dev "$iface" 2>/dev/null || true; fi; ip route replace %s via %s dev "$iface" src %s',
+                escapeshellarg($sourceWireGuardIp),
+                escapeshellarg("{$sourceWireGuardIp}/32"),
                 escapeshellarg("{$wireGuardIp}/32"),
                 escapeshellarg($providerIp),
                 escapeshellarg($sourceWireGuardIp),

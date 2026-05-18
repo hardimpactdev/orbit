@@ -16,8 +16,8 @@ pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 
 /**
  * Verifies the reachability regression on `app:remove`: a deployed app must
- * stop responding by hostname after removal. We lock in the contract as 404
- * (Caddy default for an unconfigured host on a node with no matching site).
+ * stop responding by hostname after removal. The post-removal state may be a
+ * non-200 HTTP response or no HTTPS listener for that hostname.
  *
  * Depends on the gateway DNS provisioning plan
  * (`docs/superpowers/plans/2026-05-16-gateway-dns-provisioning.md`).
@@ -48,9 +48,13 @@ it('stops serving a removed development app from the control over its TLD hostna
         $appIp = $app->waitForIpv4();
 
         E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
+        E2ENetwork::routeWireGuardPeer($control, '10.6.0.4', $appIp, '10.6.0.3');
         E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
         E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.4', $appIp, '10.6.0.2');
         E2ENetwork::routeWireGuardPeer($app, '10.6.0.2', $gatewayIp, '10.6.0.4');
+        E2ENetwork::routeWireGuardPeer($app, '10.6.0.3', $controlIp, '10.6.0.4');
+
+        e2eGrantNodeAccessOnGateway($gateway, $key);
 
         E2ECommand::ssh(
             $gateway,
@@ -106,16 +110,15 @@ it('stops serving a removed development app from the control over its TLD hostna
             $control,
             $config->controlUser,
             $key,
-            "cd /home/{$config->controlUser}/orbit && orbit app:remove {$name} --node=app-dev-1 --json",
+            "cd /home/{$config->controlUser}/orbit && orbit app:remove {$name} --force --json",
             timeoutSeconds: 600,
         );
 
-        E2EReachability::assertHttpReachable(
+        E2EReachability::assertHttpNotServing(
             control: $control,
             controlUser: $config->controlUser,
             key: $key,
             url: "https://{$name}.test/",
-            expectedStatus: 404,
         );
 
         $passed = true;

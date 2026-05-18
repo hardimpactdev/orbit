@@ -29,6 +29,6 @@ class DnsmasqReconciler
 
         File::put($confPath, $expected);
 
-        Process::timeout(15)->run('docker exec orbit-dns kill -HUP 1');
+        Process::timeout(30)->run('docker restart orbit-dns');
     }
 }
