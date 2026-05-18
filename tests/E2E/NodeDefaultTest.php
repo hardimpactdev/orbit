@@ -14,9 +14,11 @@ function nodeDefaultSeedLocal(E2ETopologyHarness $topology): void
     $checkout = escapeshellarg($topology->checkout('control'));
     $script = <<<'PHP'
 \Illuminate\Support\Facades\DB::table('local_node_defaults')->delete();
+\Illuminate\Support\Facades\DB::table('local_gateway_settings')->delete();
+\Illuminate\Support\Facades\DB::table('node_roles')->delete();
 \App\Models\Node::query()->delete();
 
-\Illuminate\Support\Facades\DB::table('nodes')->insert([
+$nodeId = \Illuminate\Support\Facades\DB::table('nodes')->insertGetId([
     'name' => 'app-dev-1',
     'role' => 'app',
     'host' => '10.6.0.7',
@@ -26,6 +28,16 @@ function nodeDefaultSeedLocal(E2ETopologyHarness $topology): void
     'status' => 'active',
     'environment' => 'development',
     'platform' => 'ubuntu_24-04',
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
+
+\Illuminate\Support\Facades\DB::table('node_roles')->insert([
+    'node_id' => $nodeId,
+    'role' => 'app-development',
+    'status' => 'active',
+    'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
+    'converged_at' => now(),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -45,9 +57,11 @@ function nodeDefaultSeedWithDefault(E2ETopologyHarness $topology): void
     $checkout = escapeshellarg($topology->checkout('control'));
     $script = <<<'PHP'
 \Illuminate\Support\Facades\DB::table('local_node_defaults')->delete();
+\Illuminate\Support\Facades\DB::table('local_gateway_settings')->delete();
+\Illuminate\Support\Facades\DB::table('node_roles')->delete();
 \App\Models\Node::query()->delete();
 
-\Illuminate\Support\Facades\DB::table('nodes')->insert([
+$nodeId = \Illuminate\Support\Facades\DB::table('nodes')->insertGetId([
     'name' => 'app-dev-1',
     'role' => 'app',
     'host' => '10.6.0.7',
@@ -57,6 +71,16 @@ function nodeDefaultSeedWithDefault(E2ETopologyHarness $topology): void
     'status' => 'active',
     'environment' => 'development',
     'platform' => 'ubuntu_24-04',
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
+
+\Illuminate\Support\Facades\DB::table('node_roles')->insert([
+    'node_id' => $nodeId,
+    'role' => 'app-development',
+    'status' => 'active',
+    'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
+    'converged_at' => now(),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -91,6 +115,7 @@ it('shows the current local default from a control node', function (): void {
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
+            allowFailure: true,
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -245,6 +270,7 @@ it('rejects name not found on a control node', function (): void {
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
+            allowFailure: true,
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);

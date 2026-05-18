@@ -48,7 +48,9 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
         ->and($commands[0])->toContain('docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0')
         ->and($commands[0])->toContain('docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0')
         ->and($commands[0])->toContain("UPDATE interfaces_table SET ipv4_cidr = '10.6.0.0/24'")
-        ->and($commands[0])->toContain('WG_HOST=10.231.0.11');
+        ->and($commands[0])->toContain('INIT_HOST=10.231.0.11')
+        ->and($commands[0])->toContain('INIT_PASSWORD=orbit-e2e-bootstrap-password')
+        ->and($commands[0])->toContain('INSECURE=true');
 });
 
 it('persists and activates topology peers on wg-easy wg0', function (): void {

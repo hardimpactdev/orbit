@@ -26,6 +26,7 @@ it('reads schedule run logs from the control node through the gateway api', func
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
+        e2eGrantNodeAccess($topology);
 
         $appName = 'e2e-sched-logs-'.strtolower(bin2hex(random_bytes(3)));
         $scheduleName = 'e2e-logs-'.strtolower(bin2hex(random_bytes(3)));

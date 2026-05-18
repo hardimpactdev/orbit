@@ -243,6 +243,41 @@ function e2eCheckout(E2ETopologyLease|E2ETopologyHarness $topology, ?array $role
     return E2ECurrentCheckout::installOnTopology($topology, $roles, $users);
 }
 
+function e2eGrantNodeAccess(E2ETopologyHarness $topology, string $consumer = 'control-1', string $serving = 'app-dev-1'): void
+{
+    $consumerValue = var_export($consumer, true);
+    $servingValue = var_export($serving, true);
+    $checkout = escapeshellarg($topology->checkout('gateway'));
+
+    $script = <<<PHP
+\$nodes = \\App\\Models\\Node::query()
+    ->whereIn('name', [{$consumerValue}, {$servingValue}])
+    ->pluck('id', 'name');
+
+foreach ([{$consumerValue}, {$servingValue}] as \$name) {
+    if (! \$nodes->has(\$name)) {
+        throw new \\RuntimeException("Missing prepared node [{\$name}].");
+    }
+}
+
+\\Illuminate\\Support\\Facades\\DB::table('node_access')->updateOrInsert([
+    'consumer_node_id' => \$nodes->get({$consumerValue}),
+    'serving_node_id' => \$nodes->get({$servingValue}),
+], [
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
+
+echo 'granted';
+PHP;
+
+    $topology->ssh(
+        'gateway',
+        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        timeoutSeconds: 120,
+    );
+}
+
 function e2eProvisionCleanup(bool $passed, ?E2ERun $run = null, E2ETopologyLease|E2ETopologyHarness|null $topology = null): void
 {
     if ($passed || ! e2eProvisionKeepsFailures()) {

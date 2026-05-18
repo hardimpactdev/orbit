@@ -15,8 +15,8 @@ final readonly class E2EWgEasyGateway
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v docker >/dev/null 2>&1; then
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq docker.io sqlite3
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io sqlite3
 fi
 sudo systemctl enable --now docker
 docker rm -f wg-easy >/dev/null 2>&1 || true
@@ -24,11 +24,17 @@ sudo install -d -m 0755 -o orbit -g orbit /home/orbit/.wg-easy
 docker run -d \
     --name wg-easy \
     --restart unless-stopped \
+    -e INIT_ENABLED=true \
+    -e INIT_USERNAME=orbit \
+    -e INIT_PASSWORD=orbit-e2e-bootstrap-password \
     -e %s \
-    -e WG_DEFAULT_ADDRESS=10.6.0.x \
-    -e WG_DEFAULT_DNS=10.6.0.1 \
-    -e WG_ALLOWED_IPS=10.6.0.0/24 \
-    -e WG_PERSISTENT_KEEPALIVE=25 \
+    -e INIT_PORT=51820 \
+    -e INIT_DNS=10.6.0.1 \
+    -e INIT_ALLOWED_IPS=10.6.0.0/24 \
+    -e INSECURE=true \
+    -e PORT=51821 \
+    -e HOST=0.0.0.0 \
+    -e DISABLE_IPV6=true \
     -p 51820:51820/udp \
     -p 127.0.0.1:51821:51821/tcp \
     --cap-add NET_ADMIN \
@@ -43,6 +49,7 @@ for i in $(seq 1 30); do
     sleep 1
 done
 test -f /home/orbit/.wg-easy/wg-easy.db
+sudo chown -R orbit:orbit /home/orbit/.wg-easy
 for i in $(seq 1 30); do
     docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && break
     sleep 1
@@ -51,7 +58,7 @@ docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
 docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
 sqlite3 /home/orbit/.wg-easy/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = '10.6.0.0/24' WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = '[\"10.6.0.1\"]', default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
 SH,
-                escapeshellarg("WG_HOST={$advertisedHost}"),
+                escapeshellarg("INIT_HOST={$advertisedHost}"),
                 $this->sqliteString($advertisedHost),
             ),
             "Could not start wg-easy on {$gateway->name()}",
@@ -131,6 +138,7 @@ SQL;
             sprintf(
                 <<<'SH'
 set -euo pipefail
+sudo chown -R orbit:orbit /home/orbit/.wg-easy
 sqlite3 /home/orbit/.wg-easy/wg-easy.db <<'ORBIT_WG_EASY_SQL'
 %s
 ORBIT_WG_EASY_SQL

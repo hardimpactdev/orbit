@@ -61,7 +61,7 @@ final class E2ETopologyHarness
         return $this->checkouts;
     }
 
-    public function ssh(string $role, string $command, ?string $user = null, ?int $timeoutSeconds = null): ProcessResult
+    public function ssh(string $role, string $command, ?string $user = null, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
     {
         $user ??= $this->defaultUserFor($role);
 
@@ -71,6 +71,7 @@ final class E2ETopologyHarness
             $this->lease->sshKeyPair(),
             $command,
             $timeoutSeconds,
+            $allowFailure,
         );
     }
 

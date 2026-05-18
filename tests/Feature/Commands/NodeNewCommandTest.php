@@ -122,11 +122,14 @@ describe('node:new', function (): void {
             ?string &$bootstrapInput = null,
             string $gatewayPlatformOutput = 'ubuntu_24-04',
             int $gatewayPlatformExitCode = 0,
+            int $gatewayRuntimeExitCode = 0,
+            string $gatewayRuntimeErrorOutput = '',
+            ?string &$localWireGuardConfig = null,
         ): void {
             $privateKeys = ['gateway-private-key', 'control-private-key'];
             $publicKeys = ['gateway-public-key', 'control-public-key'];
 
-            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys, $gatewayPlatformOutput, $gatewayPlatformExitCode) {
+            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys, $gatewayPlatformOutput, $gatewayPlatformExitCode, $gatewayRuntimeExitCode, $gatewayRuntimeErrorOutput, &$localWireGuardConfig) {
                 if ($process->command === 'wg genkey') {
                     return Process::result(output: array_shift($privateKeys)."\n");
                 }
@@ -137,8 +140,20 @@ describe('node:new', function (): void {
 
                 if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
                     $bootstrapInput = (string) $process->input;
+                    $output = $bootstrapOutput;
 
-                    return Process::result(output: $bootstrapOutput."\n");
+                    if (
+                        str_contains($process->command, '--metadata-json')
+                        && str_starts_with($bootstrapOutput, '-----BEGIN CERTIFICATE-----')
+                        && str_contains($bootstrapOutput, '-----END CERTIFICATE-----')
+                    ) {
+                        $output = json_encode([
+                            'ca_cert' => $bootstrapOutput,
+                            'wireguard_server_public_key' => 'wg-easy-public-key',
+                        ], JSON_THROW_ON_ERROR);
+                    }
+
+                    return Process::result(output: $output."\n");
                 }
 
                 if (str_contains($process->command, 'orbit:internal:detect-platform')) {
@@ -151,6 +166,19 @@ describe('node:new', function (): void {
 
                 if (str_contains($process->command, 'ssh-keygen -y')) {
                     return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+                }
+
+                if (str_contains($process->command, 'docker-compose-v2') && str_contains($process->command, 'docker compose version')) {
+                    return Process::result(
+                        errorOutput: $gatewayRuntimeErrorOutput,
+                        exitCode: $gatewayRuntimeExitCode,
+                    );
+                }
+
+                if (str_contains($process->command, 'tee /etc/wireguard/wg-orbit.conf')) {
+                    $localWireGuardConfig = (string) $process->input;
+
+                    return Process::result();
                 }
 
                 if ($process->command === 'sw_vers -productVersion') {
@@ -217,8 +245,9 @@ describe('node:new', function (): void {
     it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
         $mockCaCert = $this->mockCaCert;
         $bootstrapInput = null;
+        $localWireGuardConfig = null;
 
-        ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput);
+        ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput, 'ubuntu_24-04', 0, 0, '', $localWireGuardConfig);
         $identityMock = ($this->fakeGatewayApiVerification)();
 
         $exitCode = Artisan::call('node:new', [
@@ -300,6 +329,7 @@ describe('node:new', function (): void {
             ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
             ->and($controlPeer->public_key)->toBe('control-public-key')
             ->and($controlPeer->private_key)->toBe('control-private-key')
+            ->and($controlPeer->pre_shared_key)->toBeString()->not->toBeEmpty()
             ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32');
 
         $identity = json_decode((string) $bootstrapInput, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -308,14 +338,24 @@ describe('node:new', function (): void {
             'gateway' => [
                 'public_key' => 'gateway-public-key',
                 'private_key' => 'gateway-private-key',
+                'pre_shared_key' => $identity['gateway']['pre_shared_key'],
             ],
             'control' => [
                 'name' => 'mini',
                 'wireguard_address' => '10.6.0.3',
                 'public_key' => 'control-public-key',
                 'private_key' => 'control-private-key',
+                'pre_shared_key' => $identity['control']['pre_shared_key'],
             ],
         ]);
+
+        expect($identity['gateway']['pre_shared_key'])->toBeString()->not->toBeEmpty()
+            ->and($identity['control']['pre_shared_key'])->toBeString()->not->toBeEmpty()
+            ->and($localWireGuardConfig)->toContain('PrivateKey = control-private-key')
+            ->and($localWireGuardConfig)->toContain('PublicKey = wg-easy-public-key')
+            ->and($localWireGuardConfig)->toContain('PresharedKey = '.$identity['control']['pre_shared_key'])
+            ->and($localWireGuardConfig)->toContain('AllowedIPs = 10.6.0.0/24')
+            ->and($localWireGuardConfig)->not->toContain('PublicKey = gateway-public-key');
 
         $trustPath = storage_path('app/orbit/gateway-ca/orbit.crt');
         expect(file_exists($trustPath))->toBeTrue()
@@ -350,14 +390,55 @@ describe('node:new', function (): void {
             && str_contains($process->command, 'orbit:internal:bootstrap-gateway-local'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')
             && str_contains($process->command, '--identity-json=-')
+            && str_contains($process->command, '--metadata-json')
             && ! str_contains($process->command, 'gateway-private-key')
             && ! str_contains($process->command, 'control-private-key'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
             && str_contains($process->command, 'orbit:internal:detect-platform --update-local-node'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && str_contains($process->command, 'docker-compose-v2')
+            && str_contains($process->command, 'sqlite3')
+            && str_contains($process->command, 'usermod -aG docker')
+            && str_contains($process->command, 'docker compose version'));
 
         $identityMock->assertSent(ShowGatewayIdentityRequest::class);
+    });
+
+    it('fails before gateway bootstrap when container runtime dependencies cannot be prepared', function (): void {
+        ($this->fakeFirstGatewayProcesses)(
+            bootstrapOutput: $this->mockCaCert,
+            gatewayRuntimeExitCode: 1,
+            gatewayRuntimeErrorOutput: 'Unable to locate package docker-compose-v2',
+        );
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-runtime-fail',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.15',
+            '--user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe([
+                'error' => [
+                    'code' => 'node.provisioning_incomplete',
+                    'message' => "Gateway host '192.0.2.15' could not prepare container runtime dependencies.",
+                    'meta' => [
+                        'host' => '192.0.2.15',
+                        'step' => 'gateway_runtime_dependencies',
+                        'error' => 'Unable to locate package docker-compose-v2',
+                    ],
+                ],
+            ])
+            ->and(DB::table('nodes')->count())->toBe(0);
+
+        Process::assertDidntRun(fn ($process): bool => str_contains($process->command, 'orbit:internal:bootstrap-gateway-local'));
     });
 
     it('converges an already bootstrapped first gateway without duplicating trust install', function (): void {

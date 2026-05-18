@@ -30,11 +30,11 @@ final readonly class E2ECommand
         );
     }
 
-    public static function ssh(E2EInstance $instance, string $user, SshKeyPair $key, string $command, ?int $timeoutSeconds = null): ProcessResult
+    public static function ssh(E2EInstance $instance, string $user, SshKeyPair $key, string $command, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
     {
         $result = $instance->ssh($user, $key, $command, $timeoutSeconds);
 
-        if (! $result->successful()) {
+        if (! $allowFailure && ! $result->successful()) {
             throw new RuntimeException(trim("SSH command failed: {$command}\n".$result->output().$result->errorOutput()));
         }
 

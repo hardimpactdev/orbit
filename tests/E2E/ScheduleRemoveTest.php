@@ -26,6 +26,7 @@ it('removes a schedule from the control node through the gateway api', function 
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
+        e2eGrantNodeAccess($topology);
 
         $appName = 'e2e-sched-rm-'.strtolower(bin2hex(random_bytes(3)));
         $scheduleName = 'e2e-rm-'.strtolower(bin2hex(random_bytes(3)));

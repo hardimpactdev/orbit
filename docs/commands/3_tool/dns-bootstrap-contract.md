@@ -47,14 +47,17 @@ Compose path: `~/.config/orbit/wg-easy/docker-compose.yaml`.
 
 Required envs / settings:
 
-- `WG_HOST` — the gateway's public IPv4 (read from `node.public_ipv4`).
-- `PASSWORD_HASH` — generated at bootstrap time, persisted in the gateway's
-  `.env` as `WG_EASY_PASSWORD_HASH=...` so future runs are idempotent and so
+- `INIT_ENABLED=true` — enables wg-easy v15 unattended setup.
+- `INIT_USERNAME=orbit` and `INIT_PASSWORD=<generated>` — bootstrap the admin
+  account. The generated password is persisted in the gateway's `.env` as
+  `WG_EASY_PASSWORD=...` so future runs are idempotent and so
   `tool:credentials wg-easy` can later expose it.
-- `WG_DEFAULT_ADDRESS=10.6.0.x` — wg-easy address space.
-- `WG_DEFAULT_DNS=10.6.0.1` — the wg-easy WG IP, where `orbit-dns` listens
-  (via shared netns).
-- `WG_ALLOWED_IPS=10.6.0.0/24`.
+- `INIT_HOST=<public host>` — the gateway's public IPv4 or DNS name.
+- `INIT_PORT=51820`.
+- `INIT_DNS=10.6.0.1` — the wg-easy WG IP, where `orbit-dns` listens via the
+  shared netns.
+- `INIT_ALLOWED_IPS=10.6.0.0/24`.
+- `INSECURE=true` with the admin HTTP port bound to `127.0.0.1`.
 - Ports: `51820/udp`, `51821/tcp`.
 - Caps: `NET_ADMIN`, `SYS_MODULE`.
 - Volumes: `~/.wg-easy:/etc/wireguard`, `/lib/modules:/lib/modules:ro`.

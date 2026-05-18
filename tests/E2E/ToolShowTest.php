@@ -19,6 +19,7 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
+            allowFailure: true,
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -48,6 +49,7 @@ it('shows a registered tool from gateway intent as human output', function (): v
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
+            allowFailure: true,
         );
 
         expect($result->successful())->toBeTrue()
@@ -70,6 +72,7 @@ it('returns tool.not_found error for unknown tool name in the gateway registry',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
+            allowFailure: true,
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -92,6 +95,7 @@ it('returns tool.unsupported_action error for an unsupported tool catalog name',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
+            allowFailure: true,
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -120,14 +124,13 @@ it('includes live key in JSON output when --live flag is passed', function (): v
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        // --live requests live node inspection; result may succeed or fail with
-        // tool.remote_action_failed — either way the key must be present in the
-        // success path and the command must not crash without a JSON envelope.
+        // --live requests live node inspection; the success path returns the
+        // normal tool envelope plus observed fields.
         expect($payload)->toBeArray()
             ->and($payload)->toHaveKey('success');
 
         if (isset($payload['success'])) {
-            expect($payload['success']['data'])->toHaveKey('live');
+            expect($payload['success']['data']['tool'])->toHaveKeys(['observed_state', 'observed_version']);
         }
     } finally {
         $topology->cleanup();

@@ -83,8 +83,8 @@ final readonly class E2EWireGuardMesh
             sprintf(
                 <<<'SH'
 set -euo pipefail
-sudo apt-get update -qq >/dev/null
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wireguard-tools >/dev/null
+sudo apt-get -o DPkg::Lock::Timeout=300 update -qq >/dev/null
+sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq wireguard-tools >/dev/null
 sudo install -d -m 0700 /etc/wireguard
 cat <<'ORBIT_WG_CONFIG' | sudo tee /etc/wireguard/wg-orbit.conf >/dev/null
 %s

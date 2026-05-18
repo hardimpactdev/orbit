@@ -32,6 +32,10 @@ responses* the way an operator on a control node would experience them.
 
 - `assertHttpReachable` uses `curl -k`. Orbit's internal CA is not the thing
   under test here. A separate test could pin CA trust if needed.
+- When the URL uses a hostname, the helper resolves that hostname through the
+  gateway DNS server and passes the result to curl with `--resolve`. This keeps
+  the requested host/SNI intact without depending on caller-local resolver
+  mutation on lean Linux E2E nodes.
 
 **Current pointers:**
 

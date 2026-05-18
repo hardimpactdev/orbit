@@ -48,7 +48,7 @@ The tools probe reads gateway tool rows and checks these layers:
    match the tool definition when credentials are part of the tool contract.
 7. **Lifecycle state:** managed services or containers match the expected
    lifecycle state, such as `running` or `installed`.
-8. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed tools may
+8. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
    be inspected for compatible tool facts.
 
 Observed node capabilities without gateway tool rows are unmanaged inventory by
@@ -87,9 +87,9 @@ they probe.
 
 ## Tool Fix Map
 
-This table shows what `doctor --fix --restore` does for each fixable issue code.
+This table shows what `doctor --restore` does for each fixable issue code.
 
-| Code | `doctor --fix --restore` behavior |
+| Code | `doctor --restore` behavior |
 | --- | --- |
 | `tool.capability_missing` | Install or restore the managed capability only when the tool definition declares a safe install or repair path. |
 | `tool.version_mismatch` | Update or downgrade the managed tool only when the tool definition supports the target version transition. |
@@ -102,7 +102,7 @@ This table shows what `doctor --fix --restore` does for each fixable issue code.
 | `tool.dns_port_not_listening` | Restart the `orbit-dns` container. |
 | `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from the gateway intent and SIGHUP `orbit-dns` (no container restart). |
 
-`doctor --fix --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
+`doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, or
 `tool.unregistered_capability`.
 
@@ -119,9 +119,9 @@ configuration to match observed node state; adoption owns those configuration ch
 
 ## Tool Adopt Map
 
-This table shows what `doctor --fix --adopt` does for each adoptable issue code.
+This table shows what `doctor --adopt` does for each adoptable issue code.
 
-| Code | `doctor --fix --adopt` behavior |
+| Code | `doctor --adopt` behavior |
 | --- | --- |
 | `tool.unregistered_capability` | Create a gateway tool row when: the operator selected a specific node and observed capability; the capability maps to a supported tool definition; and the tool definition declares what observed facts may become configuration. |
 | `tool.version_mismatch` | Update expected version only when the observed version is supported and the operator selected the specific tool for adoption. |
@@ -129,7 +129,7 @@ This table shows what `doctor --fix --adopt` does for each adoptable issue code.
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
 | `tool.dns_config_drift` | Record the observed `dnsmasq.conf` content as the gateway intent. Narrow use case: an operator hand-edited the file for an emergency and now wants Orbit to adopt that change. |
 
-`doctor --fix --adopt` does not scan arbitrary hosts for inventory, adopt unsupported
+`doctor --adopt` does not scan arbitrary hosts for inventory, adopt unsupported
 packages or containers, infer app/database ownership, adopt generated process or
 schedule artifacts, or adopt firewall/proxy backend artifacts as tool facts.
 

@@ -21,7 +21,7 @@ The app family owns these facts:
 - production app health: production app health checks, deployment pipeline
   validity, and latest deployment status recorded as app-owned gateway history;
 - app-owned adoption facts: selected existing app paths that can be tied to an
-  explicit app name and app node during `doctor --fix --adopt`. During adoption,
+  explicit app name and app node during `doctor --adopt`. During adoption,
   `composer.json` is the only project file Orbit may inspect for PHP-version
   hints, and only when the app path is a PHP project. Orbit must not read
   `.php-version`, `package.json`, or other project files for app adoption
@@ -95,9 +95,9 @@ Each code below corresponds to a specific layer in the apps probe.
 
 ## App Fix Map
 
-The table below shows what `doctor --fix --restore` does for each fixable code.
+The table below shows what `doctor --restore` does for each fixable code.
 
-| Code | `doctor --fix --restore` behavior |
+| Code | `doctor --restore` behavior |
 | --- | --- |
 | `app.fpm_config_missing` | Re-render and install the app PHP-FPM configuration from gateway app configuration. |
 | `app.fpm_config_mismatch` | Rewrite the app PHP-FPM configuration to match gateway app configuration. |
@@ -108,7 +108,7 @@ The table below shows what `doctor --fix --restore` does for each fixable code.
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |
 | `app.production_user_mismatch` | Re-apply production app user, ownership, and PHP-FPM pool identity from gateway app configuration. |
 
-`doctor --fix --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
+`doctor --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
 `app.path_missing`, `app.path_unusable`, `app.root_missing`,
 `app.root_outside_path`, `app.php_version_unavailable`,
 `app.production_health_unhealthy`, `app.deployment_pipeline_invalid`,
@@ -125,15 +125,15 @@ or changes node reachability.
 
 ## App Adopt Map
 
-The table below shows what `doctor --fix --adopt` does for each adoptable code.
+The table below shows what `doctor --adopt` does for each adoptable code.
 
-| Code | `doctor --fix --adopt` behavior |
+| Code | `doctor --adopt` behavior |
 | --- | --- |
 | `app.unregistered_path` | Create app configuration only when the selected scope provides an explicit app name, app node, and path, and the observed path is compatible with `app:register` adoption rules. |
 | `app.fpm_config_mismatch` | Update app runtime configuration only when the observed PHP-FPM configuration proves the same app identity and the observed values are supported. |
 | `app.runtime_config_mismatch` | Update app runtime configuration only when the observed runtime configuration proves the same app identity and the observed values are supported. |
 
-`doctor --fix --adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
+`doctor --adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
 virtual hosts, adopt proxy route backend artifacts as app configuration, infer database
 ownership, adopt deployment run outcomes, or adopt workspace/process/schedule
 artifacts as app facts.
@@ -141,7 +141,7 @@ artifacts as app facts.
 ## Deployment Health Recovery
 
 Deployment health issues are observable app health facts, not convergence drift
-that `doctor --fix --restore` or `doctor --fix --adopt` can resolve.
+that `doctor --restore` or `doctor --adopt` can resolve.
 
 - `app.latest_deployment_failed` points operators to
   [`deploy:log`](../10_deploy/6_deploy-log/deploy-log.md) for the failed run

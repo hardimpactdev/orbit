@@ -89,7 +89,7 @@ are not part of the initial contract.
 | `creation` | Initial workspace registration. |
 | `setup` | Execution of `workspace:setup` steps. |
 | `removal` | Execution of `workspace:remove` steps. |
-| `adoption` | Discovery and registration via `doctor --fix --adopt`. |
+| `adoption` | Discovery and registration via `doctor --adopt`. |
 | `php_update` | Modification of the effective PHP version. |
 
 ### Limits

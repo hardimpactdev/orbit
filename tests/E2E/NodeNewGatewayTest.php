@@ -67,14 +67,16 @@ PHP;
             ->and($gatewayVersion->successful())->toBeTrue($gatewayVersion->output().$gatewayVersion->errorOutput());
 
         $gatewayWireGuard = e2eProvisionStep('assert gateway WireGuard interface', fn () => [
-            $gateway->exec('sudo wg show wg-orbit listen-port | grep -Fx 51820'),
+            $gateway->exec("! sudo grep -q '^ListenPort = 51820$' /etc/wireguard/wg-orbit.conf"),
             $gateway->exec("ip -o address show dev wg-orbit | grep -F '10.6.0.2/24'"),
             $gateway->exec('systemctl is-enabled wg-quick@wg-orbit'),
+            $gateway->exec('docker exec wg-easy wg show wg0 listen-port | grep -Fx 51820'),
         ]);
 
         expect($gatewayWireGuard[0]->successful())->toBeTrue($gatewayWireGuard[0]->output().$gatewayWireGuard[0]->errorOutput())
             ->and($gatewayWireGuard[1]->successful())->toBeTrue($gatewayWireGuard[1]->output().$gatewayWireGuard[1]->errorOutput())
-            ->and($gatewayWireGuard[2]->successful())->toBeTrue($gatewayWireGuard[2]->output().$gatewayWireGuard[2]->errorOutput());
+            ->and($gatewayWireGuard[2]->successful())->toBeTrue($gatewayWireGuard[2]->output().$gatewayWireGuard[2]->errorOutput())
+            ->and($gatewayWireGuard[3]->successful())->toBeTrue($gatewayWireGuard[3]->output().$gatewayWireGuard[3]->errorOutput());
 
         $gatewayPeers = e2eProvisionStep('assert gateway WireGuard peers', fn () => gatewayWireGuardPeers($gateway));
 

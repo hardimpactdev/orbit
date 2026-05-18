@@ -12,13 +12,15 @@ use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
 use App\E2E\Support\ProviderPool;
 
-pest()->group('e2e-feature', 'e2e-feature-reachability');
+pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 
 /**
  * Smallest credible reachability test. Provisions a gateway with the new DNS
  * bootstrap path, then asserts from the control node that:
  *   1. `<gateway-name>.<gateway-tld>` resolves over WG via the gateway DNS.
- *   2. `https://<gateway-name>.<gateway-tld>/` returns 200.
+ *   2. `https://<gateway-wg-ip>/` returns 200 over WG. Gateway API TLS is
+ *      currently issued for the WireGuard IP, which is also the stored gateway
+ *      URL used by control nodes.
  *
  * Depends on the gateway DNS provisioning plan
  * (`docs/superpowers/plans/2026-05-16-gateway-dns-provisioning.md`).
@@ -80,7 +82,7 @@ PHP),
             control: $control,
             controlUser: $config->controlUser,
             key: $key,
-            url: 'https://gateway-1.gateway/',
+            url: 'https://10.6.0.2/',
             expectedStatus: 200,
         );
 

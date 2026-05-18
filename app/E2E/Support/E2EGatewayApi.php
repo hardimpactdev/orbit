@@ -22,18 +22,21 @@ final readonly class E2EGatewayApi
         $php = <<<PHP
 \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'control-1'],
-    [
-        'role' => 'control',
-        'environment' => null,
-        'tld' => null,
-        'platform' => 'unknown',
-        'host' => {$controlIpValue},
-        'wireguard_address' => {$controlWireGuardIpValue},
-        'gateway_endpoint' => {$gatewayIpValue},
-                'user' => {$controlUserValue},
-        'orbit_path' => {$orbitPathValue},
-        'status' => 'active',
-            ],
+    array_merge(
+        [
+            'role' => 'control',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => {$controlIpValue},
+            'wireguard_address' => {$controlWireGuardIpValue},
+            'gateway_endpoint' => {$gatewayIpValue},
+            'user' => {$controlUserValue},
+            'orbit_path' => {$orbitPathValue},
+            'status' => 'active',
+        ],
+        \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => {$controlUserValue}] : [],
+    ),
 );
 PHP;
 
@@ -110,11 +113,12 @@ PHP;
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -v '^VIEW_COMPILED_PATH=' .env > .env.tmp && mv .env.tmp .env && printf '\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && (grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction) && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && (grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction) && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
         $scriptPath = "/tmp/orbit-{$label}-tls.php";
+        $httpRouterPath = "/tmp/orbit-{$label}-http-router.php";
 
         E2ECommand::exec(
             $gateway,
@@ -124,13 +128,21 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            'systemctl stop caddy >/dev/null 2>&1 || true',
-            'Could not stop gateway Caddy before starting gateway test servers',
+            "cat > {$httpRouterPath} <<'PHP'\n".self::httpRouterScript($orbitPath)."\nPHP",
+            'Could not write gateway HTTP test router',
         );
 
         E2ECommand::exec(
             $gateway,
-            "cd {$orbitPathArgument} && nohup env VIEW_COMPILED_PATH={$viewCompiledPath} php artisan serve --host={$gatewayIp} --port=80 > /tmp/orbit-gateway-http.log 2>&1 &",
+            'systemctl stop caddy >/dev/null 2>&1 || true',
+            'Could not stop gateway Caddy before starting gateway test servers',
+        );
+
+        self::prepareRootRemoteShellIdentity($gateway);
+
+        E2ECommand::exec(
+            $gateway,
+            "cd {$orbitPathArgument} && nohup env VIEW_COMPILED_PATH={$viewCompiledPath} php -d display_errors=0 -S {$gatewayIp}:80 -t public {$httpRouterPath} > /tmp/orbit-gateway-http.log 2>&1 &",
             'Could not start gateway HTTP API',
         );
 
@@ -211,13 +223,45 @@ PHP;
         return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
     }
 
+    private static function prepareRootRemoteShellIdentity(E2EInstance $gateway): void
+    {
+        E2ECommand::exec(
+            $gateway,
+            'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi',
+            'Could not prepare root RemoteShell identity for gateway HTTP API',
+            timeoutSeconds: 60,
+        );
+    }
+
+    private static function httpRouterScript(string $orbitPath): string
+    {
+        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\n".<<<'PHP_WRAP'
+        $publicPath = $orbitPath.'/public';
+        $uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '');
+
+        if ($uri !== '/' && is_file($publicPath.$uri)) {
+            return false;
+        }
+
+        require $publicPath.'/index.php';
+        PHP_WRAP;
+    }
+
     private static function tlsServerScript(string $orbitPath, string $gatewayIp): string
     {
         return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$gatewayIp = ".var_export($gatewayIp, true).";\n\n".<<<'PHP_WRAP'
         
         function respond($connection, int $status, string $body, string $contentType = 'application/json'): void
         {
-            $reason = $status === 200 ? 'OK' : ($status === 422 ? 'Unprocessable Content' : 'Not Found');
+            $reason = match ($status) {
+                200 => 'OK',
+                201 => 'Created',
+                400 => 'Bad Request',
+                403 => 'Forbidden',
+                422 => 'Unprocessable Content',
+                502 => 'Bad Gateway',
+                default => 'Not Found',
+            };
         
             fwrite($connection, "HTTP/1.1 {$status} {$reason}\r\nContent-Type: {$contentType}\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
         }
@@ -238,6 +282,83 @@ PHP;
             }
         
             return $body;
+        }
+
+        function peer_ip($connection): ?string
+        {
+            $peer = stream_socket_get_name($connection, true);
+
+            if (! is_string($peer) || $peer === '') {
+                return null;
+            }
+
+            $host = preg_replace('/:\d+$/', '', $peer);
+
+            return is_string($host) && filter_var($host, FILTER_VALIDATE_IP) !== false ? $host : null;
+        }
+
+        function proxy_to_laravel($connection, string $requestLine, array $headers, string $body): void
+        {
+            global $gatewayIp;
+
+            $parts = explode(' ', trim($requestLine), 3);
+
+            if (count($parts) < 3) {
+                respond($connection, 400, '');
+
+                return;
+            }
+
+            $upstream = @stream_socket_client("tcp://{$gatewayIp}:80", $errno, $errstr, 5);
+
+            if ($upstream === false) {
+                respond($connection, 502, json_encode([
+                    'error' => [
+                        'code' => 'gateway_unavailable',
+                        'message' => "Could not proxy request to Laravel HTTP server: {$errstr}",
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR));
+
+                return;
+            }
+
+            stream_set_timeout($upstream, 900);
+
+            $headers['host'] = $gatewayIp;
+            $headers['connection'] = 'close';
+            $headers['accept-encoding'] = 'identity';
+            $headers['content-length'] = (string) strlen($body);
+
+            $clientIp = peer_ip($connection);
+
+            if ($clientIp !== null) {
+                $headers['x-orbit-e2e-wireguard-ip'] = $clientIp;
+            }
+
+            fwrite($upstream, "{$parts[0]} {$parts[1]} {$parts[2]}\r\n");
+
+            foreach ($headers as $name => $value) {
+                if (! is_string($value)) {
+                    continue;
+                }
+
+                fwrite($upstream, "{$name}: {$value}\r\n");
+            }
+
+            fwrite($upstream, "\r\n{$body}");
+
+            while (! feof($upstream)) {
+                $chunk = fread($upstream, 8192);
+
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+
+                fwrite($connection, $chunk);
+            }
+
+            fclose($upstream);
         }
         
         function run_orbit_command(string $command): array
@@ -1441,7 +1562,8 @@ PHP;
                 continue;
             }
         
-            respond($connection, 404, '');
+            $body = read_request_body($connection, $headers);
+            proxy_to_laravel($connection, $requestLine, $headers, $body);
             fclose($connection);
         }
         PHP_WRAP;
@@ -1457,9 +1579,12 @@ $matches = static function (string $command): bool {
 
     $isPhpProcess = str_contains($command, 'php ');
     $isGatewayHttp = str_contains($command, 'php artisan serve --host=') && str_contains($command, '--port=80');
+    $isQuietGatewayHttp = str_contains($command, 'php -d display_errors=0 -S ')
+        && str_contains($command, ':80')
+        && str_contains($command, '-http-router.php');
     $isGatewayTls = str_contains($command, '/tmp/orbit-') && str_contains($command, '-tls.php');
 
-    return $isPhpProcess && ($isGatewayHttp || $isGatewayTls);
+    return $isPhpProcess && ($isGatewayHttp || $isQuietGatewayHttp || $isGatewayTls);
 };
 
 $pids = [];

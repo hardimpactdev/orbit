@@ -19,7 +19,7 @@ The workspace family owns these facts:
   version, managed runtime configuration, and filesystem ownership required for
   the workspace environment;
 - workspace-owned adoption facts: selected existing workspace paths that can be
-  tied to an explicit app and workspace name during `doctor --fix --adopt`.
+  tied to an explicit app and workspace name during `doctor --adopt`.
 - stale workspace artifacts owned by Orbit whose identity no longer maps to an
   active gateway workspace record.
 
@@ -51,7 +51,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
    gateway workspace configuration.
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
-6. **Adoption hints:** during `doctor --fix --adopt`, an explicitly selected existing
+6. **Adoption hints:** during `doctor --adopt`, an explicitly selected existing
    workspace path may be inspected for compatible workspace facts. `composer.json`
    is the only project file that may provide a PHP version hint, and only for a
    PHP project.
@@ -85,9 +85,9 @@ Each code below corresponds to a specific layer in the workspaces probe.
 
 ## Workspace Fix Map
 
-The table below shows what `doctor --fix --restore` does for each fixable code.
+The table below shows what `doctor --restore` does for each fixable code.
 
-| Code | `doctor --fix --restore` behavior |
+| Code | `doctor --restore` behavior |
 | --- | --- |
 | `workspace.path_missing` | Recreate the workspace path only when gateway workspace configuration has enough source information and the repair will not overwrite unrelated files. |
 | `workspace.fpm_config_missing` | Re-render and install the workspace PHP-FPM configuration from gateway workspace configuration. |
@@ -96,7 +96,7 @@ The table below shows what `doctor --fix --restore` does for each fixable code.
 | `workspace.runtime_config_mismatch` | Rewrite managed workspace runtime configuration to match gateway workspace configuration. |
 | `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity no longer maps to active workspace configuration. |
 
-`doctor --fix --restore` does not handle `workspace.record_incomplete`,
+`doctor --restore` does not handle `workspace.record_incomplete`,
 `workspace.parent_app_invalid`, `workspace.path_unusable`,
 `workspace.path_outside_policy`, `workspace.php_version_unavailable`,
 `workspace.unregistered_path`, or `workspace.php_hint_unsupported`.
@@ -111,15 +111,15 @@ edits inherited runtime units, or changes node reachability.
 
 ## Workspace Adopt Map
 
-The table below shows what `doctor --fix --adopt` does for each adoptable code.
+The table below shows what `doctor --adopt` does for each adoptable code.
 
-| Code | `doctor --fix --adopt` behavior |
+| Code | `doctor --adopt` behavior |
 | --- | --- |
 | `workspace.unregistered_path` | Create workspace configuration only when the selected scope provides an explicit app, workspace name, and path, and the observed path is compatible with `workspace:setup` adoption rules. |
 | `workspace.fpm_config_mismatch` | Update workspace runtime configuration only when the observed PHP-FPM configuration proves the same app and workspace identity and the observed values are supported. |
 | `workspace.runtime_config_mismatch` | Update workspace runtime configuration only when the observed runtime configuration proves the same app and workspace identity and the observed values are supported. |
 
-`doctor --fix --adopt` does not scan arbitrary filesystem paths for workspaces, adopt unknown
+`doctor --adopt` does not scan arbitrary filesystem paths for workspaces, adopt unknown
 virtual hosts, adopt proxy route backend artifacts as workspace configuration, infer
 database ownership, read `.php-version`, or adopt process/schedule/tool/firewall
 artifacts as workspace facts.

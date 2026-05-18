@@ -134,6 +134,7 @@ it('returns validation_failed when id is missing from a control caller', functio
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
+            allowFailure: true,
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -161,6 +162,7 @@ it('returns validation_failed for an invalid id from a control caller', function
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
+            allowFailure: true,
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);

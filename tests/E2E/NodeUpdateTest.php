@@ -25,7 +25,7 @@ it('updates node metadata from a control caller through the gateway api', functi
         $updateResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:update app-dev-1 --environment=production --json',
+                'cd %s && php artisan node:update app-dev-1 --public-ipv4=203.0.113.45 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -34,21 +34,20 @@ it('updates node metadata from a control caller through the gateway api', functi
         $updatePayload = json_decode(trim($updateResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($updatePayload['success']['data']['name'])->toBe('app-dev-1')
-            ->and($updatePayload['success']['data']['changed'])->toBe(['environment'])
+            ->and($updatePayload['success']['data']['changed'])->toBe(['public_ipv4'])
             ->and($updatePayload['success']['data']['action'])->toBe('updated');
 
-        $showResult = $topology->ssh(
-            'control',
+        $metadataResult = $topology->ssh(
+            'gateway',
             sprintf(
-                'cd %s && php artisan node:show app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                'cd %s && php artisan tinker --execute=%s',
+                escapeshellarg($topology->checkout('gateway')),
+                escapeshellarg('echo \App\Models\Node::query()->where("name", "app-dev-1")->value("public_ipv4");'),
             ),
             timeoutSeconds: 120,
         );
 
-        $showPayload = json_decode(trim($showResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($showPayload['success']['data']['node']['environment'])->toBe('production');
+        expect(trim($metadataResult->output()))->toBe('203.0.113.45');
     } finally {
         $topology->cleanup();
     }

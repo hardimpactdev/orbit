@@ -106,8 +106,10 @@ flow, the initiating control node does not run `gateway:add`.
 Gateway bootstrap also installs the gateway-side DNS substrate:
 
 - `wg-easy` (the WireGuard VPN server) is installed under
-  `~/.config/orbit/wg-easy/`. The bcrypt admin password hash is generated and
-  persisted as `WG_EASY_PASSWORD_HASH` in the gateway's `.env`.
+  `~/.config/orbit/wg-easy/`. The admin password is generated and persisted as
+  `WG_EASY_PASSWORD` in the gateway's `.env` for wg-easy v15 unattended setup.
+- `wg-easy` owns UDP `51820`. The gateway host's `wg-orbit` interface is
+  configured as a peer/client of `wg-easy`, not as a second WireGuard server.
 - `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
   sharing wg-easy's network namespace, so it answers DNS for fleet TLDs on
   the wg-easy WG IP. The initial `dnsmasq.conf` reflects the current
@@ -120,7 +122,7 @@ The full contract for the DNS substrate is
 `--host` is required for every gateway request, including later gateway
 convergence checks after a gateway already exists. During first-gateway
 bootstrap, the resolved `--host` value becomes the initial gateway endpoint used
-in generated WireGuard peer configs *and* is passed to wg-easy as `WG_HOST`,
+in generated WireGuard peer configs *and* is passed to wg-easy as `INIT_HOST`,
 so it must be an IP address or dotted DNS name reachable by the nodes that will
 join the fleet.
 
@@ -186,6 +188,9 @@ For first-gateway bootstrap:
   `gateway:add` on that initiating control node afterward.
 - Requires a resolved initiating control-node name. Defaults to the
   normalized local short hostname.
+- Installs Docker Engine and Docker Compose on Ubuntu gateway hosts when they
+  are missing, because the gateway DNS substrate runs `wg-easy` and
+  `orbit-dns` as containers.
 
 For app-node creation:
 

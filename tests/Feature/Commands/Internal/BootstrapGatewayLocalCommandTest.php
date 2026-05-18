@@ -38,14 +38,27 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         $this->wgEasyServiceInstaller = new class extends WgEasyServiceInstaller
         {
-            /** @var list<array{publicHost: string, passwordHash: string}> */
+            /** @var list<array{publicHost: string, username: string, password: string}> */
             public array $invocations = [];
+
+            /** @var list<array{name: string, private_key: string, public_key: string, pre_shared_key: string, address: string}> */
+            public array $peers = [];
 
             public function __construct() {}
 
-            public function install(string $publicHost, string $passwordHash): void
+            public function install(string $publicHost, string $username, string $password): void
             {
-                $this->invocations[] = ['publicHost' => $publicHost, 'passwordHash' => $passwordHash];
+                $this->invocations[] = ['publicHost' => $publicHost, 'username' => $username, 'password' => $password];
+            }
+
+            public function publicKey(): string
+            {
+                return 'wg-easy-public-key';
+            }
+
+            public function configurePeers(array $peers): void
+            {
+                $this->peers = $peers;
             }
         };
 
@@ -118,11 +131,12 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2'])
             ->and($this->wgEasyServiceInstaller->invocations)->toHaveCount(1)
             ->and($this->wgEasyServiceInstaller->invocations[0]['publicHost'])->toBe('203.0.113.10')
-            ->and($this->wgEasyServiceInstaller->invocations[0]['passwordHash'])->not->toBe('')
+            ->and($this->wgEasyServiceInstaller->invocations[0]['username'])->toBe('orbit')
+            ->and($this->wgEasyServiceInstaller->invocations[0]['password'])->not->toBe('')
             ->and($this->orbitDnsServiceInstaller->installs)->toBe(1);
     });
 
-    it('persists the wg-easy admin password hash in the gateway env', function (): void {
+    it('persists the wg-easy admin password in the gateway env', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
@@ -131,16 +145,16 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         $env = File::get(app()->environmentFilePath());
 
-        expect($env)->toContain('WG_EASY_PASSWORD_HASH=');
+        expect($env)->toContain('WG_EASY_PASSWORD=');
     });
 
-    it('reuses an existing wg-easy admin password hash on re-bootstrap', function (): void {
+    it('reuses an existing wg-easy admin password on re-bootstrap', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
         ]);
-        $firstHash = $this->wgEasyServiceInstaller->invocations[0]['passwordHash'];
+        $firstPassword = $this->wgEasyServiceInstaller->invocations[0]['password'];
 
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
@@ -148,7 +162,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             '--public-host' => '203.0.113.10',
         ]);
 
-        expect($this->wgEasyServiceInstaller->invocations[1]['passwordHash'])->toBe($firstHash);
+        expect($this->wgEasyServiceInstaller->invocations[1]['password'])->toBe($firstPassword);
     });
 
     it('skips wg-easy and orbit-dns when public host is not provided', function (): void {
@@ -307,5 +321,84 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and($gatewayPeer->fresh()->private_key)->toBe('gateway-private-v1')
             ->and($controlPeer->fresh()->public_key)->toBe('control-public-v1')
             ->and($controlPeer->fresh()->private_key)->toBe('control-private-v1');
+    });
+
+    it('configures the gateway host as a wg-easy peer during first-gateway bootstrap', function (): void {
+        $writtenConfig = null;
+        $caDir = storage_path('app/orbit/ca');
+
+        File::ensureDirectoryExists($caDir);
+        File::put("{$caDir}/root.key", 'test-root-key');
+        File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
+
+        Process::fake(function ($process) use (&$writtenConfig) {
+            if (str_contains($process->command, 'tee /etc/wireguard/wg-orbit.conf')) {
+                $writtenConfig = (string) $process->input;
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+
+        $identity = [
+            'gateway' => [
+                'public_key' => 'gateway-public-v1',
+                'private_key' => 'gateway-private-v1',
+                'pre_shared_key' => 'gateway-psk-v1',
+            ],
+            'control' => [
+                'name' => 'mini',
+                'wireguard_address' => '10.6.0.3',
+                'public_key' => 'control-public-v1',
+                'private_key' => 'control-private-v1',
+                'pre_shared_key' => 'control-psk-v1',
+            ],
+        ];
+
+        $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--identity-json' => json_encode($identity, JSON_THROW_ON_ERROR),
+            '--public-host' => '203.0.113.10',
+            '--metadata-json' => true,
+        ]);
+
+        $metadata = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $gateway = Node::query()->where('name', 'gateway-1')->first();
+        $control = Node::query()->where('name', 'mini')->first();
+        $gatewayPeer = WireGuardPeer::query()->where('node_id', $gateway?->id)->first();
+        $controlPeer = WireGuardPeer::query()->where('node_id', $control?->id)->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($metadata['ca_cert'])->toContain('-----BEGIN CERTIFICATE-----')
+            ->and($metadata['wireguard_server_public_key'])->toBe('wg-easy-public-key')
+            ->and($gatewayPeer)->toBeInstanceOf(WireGuardPeer::class)
+            ->and($gatewayPeer->pre_shared_key)->toBe('gateway-psk-v1')
+            ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
+            ->and($controlPeer->pre_shared_key)->toBe('control-psk-v1')
+            ->and($this->wgEasyServiceInstaller->peers)->toMatchArray([
+                [
+                    'name' => 'gateway-1',
+                    'private_key' => 'gateway-private-v1',
+                    'public_key' => 'gateway-public-v1',
+                    'pre_shared_key' => 'gateway-psk-v1',
+                    'address' => '10.6.0.2',
+                ],
+                [
+                    'name' => 'mini',
+                    'private_key' => 'control-private-v1',
+                    'public_key' => 'control-public-v1',
+                    'pre_shared_key' => 'control-psk-v1',
+                    'address' => '10.6.0.3',
+                ],
+            ])
+            ->and($writtenConfig)->toContain('PrivateKey = gateway-private-v1')
+            ->and($writtenConfig)->toContain('Address = 10.6.0.2/24')
+            ->and($writtenConfig)->toContain('PublicKey = wg-easy-public-key')
+            ->and($writtenConfig)->toContain('PresharedKey = gateway-psk-v1')
+            ->and($writtenConfig)->toContain('AllowedIPs = 10.6.0.0/24')
+            ->and($writtenConfig)->toContain('Endpoint = 203.0.113.10:51820')
+            ->and($writtenConfig)->not->toContain('ListenPort = 51820')
+            ->and($writtenConfig)->not->toContain('PublicKey = control-public-v1');
     });
 });

@@ -12,7 +12,7 @@ use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
 use App\E2E\Support\ProviderPool;
 
-pest()->group('e2e-feature', 'e2e-feature-reachability');
+pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 
 /**
  * Asserts that an `app:new`-provisioned development app is reachable from the

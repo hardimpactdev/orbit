@@ -49,11 +49,11 @@ Each code below identifies a specific process-family drift condition that the pr
 
 ## Process Fix Map
 
-Use `doctor --fix --restore` to trigger the repair action listed for each code.
+Use `doctor --restore` to trigger the repair action listed for each code.
 
-| Code | `doctor --fix --restore` behavior |
+| Code | `doctor --restore` behavior |
 | --- | --- |
-| `process.runtime_backend_unavailable` | No `doctor --fix --restore` action. Process manager installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Supervisor. |
+| `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Supervisor. |
 | `process.runtime_unit_missing` | Re-render and reload the missing Supervisor program from gateway app, workspace, and process configuration. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned Supervisor program whose identity no longer maps to active gateway app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the Supervisor program from gateway app, workspace, and process configuration. |
@@ -62,15 +62,15 @@ Use `doctor --fix --restore` to trigger the repair action listed for each code.
 | `process.event_notifier_missing` | Reinstall Orbit-managed lifecycle event notifier material for the selected runtime unit. |
 | `process.event_notifier_mismatch` | Rewrite lifecycle event notifier material to match gateway configuration and the current gateway event intake identity. |
 
-`doctor --fix --restore` does not handle `process.record_incomplete`, `process.owner_app_invalid`, `process.runtime_context_unresolved`, or `process.runtime_backend_unavailable`.
+`doctor --restore` does not handle `process.record_incomplete`, `process.owner_app_invalid`, `process.runtime_context_unresolved`, or `process.runtime_backend_unavailable`.
 
 Missing or invalid process definitions and app ownership problems remain explicit process, app, or workspace command work. Process doctor never creates process definitions, changes process names, edits app or workspace records, or adopts arbitrary runtime-unit files as gateway configuration.
 
 ## Process Adopt Map
 
-Use `doctor --fix --adopt` to apply the adoption action listed for each code.
+Use `doctor --adopt` to apply the adoption action listed for each code.
 
-| Code | `doctor --fix --adopt` behavior |
+| Code | `doctor --adopt` behavior |
 | --- | --- |
 | `process.runtime_backend_unavailable` | No adoption action. |
 | `process.runtime_unit_extra` | No adoption action. Supervisor programs are derived artifacts and must not create process configuration. |

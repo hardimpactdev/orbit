@@ -23,7 +23,7 @@ final readonly class WireGuardIdentity
         }
 
         $node = Node::query()
-            ->where('wireguard_address', $request->ip())
+            ->where('wireguard_address', $this->peerAddress($request))
             ->where('status', 'active')
             ->first();
 
@@ -45,5 +45,18 @@ final readonly class WireGuardIdentity
                 'meta' => [],
             ],
         ], 403);
+    }
+
+    private function peerAddress(Request $request): string
+    {
+        if ((bool) config('orbit.e2e_trust_wireguard_header', false)) {
+            $header = $request->headers->get('X-Orbit-E2E-WireGuard-Ip');
+
+            if (is_string($header) && filter_var($header, FILTER_VALIDATE_IP) !== false) {
+                return $header;
+            }
+        }
+
+        return $request->ip();
     }
 }

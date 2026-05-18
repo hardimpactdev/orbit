@@ -27,13 +27,17 @@ final readonly class E2EReachability
         int $timeoutSeconds = 15,
     ): void {
         $command = sprintf(
-            'dig +time=%d +short %s @%s',
+            <<<'SH'
+%s
+dig +time=%d +short %s @%s
+SH,
+            self::ensureDigCommand(),
             $timeoutSeconds,
             escapeshellarg($hostname),
             escapeshellarg($dnsServer),
         );
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, $timeoutSeconds + 5);
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
         $answer = trim($result->output());
 
         if ($answer === '') {
@@ -65,13 +69,9 @@ final readonly class E2EReachability
         int $expectedStatus = 200,
         int $timeoutSeconds = 15,
     ): void {
-        $command = sprintf(
-            'curl -k -s -o /dev/null -w "%%{http_code}" --max-time %d %s',
-            $timeoutSeconds,
-            escapeshellarg($url),
-        );
+        $command = self::curlCommand($url, '-s -o /dev/null -w "%{http_code}"', $timeoutSeconds);
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, $timeoutSeconds + 5);
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
         $observed = trim($result->output());
 
         if ($observed !== (string) $expectedStatus) {
@@ -92,13 +92,9 @@ final readonly class E2EReachability
         string $marker,
         int $timeoutSeconds = 15,
     ): void {
-        $command = sprintf(
-            'curl -k -s --max-time %d %s',
-            $timeoutSeconds,
-            escapeshellarg($url),
-        );
+        $command = self::curlCommand($url, '-s', $timeoutSeconds);
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, $timeoutSeconds + 5);
+        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
         $body = $result->output();
 
         if (! str_contains($body, $marker)) {
@@ -109,5 +105,75 @@ final readonly class E2EReachability
                 trim($body),
             ));
         }
+    }
+
+    private static function curlCommand(string $url, string $options, int $timeoutSeconds): string
+    {
+        [$resolvePrefix, $resolveOption] = self::curlResolveParts($url, $timeoutSeconds);
+
+        return trim(sprintf(
+            <<<'SH'
+%s
+curl -k %s --max-time %d%s %s
+SH,
+            $resolvePrefix,
+            $options,
+            $timeoutSeconds,
+            $resolveOption,
+            escapeshellarg($url),
+        ));
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private static function curlResolveParts(string $url, int $timeoutSeconds, string $dnsServer = '10.6.0.1'): array
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (! is_string($host) || $host === '') {
+            throw new RuntimeException("HTTP reachability URL must include a host: {$url}");
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return ['', ''];
+        }
+
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        $port = parse_url($url, PHP_URL_PORT);
+
+        if (! is_int($port)) {
+            $port = $scheme === 'http' ? 80 : 443;
+        }
+
+        $prefix = sprintf(
+            <<<'SH'
+%s
+resolved_ip="$(dig +time=%d +short %s @%s | awk 'NF { print; exit }')"
+if [ -z "$resolved_ip" ]; then
+    printf 'Could not resolve %%s via %%s\n' %s %s >&2
+    exit 6
+fi
+SH,
+            self::ensureDigCommand(),
+            $timeoutSeconds,
+            escapeshellarg($host),
+            escapeshellarg($dnsServer),
+            escapeshellarg($host),
+            escapeshellarg($dnsServer),
+        );
+
+        return [$prefix, ' --resolve '.escapeshellarg("{$host}:{$port}:").'"$resolved_ip"'];
+    }
+
+    private static function ensureDigCommand(): string
+    {
+        return <<<'SH'
+if ! command -v dig >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils
+fi
+SH;
     }
 }

@@ -231,7 +231,7 @@ final readonly class E2EResourceLeasePool
             return true;
         }
 
-        $modifiedAt = filemtime($path);
+        $modifiedAt = @filemtime($path);
 
         if ($modifiedAt === false || (time() - $modifiedAt) < $this->staleSeconds) {
             return false;

@@ -26,6 +26,7 @@ use RuntimeException;
     {--identity-json= : Gateway/control WireGuard identity payload; use - to read JSON from STDIN}
     {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
     {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
+    {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
     {--skip-runtime-install : Skip PHP-FPM, Caddy, wg-easy, and orbit-dns installation for container-only E2E topology preparation}')]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
@@ -41,6 +42,7 @@ class BootstrapGatewayLocalCommand extends Command
         $wireguardAddress = $this->stringArgument('wireguard-address');
         $identity = $this->identityPayload();
         $gatewayTld = $this->stringOption('tld') ?? 'gateway';
+        $publicHost = $this->stringOption('public-host');
 
         if ($name === null || $wireguardAddress === null) {
             throw new RuntimeException('Name and wireguard-address are required.');
@@ -88,6 +90,7 @@ class BootstrapGatewayLocalCommand extends Command
                 [
                     'public_key' => $identity['gateway']['public_key'],
                     'private_key' => $identity['gateway']['private_key'],
+                    'pre_shared_key' => $identity['gateway']['pre_shared_key'],
                     'allowed_ips' => "{$wireguardAddress}/32",
                 ],
             );
@@ -97,40 +100,94 @@ class BootstrapGatewayLocalCommand extends Command
                 [
                     'public_key' => $identity['control']['public_key'],
                     'private_key' => $identity['control']['private_key'],
+                    'pre_shared_key' => $identity['control']['pre_shared_key'],
                     'allowed_ips' => "{$identity['control']['wireguard_address']}/32",
                 ],
             );
 
             return [
+                'gateway_name' => $gateway->name,
+                'gateway_public_key' => $gatewayPeer->public_key,
                 'gateway_private_key' => $gatewayPeer->private_key,
+                'gateway_pre_shared_key' => $gatewayPeer->pre_shared_key,
+                'gateway_wireguard_address' => $gateway->wireguard_address,
+                'control_name' => $control->name,
                 'control_public_key' => $controlPeer->public_key,
+                'control_private_key' => $controlPeer->private_key,
+                'control_pre_shared_key' => $controlPeer->pre_shared_key,
                 'control_wireguard_address' => $control->wireguard_address,
             ];
         });
 
-        if ($enrollment !== null) {
-            $wireGuard->install($this->gatewayWireGuardConfig(
-                gatewayPrivateKey: $enrollment['gateway_private_key'],
-                gatewayWireguardAddress: $wireguardAddress,
-                controlPublicKey: $enrollment['control_public_key'],
-                controlWireguardAddress: $enrollment['control_wireguard_address'],
-            ));
-        }
-
         $this->markGatewayEnvironment();
 
         $caService->ensureRootCa();
+        $wireguardServerPublicKey = null;
+
+        if (! (bool) $this->option('skip-runtime-install')) {
+            if ($publicHost !== null) {
+                $password = $this->ensureWgEasyPassword();
+                $username = (string) config('services.wg_easy.username', 'orbit');
+                $wgEasyServiceInstaller->install(publicHost: $publicHost, username: $username, password: $password);
+                $wireguardServerPublicKey = $wgEasyServiceInstaller->publicKey();
+
+                if ($enrollment !== null) {
+                    if ($enrollment['gateway_pre_shared_key'] === null || $enrollment['control_pre_shared_key'] === null) {
+                        throw new RuntimeException('WireGuard identity payload must include pre-shared keys when bootstrapping through wg-easy.');
+                    }
+
+                    $wgEasyServiceInstaller->configurePeers([
+                        [
+                            'name' => $enrollment['gateway_name'],
+                            'private_key' => $enrollment['gateway_private_key'],
+                            'public_key' => $enrollment['gateway_public_key'],
+                            'pre_shared_key' => $enrollment['gateway_pre_shared_key'],
+                            'address' => $enrollment['gateway_wireguard_address'],
+                        ],
+                        [
+                            'name' => $enrollment['control_name'],
+                            'private_key' => $enrollment['control_private_key'],
+                            'public_key' => $enrollment['control_public_key'],
+                            'pre_shared_key' => $enrollment['control_pre_shared_key'],
+                            'address' => $enrollment['control_wireguard_address'],
+                        ],
+                    ]);
+                }
+            }
+        }
+
+        if ($enrollment !== null) {
+            $wireGuard->install($wireguardServerPublicKey !== null && $publicHost !== null
+                ? $this->gatewayClientWireGuardConfig(
+                    gatewayPrivateKey: $enrollment['gateway_private_key'],
+                    gatewayWireguardAddress: $wireguardAddress,
+                    wireguardServerPublicKey: $wireguardServerPublicKey,
+                    preSharedKey: $enrollment['gateway_pre_shared_key'],
+                    endpoint: $publicHost,
+                )
+                : $this->gatewayWireGuardConfig(
+                    gatewayPrivateKey: $enrollment['gateway_private_key'],
+                    gatewayWireguardAddress: $wireguardAddress,
+                    controlPublicKey: $enrollment['control_public_key'],
+                    controlWireguardAddress: $enrollment['control_wireguard_address'],
+                ));
+        }
 
         if (! (bool) $this->option('skip-runtime-install')) {
             $gatewayApiRuntimeInstaller->install($wireguardAddress);
 
-            $publicHost = $this->stringOption('public-host');
-
             if ($publicHost !== null) {
-                $passwordHash = $this->ensureWgEasyPasswordHash();
-                $wgEasyServiceInstaller->install(publicHost: $publicHost, passwordHash: $passwordHash);
                 $orbitDnsServiceInstaller->install();
             }
+        }
+
+        if ((bool) $this->option('metadata-json')) {
+            $this->line(json_encode([
+                'ca_cert' => $caService->rootCert(),
+                'wireguard_server_public_key' => $wireguardServerPublicKey,
+            ], JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
         }
 
         $this->line($caService->rootCert());
@@ -138,20 +195,20 @@ class BootstrapGatewayLocalCommand extends Command
         return self::SUCCESS;
     }
 
-    private function ensureWgEasyPasswordHash(): string
+    private function ensureWgEasyPassword(): string
     {
-        $existing = $this->readEnvVar('WG_EASY_PASSWORD_HASH');
+        $existing = $this->readEnvVar('WG_EASY_PASSWORD');
 
         if ($existing !== null) {
             return $existing;
         }
 
         $password = Str::random(32);
-        $hash = password_hash($password, PASSWORD_BCRYPT);
 
-        $this->writeEnvVar('WG_EASY_PASSWORD_HASH', $hash);
+        $this->writeEnvVar('WG_EASY_PASSWORD', $password);
+        config(['services.wg_easy.password' => $password]);
 
-        return $hash;
+        return $password;
     }
 
     private function readEnvVar(string $key): ?string
@@ -167,7 +224,19 @@ class BootstrapGatewayLocalCommand extends Command
         if (preg_match('/^'.preg_quote($key, '/').'=(.*)$/m', $contents, $matches) === 1) {
             $value = trim($matches[1]);
 
-            return $value === '' ? null : $value;
+            if ($value === '') {
+                return null;
+            }
+
+            if (str_starts_with($value, '"') && str_ends_with($value, '"')) {
+                return stripcslashes(substr($value, 1, -1));
+            }
+
+            if (str_starts_with($value, "'") && str_ends_with($value, "'")) {
+                return str_replace("\\'", "'", substr($value, 1, -1));
+            }
+
+            return $value;
         }
 
         return null;
@@ -222,8 +291,8 @@ class BootstrapGatewayLocalCommand extends Command
 
     /**
      * @return array{
-     *     gateway: array{public_key: string, private_key: string},
-     *     control: array{name: string, wireguard_address: string, public_key: string, private_key: string}
+     *     gateway: array{public_key: string, private_key: string, pre_shared_key: ?string},
+     *     control: array{name: string, wireguard_address: string, public_key: string, private_key: string, pre_shared_key: ?string}
      * }|null
      */
     private function identityPayload(): ?array
@@ -254,12 +323,14 @@ class BootstrapGatewayLocalCommand extends Command
             'gateway' => [
                 'public_key' => $this->payloadString($payload, 'gateway.public_key'),
                 'private_key' => $this->payloadString($payload, 'gateway.private_key'),
+                'pre_shared_key' => $this->payloadOptionalString($payload, 'gateway.pre_shared_key'),
             ],
             'control' => [
                 'name' => $this->payloadString($payload, 'control.name'),
                 'wireguard_address' => $this->payloadString($payload, 'control.wireguard_address'),
                 'public_key' => $this->payloadString($payload, 'control.public_key'),
                 'private_key' => $this->payloadString($payload, 'control.private_key'),
+                'pre_shared_key' => $this->payloadOptionalString($payload, 'control.pre_shared_key'),
             ],
         ];
     }
@@ -276,6 +347,53 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         return $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadOptionalString(array $payload, string $key): ?string
+    {
+        $value = data_get($payload, $key);
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value) || $value === '') {
+            throw new RuntimeException("WireGuard identity payload has invalid {$key}.");
+        }
+
+        return $value;
+    }
+
+    private function gatewayClientWireGuardConfig(
+        string $gatewayPrivateKey,
+        string $gatewayWireguardAddress,
+        string $wireguardServerPublicKey,
+        ?string $preSharedKey,
+        string $endpoint,
+    ): string {
+        $lines = [
+            '[Interface]',
+            "PrivateKey = {$gatewayPrivateKey}",
+            "Address = {$gatewayWireguardAddress}/24",
+            '',
+            '[Peer]',
+            "PublicKey = {$wireguardServerPublicKey}",
+        ];
+
+        if ($preSharedKey !== null) {
+            $lines[] = "PresharedKey = {$preSharedKey}";
+        }
+
+        return implode("\n", [
+            ...$lines,
+            'AllowedIPs = 10.6.0.0/24',
+            "Endpoint = {$endpoint}:51820",
+            'PersistentKeepalive = 25',
+            '',
+        ]);
     }
 
     private function gatewayWireGuardConfig(

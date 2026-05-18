@@ -51,32 +51,32 @@ The table below lists every issue code the schedule probe may emit and the condi
 
 ## Schedule Fix Map
 
-The table below lists what `doctor --fix --restore` does for each issue code.
+The table below lists what `doctor --restore` does for each issue code.
 
-| Code | `doctor --fix --restore` behavior |
+| Code | `doctor --restore` behavior |
 | --- | --- |
-| `schedule.runtime_backend_unavailable` | No `doctor --fix --restore` action. Process manager recovery belongs to `tool` family doctor and node operations. |
+| `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Process manager recovery belongs to `tool` family doctor and node operations. |
 | `schedule.scheduler_missing` | Re-render and load the `orbit_scheduler` Supervisor program from node-level scheduler configuration. |
 | `schedule.scheduler_stopped` | Start the `orbit_scheduler` Supervisor program through the process manager. |
-| `schedule.heartbeat_stale` | No `doctor --fix --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler explicitly with `process:restart orbit_scheduler` or investigate the daemon. |
-| `schedule.registry_sync_stale` | No `doctor --fix --restore` action. Sync is restored when scheduler-to-gateway connectivity recovers. |
+| `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler explicitly with `process:restart orbit_scheduler` or investigate the daemon. |
+| `schedule.registry_sync_stale` | No `doctor --restore` action. Sync is restored when scheduler-to-gateway connectivity recovers. |
 | `schedule.lock_stuck` | Release the stale lock on the target node and record the affected run as `failed`. |
 | `schedule.run_history_hook_missing` | Recreate run-history hook material for the selected schedule. |
 | `schedule.run_history_hook_mismatch` | Replace run-history hook material with the gateway-configured hook. |
 
-`doctor --fix --restore` does not handle `schedule.record_incomplete`,
+`doctor --restore` does not handle `schedule.record_incomplete`,
 `schedule.target_invalid`, `schedule.runtime_backend_unavailable`,
 `schedule.heartbeat_stale`, or `schedule.registry_sync_stale`.
 
 ## Schedule Adopt Map
 
-The table below lists what `doctor --fix --adopt` does for each issue code.
+The table below lists what `doctor --adopt` does for each issue code.
 
-| Code | `doctor --fix --adopt` behavior |
+| Code | `doctor --adopt` behavior |
 | --- | --- |
 | (no codes adopt by default) | Schedules are gateway configuration. There is no observed-artifact-as-configuration path. Use `schedule:add` directly to create a schedule from an observed candidate. |
 
-`doctor --fix --adopt` does not scan arbitrary hosts or import scheduler-local state into gateway schedule configuration.
+`doctor --adopt` does not scan arbitrary hosts or import scheduler-local state into gateway schedule configuration.
 
 ## Test Mapping
 

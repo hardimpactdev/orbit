@@ -26,7 +26,13 @@ it('syncs app-node schedule intent and reports run history from a scheduler tick
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         scheduleSchedulerSeedGatewayIntent($topology, $scheduleName, $scheduleKey);
-        scheduleSchedulerPrepareDevNode($topology, $gatewayApiIp, scheduleSchedulerGatewayRootCa($topology), $hookPath);
+        scheduleSchedulerPrepareDevNode(
+            $topology,
+            $gatewayApiIp,
+            $topology->instance('dev')->waitForIpv4(),
+            scheduleSchedulerGatewayRootCa($topology),
+            $hookPath,
+        );
 
         $tick = $topology->ssh(
             'dev',
@@ -98,9 +104,10 @@ PHP;
     );
 }
 
-function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string $gatewayRootCa, string $hookPath): void
+function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string $devIp, string $gatewayRootCa, string $hookPath): void
 {
     $gatewayApiIpValue = var_export($gatewayApiIp, true);
+    $devIpValue = var_export($devIp, true);
     $caPath = $topology->checkout('dev').'/storage/app/orbit/gateway-ca/orbit.crt';
     $caPathValue = var_export($caPath, true);
 
@@ -111,8 +118,8 @@ function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string
         'role' => 'app',
         'environment' => 'development',
         'tld' => 'test',
-        'host' => '10.6.0.4',
-        'wireguard_address' => '10.6.0.4',
+        'host' => {$devIpValue},
+        'wireguard_address' => {$devIpValue},
         'gateway_endpoint' => {$gatewayApiIpValue},
                 'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
@@ -130,6 +137,12 @@ function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string
 
 echo 'configured';
 PHP;
+
+    $topology->ssh(
+        'dev',
+        'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-scheduler >/dev/null; fi && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && public_key=$(cat ~/.ssh/id_ed25519.pub) && grep -qxF "$public_key" ~/.ssh/authorized_keys || printf "%s\n" "$public_key" >> ~/.ssh/authorized_keys',
+        timeoutSeconds: 60,
+    );
 
     $topology->ssh(
         'dev',

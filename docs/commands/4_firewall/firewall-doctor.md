@@ -22,11 +22,11 @@ The firewall probe reads gateway firewall rules and checks these layers:
 3. **Baseline policy boundary:** the rule does not attempt to mutate node bootstrap policy owned by the node family.
 4. **Backend presence:** the expected backend rule exists when gateway configuration says it should exist.
 5. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, and protocol.
-6. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed backend rules may be inspected for compatible firewall-rule facts.
+6. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend rules may be inspected for compatible firewall-rule facts.
 
 Observed backend firewall rules without gateway firewall configuration are unmanaged node reality by default. They are not reported as drift unless the operator requested an explicit adoption scope.
 
-Backend rows that cannot be represented in Orbit firewall-rule fields are reported as unverifiable or skipped according to the probe result. They are not deleted by `doctor --fix --restore` and are not adopted by `doctor --fix --adopt`.
+Backend rows that cannot be represented in Orbit firewall-rule fields are reported as unverifiable or skipped according to the probe result. They are not deleted by `doctor --restore` and are not adopted by `doctor --adopt`.
 
 ## Firewall Issue Codes
 
@@ -43,27 +43,27 @@ Each code below identifies a specific kind of drift the firewall probe can detec
 
 ## Firewall Fix Map
 
-This table shows what `doctor --fix --restore` does for each fixable issue code.
+This table shows what `doctor --restore` does for each fixable issue code.
 
-| Code | `doctor --fix --restore` behavior |
+| Code | `doctor --restore` behavior |
 | --- | --- |
 | `firewall_rule.rule_missing` | Recreate the backend firewall rule from gateway configuration when the node is reachable and eligible. |
 | `firewall_rule.rule_mismatch` | Replace the backend firewall rule with the gateway-configured rule when the rule can be identified safely. |
 
-`doctor --fix --restore` does not handle `firewall_rule.record_incomplete`, `firewall_rule.node_invalid`, `firewall_rule.baseline_conflict`, or `firewall_rule.rule_extra`.
+`doctor --restore` does not handle `firewall_rule.record_incomplete`, `firewall_rule.node_invalid`, `firewall_rule.baseline_conflict`, or `firewall_rule.rule_extra`.
 
-`doctor --fix --restore` re-applies or replaces only gateway-configured managed rules. It does not delete unmanaged backend rules, role bootstrap policy, WireGuard interface policy, or public-ingress policy owned by the node/proxy/app domains.
+`doctor --restore` re-applies or replaces only gateway-configured managed rules. It does not delete unmanaged backend rules, role bootstrap policy, WireGuard interface policy, or public-ingress policy owned by the node/proxy/app domains.
 
 ## Firewall Adopt Map
 
-This table shows what `doctor --fix --adopt` does for each adoptable issue code.
+This table shows what `doctor --adopt` does for each adoptable issue code.
 
-| Code | `doctor --fix --adopt` behavior |
+| Code | `doctor --adopt` behavior |
 | --- | --- |
 | `firewall_rule.rule_extra` | Create a gateway firewall rule row when: the operator selected a specific node and backend rule; the node is eligible; and the backend rule can be represented in Orbit firewall-rule fields. |
 | `firewall_rule.rule_mismatch` | Update gateway configuration only when the operator selected the specific rule and the observed backend rule can be represented without changing node bootstrap policy. |
 
-`doctor --fix --adopt` does not scan arbitrary hosts, adopt unsupported firewall backends, infer app/proxy ownership from ports, or adopt node bootstrap policy into the firewall family.
+`doctor --adopt` does not scan arbitrary hosts, adopt unsupported firewall backends, infer app/proxy ownership from ports, or adopt node bootstrap policy into the firewall family.
 
 ## Test Mapping
 

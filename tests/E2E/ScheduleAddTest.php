@@ -26,6 +26,7 @@ it('adds a schedule from the control node through the gateway api', function ():
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
+        e2eGrantNodeAccess($topology);
 
         $appName = 'e2e-schedule-add-'.strtolower(bin2hex(random_bytes(3)));
         $scheduleName = 'e2e-sched-'.strtolower(bin2hex(random_bytes(3)));

@@ -73,7 +73,7 @@ This command follows the shared
    - A symlink inside the app path that points outside, or a missing document
      root directory on the node, is detected by the `app` doctor probe at
      layer 4 (Document root) and surfaced as `app.root_outside_path` or
-     `app.root_missing` with no `doctor --fix --restore` mapping. Filesystem-level reality
+     `app.root_missing` with no `doctor --restore` mapping. Filesystem-level reality
      is not part of `app:root` input validation.
 
 This split keeps the gateway-owned write fast and registry-shaped while the

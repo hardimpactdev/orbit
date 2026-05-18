@@ -357,26 +357,27 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $php = <<<PHP
 \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'gateway'],
-    [
-        'role' => 'gateway',
-        'environment' => null,
-        'tld' => null,
-        'platform' => 'unknown',
-        'host' => {$gatewayIpValue},
-        'wireguard_address' => {$gatewayIpValue},
-        'gateway_endpoint' => null,
-                'user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'status' => 'active',
-            ],
+    array_merge(
+        [
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => {$gatewayIpValue},
+            'wireguard_address' => {$gatewayIpValue},
+            'gateway_endpoint' => null,
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+        ],
+        \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => 'orbit'] : [],
+    ),
 );
 
-\$settings = \\App\\Models\\LocalGatewaySettings::current();
-\$settings->fill([
+\\App\\Models\\LocalGatewaySettings::current()->fill([
     'gateway_url' => 'https://'.{$gatewayIpValue},
     'gateway_wg_ip' => {$gatewayIpValue},
-]);
-\$settings->save();
+])->save();
 PHP;
 
         E2ECommand::ssh(

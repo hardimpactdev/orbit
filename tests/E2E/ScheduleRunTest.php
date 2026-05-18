@@ -26,6 +26,7 @@ it('runs a schedule from the control node through the gateway api and records hi
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
+        e2eGrantNodeAccess($topology);
 
         $appName = 'e2e-sched-run-'.strtolower(bin2hex(random_bytes(3)));
         $scheduleName = 'e2e-run-'.strtolower(bin2hex(random_bytes(3)));
@@ -66,6 +67,12 @@ PHP;
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($seedPhp),
             timeoutSeconds: 120,
+        );
+
+        $topology->ssh(
+            'dev',
+            'mkdir -p '.escapeshellarg("/home/orbit/apps/{$appName}"),
+            timeoutSeconds: 60,
         );
 
         $result = $topology->ssh(

@@ -21,7 +21,7 @@ it('reports workspace source drift from gateway intent', function (): void {
             'orbit',
             $topology->lease()->sshKeyPair(),
             sprintf(
-                'cd %s && php artisan doctor --family=workspace --json',
+                'cd %s && php artisan doctor --node=app-dev-1 --family=workspace --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             180,

@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
@@ -1368,6 +1369,53 @@ class NodeNewCommand extends Command
         );
     }
 
+    private function ensureGatewayRuntimeDependencies(string $host, string $sshUser, string $runtimeUser): ?int
+    {
+        $script = sprintf(
+            <<<'SCRIPT'
+set -e
+RUNTIME_USER=%s
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! command -v sqlite3 >/dev/null 2>&1; then
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+    if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io docker-compose-v2 sqlite3
+    elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io docker-compose-plugin sqlite3
+    else
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io sqlite3
+    fi
+fi
+if getent group docker >/dev/null 2>&1; then
+    sudo usermod -aG docker "$RUNTIME_USER"
+fi
+sudo systemctl enable --now docker >/dev/null
+sudo -H -u "$RUNTIME_USER" bash -lc 'docker compose version >/dev/null'
+SCRIPT,
+            escapeshellarg($runtimeUser),
+        );
+
+        $dependencies = Process::timeout(900)->run(sprintf(
+            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
+            escapeshellarg($sshUser),
+            escapeshellarg($host),
+            escapeshellarg($script),
+        ));
+
+        if ($dependencies->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Gateway host '{$host}' could not prepare container runtime dependencies.",
+            meta: [
+                'host' => $host,
+                'step' => 'gateway_runtime_dependencies',
+                'error' => trim($dependencies->errorOutput()."\n".$dependencies->output()) ?: null,
+            ],
+        );
+    }
+
     private function gatewaySshPublicKey(): string|int
     {
         $publicKey = Process::timeout(30)->run('ssh-keygen -y -f ~/.ssh/id_ed25519');
@@ -1421,6 +1469,8 @@ class NodeNewCommand extends Command
         try {
             $gatewayKeys = $wireGuardKeyGenerator->generateKeyPair();
             $controlKeys = $wireGuardKeyGenerator->generateKeyPair();
+            $gatewayPreSharedKey = $this->generatePreSharedKey();
+            $controlPreSharedKey = $this->generatePreSharedKey();
         } catch (RuntimeException $exception) {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
@@ -1437,12 +1487,14 @@ class NodeNewCommand extends Command
             'gateway' => [
                 'public_key' => $gatewayKeys['public_key'],
                 'private_key' => $gatewayKeys['private_key'],
+                'pre_shared_key' => $gatewayPreSharedKey,
             ],
             'control' => [
                 'name' => $controlName,
                 'wireguard_address' => $controlAddress,
                 'public_key' => $controlKeys['public_key'],
                 'private_key' => $controlKeys['private_key'],
+                'pre_shared_key' => $controlPreSharedKey,
             ],
         ], JSON_THROW_ON_ERROR);
 
@@ -1467,10 +1519,20 @@ class NodeNewCommand extends Command
             return $sshAuthorization;
         }
 
+        $gatewayRuntimeDependencies = $this->ensureGatewayRuntimeDependencies(
+            host: $host,
+            sshUser: $sshUser,
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($gatewayRuntimeDependencies)) {
+            return $gatewayRuntimeDependencies;
+        }
+
         $gatewayTld = $this->resolveGatewayTld();
 
         $bootstrapCommand = sprintf(
-            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s',
+            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json',
             escapeshellarg("/home/{$runtimeUser}/orbit"),
             escapeshellarg($name),
             escapeshellarg($gatewayAddress),
@@ -1496,36 +1558,19 @@ class NodeNewCommand extends Command
                 meta: [
                     'host' => $host,
                     'step' => 'bootstrap_gateway_identity',
-                    'error' => trim($bootstrap->errorOutput()) ?: null,
+                    'error' => trim($bootstrap->errorOutput()."\n".$bootstrap->output()) ?: null,
                 ],
             );
         }
 
-        $caCert = trim($bootstrap->output());
+        $bootstrapMetadata = $this->parseGatewayBootstrapMetadata($bootstrap->output(), $host);
 
-        if (! str_starts_with($caCert, '-----BEGIN CERTIFICATE-----') || ! str_contains($caCert, '-----END CERTIFICATE-----')) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' returned an invalid or empty CA certificate.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => 'Remote bootstrap did not output a valid PEM certificate.',
-                ],
-            );
+        if (is_int($bootstrapMetadata)) {
+            return $bootstrapMetadata;
         }
 
-        if (openssl_x509_parse($caCert) === false) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' returned an unparsable CA certificate.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => 'Remote bootstrap output is not a valid X.509 certificate.',
-                ],
-            );
-        }
+        $caCert = $bootstrapMetadata['ca_cert'];
+        $wireguardServerPublicKey = $bootstrapMetadata['wireguard_server_public_key'];
 
         $gatewayPlatform = $this->detectRemotePlatform(
             host: $host,
@@ -1590,9 +1635,11 @@ class NodeNewCommand extends Command
             $wireGuardInterfaceInstaller->install($this->controlWireGuardConfig(
                 controlPrivateKey: $controlKeys['private_key'],
                 controlWireguardAddress: $controlAddress,
-                gatewayPublicKey: $gatewayKeys['public_key'],
+                gatewayPublicKey: $wireguardServerPublicKey,
                 gatewayWireguardAddress: $gatewayAddress,
                 gatewayEndpoint: $host,
+                preSharedKey: $controlPreSharedKey,
+                allowedIps: '10.6.0.0/24',
             ));
         } catch (RuntimeException $exception) {
             return $this->failCommand(
@@ -1606,7 +1653,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $trustPath, $caSha256): void {
+        DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $controlPreSharedKey, $trustPath, $caSha256): void {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -1654,6 +1701,7 @@ class NodeNewCommand extends Command
                 [
                     'public_key' => $controlKeys['public_key'],
                     'private_key' => $controlKeys['private_key'],
+                    'pre_shared_key' => $controlPreSharedKey,
                     'allowed_ips' => "{$controlAddress}/32",
                 ],
             );
@@ -1724,19 +1772,122 @@ class NodeNewCommand extends Command
         string $gatewayPublicKey,
         string $gatewayWireguardAddress,
         string $gatewayEndpoint,
+        ?string $preSharedKey = null,
+        ?string $allowedIps = null,
     ): string {
-        return implode("\n", [
+        $lines = [
             '[Interface]',
             "PrivateKey = {$controlPrivateKey}",
             "Address = {$controlWireguardAddress}/24",
             '',
             '[Peer]',
             "PublicKey = {$gatewayPublicKey}",
-            "AllowedIPs = {$gatewayWireguardAddress}/32",
+        ];
+
+        if ($preSharedKey !== null) {
+            $lines[] = "PresharedKey = {$preSharedKey}";
+        }
+
+        return implode("\n", [
+            ...$lines,
+            'AllowedIPs = '.($allowedIps ?? "{$gatewayWireguardAddress}/32"),
             "Endpoint = {$gatewayEndpoint}:51820",
             'PersistentKeepalive = 25',
             '',
         ]);
+    }
+
+    private function generatePreSharedKey(): string
+    {
+        try {
+            return base64_encode(random_bytes(32));
+        } catch (Throwable $exception) {
+            throw new RuntimeException('WireGuard pre-shared key generation failed.', previous: $exception);
+        }
+    }
+
+    /**
+     * @return array{ca_cert: string, wireguard_server_public_key: string}|int
+     */
+    private function parseGatewayBootstrapMetadata(string $output, string $host): array|int
+    {
+        $trimmed = trim($output);
+        $caCert = $trimmed;
+        $wireguardServerPublicKey = null;
+
+        if (str_starts_with($trimmed, '{')) {
+            try {
+                $metadata = json_decode($trimmed, associative: true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return $this->failCommand(
+                    code: 'node.provisioning_incomplete',
+                    message: "Gateway host '{$host}' returned invalid bootstrap metadata.",
+                    meta: [
+                        'host' => $host,
+                        'step' => 'bootstrap_gateway_identity',
+                        'error' => 'Remote bootstrap metadata was not valid JSON.',
+                    ],
+                );
+            }
+
+            if (! is_array($metadata)) {
+                return $this->failCommand(
+                    code: 'node.provisioning_incomplete',
+                    message: "Gateway host '{$host}' returned invalid bootstrap metadata.",
+                    meta: [
+                        'host' => $host,
+                        'step' => 'bootstrap_gateway_identity',
+                        'error' => 'Remote bootstrap metadata was not a JSON object.',
+                    ],
+                );
+            }
+
+            $caCert = is_string($metadata['ca_cert'] ?? null) ? trim($metadata['ca_cert']) : '';
+            $wireguardServerPublicKey = is_string($metadata['wireguard_server_public_key'] ?? null)
+                ? trim($metadata['wireguard_server_public_key'])
+                : null;
+        }
+
+        if (! str_starts_with($caCert, '-----BEGIN CERTIFICATE-----') || ! str_contains($caCert, '-----END CERTIFICATE-----')) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' returned an invalid or empty CA certificate.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => 'Remote bootstrap did not output a valid PEM certificate.',
+                ],
+            );
+        }
+
+        if (openssl_x509_parse($caCert) === false) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' returned an unparsable CA certificate.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => 'Remote bootstrap output is not a valid X.509 certificate.',
+                ],
+            );
+        }
+
+        if ($wireguardServerPublicKey === null || $wireguardServerPublicKey === '') {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' did not return WireGuard server identity metadata.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => 'Remote bootstrap metadata did not include wireguard_server_public_key.',
+                ],
+            );
+        }
+
+        return [
+            'ca_cert' => $caCert,
+            'wireguard_server_public_key' => $wireguardServerPublicKey,
+        ];
     }
 
     /**

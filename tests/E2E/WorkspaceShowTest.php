@@ -84,6 +84,7 @@ it('shows workspace details from a control caller through the gateway api', func
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
+            allowFailure: true,
         );
 
         expect($humanResult->successful())->toBeTrue()
@@ -117,6 +118,7 @@ it('shows workspace details from a control caller through the gateway api', func
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
+            allowFailure: true,
         );
 
         $notFoundPayload = json_decode(trim($notFoundResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
