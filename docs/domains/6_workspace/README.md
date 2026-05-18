@@ -192,7 +192,9 @@ instead of depending on command-string substitution.
 
 The following commands are available in the `workspace` family.
 
-**Core workspace commands:**
+### Core workspace commands
+
+These commands create, inspect, and tear down workspaces themselves.
 
 1. [`orbit workspace:new [name]`](1_workspace-new/workspace-new.md)
 2. [`orbit workspace:setup [name]`](2_workspace-setup/workspace-setup.md)
@@ -202,7 +204,9 @@ The following commands are available in the `workspace` family.
 6. [`orbit workspace:history [name]`](6_workspace-history/workspace-history.md)
 7. [`orbit workspace:log [run]`](7_workspace-log/workspace-log.md)
 
-**Step management commands:**
+### Step management commands
+
+These commands manage the setup and teardown step policy that runs during workspace lifecycle events.
 
 8. [`orbit workspace-setup-step:add`](8_workspace-setup-step-add/workspace-setup-step-add.md)
 9. [`orbit workspace-setup-step:list`](9_workspace-setup-step-list/workspace-setup-step-list.md)
@@ -212,6 +216,8 @@ The following commands are available in the `workspace` family.
 13. [`orbit workspace-teardown-step:remove`](13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
 
 ## Related
+
+These doctor commands verify the families that workspace commands depend on.
 
 - [`doctor --family=workspace`](workspace-doctor.md)
 - [`doctor --family=app`](../5_app/app-doctor.md)

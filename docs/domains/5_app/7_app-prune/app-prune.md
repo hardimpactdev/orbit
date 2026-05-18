@@ -36,11 +36,25 @@ orbit app:prune docs --json --force
 
 Run `app:prune` to compare Orbit's workspace registry against configured agent IDE adapters and remove stale entries.
 
-- **Stale Detection**: Identifies workspaces tracked in Orbit's registry that no longer exist in any configured agent IDE adapter.
-- **App-Scoped**: Pruning is app-scoped even when the effective adapter is inherited from the owning node. Changing a node default with [`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) does not automatically prune every inheriting app; run `app:prune` for the affected apps when stale workspace cleanup is wanted.
-- **Dry Run**: `--dry-run` returns the computed stale-workspace set without deleting workspace configuration or node artifacts. Other destructive commands that act on an explicit named target do not inherit `--dry-run` from this command.
-- **Removal Semantics**: When removing a stale workspace, Orbit applies the same removal semantics as [`workspace:remove`](../../6_workspace/5_workspace-remove/workspace-remove.md): gateway workspace configuration is removed first, then node-side cleanup runs through the normal workspace removal order, including teardown steps.
-- **Database Limitation**: Database cleanup requires Orbit to explicitly track a database as workspace-owned. No such tracking mechanism exists in gateway configuration today, so `app:prune` always reports databases as **skipped** for manual cleanup. Orbit does not infer database ownership from names, environment files, or conventions. User-authored database removal can be expressed as a workspace teardown step.
+### Stale Detection
+
+Identifies workspaces tracked in Orbit's registry that no longer exist in any configured agent IDE adapter.
+
+### App-Scoped
+
+Pruning is app-scoped even when the effective adapter is inherited from the owning node. Changing a node default with [`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) does not automatically prune every inheriting app. Run `app:prune` for the affected apps when stale workspace cleanup is wanted.
+
+### Dry Run
+
+`--dry-run` returns the computed stale-workspace set without deleting workspace configuration or node artifacts. Other destructive commands that act on an explicit named target do not inherit `--dry-run` from this command.
+
+### Removal Semantics
+
+When removing a stale workspace, Orbit applies the same removal semantics as [`workspace:remove`](../../6_workspace/5_workspace-remove/workspace-remove.md). Gateway workspace configuration is removed first, then node-side cleanup runs through the normal workspace removal order, including teardown steps.
+
+### Database Limitation
+
+Database cleanup requires Orbit to explicitly track a database as workspace-owned. No such tracking mechanism exists in gateway configuration today, so `app:prune` always reports databases as **skipped** for manual cleanup. Orbit does not infer database ownership from names, environment files, or conventions. User-authored database removal can be expressed as a workspace teardown step.
 
 ## Requirements
 
@@ -56,8 +70,13 @@ Run `app:prune` to compare Orbit's workspace registry against configured agent I
 
 Use `--json` to receive structured output; omit it for human-readable progress.
 
-- **Human**: Progress grouped by stale workspace, showing the cleanup status for each artifact.
-- **JSON**: A machine-readable result or failure containing the app details and a list of processed workspaces.
+### Human
+
+Progress grouped by stale workspace, showing the cleanup status for each artifact.
+
+### JSON
+
+A machine-readable result or failure containing the app details and a list of processed workspaces.
 
 ## Related
 

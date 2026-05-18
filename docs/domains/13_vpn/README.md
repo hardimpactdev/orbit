@@ -95,6 +95,8 @@ The VPN family provides the following commands.
 
 ## Related
 
+The following commands and doctor contracts handle Orbit node identity that the VPN family deliberately does not own.
+
 - [`orbit node:new`](../1_node/1_node-new/node-new.md)
 - [`orbit node:remove`](../1_node/8_node-remove/node-remove.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)

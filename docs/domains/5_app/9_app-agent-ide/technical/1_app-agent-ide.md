@@ -115,7 +115,7 @@ This command follows the shared
 
 `app:agent-ide` is a configuration write with the single explicit destructive side
 effect of removing workspaces that belong to the app when the adapter changes. The app
-configuration write is not rolled back if post-write cleanup cannot finish; cleanup
+configuration write is not rolled back if the cleanup step cannot finish after the write; cleanup
 drift is reported as success with warnings and repaired by the same `app:prune`,
 `workspace:remove`, and doctor paths used elsewhere.
 

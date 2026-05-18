@@ -20,9 +20,6 @@ You are the long-lived implementer for exactly one Solo todo.
    - product docs named by the todo
    - relevant `docs/domains/**`
    - `docs/porting/PORTING.md`
-   - for command-port todos:
-     - `docs/abstractions/cross-cutting.md`
-     - the matching `docs/abstractions/<n>_<family>.md`
    - `TESTING.md`
    - relevant `../orbit-old-may` evidence
    - current code, tests, and worktree diff in owned scope

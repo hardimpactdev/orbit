@@ -10,10 +10,12 @@ fleet state, and verified by `doctor`. It is referenced from
 (`orbit:internal:bootstrap-gateway-local`).
 
 DNS *commands* — `dns:resolve-tld`, `dns:list` — stay caller-local and are
-covered by `docs/abstractions/16_dns.md`. Gateway DNS infrastructure is owned
-here by the **tool family** + **node family** + **bootstrap**.
+covered by `docs/domains/16_dns/**`. Gateway DNS infrastructure is owned here by
+the **tool family** + **node family** + **bootstrap**.
 
 ## Ownership
+
+This table maps each gateway DNS responsibility to the service or command that owns it.
 
 | Concern                                         | Owner                                                                 |
 | ----------------------------------------------- | --------------------------------------------------------------------- |
@@ -47,7 +49,7 @@ Compose path: `~/.config/orbit/wg-easy/docker-compose.yaml`.
 
 Required envs / settings:
 
-- `INIT_ENABLED=true` — enables wg-easy v15 unattended setup.
+- `INIT_ENABLED=true` — enables the unattended setup flow in wg-easy v15.
 - `INIT_USERNAME=orbit` and `INIT_PASSWORD=<generated>` — bootstrap the admin
   account. The generated password is persisted in the gateway's `.env` as
   `WG_EASY_PASSWORD=...` so future runs are idempotent and so
@@ -146,6 +148,12 @@ rebuilds `dnsmasq.conf` from current state and `docker compose up -d`).
 
 ## Evidence Pointers
 
+These pointers locate the current Orbit code paths and the old-repo references that informed this contract.
+
+### Current Orbit
+
+These files implement the bootstrap, builder, reconciler, and probe described above.
+
 - `app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php` — current bootstrap path.
 - `app/Services/Vpn/WgEasyServiceInstaller.php` — wg-easy install service.
 - `app/Services/Dns/DnsmasqConfigBuilder.php` — pure builder.
@@ -153,7 +161,12 @@ rebuilds `dnsmasq.conf` from current state and `docker compose up -d`).
 - `app/Services/Dns/DnsmasqReconciler.php` — reconciler.
 - `app/Services/Doctor/` — DNS runtime probe (`DnsRuntimeProbe`).
 - `app/Tools/DnsTool.php` — `dns` tool definition.
-- Old evidence: `../orbit-old-may/app/Services/RemoteProvisioner.php:947` — original `network_mode: container:wg-easy` rationale.
-- Old evidence: `../orbit-old-may/app/Services/DnsmasqConfigGenerator.php` — original generator shape.
-- Old evidence: `../orbit-old-may/app/Services/DoctorService.php:692` — original "orbit-dns container not found" failure.
-- Old evidence: `../orbit-old-may/app/Console/Commands/TldSyncCommand.php` — original lifecycle hook (the operator-side fetcher we are *not* porting; gateway authoritative DB row replaces it).
+
+### Old repo references
+
+These old-repo files motivated the current shape and remain useful for historical context.
+
+- `../orbit-old-may/app/Services/RemoteProvisioner.php:947` — original `network_mode: container:wg-easy` rationale.
+- `../orbit-old-may/app/Services/DnsmasqConfigGenerator.php` — original generator shape.
+- `../orbit-old-may/app/Services/DoctorService.php:692` — original "orbit-dns container not found" failure.
+- `../orbit-old-may/app/Console/Commands/TldSyncCommand.php` — original lifecycle hook (the operator-side fetcher we are *not* porting; gateway authoritative DB row replaces it).

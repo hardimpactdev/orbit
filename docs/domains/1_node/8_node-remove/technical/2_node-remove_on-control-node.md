@@ -94,4 +94,11 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Configured operator caller forwarding over HTTPS, no SSH-to-gateway path, forwarded payload, gateway-node access authorization, self-removal detection via WireGuard identity, destructive consent for self-removal and normal removal, no local-settings cleanup on self-removal, gateway-unavailable failure, authorization failure, and result rendering. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Operator caller forwarding, gateway-node authorization, destructive consent, and result rendering (full list below). |
+
+`NodeRemoveOnControlNodeContractTest` covers operator caller forwarding over
+HTTPS (no SSH-to-gateway path), forwarded payload, gateway-node access
+authorization, self-removal detection by WireGuard identity, destructive
+consent for self-removal and normal removal, no local-settings cleanup on
+self-removal, gateway-unavailable and authorization failures, and result
+rendering.

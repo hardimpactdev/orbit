@@ -24,10 +24,14 @@ Use this command to open a live event stream for one or more process runtime sco
 
 ### Stream behavior
 
+The stream begins with a snapshot of current process state and then delivers later lifecycle events as they happen.
+
 - Sends an initial snapshot for the selected runtime scope by deriving process units and probing live status.
 - Streams later `started`, `stopped`, and `crashed` events from `process_events`.
 
 ### Constraints
+
+These rules limit what the stream observes and how it interacts with process state.
 
 - Observes lifecycle events recorded by internal process-family mechanics. Crashed events may originate from runtime hooks that Orbit manages, but the intake path is not a CLI command contract.
 - Supports resume from an event id.

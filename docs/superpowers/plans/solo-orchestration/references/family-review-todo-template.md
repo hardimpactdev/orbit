@@ -31,14 +31,12 @@ Every family-review todo must state:
 ````markdown
 ### Objective
 
-Review `<family>` implementations against `docs/abstractions/**` and other
-implemented families. Promote proven shared patterns, remove duplicated
-family-local notes, and identify bounded refactors or follow-up todos.
+Review `<family>` implementations against current product docs, concrete code
+and test evidence, and other implemented families. Identify durable shared
+patterns, bounded refactors, or follow-up todos.
 
 ### Scope
 
-- `docs/abstractions/cross-cutting.md`
-- `docs/abstractions/<n>_<family>.md`
 - `docs/porting/PORTING.md`
 - `<family command docs and implementation files that prove the repeated shape>`
 - `<family tests that prove the repeated shape>`
@@ -54,8 +52,8 @@ family-local notes, and identify bounded refactors or follow-up todos.
 
 - Depends on: <family implementation todos or deliberate proving subset>
 - Blocks: <next family implementation todos, if any>
-- Parallel-safe with: <next family abstraction seed or none>
-- Known blockers: <missing abstraction file, open product decision, or none>
+- Parallel-safe with: <next family docs or implementation slice, if any>
+- Known blockers: <open product decision or none>
 
 ### Product Authority
 
@@ -68,23 +66,19 @@ family-local notes, and identify bounded refactors or follow-up todos.
 
 ### Pattern Evidence
 
-- `docs/abstractions/cross-cutting.md`
-- `docs/abstractions/<n>_<family>.md`
-- `<sibling family abstraction files>`
 - `<concrete code pointers>`
 - `<concrete test pointers>`
+- `<sibling family implementation files that prove the repeated shape>`
 
 ### Owned Files Or Domains
 
-- `docs/abstractions/**`
 - `docs/porting/PORTING.md`
 - `<bounded family implementation/test files only if refactor is in scope>`
 
 ### Required Checks
 
-- Promote patterns with two or more concrete callers to
-  `docs/abstractions/cross-cutting.md`.
-- Remove or rewrite duplicated family-local notes after promotion.
+- Promote durable patterns with two or more concrete callers only when they have
+  a clear owner in product docs, testing docs, or implementation guidance.
 - Identify refactor candidates and either make bounded refactors or create
   follow-up todos.
 - Evaluate any named promotion candidate from `docs/porting/PORTING.md`.
@@ -110,13 +104,12 @@ Run focused tests and `vendor/bin/pint --dirty --format agent` when PHP changes.
 
 - Evidence threshold is met for every promotion.
 - Authority boundaries are preserved; product behavior remains in command docs.
-- No placeholder abstraction files are added.
+- No placeholder pattern files are added.
 - `docs/porting/PORTING.md` sequencing reflects review outcome.
 - No-op outcome is justified if nothing is promoted.
 
 ### Stop Conditions
 
-- Missing family abstraction file.
 - Product-doc conflict.
 - Unclear promotion candidate.
 - Refactor scope too broad for one worker todo.

@@ -6,6 +6,8 @@ This domain owns the command contracts and product vocabulary for Orbit's operat
 
 ## Responsibilities
 
+These responsibilities scope what the operation domain owns within Orbit's documentation.
+
 - Keep this domain's command contracts aligned with Orbit's current behavior.
 - Own the domain-specific concepts, doctor docs, command pages, and technical contracts already present in this directory.
 

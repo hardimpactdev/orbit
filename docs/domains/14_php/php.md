@@ -1,10 +1,12 @@
-# Php
+# PHP
 
 ## Purpose
 
-This domain owns the command contracts and product vocabulary for Orbit's php command family. See [Php command contracts](README.md).
+This domain owns the command contracts and product vocabulary for Orbit's php command family. See [PHP command contracts](README.md).
 
 ## Responsibilities
+
+These responsibilities define what this domain's documentation must keep aligned and own.
 
 - Keep this domain's command contracts aligned with Orbit's current behavior.
 - Own the domain-specific concepts, doctor docs, command pages, and technical contracts already present in this directory.

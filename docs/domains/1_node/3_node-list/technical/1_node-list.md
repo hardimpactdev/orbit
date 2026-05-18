@@ -26,15 +26,21 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `app`, `app-development`, `app-production`, `database`, `control`. `app` matches both app host roles. `control` matches nodes without an active hosted role assignment. Single value only; comma-separated input fails as `validation_failed` because it is not one of the allowed values. Invalid values fail before side effects. |
-| `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. Single value only; comma-separated input fails as `validation_failed` because it is not one of the allowed values. Invalid values fail before side effects. |
+| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `app`, `app-development`, `app-production`, `database`, `control`. See alias notes below. |
+| `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. |
 | `doctor` | `--doctor` | Optional. | Never. | `false`. | Boolean flag. Explicit secondary operation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-`--role` and `--environment` are scalar enum filters. Multi-value semantics are
-not part of the initial contract. Operators who need to query multiple roles or
-environments at once should run `node:list --json` without that filter and
-post-filter the result, or run separate scoped invocations.
+`--role` aliases: `app` matches both app host roles; `control` matches nodes
+without an active hosted role assignment.
+
+`--role` and `--environment` are scalar enum filters with single-value
+semantics; comma-separated input fails as `validation_failed` because it is not
+one of the allowed values, and invalid values fail before side effects.
+Multi-value semantics are not part of the initial contract. Operators who need
+to query multiple roles or environments at once should run `node:list --json`
+without that filter and post-filter the result, or run separate scoped
+invocations.
 
 ## Input Resolution
 

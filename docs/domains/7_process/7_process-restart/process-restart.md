@@ -22,7 +22,7 @@ Use this command to cycle one process or all processes for a resolved app or wor
 
 - **Context Resolution**: Resolves the app or workspace runtime context.
 - **Single Process**: When `[name]` is supplied, restarts that process only.
-- **All Processes**: When `[name]` is omitted, restarts all process definitions for the selected context in process order.
+- **All Processes**: Omitting `[name]` restarts every process definition for the selected context in process order.
 - **Runtime Effects**: Restarts the derived runtime units through the gateway and records lifecycle events for the stopped and started runtime transitions.
 - **Configuration Unchanged**: Does not change process configuration and does not repair divergent runtime-unit files.
 

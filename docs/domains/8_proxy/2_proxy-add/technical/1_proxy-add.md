@@ -48,10 +48,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Ownership Boundary Rules
 
-- Fails before side effects when the domain is owned by an app, workspace, gateway, or tool route.
-- Never uses `--force` to overwrite a non-custom route.
-- Updating an existing custom route with a different target requires explicit replacement consent.
-- Consent is an interactive confirmation prompt or `--force`.
+These rules govern how `proxy:add` interacts with routes owned by other families and what consent is required to replace a custom route.
+
+The command fails before side effects if the domain is already owned by an app, workspace, gateway, or tool route. It never uses `--force` to overwrite a non-custom route. Updating an existing custom route with a different target requires explicit replacement consent, supplied either as an interactive confirmation prompt or `--force`.
 
 ### Scope Boundaries
 

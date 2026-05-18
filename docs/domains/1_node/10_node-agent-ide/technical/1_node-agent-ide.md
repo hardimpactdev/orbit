@@ -36,8 +36,14 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
-| `agent_ide` | `[agent_ide]` | Always. | Never. | None. | Must be `none` or appear in the gateway-owned adapter registry. Core adapter names: `opencode`, `polyscope`. Extension-registered adapters are accepted only after the extension registers them with the gateway. `none` clears the node default and is not an adapter. `inherit` is invalid at node scope. |
+| `agent_ide` | `[agent_ide]` | Always. | Never. | None. | Must be `none` or appear in the gateway-owned adapter registry (see notes below). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+
+The `agent_ide` value resolves against the gateway-owned adapter registry. Core
+adapter names are `opencode` and `polyscope`. Extension-registered adapters are
+accepted only after the extension registers them with the gateway. The reserved
+token `none` clears the node default and is not an adapter. The token `inherit`
+is invalid at node scope.
 
 ## Input Resolution
 
@@ -171,7 +177,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node denial, operator-caller gateway forwarding, no downstream warning payloads, and read-only guarantees (no SSH, no session creation). |
+| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node denial, operator-caller gateway forwarding, no downstream warning payloads, and read-only guarantees. |
+
+Read-only guarantees mean no SSH and no session creation during the command.
 
 Input-mode-specific test mapping lives in:
 

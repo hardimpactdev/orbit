@@ -12,7 +12,7 @@ caused by `laravel/pao` stripping tree glyphs from agent-observed output.
 `../orbit-old-may` and rewrote `UpdateCommand` and `UpdateAllCommand` to use
 it. That work surfaced three problems this plan addresses:
 
-1. `docs/commands/ux/progress/progress-tree.md` describes the proper anatomy
+1. `docs/ux/commands/progress/progress-tree.md` describes the proper anatomy
    (pipes, double-spacing, dim/accent treatment, Working/Done footer) but
    per-command `6.1_*_output-render_human.md` files draw an abbreviated tree
    without pipes. They contradict each other and neither has been clearly
@@ -37,7 +37,7 @@ stack.
 ## Implementation Contract
 
 The canonical progress tree anatomy lives in
-`docs/commands/ux/progress/progress-tree.md`. Per-command renderer docs do
+`docs/ux/commands/progress/progress-tree.md`. Per-command renderer docs do
 not redraw it; they reference it and add a command-specific step list.
 
 The `command-designer` skill mirrors the canonical anatomy and points at
@@ -63,7 +63,7 @@ in a command is a regression. The architecture test layer enforces this.
 
 ### Spec hardening
 
-- Modify: `docs/commands/ux/progress/progress-tree.md` — add explicit
+- Modify: `docs/ux/commands/progress/progress-tree.md` — add explicit
   "Visual Anatomy" section (outer indent, pipe separators, double-space gap,
   label padding, footer treatment), formalize the dot-state table with
   matching anatomy lines, add a "Dynamic Trees" subsection covering rows
@@ -81,7 +81,7 @@ in a command is a regression. The architecture test layer enforces this.
 
 Replace the redrawn tree in each `6.1_*_output-render_human.md` with:
 
-1. A reference link: `See [progress tree anatomy](../../commands/ux/progress/progress-tree.md).`
+1. A reference link: `See [progress tree anatomy](../../ux/commands/progress/progress-tree.md).`
 2. A "Step List" subsection: title text, ordered step labels, lifecycle
    rule (single label vs per-stage), success and failure footer text.
 
@@ -191,7 +191,7 @@ escape hatch is the safer approach because it survives composer updates.
 
 ### Phase 1 — Spec hardening
 
-- [ ] Audit `docs/commands/ux/progress/progress-tree.md` against the actual
+- [ ] Audit `docs/ux/commands/progress/progress-tree.md` against the actual
       `SpinnerTreeRenderer` / `LifecycleSummaryRenderer` output.
       Reconcile any drift (label padding, footer wording, dot color
       assignments).

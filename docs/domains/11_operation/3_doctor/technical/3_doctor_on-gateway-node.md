@@ -56,7 +56,7 @@ The gateway owns the family dispatch loop for the single-node target. Each selec
 
 | Family | Gateway-owned probing behavior |
 | --- | --- |
-| `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. All node-family facts render under the `Node` row today; a planned `DNS`/`DNS/TLD` slice will separate resolver-specific findings when available. |
+| `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. |
 | `app` | Check app configuration and app-node runtime facts on the target app node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace configuration and the target app node's workspace reality, using app-suffixed workspace identifiers in human output. |
 | `process` | Check process configuration and process supervisor/runtime reality on the target app node. |
@@ -64,6 +64,8 @@ The gateway owns the family dispatch loop for the single-node target. Each selec
 | `firewall_rule` | Check firewall rule configuration and backend firewall reality on the target node. |
 | `tool` | Check tool configuration, installed versions, configuration, and lifecycle state on the target node. |
 | `schedule` | Check schedule configuration, scheduler liveness, and recent schedule reality for the target node and its apps. |
+
+All node-family facts render under the `Node` row today; a planned `DNS`/`DNS/TLD` slice will separate resolver-specific findings when available.
 
 Family contracts remain authoritative for exact probe facts, issue codes, restore maps, and adopt maps. The gateway peer contract owns only where probing is orchestrated and which peer role is allowed to perform it.
 

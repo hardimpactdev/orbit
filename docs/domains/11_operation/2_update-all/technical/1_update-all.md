@@ -126,9 +126,9 @@ fleet failures are Orbit-handled command failures.
 - `update:all` changes Orbit installations.
 - It does not verify state-family drift or runtime readiness.
 - Run `doctor --family=<family>` after updates to verify convergence for a specific family.
-- A remote update failure may create node-family drift if a node is left on a
-  different Orbit version; node doctor owns any later reachability or readiness
-  diagnosis once its contract is converted in this repo.
+- A remote update failure may leave a node on a different Orbit version.
+- Such a version mismatch creates node-family drift.
+- Node doctor owns any later reachability or readiness diagnosis once its contract is converted in this repo.
 
 ## Activity Logging
 

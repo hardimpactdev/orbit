@@ -59,7 +59,13 @@ return [
     'path' => base_path('docs'),
 
     'generated_docs' => [
-        'enforce' => false,
+        'files' => [
+            'README.md',
+        ],
+        'allowed' => [
+            'ux',
+            'superpowers',
+        ],
     ],
 
     'rules' => [

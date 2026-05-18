@@ -31,7 +31,7 @@ Target context is required when neither `--node` nor local `node:default` resolv
 
 ## What Happens
 
-Run this command to remove an Orbit-owned gateway firewall rule and apply the cleanup on the target node.
+Run this command to remove a gateway firewall rule owned by Orbit and apply the cleanup on the target node.
 
 `firewall:remove`:
 

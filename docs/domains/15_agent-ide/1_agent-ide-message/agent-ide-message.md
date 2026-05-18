@@ -28,14 +28,31 @@ orbit agent-ide:message "Summarize the failing request" --app=docs --json
 
 ## Behavior Summary
 
-Use this section to understand how the command resolves its target and delivers the message.
+These subsections describe how the command resolves its target, finds the active session, and delivers the message.
 
-- **Message Input**: Accepts the message from `[message]` or from standard input when `--stdin` is present.
-- **Target Resolution**: `--workspace=<workspace>` targets a workspace; `--app=<app>` targets the app's main context; with no explicit target, Orbit resolves the current workspace or app from the current directory when possible.
-- **Adapter Resolution**: Resolves the effective Agent IDE adapter from workspace setting when a future workspace override exists, then app override, then owning node default.
-- **Session Lookup**: Finds the active adapter session for the resolved context. The adapter owns session lookup, but lookup must stay inside the resolved app/workspace scope.
-- **Delivery**: Sends the message through the resolved adapter and reports delivery success or adapter failure.
-- **No Mutations**: Does not create an Agent IDE session and does not mutate Orbit app, workspace, process, node, or tool state.
+### Message input
+
+Accepts the message from `[message]` or from standard input when `--stdin` is present.
+
+### Target resolution
+
+Resolves the target context from explicit options or the current directory. `--workspace=<workspace>` targets a workspace and `--app=<app>` targets the app's main context. With no explicit target, Orbit resolves the current workspace or app from the current directory when possible.
+
+### Adapter resolution
+
+Resolves the effective Agent IDE adapter from workspace setting when a future workspace override exists, then app override, then owning node default.
+
+### Session lookup
+
+Finds the active adapter session for the resolved context. The adapter owns session lookup, but lookup must stay inside the resolved app/workspace scope.
+
+### Delivery
+
+Sends the message through the resolved adapter and reports delivery success or adapter failure.
+
+### No mutations
+
+Does not create an Agent IDE session and does not mutate Orbit app, workspace, process, node, or tool state.
 
 ## Requirements
 

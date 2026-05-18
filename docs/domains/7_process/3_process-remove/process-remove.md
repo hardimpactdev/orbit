@@ -23,7 +23,7 @@ Use this command to remove a process definition and its runtime units.
 - **Gateway Removal**: Removes app-owned process configuration from the gateway.
 - **Runtime Unit Cleanup**: Stops and removes derived runtime units for the main app instance and all workspaces.
 - **Log Preservation**: Does not remove historical logs.
-- **Drift Reporting**: Reports repairable cleanup drift when configuration removal succeeds. Drift is reported if runtime-unit cleanup does not fully converge.
+- **Drift Reporting**: Reports repairable cleanup drift when runtime-unit cleanup does not fully converge.
 
 ## Related
 

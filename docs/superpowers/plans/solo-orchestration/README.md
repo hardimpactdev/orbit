@@ -337,12 +337,12 @@ prompt at
 `docs/superpowers/plans/solo-orchestration/references/worktree/setup.md`.
 
 Product authority docs are read-only for normal implementation todos. If the
-assigned behavior conflicts with `docs/domains/**`, `docs/abstractions/**`,
-`docs/architecture.md`, `docs/mission.md`, or `docs/concepts.md`, the worker marks
-the todo `needs-direction` instead of changing the contract locally. Product
-authority docs may change only through an explicit docs/design todo or direct
-human instruction. Progress and accounting docs such as `docs/porting/PORTING.md` may be
-updated with implementation status, gate evidence, and accepted deferrals.
+assigned behavior conflicts with `docs/domains/**`, `docs/architecture.md`,
+`docs/mission.md`, or `docs/concepts.md`, the worker marks the todo
+`needs-direction` instead of changing the contract locally. Product authority
+docs may change only through an explicit docs/design todo or direct human
+instruction. Progress and accounting docs such as `docs/porting/PORTING.md` may
+be updated with implementation status, gate evidence, and accepted deferrals.
 
 For `e2e-feature` gates, prepared topology images and templates are reusable
 baselines. Feature assertions must install or overlay the assigned worktree's

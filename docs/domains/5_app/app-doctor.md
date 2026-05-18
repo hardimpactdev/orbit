@@ -12,7 +12,7 @@ The app family owns these facts:
 
 - gateway-owned app records: name, environment, owning app node, app path,
   document root, PHP version, production policy, deployment pipeline configuration,
-  and the app-level agent IDE default;
+  and the agent IDE default set at the app level;
 - app source location: the managed app path exists on the owning app node and
   the configured document root exists inside that path;
 - app runtime artifacts: app PHP-FPM configuration, production app user and
@@ -56,7 +56,7 @@ The apps probe reads gateway app records and checks these layers:
    policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
    run.
-8. **App agent IDE default:** when an app-level agent IDE default is configured, it points at a supported adapter.
+8. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
 9. **Stale app artifacts:** App PHP-FPM or runtime artifacts owned by Orbit whose
    encoded app identity no longer maps to an active app record are reported as
    orphaned app drift.
@@ -158,7 +158,14 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, probe-layer selection, issue codes (including deployment health), fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
-| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior for registry configuration, owning node eligibility, source path, document root, PHP runtime, PHP-FPM configuration, runtime configuration, production user policy, production health, deployment pipeline configuration, latest deployment status, agent IDE defaults, stale artifacts, and exclusion of proxy/workspace/process/schedule/node/tool/firewall drift. |
+| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior (see breakdown below). |
 | `tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
 | `tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
 | `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |
+
+`AppsProbeTest` covers registry configuration, owning node eligibility, source
+path, document root, PHP runtime, PHP-FPM configuration, runtime
+configuration, production user policy, and production health. It also covers
+deployment pipeline configuration, latest deployment status, agent IDE
+defaults, stale artifacts, and exclusion of
+proxy/workspace/process/schedule/node/tool/firewall drift.

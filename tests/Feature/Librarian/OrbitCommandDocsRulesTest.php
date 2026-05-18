@@ -806,7 +806,7 @@ it('reports renderer files without primitive references', function (): void {
             'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
             'severity' => 'error',
             'rule' => 'command_docs.renderer_primitive_reference',
-            'message' => 'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/commands/ux/lists/ or docs/commands/ux/progress/) or explicitly declares "None." with a reason.',
+            'message' => 'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/ux/commands/lists/ or docs/ux/commands/progress/) or explicitly declares "None." with a reason.',
         ]);
 });
 

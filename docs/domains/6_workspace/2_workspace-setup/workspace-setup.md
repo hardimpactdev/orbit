@@ -114,8 +114,8 @@ The following steps describe what the command does during a successful run.
   A failed probe is reported as a command warning, not as setup failure or a
   doctor issue code.
 
-This command is idempotent. Re-running on an already-managed workspace
-re-renders artifacts and verifies command-owned application. The result
+This command is idempotent. Re-running it on a workspace that is already
+managed re-renders artifacts and verifies command-owned application. The result
 reports which path the run took (`set_up`, `adopted`, or `converged`) so
 operators and agents can see what changed.
 
@@ -135,7 +135,8 @@ The output format depends on whether `--json` is passed.
   workspace URL.
 - **JSON**: A machine-readable result with the workspace's registry data,
   including a durable `workspace.adopted` flag set when the path was first
-  adopted via setup. The setup-time HTTP probe result is included in metadata.
+  adopted via setup. The result of the HTTP probe performed at setup time is
+  included in metadata.
 
 ## Related
 

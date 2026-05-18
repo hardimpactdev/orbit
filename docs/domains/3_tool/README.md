@@ -129,15 +129,21 @@ The `tool:*` family covers inventory, lifecycle, configuration, and credential o
 
 ### Inventory and inspection
 
+These commands list catalogued tools and show per-tool state for a node.
+
 1. [`orbit tool:list`](1_tool-list/tool-list.md)
 2. [`orbit tool:show <tool>`](2_tool-show/tool-show.md)
 
 ### Provisioning
 
+These commands create or remove an installable tool on a node.
+
 3. [`orbit tool:install <tool>`](3_tool-install/tool-install.md)
 4. [`orbit tool:remove <tool>`](4_tool-remove/tool-remove.md)
 
 ### Lifecycle
+
+These commands run, stop, restart, or inspect logs for a managed tool.
 
 5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
 6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)
@@ -145,6 +151,8 @@ The `tool:*` family covers inventory, lifecycle, configuration, and credential o
 8. [`orbit tool:logs <tool>`](8_tool-logs/tool-logs.md)
 
 ### Configuration and credentials
+
+These commands change tool versions or configuration and expose generated credentials.
 
 9. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
 10. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)

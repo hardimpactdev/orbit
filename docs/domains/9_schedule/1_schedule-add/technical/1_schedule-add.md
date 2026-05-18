@@ -40,10 +40,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Schedule Configuration Rules
 
+These rules describe how `schedule:add` resolves scope and writes the gateway schedule row.
+
 - Resolves exactly one target scope: app or node.
 - Creates one gateway schedule-configuration row in the `schedule` state family.
 - Stores the schedule name, scope, target, interval, timezone, execution source, enabled state, and initial status.
-- Fails before side effects when the name collides with an existing schedule in the selected scope.
+- Rejects writes that collide with an existing schedule name in the selected scope, before any side effects.
 
 ### Execution Source Rules
 

@@ -6,10 +6,12 @@
 
 The firewall family owns these facts:
 
-- firewall rule rows owned by the gateway: node, name, direction, action, source, destination, protocol, port, reason, and backend metadata needed to identify the applied rule;
+- firewall rule rows owned by the gateway, plus their backend identity metadata;
 - managed backend rules rendered from those rows;
 - drift between gateway configuration and the node firewall backend;
 - adoption facts for explicitly selected observed rules that can safely become Orbit-owned firewall configuration.
+
+Each gateway firewall rule row records the node, name, direction, action, source, destination, protocol, port, reason, and the backend metadata needed to identify the applied rule.
 
 Node reachability belongs to `node`. Proxy routes, apps, workspaces, processes, schedules, and tools remain outside the firewall family even when their capabilities depend on firewall policy.
 
@@ -60,8 +62,14 @@ This table shows what `doctor --adopt` does for each adoptable issue code.
 
 | Code | `doctor --adopt` behavior |
 | --- | --- |
-| `firewall_rule.rule_extra` | Create a gateway firewall rule row when: the operator selected a specific node and backend rule; the node is eligible; and the backend rule can be represented in Orbit firewall-rule fields. |
+| `firewall_rule.rule_extra` | Create a gateway firewall rule row when all `rule_extra` preconditions below are met. |
 | `firewall_rule.rule_mismatch` | Update gateway configuration only when the operator selected the specific rule and the observed backend rule can be represented without changing node bootstrap policy. |
+
+`rule_extra` adoption requires:
+
+- the operator selected a specific node and backend rule
+- the node is eligible
+- the backend rule can be represented in Orbit firewall-rule fields
 
 `doctor --adopt` does not scan arbitrary hosts, adopt unsupported firewall backends, infer app/proxy ownership from ports, or adopt node bootstrap policy into the firewall family.
 
@@ -72,7 +80,11 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/FirewallFamilyDoctorContractTest.php` | Firewall-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering for firewall probes. |
-| `tests/Unit/Services/Firewall/FirewallProbeTest.php` | In-memory firewall probe diff behavior for registry configuration, node eligibility, baseline policy boundaries, missing rules, mismatched rules, extra rules in adoption scope, and exclusion of node/proxy/app drift from firewall issue codes. |
+| `tests/Unit/Services/Firewall/FirewallProbeTest.php` | In-memory firewall probe diff behavior (see breakdown below). |
 | `tests/E2E/Read/FirewallDoctorTest.php` | Real read-only `doctor --family=firewall_rule --json` against nodes with managed firewall rules. |
 | `tests/E2E/Ephemeral/FirewallDoctorFixTest.php` | Real `doctor --fix --family=firewall_rule --restore` repair of safe managed firewall drift. |
 | `tests/E2E/Ephemeral/FirewallDoctorAdoptTest.php` | Real `doctor --fix --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |
+
+`FirewallProbeTest.php` covers registry configuration, node eligibility,
+baseline policy boundaries, missing rules, mismatched rules, extra rules in
+adoption scope, and exclusion of node/proxy/app drift from firewall issue codes.

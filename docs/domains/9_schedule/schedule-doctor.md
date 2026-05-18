@@ -21,7 +21,9 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 1. **Registry configuration:** every selected schedule has valid scope, target, interval, timezone, execution source, enabled state, and scheduler metadata.
 2. **Target eligibility:** the app, node, or Orbit maintenance target resolves and is visible to the caller.
 3. **Node eligibility:** the target node resolves to a visible active gateway or app node with schedule capability.
-4. **Process manager availability:** the target node has Supervisor installed and reachable. When this layer fails, the probe reports `schedule.runtime_backend_unavailable` and skips all downstream scheduler layers.
+4. **Process manager availability:** the target node has Supervisor installed and reachable.
+
+If layer 4 fails, the probe reports `schedule.runtime_backend_unavailable` and skips the scheduler layers listed below.
 
 **Scheduler layers** (skipped when layer 4 fails):
 
@@ -85,6 +87,11 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/ScheduleFamilyDoctorContractTest.php` | Schedule-family dispatch, probe-layer selection, schedule issue codes, fix map, denied adopt cases, scope filtering, and assertion that `schedule.runtime_backend_unavailable` short-circuits downstream scheduler layer checks. |
-| `tests/Unit/Services/Schedules/ScheduleProbeTest.php` | In-memory schedule probe diff behavior for registry configuration, target eligibility, node eligibility, process manager availability, scheduler presence, scheduler liveness, heartbeat freshness, registry sync freshness, schedule lock health, and run-history hook material. |
+| `tests/Unit/Services/Schedules/ScheduleProbeTest.php` | In-memory probe diff behavior across registry, eligibility, runtime, scheduler, and history layers (scope below). |
 | `tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
 | `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --fix --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
+
+`ScheduleProbeTest` covers registry configuration, target eligibility, node
+eligibility, process manager availability, scheduler presence, scheduler
+liveness, heartbeat freshness, registry sync freshness, schedule lock health,
+and run-history hook material.

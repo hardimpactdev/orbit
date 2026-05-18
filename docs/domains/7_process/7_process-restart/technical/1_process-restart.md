@@ -85,7 +85,14 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, app-node caller allowance, unknown-role denial, named and all-process selection, process-order execution, runtime-unit derivation, successful restart, durable lifecycle event recording, partial bulk failure reporting, no configuration mutation, no direct process manager operation, runtime action failure, and authorization failure. |
+| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, caller-role acceptance and denial, process selection, runtime-unit derivation, successful restart, durable event recording, partial bulk failure, and authorization failure (full scope below). |
 | `tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
+
+`ProcessRestartCommandTest` covers context resolution, app-node caller
+allowance, unknown-role denial, named and all-process selection, process-order
+execution, runtime-unit derivation, successful restart, durable lifecycle
+event recording, partial bulk failure reporting, no configuration mutation, no
+direct process-manager operation, runtime action failure, and authorization
+failure.
 
 Renderer and input-mode test mapping lives in the split companion files.

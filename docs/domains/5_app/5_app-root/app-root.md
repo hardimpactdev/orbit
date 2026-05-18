@@ -47,7 +47,8 @@ and then re-applies the necessary runtime artifacts on the application node.
 
 `app:root` is convergent and idempotent. Re-running it with the same root as
 gateway configuration is a documented success path and is safe to use as a "redo
-apply" recovery action. The command always re-applies artifacts, so re-running it on an already-managed app still refreshes node artifacts.
+apply" recovery action. The command always re-applies artifacts, so re-running
+it against an app that is already managed still refreshes node artifacts.
 
 ## Output
 

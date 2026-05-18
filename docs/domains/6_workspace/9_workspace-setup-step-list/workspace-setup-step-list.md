@@ -77,6 +77,8 @@ for the exact payload shape.
 
 ## Related Commands
 
+These commands work alongside `workspace-setup-step:list` when managing or running the setup pipeline.
+
 - [`workspace-setup-step:add`](../8_workspace-setup-step-add/workspace-setup-step-add.md) — append or insert a step
 - [`workspace-setup-step:remove`](../10_workspace-setup-step-remove/workspace-setup-step-remove.md) — remove a step by ID
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — execute the setup pipeline

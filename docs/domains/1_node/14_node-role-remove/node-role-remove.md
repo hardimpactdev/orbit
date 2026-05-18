@@ -12,6 +12,8 @@ orbit node role:remove [node] [role] [--force] [--purge-data] [--json]
 
 ## Behavior
 
+This command removes one role assignment from a node and gates destructive cleanup behind explicit flags.
+
 - `gateway` cannot be removed through this command.
 - `--purge-data` requires `--force`.
 - Removal blocks when dependents exist.

@@ -1,4 +1,4 @@
-# UX Primitives
+# Command UX Primitives
 
 This tree is the product authority for which renderer and prompt primitives
 Orbit commands may use, and when each is appropriate. Renderer docs and

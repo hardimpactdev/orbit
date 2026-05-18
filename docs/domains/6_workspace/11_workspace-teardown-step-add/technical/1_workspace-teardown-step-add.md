@@ -73,8 +73,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Teardown Step Addition Rules
 
-`workspace-teardown-step:add` writes a single gateway-owned teardown step
-record for an app's workspace lifecycle. The step is *not* executed during
+`workspace-teardown-step:add` writes a single teardown step record owned by
+the gateway for an app's workspace lifecycle. The step is *not* executed during
 this command; it is applied by `workspace:remove` and `app:prune` at the
 teardown phase, before destructive workspace cleanup.
 

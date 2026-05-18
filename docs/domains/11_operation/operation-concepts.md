@@ -4,44 +4,56 @@ This document defines operation-command-domain vocabulary and invariants. It sup
 
 ## Domain and scope
 
-These terms define the scope and structure of the operation command domain.
+These terms define the scope and structure of the operation command domain. The domain is cross-cutting; it does not create a separate state family, and operational history reads live in the activity family.
 
-- **Operation command domain:** The cross-cutting command domain for updating Orbit installations, orchestrating doctor convergence, and running request profiling diagnostics. It does not create a separate state family. Operational history reads live in the activity family.
-- **Cross-family workflow:** Operation command path that reads, writes, verifies, restores, or adopts state owned by one or more product families. Those families remain the owners of configuration, reality, issue codes, and repair or adoption behavior.
-- **Local operation command:** Operation command whose side effects are limited to the caller machine. A command that extends beyond the caller machine must document a gateway-mediated fleet path.
-- **Fleet-changing operation command:** Operation command that changes Orbit installations beyond the caller machine. It runs through gateway-owned authority, node access policy, and documented gateway-to-node execution paths.
+- **Operation command domain:** Cross-cutting command domain for updating Orbit installations, orchestrating doctor convergence, and running request profiling diagnostics.
+- **Cross-family workflow:** Operation command path that reads, writes, verifies, restores, or adopts state owned by product families.
+- **Local operation command:** Operation command whose side effects are limited to the caller machine.
+- **Fleet-changing operation command:** Operation command that changes Orbit installations beyond the caller machine through gateway-owned authority.
+
+Product families remain the owners of configuration, reality, issue codes, and repair or adoption behavior. A local command that extends beyond the caller machine must document a gateway-mediated fleet path. Fleet-changing commands also run through node access policy and documented gateway-to-node execution paths.
 
 ## Updates
 
 These terms describe the update workflow and its components.
 
-- **Local update:** `update` sequence that changes only the current Orbit checkout: fast-forward source pull, dependency installation, and local Orbit migrations.
-- **Fleet update:** `update:all` sequence that updates the caller-local checkout and selected active non-local managed Orbit installations through gateway-owned authority. Remote execution uses gateway-to-app-node `RemoteShell`. Operator nodes are never remote update targets.
-- **Update target:** One selected Orbit installation in an update workflow, such as the caller-local checkout, the gateway checkout, or an app-node checkout selected from gateway node configuration.
-- **Update step:** Ordered local checkout update action: source pull, dependency installation, or migration execution. A target succeeds only when all required update steps succeed.
-- **Target result:** Per-update-target outcome preserved for renderers. Includes both successful and failed targets when a fleet update partially fails.
+- **Local update:** `update` sequence that changes only the current Orbit checkout: source pull, dependency installation, and local Orbit migrations.
+- **Fleet update:** `update:all` sequence that updates the caller-local checkout and selected active non-local managed Orbit installations.
+- **Update target:** One selected Orbit installation in an update workflow.
+- **Update step:** Ordered local checkout update action: source pull, dependency installation, or migration execution.
+- **Target result:** Per-update-target outcome preserved for renderers.
+
+Fleet update runs through gateway-owned authority, with remote execution using gateway-to-app-node `RemoteShell`. Operator nodes are never remote update targets. A target succeeds only when all required update steps succeed; target results include both successful and failed targets when a fleet update partially fails.
 
 ## Doctor
 
 These terms describe the `doctor` command and its components.
 
-**Orchestration and scope:**
+### Orchestration and scope
+
+These terms cover what a doctor run resolves, authorizes, and dispatches.
 
 - **Doctor orchestration:** Global `doctor` command responsibility for scope resolution, authorization, mode selection, family dispatch, output envelopes, generic issue kinds, and generic failure behavior.
 - **Doctor scope:** Resolved and authorized filter set for a doctor run, including selected families, node or self scope, app scope, and workspace scope.
 
-**Modes:**
+### Modes
+
+These terms describe the four doctor execution modes and how they combine.
 
 - **Doctor mode:** One of `verify`, `interactive`, `restore`, or `adopt`.
 - **Doctor verify mode:** Default mode. Compares gateway configuration and node reality only.
 - **Doctor interactive mode:** `--fix`. Prompts per finding to restore, adopt, skip, or view details.
 - **Doctor force modes:** `--restore` applies safe gateway configuration to node reality. `--adopt` records compatible node reality into gateway configuration. `--fix`, `--restore`, and `--adopt` are mutually exclusive.
 
-**Contracts, kinds, and actions:**
+### Contracts, kinds, and actions
 
-- **Family doctor contract:** Family-owned contract for probe layers, concrete issue codes, diagnostic details, restore action maps, adopt action maps, and test mapping for that family.
-- **Doctor issue kind:** Generic relationship between gateway configuration and observed reality: `missing`, `extra`, `divergent`, or `unverifiable`. Families own the concrete issue codes that produce these kinds.
-- **Doctor action:** Recorded restore or adopt attempt owned by a family doctor contract. Actions may complete, skip, fail, or conflict. Remaining drift must stay visible after action execution.
+These terms describe family-owned doctor contracts and the actions they produce.
+
+- **Family doctor contract:** Family-owned contract for probe layers, issue codes, diagnostics, restore/adopt action maps, and test mapping.
+- **Doctor issue kind:** Generic relationship between gateway configuration and observed reality: `missing`, `extra`, `divergent`, or `unverifiable`.
+- **Doctor action:** Recorded restore or adopt attempt owned by a family doctor contract.
+
+Families own the concrete issue codes that produce doctor kinds. Doctor actions may complete, skip, fail, or conflict; remaining drift must stay visible after action execution.
 
 ## Activity
 
@@ -52,11 +64,12 @@ Activity logging and history reads live in the activity family. See [`docs/domai
 These terms describe the `profile` command and its components.
 
 - **Profile target:** Orbit-managed app or workspace route resolved from a target argument, app option, URL, hostname, absolute path, or local app/workspace context.
-- Arbitrary internet URLs are outside the profile command contract.
-- **Profile request origin:** Location that performs the timed HTTP request — currently the caller machine or the gateway. The gateway identifies the calling peer role and route reachability to select the origin.
-- **Baseline profile result:** One timed HTTP `GET` result with network timing, response status, byte count, effective URL, headers, completion state, and request failure diagnostics when applicable.
-- **Toolbar enrichment:** Optional profile data decoded from an app response's Toolbar summary header. It augments the baseline result without changing baseline timing measurements.
+- **Profile request origin:** Location that performs the timed HTTP request — currently the caller machine or the gateway.
+- **Baseline profile result:** One timed HTTP `GET` result with timing, status, byte count, URL, headers, completion state, and failure diagnostics.
+- **Toolbar enrichment:** Optional profile data decoded from an app response's Toolbar summary header.
 - **Toolbar auth mode:** Explicit profile authentication mode carried by request headers: guest, first user, or a specific user id.
+
+Arbitrary internet URLs are outside the profile command contract. The gateway identifies the calling peer role and route reachability to select the origin. Toolbar enrichment augments the baseline result without changing baseline timing measurements.
 
 ## Boundaries
 

@@ -26,8 +26,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When local workspace context cannot resolve it. | Local workspace context when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug. |
-| `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning app node. | **Absolute path on the owning app node.** A relative or non-absolute value fails before side effects with `error.code=validation_failed`, `error.meta.field=path`. The path must exist on the app node and satisfy the parent app's workspace source policy. Generic worktree paths must live under `<app path>/.worktrees/`. |
+| `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning app node. | Absolute path on the owning app node. See `--path` rules below. |
 | `--json` | `flag` | Optional. | `false` | n/a |
+
+The `--path` value must be an absolute path on the owning app node. A relative
+or non-absolute value fails before side effects with
+`error.code=validation_failed`, `error.meta.field=path`. The path must exist
+on the app node and satisfy the parent app's workspace source policy. Generic
+worktree paths must live under `<app path>/.worktrees/`.
 
 ## Input Resolution
 

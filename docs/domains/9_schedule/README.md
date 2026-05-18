@@ -12,17 +12,34 @@ These rules define how schedule commands behave and what they own.
 
 ### Ownership and scope
 
+These rules describe what the schedule command family owns and where each kind of schedule runs.
+
+#### Command and configuration ownership
+
 - The schedule command family owns the `schedule:*` command prefix.
 - The gateway is the source of truth for schedule definitions, targets, intervals, execution sources, enabled state, and run history.
-- Schedules may target an app, a node, or Orbit-owned maintenance work.
+
+#### Schedule scope and target
+
+Schedules may target an app, a node, or Orbit-owned maintenance work. Each scope determines where the schedule runs.
+
 - App-scoped schedules run in the app context on the owning app node.
 - Node-scoped schedules run on the selected node.
-- Orbit-scoped maintenance schedules run on the gateway unless a command explicitly documents another serving node.
+- Orbit-scoped maintenance schedules run on the gateway by default.
 - A Laravel scheduler is a normal app-scoped schedule that runs `php artisan schedule:run` every minute.
+
+A command may override the Orbit-scoped default by documenting another serving node explicitly.
+
+#### Execution source and intervals
+
 - Scheduled work has exactly one execution source: an inline command or a managed script path.
 - Intervals use Orbit's portable interval language, such as `every 5 minutes`, `daily at 09:00`, `weekdays at 09:00`, or `weekly on monday at 09:00`.
 
 ### Execution and reads
+
+These rules describe how schedule writes propagate to the Orbit Scheduler and how reads source their data.
+
+#### Write propagation
 
 - Schedule write commands mutate gateway configuration first.
 - The Orbit Scheduler on the target node observes the change on its next sync,
@@ -30,6 +47,9 @@ These rules define how schedule commands behave and what they own.
 - There is no per-schedule node-side artifact to apply. The only applied
   artifact is the `orbit_scheduler` Supervisor program, which is applied once
   per node by node provisioning.
+
+#### Reads and adoption
+
 - Schedule reads use gateway configuration and durable run history by default.
 - Live scheduler reality belongs to `doctor --family=schedule`.
 - The schedule family does not adopt arbitrary observed processes as schedules. Adoption is reserved for explicitly selected runs reported by the Orbit Scheduler that match an existing or operator-supplied schedule shape.
@@ -102,6 +122,8 @@ Use these commands to manage schedules across the full lifecycle.
 6. [`orbit schedule:logs`](6_schedule-logs/schedule-logs.md)
 
 ## Related
+
+These references cover schedule diagnostics and the neighboring command families that schedules interact with.
 
 - [`doctor --family=schedule`](schedule-doctor.md)
 - [`orbit app:*`](../5_app/README.md)

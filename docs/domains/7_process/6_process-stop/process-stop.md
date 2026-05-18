@@ -22,7 +22,7 @@ Use this command to stop one process or all processes for a resolved app or work
 
 - **Context Resolution**: Resolves the app or workspace runtime context.
 - **Single Process**: When `[name]` is supplied, stops that process only.
-- **All Processes**: When `[name]` is omitted, stops all process definitions for the selected context in process order.
+- **All Processes**: Omitting `[name]` stops every process definition for the selected context in process order.
 - **Event Recording**: Records and publishes a `stopped` process event after each successful stop.
 - **Configuration Unchanged**: Does not change process configuration and does not remove the runtime unit.
 

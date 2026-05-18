@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway identifies the calling WireGuard peer and authorizes the selected scope.
-- When the calling peer is identified as an app-node peer, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects.
-- Exception: the gateway allows a resolution mode when the selected family doctor contract documents a narrow app-node write-mode exception.
+- For app-node peers, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects.
+- The selected family doctor contract may document a narrow exception that permits resolution modes for app-node peers.
 
 ## Signature
 
@@ -62,7 +62,10 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
    - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
    - Omitted node scope defaults to `--self`.
    - `--self` combined with `--node` is rejected before forwarding.
-4. Call the gateway to authorize the scope, derive the target-role category set, and dispatch family probes. In resolution modes, the gateway also attempts actions. Family filters intersect with the target-role category set; families outside the set are rejected by the gateway.
+4. Call the gateway to authorize the scope, derive the target-role category set, and dispatch family probes.
+   - In resolution modes, the gateway also attempts actions.
+   - Family filters intersect with the target-role category set.
+   - Families outside the set are rejected by the gateway.
 5. Render the gateway's diagnostic.
 
 Input-mode-specific contracts are required for resolution modes:
@@ -94,30 +97,20 @@ Input-mode-specific contracts are required for resolution modes:
 
 `--adopt` is explicit adoption-mode consent for family-declared adoption actions. It is the only doctor mode that may intentionally mutate gateway configuration.
 
-### Scope and authorization rules
+### Scope, Authorization, and App-Node Write Boundaries
 
-- Resolve and validate all scope filters before probes or side effects.
-- Resolve a single-node target before probes; multi-node scopes are not supported.
-- Apply gateway-owned authorization to the resolved scope before probes or side effects.
-- Fail before probes when mutually exclusive options are combined.
-- Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
-- Fail before probes when a requested family, node, app, or workspace scope cannot be resolved.
-- Fail before probes when a requested family is outside the target node's active-role category set.
-- Fail before side effects when the selected family does not support the requested mode.
-
-### App-Node Write Boundaries
-
-- App-node CLI availability is not generic doctor write permission.
-- The gateway authorizes verify-mode scopes for app-node peers.
-- The gateway denies `--fix`, `--restore`, or `--adopt` from app-node peers.
-- Exception: the gateway allows a resolution mode when the selected family doctor contract documents a narrow app-node exception.
-- App-node working-directory hints may help scope resolution in verify mode, but only when the family contract defines that behavior.
-- Working-directory hints do not authorize mutation of gateway configuration or node reality.
+Cross-peer scope-resolution rules and the app-node write boundary list are
+owned by
+[`7_doctor_scope-and-authorization.md`](7_doctor_scope-and-authorization.md).
+Peer-specific authorization remains in the on-node companion contracts:
+[`2_doctor_on-control-node.md`](2_doctor_on-control-node.md),
+[`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md), and
+[`4_doctor_on-app-node.md`](4_doctor_on-app-node.md).
 
 ### Result Classification Rules
 
-- Return healthy success when no drift or probe errors remain after the selected mode completes.
-- Return a drift failure when issues remain after the mode completes.
+- After the selected mode completes with no remaining drift or probe errors, return healthy success.
+- After the mode completes with remaining issues, return a drift failure.
 - In verify mode, do not change gateway configuration or node reality.
 - In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
 - A family probe error prevents a healthy result.

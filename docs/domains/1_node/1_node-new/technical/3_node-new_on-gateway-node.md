@@ -161,9 +161,9 @@ open-resolver exposure. If the node row is written but development DNS
 convergence fails, `node:new` reports partial provisioning with a node-family
 drift handoff to `doctor --family=node --restore`.
 
-Compatible app-node adoption may use existing non-active gateway configuration
-only when the adoption flow can prove the registry peer material against
-live WireGuard reality. Adopting a missing peer on an active app node may attach
+Compatible app-node adoption may use existing gateway configuration that is
+not active only when the adoption flow can prove the registry peer material
+against live WireGuard reality. Adopting a missing peer on an active app node may attach
 unowned live WireGuard reality only when the adoption flow proves the
 selected node name, role, supported platform, live interface public key, and
 WireGuard address through a bounded read of non-secret identity artifacts.
@@ -223,8 +223,8 @@ identity. It must not overwrite a proven but incompatible host.
   drift for `doctor --family=node --restore`.
 - Operator-node enrollment fails if WireGuard peer minting cannot return a peer
   address that matches the node record.
-- App-node provisioning reports partial provisioning when gateway configuration is
-  written but node readiness verification fails.
+- Provisioning on an app node reports partial provisioning when gateway
+  configuration is written but node readiness verification fails.
 - Missing app-node host or development TLD is handled by the selected input
   mode before side effects, as defined in the canonical contract.
 - Resolved development TLDs fail before side effects when they are invalid,
@@ -237,6 +237,23 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior: active local gateway identity requirement, post-input path eligibility, path matrix behavior, `node_new.host` required for every gateway request, already-provisioned convergence without reprovisioning, missing gateway-row materialization outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --restore`, reset outside `node:new`, operator-node enrollment without SSH, forbidden-input behavior for operator-node enrollment, app-node provisioning over SSH, development TLD persistence, TLD mapping creation, compatible adoption, and incompatible record failures before side effects. Renderer tests own exact output shape. |
+| `tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior (see breakdown below). |
 | `tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-node provisioning and development TLD mapping. |
 | `tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-node provisioning without development TLD mapping. |
+
+`NodeNewCommandTest.php` covers:
+
+- active local gateway identity requirement
+- post-input path eligibility and path matrix behavior
+- `node_new.host` required for every gateway request
+- already-provisioned convergence without reprovisioning
+- missing gateway-row materialization outside `node:new`
+- compatible drift and incomplete-gateway handoff to `doctor --family=node --restore`
+- reset outside `node:new`
+- operator-node enrollment without SSH, including forbidden-input behavior
+- app-node provisioning over SSH
+- development TLD persistence and TLD mapping creation
+- compatible adoption
+- incompatible record failures before side effects
+
+Renderer tests own exact output shape.

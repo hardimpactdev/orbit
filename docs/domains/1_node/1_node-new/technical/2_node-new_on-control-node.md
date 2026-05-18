@@ -44,7 +44,12 @@ same blocker. All path eligibility must complete before side effects begin.
 | `app-production` | Resolve canonical hosted-role inputs, then forward to the gateway over HTTPS as `roles: ['app-production']`. Requires `node_new.host` and `node_new.user`. |
 | `database` | Forward a canonical hosted-role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
 | repeated hosted roles | Forward compatible canonical hosted-role arrays, such as `roles: ['app-production', 'database']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
-| `app` | Legacy compatibility path. Resolve app-node inputs, then forward to the gateway over HTTPS using the legacy app contract with `node_new.environment`. Human mode warns that `app` now maps to hosted app roles after the environment is resolved interactively or from flags. |
+| `app` | Legacy compatibility path. See app-role forwarding below. |
+
+For `--role=app`, resolve app-node inputs, then forward to the gateway over
+HTTPS using the legacy app contract with `node_new.environment`. Human mode
+warns that `app` now maps to hosted app roles after the environment is resolved
+interactively or from flags.
 
 ## First-Gateway Bootstrap
 
@@ -109,6 +114,20 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Operator-caller behavior: post-input path eligibility, first-gateway bootstrap eligibility, complete local onboarding for the initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded from `node_new.host`, gateway-connected forwarding for convergence/adoption/app-node creation/operator-node enrollment, forwarded host and TLD input, missing-gateway failure for app/control requests, and no durable node state written locally outside first-gateway onboarding. |
-| `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from a operator node with no gateway configured, including SSH bootstrap, explicit initiating operator-node name, initiating operator-node identity installation, gateway endpoint/trust storage from the bootstrap host, `/api/me` verification, and no follow-up `gateway:add` requirement. |
+| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Operator-caller behavior across input, bootstrap, and forwarding paths; see detail below. |
+| `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from an operator node; see detail below. |
 | `tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for operator-node execution after `gateway:add`, proving gateway convergence or adoption, app-node creation, and operator-node enrollment are forwarded to the gateway over WireGuard instead of applied locally. |
+
+`NodeNewOnControlNodeContractTest.php` covers post-input path eligibility,
+first-gateway bootstrap eligibility, complete local onboarding for the
+initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded
+from `node_new.host`, gateway-connected forwarding for
+convergence/adoption/app-node creation/operator-node enrollment, forwarded host
+and TLD input, missing-gateway failure for app/control requests, and no durable
+node state written locally outside first-gateway onboarding.
+
+`NodeNewGatewayBootstrapTest.php` exercises the flow from a operator node with
+no gateway configured, including SSH bootstrap, explicit initiating
+operator-node name, initiating operator-node identity installation, gateway
+endpoint/trust storage from the bootstrap host, `/api/me` verification, and no
+follow-up `gateway:add` requirement.

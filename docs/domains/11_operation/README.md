@@ -22,7 +22,9 @@ These rules constrain all commands in the operation domain.
 
 **Behavior contracts:**
 
-- Updates change Orbit installations. They do not replace doctor; run the doctor family that owns the changed artifact when drift or runtime readiness matters.
+- Updates change Orbit installations.
+- Updates do not replace doctor.
+- For drift or runtime readiness questions after an update, run the doctor family that owns the changed artifact.
 - `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.
 - Family doctor contracts own concrete probes, issue codes, and restore/adopt action maps.
 - Profiling reads request/runtime data and must not mutate app configuration.

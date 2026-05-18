@@ -4,14 +4,14 @@ Use this reference for the implementation mechanics behind Orbit's terminal
 output: ANSI codes, animation patterns, traits, and the gateway-streamed SSE
 shape. Primitive selection (which renderer or prompt to use, and when) is
 product-authority and lives in
-[`docs/commands/ux/`](../../../../docs/commands/ux/README.md).
+[`docs/ux/commands/`](../../../../docs/ux/commands/README.md).
 
 For the visible behavior of:
 
-- read-only list output → see [`docs/commands/ux/lists/table.md`](../../../../docs/commands/ux/lists/table.md);
-- interactive row selection → see [`docs/commands/ux/lists/data-table-prompt.md`](../../../../docs/commands/ux/lists/data-table-prompt.md);
-- prompts (text, confirm, select, etc.) → see [`docs/commands/ux/inputs/`](../../../../docs/commands/ux/inputs/README.md);
-- multi-step progress and spinners → see [`docs/commands/ux/progress/`](../../../../docs/commands/ux/progress/README.md).
+- read-only list output → see [`docs/ux/commands/lists/table.md`](../../../../docs/ux/commands/lists/table.md);
+- interactive row selection → see [`docs/ux/commands/lists/data-table-prompt.md`](../../../../docs/ux/commands/lists/data-table-prompt.md);
+- prompts (text, confirm, select, etc.) → see [`docs/ux/commands/inputs/`](../../../../docs/ux/commands/inputs/README.md);
+- multi-step progress and spinners → see [`docs/ux/commands/progress/`](../../../../docs/ux/commands/progress/README.md).
 
 This file owns implementation patterns only.
 
@@ -162,11 +162,11 @@ Prompting remains a caller-side input-mode concern.
 
 Info/detail commands and list commands do not use progress trees unless they
 do slow external work. Primitive selection lives in
-[`docs/commands/ux/lists/`](../../../../docs/commands/ux/lists/README.md):
+[`docs/ux/commands/lists/`](../../../../docs/ux/commands/lists/README.md):
 read-only list output uses
-[`Laravel\Prompts\table`](../../../../docs/commands/ux/lists/table.md) and
+[`Laravel\Prompts\table`](../../../../docs/ux/commands/lists/table.md) and
 interactive row selection uses
-[`Laravel\Prompts\datatable`](../../../../docs/commands/ux/lists/data-table-prompt.md).
+[`Laravel\Prompts\datatable`](../../../../docs/ux/commands/lists/data-table-prompt.md).
 Info/detail commands continue to use a key-value tree via
 `WithHumanOutput::renderForHumans()`.
 
@@ -327,10 +327,10 @@ When migrating:
 - Do not use `HasStepOutput`.
 - Do not use `intro()` from Laravel Prompts.
 - Do not use `$this->table()` for list data; use `Laravel\Prompts\table` per
-  [`docs/commands/ux/lists/table.md`](../../../../docs/commands/ux/lists/table.md).
+  [`docs/ux/commands/lists/table.md`](../../../../docs/ux/commands/lists/table.md).
 - Do not use Symfony `$this->ask`, `$this->confirm`, `$this->choice`, or
   `$this->secret` for prompts; use the matching primitive in
-  [`docs/commands/ux/inputs/`](../../../../docs/commands/ux/inputs/README.md).
+  [`docs/ux/commands/inputs/`](../../../../docs/ux/commands/inputs/README.md).
 - Do not hardcode spinner frames.
 - Do not block without animation when a step can take more than one second.
 - Do not skip the JSON path.

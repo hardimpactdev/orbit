@@ -70,7 +70,7 @@ This command follows the shared
   redirect.
 - Install the fetched CA into local trust storage when local gateway CA trust is
   missing or stale.
-- Use the same trust-store repair behavior documented by
+- Use the same behavior for repairing the trust store that is documented by
   [`gateway:trust`](../../2_gateway-trust/gateway-trust.md), but with the
   gateway endpoint resolved by the onboarding flow.
 

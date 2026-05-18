@@ -36,8 +36,8 @@ These rules govern all DNS commands in this family.
   public DNS records.
 - DNS write commands require the local OS privileges needed to update resolver
   configuration and refresh the resolver backend.
-- Node-family doctor contracts own development TLD readiness provisioned by the
-  gateway, and app-node resolver drift.
+- The doctor contracts in the node family own development TLD readiness
+  provisioned by the gateway, and app-node resolver drift.
 
 ## Commands
 

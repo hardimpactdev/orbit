@@ -31,12 +31,29 @@ orbit profile --app=docs --user=1
 
 `profile` resolves a target app, sends one timed HTTP request, and returns the result.
 
-- **Target Resolution**: Resolves a target app from `[target]`, `--app`, or the current directory. Accepts a full URL target by splitting it into host target and request URI.
-- **Request**: Sends one HTTP `GET` request with a per-run request id.
-- **Timing**: Measures DNS, connect, TLS, time to first byte, download, total time, response status, and response size.
-- **Authentication**: Sends explicit Toolbar auth headers when `--as-first-user` or `--user=<id>` is supplied.
-- **Toolbar Enrichment**: Enriches the baseline timings with Laravel Toolbar summary data when the app exposes it for the request. Toolbar enrichment never changes the measured baseline timing values.
-- **Success Condition**: Treats a completed HTTP response as a successful profile run, even when the status code is not 2xx.
+### Target Resolution
+
+Resolves a target app from `[target]`, `--app`, or the current directory. A full URL target is split into host target and request URI.
+
+### Request
+
+Sends one HTTP `GET` request with a per-run request id.
+
+### Timing
+
+Measures DNS, connect, TLS, time to first byte, download, total time, response status, and response size.
+
+### Authentication
+
+Sends explicit Toolbar auth headers for `--as-first-user` or `--user=<id>`.
+
+### Toolbar Enrichment
+
+Enriches the baseline timings with Laravel Toolbar summary data exposed by the app for the request. Toolbar enrichment never changes the measured baseline timing values.
+
+### Success Condition
+
+Treats a completed HTTP response as a successful profile run, even for responses outside the 2xx range.
 
 ## Requirements
 
@@ -50,8 +67,13 @@ orbit profile --app=docs --user=1
 
 The output format depends on whether `--json` is passed.
 
-- **Human**: Renders the resolved request, status, total time, timing timeline, and query summary when Toolbar data is available.
-- **JSON**: Returns the same result as machine-readable output. See the [JSON renderer contract](technical/6.2_profile_output-render_json.md) for the exact shape.
+### Human
+
+Renders the resolved request, status, total time, timing timeline, and query summary. The query summary appears with available Toolbar data.
+
+### JSON
+
+Returns the same result as machine-readable output. See the [JSON renderer contract](technical/6.2_profile_output-render_json.md) for the exact shape.
 
 ## Related
 

@@ -166,8 +166,14 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceHistoryCommandTest.php` | Command contract: input resolution (CWD, name, `--app` disambiguation), authorization check, filter validation, status and action taxonomy mapping, default `--limit=50` and `500` cap with `limit_capped` reporting, range pagination via `--until`, retention contract (no gateway-side pruning), read-only guarantee, and failure semantics. |
+| `tests/Feature/Commands/Workspaces/WorkspaceHistoryCommandTest.php` | Command contract for `workspace:history` lifecycle; see detail below. |
 | `tests/E2E/Read/WorkspaceHistoryTest.php` | Real read-only `workspace:history --json` against a workspace with mixed lifecycle and setup runs. |
+
+`WorkspaceHistoryCommandTest.php` covers input resolution (CWD, name, `--app`
+disambiguation), authorization check, filter validation, status and action
+taxonomy mapping, default `--limit=50` and `500` cap with `limit_capped`
+reporting, range pagination via `--until`, retention contract (no gateway-side
+pruning), read-only guarantee, and failure semantics.
 
 Renderer-specific test mapping lives in:
 

@@ -22,7 +22,7 @@ Use this command to start one process or all processes for a resolved app or wor
 
 - **Context Resolution**: Resolves the app or workspace runtime context.
 - **Single Process**: When `[name]` is supplied, starts that process only.
-- **All Processes**: When `[name]` is omitted, starts all process definitions for the selected context in process order.
+- **All Processes**: Omitting `[name]` starts every process definition for the selected context in process order.
 - **Event Recording**: Records and publishes a `started` process event after each successful start.
 - **Configuration Unchanged**: Does not change process configuration.
 

@@ -77,6 +77,8 @@ for the exact payload shape.
 
 ## Related Commands
 
+These commands work alongside `workspace-teardown-step:list` when managing or running the teardown pipeline.
+
 - [`workspace-teardown-step:add`](../11_workspace-teardown-step-add/workspace-teardown-step-add.md) — append or insert a step
 - [`workspace-teardown-step:remove`](../13_workspace-teardown-step-remove/workspace-teardown-step-remove.md) — remove a step by ID
 - [`workspace:remove`](../5_workspace-remove/workspace-remove.md) — execute the teardown pipeline before removing the workspace

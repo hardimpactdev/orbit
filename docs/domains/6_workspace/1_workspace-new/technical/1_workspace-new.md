@@ -149,7 +149,7 @@ register an existing path use
    `doctor --fix --family=workspace --restore`. This matches the
    `app:new`/`app:register` pattern: once configuration is durable, apply drift
    is convergence work, not a hard failure.
-   Setup-time HTTP probe failures use the command-owned
+   HTTP probe failures that occur at setup time use the command-owned
    `workspace.http_probe_unhealthy` warning with `family: null`, matching
    `workspace:setup`.
 

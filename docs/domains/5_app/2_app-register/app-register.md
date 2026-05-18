@@ -27,16 +27,27 @@ orbit app:register my-app --domain=example.com
 
 ## Arguments and options
 
+The following arguments and options shape an `app:register` invocation.
+
 - `name`: The name of the app.
-- `--path=<path>`: The absolute path to the app on the target node. Required when adopting a path not yet known to Orbit.
-- `--node=<name>`: The target app node. Defaults to the existing app owner, the local default development node, or an interactive prompt.
+- `--path=<path>`: The absolute path to the app on the target node.
+- `--node=<name>`: The target app node.
 - `--root=<path>`: The document root relative to the app path. Default: `public`.
-- `--php-version=<version>`: The app PHP-FPM version to store in gateway app
-  configuration. When omitted, existing apps keep their stored value and newly adopted
-  apps use Orbit's app runtime default (`8.5`), not the owning node's CLI PHP
-  default.
+- `--php-version=<version>`: The app PHP-FPM version to store in gateway app configuration.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
 - `--json`: Output JSON.
+
+### `--path` adoption requirement
+
+`--path` is required when adopting a path that is not yet known to Orbit.
+
+### `--node` defaults
+
+`--node` defaults to the existing app owner, the local default development node, or an interactive prompt.
+
+### `--php-version` defaults
+
+When `--php-version` is omitted, existing apps keep their stored value. Newly adopted apps use Orbit's app runtime default (`8.5`), not the owning node's CLI PHP default.
 
 `--repo` is not accepted. In the current converted app command surface,
 repository URL is metadata that is captured only at creation time by
@@ -55,18 +66,31 @@ gateway and that its runtime artifacts are properly applied on the target app
 node.
 
 1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development app node.
-2. **Registration/Adoption**: Writes the app's configuration to the gateway database. If the path already exists but isn't managed by Orbit, it is "adopted."
-3. **Apply**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration, then records app-owned proxy route configuration for the `proxy` family to converge.
-4. **Production Activation**: If a domain is supplied, it performs DNS and TLS checks to activate production routing. When DNS or TLS prerequisites are pending, the registration still succeeds and the inactive domain is reported as a non-fatal warning. Retry the same command once propagation completes.
+2. **Registration/Adoption**: Writes the app's configuration to the gateway database. An existing path not yet managed by Orbit is adopted at this step.
+3. **Apply**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
+4. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
-This command is idempotent. Re-running on an already-managed app re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, or `converged`) so operators and agents can see what changed.
+Step 4 only runs when a domain is supplied.
+
+### Pending production prerequisites
+
+If DNS or TLS prerequisites are pending at Production Activation time, registration still succeeds. The inactive domain is reported as a non-fatal warning. Retry the same command once propagation completes.
+
+### Idempotency
+
+This command is idempotent. Re-running it on an app that is already managed re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, or `converged`) so operators and agents can see what changed.
 
 ## Output
 
-You will receive output in the format determined by the presence of `--json`.
+You receive output in the format determined by the presence of `--json`.
 
-- **Human**: A progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
-- **JSON**: A machine-readable result with the app's registry data, including a durable `adopted` flag set when the path was first adopted via registration.
+### Human
+
+Progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
+
+### JSON
+
+A machine-readable result with the app's registry data. It includes a durable `adopted` flag, set when the path was first adopted via registration.
 
 ## Requirements
 

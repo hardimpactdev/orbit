@@ -23,28 +23,32 @@ These terms define the deploy command domain and what it owns.
 
 These terms describe the units of work that make up a deployment pipeline.
 
-- **Deployment step definition:** Record assigned by the gateway and owned by the app, containing a title, shell command, order, timeout, and optional retention metadata.
+- **Deployment step definition:** Record assigned by the gateway and owned by
+  the app, containing a title, shell command, order, timeout, and optional
+  retention metadata.
 - **Deployment step command:** Arbitrary shell script executed during
-  `deploy:run` from the app source path tracked by the gateway, on the app's owning
-  node. Step commands may be single-line commands or multiline scripts.
+  `deploy:run` from the app source path tracked by the gateway, on the app's
+  owning node. Step commands may be single-line commands or multiline scripts.
 - **Deployment step order:** Positive integer ordering within a production
   app's deployment pipeline. Insertions and removals reorder neighboring steps
   to keep the pipeline stable and ascending.
 - **Deployment step timeout:** Maximum runtime in seconds for one deployment
   step before Orbit marks that step failed.
-- **Retention metadata:** Optional deploy-step metadata for steps that create or
-  prune versioned releases. It belongs only to the declaring step; Orbit does
+- **Retention metadata:** Optional deploy-step metadata for steps that create
+  or prune versioned releases. It belongs only to the declaring step; Orbit does
   not have global app deployment retention policy or release state.
 
 ## Runs and logs
 
 These terms describe the runtime side of deployments — how runs are tracked and how their output is stored.
 
-- **Deployment run:** Durable history record created by the gateway and owned by the app, written by `deploy:run` before the first configured step executes.
-- **Deployment run context:** Variable map generated once before the first step executes. It includes reusable values such as `release`,
-  `app_path`, `release_path`, `app_user`, and related app/node metadata.
-  Step commands may reference context values with `{{ key }}` placeholders or
-  `ORBIT_DEPLOY_*` environment variables.
+- **Deployment run:** Durable history record created by the gateway and owned
+  by the app, written by `deploy:run` before the first configured step executes.
+- **Deployment run context:** Variable map generated once before the first step
+  executes. It includes reusable values such as `release`, `app_path`,
+  `release_path`, `app_user`, and related app/node metadata. Step commands may
+  reference context values with `{{ key }}` placeholders or `ORBIT_DEPLOY_*`
+  environment variables.
 - **Deployment run status:** Run lifecycle value: `running`, `completed`,
   `failed`, or `cancelled`.
 - **Deployment step execution:** One step's execution within a deployment run,
@@ -55,9 +59,11 @@ These terms describe the runtime side of deployments — how runs are tracked an
 - **Deployment run history:** Durable app-owned gateway history of deployment
   runs. Read commands use stored history and do not inspect live node state.
 - **Deployment log:** Stored per-step deployment output for a previous run. It
-  is captured gateway history, not live streaming output, process manager
-  log output, or a node filesystem read.
-- **Latest deployment status:** Gateway state owned by the app that records the newest deployment outcome, used by app doctor when evaluating production app health.
+  is captured gateway history, not live streaming output, process manager log
+  output, or a node filesystem read.
+- **Latest deployment status:** Gateway state owned by the app that records the
+  newest deployment outcome. App doctor uses it when evaluating production app
+  health.
 
 ## Health and boundaries
 
@@ -72,9 +78,8 @@ These terms define what the deploy family owns and what belongs to other familie
   manage development apps, create process definitions or schedules, inspect live
   node state during reads, model releases as standalone state, or prove
   production app health after a deployment run.
-- **Cross-family invocation:** Deploy steps may invoke documented commands
-  from other families as their step command, including
-  `process:restart [name]` after artifact rotation or `php:reload-fpm`
-  after a PHP version change. Lifecycle semantics still belong to the
-  invoked family; the deploy family only records the step's exit code and
-  captured output as run history.
+- **Cross-family invocation:** Deploy steps may invoke documented commands from
+  other families as their step command, including `process:restart [name]`
+  after artifact rotation or `php:reload-fpm` after a PHP version change.
+  Lifecycle semantics still belong to the invoked family; the deploy family
+  only records the step's exit code and captured output as run history.

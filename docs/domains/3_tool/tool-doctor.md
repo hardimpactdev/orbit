@@ -123,11 +123,17 @@ This table shows what `doctor --adopt` does for each adoptable issue code.
 
 | Code | `doctor --adopt` behavior |
 | --- | --- |
-| `tool.unregistered_capability` | Create a gateway tool row when: the operator selected a specific node and observed capability; the capability maps to a supported tool definition; and the tool definition declares what observed facts may become configuration. |
+| `tool.unregistered_capability` | Create a gateway tool row (see conditions below). |
 | `tool.version_mismatch` | Update expected version only when the observed version is supported and the operator selected the specific tool for adoption. |
 | `tool.config_mismatch` | Update expected config when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
 | `tool.dns_config_drift` | Record the observed `dnsmasq.conf` content as the gateway intent. Narrow use case: an operator hand-edited the file for an emergency and now wants Orbit to adopt that change. |
+
+`tool.unregistered_capability` adoption requires three conditions:
+
+- the operator selected a specific node and observed capability;
+- the capability maps to a supported tool definition;
+- the tool definition declares what observed facts may become configuration.
 
 `doctor --adopt` does not scan arbitrary hosts for inventory, adopt unsupported
 packages or containers, infer app/database ownership, adopt generated process or
@@ -140,7 +146,12 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/ToolsFamilyDoctorContractTest.php` | Tools-family dispatch, probe-layer selection, tool issue codes, tool fix map, tool adopt map, denied fix/adopt cases, and scope filtering as it affects tool probes. |
-| `tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior for: registry configuration, node eligibility, capability presence, version/configuration/credential/lifecycle drift, adoption scopes, and exclusion of app, workspace, process, schedule, proxy, firewall, and node drift from tool issue codes. |
+| `tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior (scope below). |
 | `tests/E2E/Read/ToolsDoctorTest.php` | Real read-only `doctor --family=tool --json` against nodes with managed and observational tool rows. |
 | `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --fix --family=tool --restore` repair of safe managed tool drift. |
 | `tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --fix --family=tool --adopt` for compatible selected observed tool adoption. |
+
+`ToolsProbeTest` covers registry configuration, node eligibility, capability
+presence, version/configuration/credential/lifecycle drift, and adoption
+scopes. It also asserts that app, workspace, process, schedule, proxy,
+firewall, and node drift do not surface as tool issue codes.

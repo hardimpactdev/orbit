@@ -66,10 +66,11 @@ This command follows the shared
     - Connect to the app node over SSH.
     - Remove app PHP-FPM configuration.
     - Remove managed runtime configuration.
-    - Remove the app path only if it was created/managed by Orbit and no other app shares it.
-      App-level removal does not honor per-workspace `--keep-files` preferences:
-      child workspace worktrees under the removed app path are removed with the
-      app path when that path is eligible for deletion.
+    - Remove the app path if it is eligible for deletion (see below).
+
+#### App path deletion eligibility
+
+The app path is removed only when Orbit created or managed it and no other app shares it. App-level removal does not honor per-workspace `--keep-files` preferences. Child workspace worktrees under the removed app path are removed together with the app path.
 
 ### 4. Convergence and Drift
 - Once gateway configuration is removed, the app record is gone from gateway app

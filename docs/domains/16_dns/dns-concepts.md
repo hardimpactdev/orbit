@@ -17,7 +17,7 @@ These terms define the scope of the DNS command domain and its relationship to t
 - **Caller-local resolver override:** Resolver configuration that Orbit manages
   and that maps wildcard hostnames under a development TLD to a local
   target IP address for browser and CLI use on the caller machine.
-- **Orbit-managed local resolver state:** Resolver files, labels, or config
+- **Local resolver state managed by Orbit:** Resolver files, labels, or config
   blocks written by Orbit on the caller machine. DNS commands may read or
   remove only this managed state, not arbitrary operator resolver entries.
 - **Local resolver backend:** Platform resolver implementation Orbit knows how
@@ -57,7 +57,7 @@ These terms describe the entries that DNS commands read and write on the caller 
 
 These terms define what the DNS command domain must not touch.
 
-- **Gateway-owned development DNS mapping:** Development DNS state for the node family
+- **Development DNS mapping owned by the gateway:** Development DNS state for the node family
   created during app-node provisioning and repaired by
   `doctor --fix --family=node --restore`. DNS commands must not create, inspect, or
   repair these mappings.

@@ -25,11 +25,15 @@ Non-interactive input mode requires `--force` because prompts are unavailable.
 
 ### Remove a workspace with confirmation
 
+Use this form for an interactive removal that prompts for destructive consent.
+
 ```bash
 orbit workspace:remove feature-api
 ```
 
 ### Remove the current workspace (CWD resolution)
+
+Run inside a registered workspace worktree to omit the name argument.
 
 ```bash
 cd ~/sites/my-app/.worktrees/feature-docs
@@ -38,11 +42,15 @@ orbit workspace:remove
 
 ### Remove a workspace but keep the worktree files
 
+Pass `--keep-files` to clean up Orbit configuration while preserving the worktree on disk.
+
 ```bash
 orbit workspace:remove feature-api --keep-files
 ```
 
 ### Force removal without confirmation
+
+Use `--force` in non-interactive environments or scripts that have already obtained consent.
 
 ```bash
 orbit workspace:remove feature-api --force
@@ -115,6 +123,8 @@ The output format depends on whether `--json` is passed.
   or `--force`. Non-interactive input mode requires `--force`.
 
 ## Related Commands
+
+These commands work alongside `workspace:remove` when creating, listing, or repairing workspaces.
 
 - [`workspace:new`](../1_workspace-new/workspace-new.md) — create a new workspace
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — provision a workspace

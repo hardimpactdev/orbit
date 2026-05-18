@@ -169,7 +169,7 @@ do not grant SSH, and do not replace WireGuard authentication.
 These terms describe how the gateway maintains DNS resolution for development
 hosted nodes.
 
-- **Gateway-owned development DNS mapping:** Node-family gateway configuration
+- **Development DNS mapping owned by the gateway:** Node-family gateway configuration
   and gateway-local resolver reality that maps `*.{tld}` for an active
   `app-development` role assignment to that node's WireGuard address. The
   gateway owns this mapping.
@@ -198,8 +198,8 @@ part of development hosted-role readiness.
 
 The node family owns fleet membership, node roles, role assignments, supported
 platforms, gateway configuration, node identity, hosted-node reachability from
-the gateway, access policy, gateway runtime readiness, gateway-owned
-development DNS mappings, and node lifecycle checks.
+the gateway, access policy, gateway runtime readiness, development DNS mappings
+owned by the gateway, and node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process
 or schedule definitions, proxy route lifecycle, tool registration, or editable

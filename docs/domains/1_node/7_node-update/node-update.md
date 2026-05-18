@@ -78,8 +78,8 @@ that are directly affected by the changed metadata.
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
 - Reconciles the gateway's `dnsmasq.conf` and SIGHUPs `orbit-dns` when `tld`
-  or `wireguard_address` actually change for a node. This keeps the
-  WG-served DNS layer aligned with the registry without restarting the
+  or `wireguard_address` actually change for a node. This keeps the DNS layer
+  served over WireGuard aligned with the registry without restarting the
   container. The contract for the DNS substrate is
   [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
   Other field changes do not touch DNS.

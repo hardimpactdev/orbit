@@ -19,12 +19,10 @@ The node family owns these facts:
 - node bootstrap artifacts: gateway runtime readiness, hosted-node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the hosted node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
-- node-related defaults: `app-development` assignment TLD settings, gateway
-  development DNS mappings for those TLDs, gateway development DNS resolver
-  safety, local
-  `node:default` preferences when `--self` inspects the current CLI, the node-level
-  PHP CLI defaults that the gateway owns, and the node-level agent IDE
-  defaults that the gateway owns.
+- node-related defaults: `app-development` assignment TLD settings, development
+  DNS mappings for those TLDs, DNS resolver safety, local `node:default`
+  preferences for `--self`, and PHP CLI and agent IDE defaults at the node
+  level.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -197,11 +195,21 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 
 | Code | `doctor --family=node --adopt` behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer only when the selected active hosted node has a non-secret identity artifact that matches gateway configuration and live WireGuard reality proves exactly one allowed address. Private key material is not read or adopted. |
-| `node.wireguard_peer_extra` | Attach the peer only when the selected scope names a node identity that is already provisioned and compatible, the registry peer public key is present in live WireGuard reality, and that live peer has exactly one unambiguous allowed address. |
+| `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer. See conditions below. |
+| `node.wireguard_peer_extra` | Attach the peer when the registry peer public key matches live WireGuard reality. See conditions below. |
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
 | `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
+
+Conditions for `node.wireguard_peer_missing` adoption: the selected active
+hosted node has a non-secret identity artifact that matches gateway
+configuration, and live WireGuard reality proves exactly one allowed address.
+Private key material is not read or adopted.
+
+Conditions for `node.wireguard_peer_extra` adoption: the selected scope names
+a node identity that is already provisioned and compatible, the registry peer
+public key is present in live WireGuard reality, and that live peer has
+exactly one unambiguous allowed address.
 
 `doctor --family=node --adopt` does not handle unselected hosts, unresolved caller identities,
 unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
@@ -229,5 +237,14 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior for registry configuration, role assignment compatibility and status, access grant integrity, WireGuard identity, presented caller identity resolving to a unique active node record, platform reality, SSH reachability, public IP metadata exclusion from probe/restore/adopt behavior, gateway runtime readiness, hosted-node bootstrap readiness, and development TLD mapping readiness, `node.local_default_invalid`, `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`. |
+| `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior (see breakdown below). |
 | `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Node-family dispatch through the global doctor command, drift-detected exit semantics, healthy and unhealthy human/JSON output for the node family, and rejection of unsupported node-family flag combinations. |
+
+`NodesProbeTest` covers diff behavior for registry configuration, role
+assignment compatibility and status, access grant integrity, WireGuard
+identity, and presented caller identity resolving to a unique active node
+record. It also covers platform reality, SSH reachability, public IP metadata
+exclusion from probe/restore/adopt behavior, gateway runtime readiness,
+hosted-node bootstrap readiness, and development TLD mapping readiness. The
+probe additionally covers `node.local_default_invalid`,
+`node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`.

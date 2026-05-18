@@ -58,5 +58,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnAppNodeContractTest.php` | Primary owner for app-caller rejection: app-role callers with `--role=gateway`, `--role=app`, `--role=control`, and no `--role` are rejected by the gateway before gateway-owned writes, SSH, or WireGuard minting. Renderer tests own the human and JSON formatting of that error. |
+| `tests/Feature/Commands/Nodes/NodeNewOnAppNodeContractTest.php` | Primary owner for app-caller rejection (see below). |
 | `tests/E2E/Ephemeral/NodeNewAppNodeRejectionTest.php` | Real-node smoke coverage proving the gateway rejects app-role callers before any node-state mutation. |
+
+`NodeNewOnAppNodeContractTest.php` covers app-role callers with `--role=gateway`,
+`--role=app`, `--role=control`, and no `--role` being rejected by the gateway
+before gateway-owned writes, SSH, or WireGuard minting. Renderer tests own the
+human and JSON formatting of that error.

@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
 - `control` and `gateway` callers may proceed when authorized.
-- Re-rendering runtime artifacts requires the gateway to reach the owning app node.
+- To re-render runtime artifacts, the gateway must reach the owning app node.
 
 ## Signature
 

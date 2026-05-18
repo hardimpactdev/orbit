@@ -177,12 +177,25 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract: interactive choose from authorized development app-node choices, show with and without default in non-interactive mode, set with positional `name`, set with invalid/non-development node, clear with and without existing default, mutually exclusive input rejection, gateway-unavailable and authorization failures for choose/set, app-caller denial, gateway-caller denial, and local write guarantee (no gateway mutation, no grant creation). |
+| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract (see scope below). |
 | `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Operator-caller contract: show and clear local-only, `/api/me` preflight before configured choose/set, and gateway-local shortcut rejection. |
 | `tests/Feature/Commands/Nodes/NodeDefaultOnAppNodeContractTest.php` | App-caller contract: choose/set rejection before prompts, node listing, or local writes; show and clear local-only. |
 | `tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
 | `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
 | `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
+
+`NodeDefaultCommandTest` covers:
+
+- interactive choose from authorized development app-node choices;
+- show with and without default in non-interactive mode;
+- set with positional `name`;
+- set with invalid/non-development node;
+- clear with and without existing default;
+- mutually exclusive input rejection;
+- gateway-unavailable and authorization failures for choose/set;
+- app-caller denial;
+- gateway-caller denial;
+- local write guarantee (no gateway mutation, no grant creation).
 
 Input-mode-specific test mapping lives in:
 

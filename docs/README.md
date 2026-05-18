@@ -1,17 +1,31 @@
 # Documentation
 
-Read these files as Orbit's active documentation contract:
+1. [Mission](mission.md)
+2. [Architecture](architecture.md)
+3. [Tech Stack](tech-stack.md)
+4. [Concepts](concepts.md)
 
-1. [Mission](mission.md) — why Orbit exists and who it serves.
-2. [Architecture](architecture.md) — how Orbit is designed: hub-and-spoke shape, state model, drift handling, and command contract.
-3. [Tech Stack](tech-stack.md) — implementation pieces and technology stack that make the architecture real.
-4. [Concepts](concepts.md) — routing index for Orbit terms and owning docs.
-5. [Command Contracts](domains/README.md) — stable command behavior, input modes, output renderers, and JSON contracts.
+## Additional Documentation
 
-Command families may define their own concept documents, such as
-[Node Concepts](domains/1_node/node-concepts.md), when domain vocabulary needs
-a stable owner.
+1. [UX](ux/)
+2. [Superpowers](superpowers/)
 
-Historical specs, notes, archived plans, audits, runbooks, and working
-documents remain in `../orbit-old-may/docs/superpowers/`. Use them for context,
-not as authority over the active documentation contract above.
+## Domains
+
+1. [Node](domains/1_node/node.md)
+2. [Gateway](domains/2_gateway/gateway.md)
+3. [Tool](domains/3_tool/tool.md)
+4. [Firewall](domains/4_firewall/firewall.md)
+5. [App](domains/5_app/app.md)
+6. [Workspace](domains/6_workspace/workspace.md)
+7. [Process](domains/7_process/process.md)
+8. [Proxy](domains/8_proxy/proxy.md)
+9. [Schedule](domains/9_schedule/schedule.md)
+10. [Deploy](domains/10_deploy/deploy.md)
+11. [Operation](domains/11_operation/operation.md)
+12. [CF](domains/12_cf/cf.md)
+13. [VPN](domains/13_vpn/vpn.md)
+14. [PHP](domains/14_php/php.md)
+15. [Agent IDE](domains/15_agent-ide/agent-ide.md)
+16. [DNS](domains/16_dns/dns.md)
+17. [Activity](domains/17_activity/activity.md)

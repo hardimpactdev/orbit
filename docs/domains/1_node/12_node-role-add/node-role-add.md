@@ -12,6 +12,8 @@ orbit node role:add [node] [role] [--tld=] [--json]
 
 ## Behavior
 
+This command validates the role assignment, applies role-local options, and reports convergence progress.
+
 - `gateway` cannot be added through this command.
 - `app-development` requires `--tld`.
 - `app-production` and `database` reject unsupported role-local options.

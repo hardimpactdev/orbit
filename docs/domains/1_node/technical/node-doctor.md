@@ -196,13 +196,13 @@ additional external services:
     live interface public key, and live WireGuard reality has exactly one
     allowed address matching the node record.
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
-- Hosted-node identity artifact readiness (`node.node_identity_artifact_missing`)
+- Identity artifact readiness on hosted nodes (`node.node_identity_artifact_missing`)
   - `NodeIdentityArtifactProbe` can read bounded non-secret identity facts from
     the selected host: local active node name, role assignments, assignment
     status, platform,
     WireGuard address, registry public key, and live interface public key when
     available.
-  - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active hosted node. Adoption of an unknown host or a gateway-role node still requires
+  - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active hosted node. Adoption of an unknown host or a node with the gateway role still requires
     a separate materialization path before the proof can be used safely.
 - Development DNS baseline reality (`node.role_baseline_mismatch`)
   - `DevelopmentDnsMappingProbe` reads gateway-local Orbit-managed development
@@ -238,8 +238,8 @@ reality to a node record.
 
 The minimum proof set is:
 
-- the target host is reached through the role-appropriate path: local read for
-  the gateway itself or gateway-owned SSH for hosted nodes;
+- the target host is reached through the path defined by its role: local read
+  for the gateway itself or gateway-owned SSH for hosted nodes;
 - the target host reports the expected Orbit node name and role;
 - if WireGuard is already configured on the target host, the reported
   WireGuard public key or address matches a gateway-owned peer or the peer
@@ -259,9 +259,12 @@ node names or roles from unselected live reality.
 
 ### Supported Keys
 
+The `node.wireguard_peer_missing` proof path never reads private keys, so the
+private key is left empty.
+
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active hosted-node records when identity artifact proof and live WireGuard reality agree. The proof path never reads private keys, so the private key is left empty. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active hosted-node records when identity artifact proof and live WireGuard reality agree. |
 | `node.wireguard_address_mismatch` | Stub: reserved for gateway-managed peer rewrite. |
 | `node.gateway_runtime_unready` | Stub: reserved for gateway-side runtime restart. |
 | `node.app_runtime_missing` | Stub: reserved for hosted-node bootstrap rerun. |
@@ -289,11 +292,13 @@ Reconciliation throws `RuntimeException` for all other keys, including:
 ## Adoption
 
 Adoption returns `Skipped` results for unsupported adoptable keys and `Updated`
-when a supported compatible record can be safely adopted:
+when a supported compatible record can be safely adopted. The
+`node.wireguard_peer_missing` proof path never reads private keys, so the
+private key is left empty.
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active hosted-node records when identity artifact proof and live WireGuard reality agree. The proof path never reads private keys, so the private key is left empty. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active hosted-node records when identity artifact proof and live WireGuard reality agree. |
 | `node.wireguard_peer_extra` | Activates the selected non-active node record when existing registry peer material matches a live WireGuard peer by public key and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the process manager is available; returns a conflict when runtime readiness cannot be verified. |
@@ -304,7 +309,7 @@ when a supported compatible record can be safely adopted:
 New probe layers should:
 
 1. Add a private `check*` method to `NodesProbe`.
-2. Call it from `diff()` in the appropriate order.
+2. Call it from `diff()` after any probe layer it depends on.
 3. Return `list<DriftEntry>` (empty list when no drift).
 4. Add the issue code to the public `node-doctor.md` contract if not already
    documented.

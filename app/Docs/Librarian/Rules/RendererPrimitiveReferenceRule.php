@@ -86,7 +86,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
         if ($section === null) {
             $findings[] = $this->finding(
                 $file,
-                'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/commands/ux/lists/ or docs/commands/ux/progress/) or explicitly declares "None." with a reason.',
+                'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/ux/commands/lists/ or docs/ux/commands/progress/) or explicitly declares "None." with a reason.',
             );
 
             return $findings;
@@ -101,7 +101,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
         if (! $this->containsRendererPrimitiveLink($body)) {
             $findings[] = $this->finding(
                 $file,
-                'The "## Primitive" section must link to a primitive page under docs/commands/ux/lists/ or docs/commands/ux/progress/, or declare "None." with a one-line reason.',
+                'The "## Primitive" section must link to a primitive page under docs/ux/commands/lists/ or docs/ux/commands/progress/, or declare "None." with a one-line reason.',
                 $section['line'],
             );
         }
@@ -139,7 +139,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                sprintf('Prompt primitive "%s" must link to docs/commands/ux/%s somewhere in this file.', $primitive, self::PRIMITIVE_MAP[$primitive]),
+                sprintf('Prompt primitive "%s" must link to docs/ux/commands/%s somewhere in this file.', $primitive, self::PRIMITIVE_MAP[$primitive]),
                 $promptMapping['line'] + $line,
             );
         }
@@ -163,7 +163,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                sprintf('Renderer and input-mode docs must not reference Symfony Console method `%s`. Use the matching primitive in docs/commands/ux/.', $method),
+                sprintf('Renderer and input-mode docs must not reference Symfony Console method `%s`. Use the matching primitive in docs/ux/commands/.', $method),
                 $this->lineForOffset($contents, $offset),
             );
         }
@@ -180,7 +180,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
     private function containsRendererPrimitiveLink(string $body): bool
     {
-        return preg_match('#ux/(lists|progress)/[a-z][a-z0-9-]*\.md#', $body) === 1;
+        return preg_match('#ux/commands/(lists|progress)/[a-z][a-z0-9-]*\.md#', $body) === 1;
     }
 
     /**

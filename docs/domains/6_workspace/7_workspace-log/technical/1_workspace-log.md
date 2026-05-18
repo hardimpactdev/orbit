@@ -55,8 +55,8 @@ or from the `latest_setup_run.run_id` field returned by
 
 1. **Historical audit read.** Read the run record and its captured per-step
    output from the gateway database. The command surfaces stored
-   `stdout`/`stderr`/`exit_code` plus per-step and per-run timing data
-   captured during application. No live process inspection is performed.
+   `stdout`/`stderr`/`exit_code` plus timing data captured per step and per
+   run during application. No live process inspection is performed.
 2. **Run wrapper timing.** Each run carries `started_at`, `finished_at`, and
    `duration_ms` for the whole run, mirroring the per-run timing already
    stored by [`workspace:history`](../../6_workspace-history/workspace-history.md).
@@ -97,7 +97,7 @@ or from the `latest_setup_run.run_id` field returned by
 The `run.status` enum matches the values resolved for
 [`workspace:history`](../../6_workspace-history/technical/1_workspace-history.md#status-taxonomy):
 
-`steps[].status` is a per-step execution enum owned by `workspace:log`.
+`steps[].status` is an execution enum, defined per step, that is owned by `workspace:log`.
 
 | Field | Values |
 | --- | --- |
@@ -119,9 +119,10 @@ execute because an earlier step failed; it is not synthesised at read time.
   [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
   the [`app:prune`](../../../5_app/7_app-prune/app-prune.md) cascade when an
   app-level command removes a workspace.
-- A run record may exist with its captured output pruned only if a future
-  per-row retention rule lands; until then, `error.code=workspace.log_not_found` is
-  reserved for that case but is not produced by the default contract.
+- A run record may exist with its captured output pruned only once a future
+  retention rule applied per row lands; until then,
+  `error.code=workspace.log_not_found` is reserved for that case but is not
+  produced by the default contract.
 
 ## Renderer Contracts
 
@@ -174,7 +175,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php` | Input resolution and `<run>` validation, run lookup, authorization, log-not-found vs run-not-found, per-run and per-step timing, absence of lifecycle env capture, truncation policy and per-step truncation booleans, status taxonomy, read-only guarantee, and failure semantics. |
+| `tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php` | Input resolution and `<run>` validation, run lookup, authorization, log-not-found vs run-not-found, per-run/per-step timing, no lifecycle env capture, truncation policy and per-step booleans, status taxonomy, read-only guarantee, and failure semantics. |
 | `tests/E2E/WorkspaceLogTest.php` | Real read-only `workspace:log <run> --json` against a workspace with both a completed and a failed setup run, asserting captured stdout/stderr, per-step timing, and truncation reporting. |
 
 Renderer-specific test mapping lives in:

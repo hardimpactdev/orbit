@@ -28,10 +28,23 @@ orbit node:list --role=app --environment=development --json
 
 ## Arguments and options
 
-- `--role`: filter by effective role assignment. Single value, one of `gateway`, `app`, `app-development`, `app-production`, `database`, or `control`. `app` matches both app host roles. `control` matches nodes without an active hosted role assignment. Comma-separated input is rejected.
-- `--environment`: filter app nodes by environment. Single value, one of `development` or `production`. Comma-separated input is rejected.
-- `--doctor`: include node doctor checks and summaries. This is explicit because it may perform live checks and take longer than a registry list.
-- `--json`: Output JSON.
+This section defines each accepted filter and output flag for `node:list`.
+
+### `--role`
+
+Filters by effective role assignment. Accepts a single value, one of `gateway`, `app`, `app-development`, `app-production`, `database`, or `control`. `app` matches both app host roles. `control` matches nodes without an active hosted role assignment. Comma-separated input is rejected.
+
+### `--environment`
+
+Filters app nodes by environment. Accepts a single value, one of `development` or `production`. Comma-separated input is rejected.
+
+### `--doctor`
+
+Includes node doctor checks and summaries. This flag is explicit because it may perform live checks and take longer than a registry list.
+
+### `--json`
+
+Outputs JSON.
 
 ## What Happens
 

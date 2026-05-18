@@ -5,12 +5,16 @@
 Show workspace registry configuration and runtime expectations.
 
 `workspace:show` provides a detailed view of a workspace's gateway-tracked
-configuration, including its parent app and owning node, branch, path and
-canonical URL, runtime expectations (effective PHP version and inheritance
+configuration. It reports the parent app and owning node, branch, path, and
+canonical URL.
+
+It also returns runtime expectations (effective PHP version and inheritance
 source, FPM pool, derived hostname), effective agent IDE resolution, inherited
 process definitions, the workspace-owned proxy route, and a summary of the most
-recent setup run. This command is a registry-only read; it does not perform live
-probes on app nodes.
+recent setup run.
+
+This command is a registry-only read; it does not perform live probes on app
+nodes.
 
 ## Usage
 
@@ -31,14 +35,27 @@ orbit workspace:show [name] [--app=<app>] [--json]
 
 Run `workspace:show` to inspect a workspace's gateway configuration without connecting to the app node.
 
-- **Registry Read**: Reads workspace configuration and related gateway history from the gateway database.
-- **Display**: Shows the workspace identity (name, parent app, branch, path, URL), owning node, runtime expectations with PHP version inheritance source, effective agent IDE resolution, inherited processes, the workspace-owned proxy route, and the latest setup run summary.
-- **Ambiguous Name**: Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces and `--app` is missing in non-interactive mode.
-- **Registry-Only**: Does not SSH to app nodes, probe filesystems, check live process status, or verify live proxy routes.
+### Registry Read
+
+Reads workspace configuration and related gateway history from the gateway database.
+
+### Display
+
+Shows the workspace identity (name, parent app, branch, path, URL), owning node, runtime expectations with PHP version inheritance source, effective agent IDE resolution, inherited processes, the workspace-owned proxy route, and the latest setup run summary.
+
+### Ambiguous Name
+
+Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces and `--app` is missing in non-interactive mode.
+
+### Registry-Only
+
+Does not SSH to app nodes, probe filesystems, check live process status, or verify live proxy routes.
 
 ## Examples
 
 ### Show a workspace by name
+
+Use this form when the workspace name is unique across all apps.
 
 ```bash
 orbit workspace:show feature-docs
@@ -46,11 +63,15 @@ orbit workspace:show feature-docs
 
 ### Show a workspace with app disambiguation
 
+Pass `--app` when the workspace name exists under more than one app.
+
 ```bash
 orbit workspace:show feature-docs --app=docs
 ```
 
 ### Show a workspace as JSON
+
+Add `--json` to receive a machine-readable payload suitable for scripting.
 
 ```bash
 orbit workspace:show feature-docs --app=docs --json

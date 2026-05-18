@@ -49,9 +49,9 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
   (a operator node with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
-- `--environment`: legacy compatibility input only. `--role=app
-  --environment=development` maps to `--role=app-development`; `--role=app
-  --environment=production` maps to `--role=app-production`.
+- `--environment`: legacy compatibility input only. `--role=app` with
+  `--environment=development` maps to `--role=app-development`; `--role=app`
+  with `--environment=production` maps to `--role=app-production`.
 - `--tld`: required for `app-development`. Development TLD for the node,
   without a leading dot.
 - `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
@@ -107,7 +107,8 @@ Gateway bootstrap also installs the gateway-side DNS substrate:
 
 - `wg-easy` (the WireGuard VPN server) is installed under
   `~/.config/orbit/wg-easy/`. The admin password is generated and persisted as
-  `WG_EASY_PASSWORD` in the gateway's `.env` for wg-easy v15 unattended setup.
+  `WG_EASY_PASSWORD` in the gateway's `.env` so that wg-easy v15 can run
+  unattended setup.
 - `wg-easy` owns UDP `51820`. The gateway host's `wg-orbit` interface is
   configured as a peer/client of `wg-easy`, not as a second WireGuard server.
 - `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
@@ -120,11 +121,12 @@ The full contract for the DNS substrate is
 [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
 
 `--host` is required for every gateway request, including later gateway
-convergence checks after a gateway already exists. During first-gateway
-bootstrap, the resolved `--host` value becomes the initial gateway endpoint used
-in generated WireGuard peer configs *and* is passed to wg-easy as `INIT_HOST`,
-so it must be an IP address or dotted DNS name reachable by the nodes that will
-join the fleet.
+convergence checks after a gateway already exists.
+
+During first-gateway bootstrap, the resolved `--host` value becomes the initial
+gateway endpoint used in generated WireGuard peer configs. It is also passed to
+wg-easy as `INIT_HOST`. As a result, it must be an IP address or dotted DNS
+name reachable by the nodes that will join the fleet.
 
 Gateway bootstrap internally creates exactly one `gateway` hosted-role
 assignment. Public hosted-role assignment does not accept `gateway`.
@@ -164,15 +166,19 @@ and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt
 
 ## Output
 
-Human output uses progress while the command validates input, provisions
+Expect progress in human output while the command validates input, provisions
 or enrolls the node, writes gateway state, and verifies readiness.
 
-JSON output includes the command result action, node name, role, lifecycle
-status, platform-version identifier, environment when applicable, development
-TLD when applicable, provisioning status, explicit node addresses, and any
-returned WireGuard configuration for operator-node enrollment. It distinguishes the SSH/bootstrap endpoint from the Orbit WireGuard address, the
-gateway endpoint used in generated peer configs, and the public IPv4/IPv6
-metadata that the operator recorded when already present.
+Add `--json` when you need a machine-readable payload. The JSON output gives
+you the command result action, node name, role, lifecycle status,
+platform-version identifier, environment when applicable, development TLD when
+applicable, provisioning status, explicit node addresses, and any returned
+WireGuard configuration for operator-node enrollment.
+
+Read the addresses carefully: the JSON distinguishes the SSH/bootstrap
+endpoint from the Orbit WireGuard address, the gateway endpoint used in
+generated peer configs, and the public IPv4/IPv6 metadata that you recorded
+when already present.
 
 ## Requirements
 

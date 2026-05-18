@@ -10,7 +10,8 @@ Before adding or changing a command:
 1. Update `docs/architecture.md` if the change affects Orbit's architecture or
    domain model.
 2. Update `docs/tech-stack.md` for changes to implementation shape, backend boundaries, process manager behavior, transport edges, or scheduler mechanics.
-3. Update the relevant command contract in this directory.
+3. Update each command contract in this directory whose behavior the change
+   affects.
 4. Confirm the command contracts remain consistent with each other.
 5. Implement code to match the contract.
 
@@ -90,14 +91,14 @@ These rules govern every command contract in this directory.
   explicit `--node`, app/workspace ownership, then interactive input prompt or
   non-interactive input failure.
 - Renderer and prompt primitive selection is governed by
-  [`docs/commands/ux/`](../commands/ux/README.md). Renderer docs and input-mode docs name
+  [`docs/ux/commands/`](../ux/commands/README.md). Renderer docs and input-mode docs name
   a primitive from that tree and link to the matching page. Implementation
   mechanics live in `.agents/skills/command-designer/SKILL.md`.
 - Technical command contracts must use the prompt IDs and Laravel Prompts
-  primitive names admitted by [`docs/commands/ux/inputs/`](../commands/ux/inputs/README.md).
+  primitive names admitted by [`docs/ux/commands/inputs/`](../ux/commands/inputs/README.md).
   Renderer contracts use primitives admitted by
-  [`docs/commands/ux/lists/`](../commands/ux/lists/README.md) and
-  [`docs/commands/ux/progress/`](../commands/ux/progress/README.md). Symfony Console
+  [`docs/ux/commands/lists/`](../ux/commands/lists/README.md) and
+  [`docs/ux/commands/progress/`](../ux/commands/progress/README.md). Symfony Console
   `$this->ask`, `$this->confirm`, `$this->choice`, `$this->secret`, and
   `$this->table` are banned in renderer and input-mode docs.
 - Public command pages that have a command directory must link to their
@@ -136,10 +137,10 @@ Each numbered domain directory contains:
   `6.2_command-name_output-render_json.md`: optional renderer-specific command
   contracts. Use when human output and JSON output have enough behavior or
   tests to deserve separate ownership.
-- `<family-singular>-doctor.md`: optional family-level doctor contract covering probe, drift, restore, and adopt behavior when the family owns doctor work beyond individual commands. Use the family-specific signature, such as `node-doctor.md` for `doctor --family=node`.
+- `<family-singular>-doctor.md`: optional family-level doctor contract for probe, drift, restore, and adopt behavior. Use a family-specific signature, such as `node-doctor.md` for `doctor --family=node`.
 - `internal/`: optional subdirectory for internal Orbit machinery commands.
 
-The shared [`docs/commands/ux/`](../commands/ux/README.md) tree lists the admitted
+The shared [`docs/ux/commands/`](../ux/commands/README.md) tree lists the admitted
 renderer and prompt primitives (lists, inputs, progress) and the rules for
 picking between them. Renderer and input-mode docs link into this tree
 instead of redescribing primitives inline.
@@ -466,6 +467,8 @@ Human output summary and JSON availability.
 Operator prerequisites and related setup commands.
 
 ## Related Commands
+
+Related commands a user may want to run before or after this one.
 ````
 
 ## Technical Command Contract Template
@@ -579,6 +582,10 @@ defines control-plane authority and trust, tools and firewall rules establish
 node capabilities and network policy, and apps and app-owned runtime behavior
 build on top of that foundation.
 
+### Foundation domains
+
+These domains define the fleet, control-plane authority, node capabilities, and the core app/workspace foundation.
+
 1. [Nodes](1_node/README.md)
 2. [Gateway](2_gateway/README.md)
 3. [Tools](3_tool/README.md)
@@ -588,11 +595,18 @@ build on top of that foundation.
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
 
-App-owned runtime domains build on nodes, gateway, and the core app/workspace foundation.
+### Runtime workflow domains
+
+These domains coordinate scheduled tasks, deployments, and cross-family operations on top of the foundation.
 
 9. [Schedules](9_schedule/README.md)
 10. [Deployments](10_deploy/README.md)
 11. [Operations](11_operation/README.md)
+
+### Runtime integration and observability domains
+
+These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs, DNS, and activity logs.
+
 12. [Cloudflare](12_cf/README.md)
 13. [VPN Administration](13_vpn/README.md)
 14. [PHP Runtime](14_php/README.md)

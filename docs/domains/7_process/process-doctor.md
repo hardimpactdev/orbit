@@ -16,16 +16,41 @@ Node reachability belongs to `node`. App source, PHP runtime, and app-owned runt
 
 ## Probe Layers
 
-The processes probe reads gateway process definitions and checks these layers:
+The processes probe reads gateway process definitions and checks the layers below in order.
 
-1. **Registry configuration:** every selected process definition has a valid app reference, process name, command, restart policy, and crash-notification policy.
-2. **Owning app and workspace expansion:** the owning app resolves to an active app record and the expected runtime contexts are the main app instance plus every active workspace for that app.
-3. **Process manager availability:** the node has Supervisor installed, the `supervisord` daemon is reachable, and its control socket is responsive. When this layer fails, the probe stops and reports `process.runtime_backend_unavailable` instead of cascading to downstream checks.
-4. **Runtime-unit identity:** each expected runtime context maps to exactly one runtime unit name that Orbit owns, using `orbit_<app>_<workspace|main>_<process>`.
-5. **Supervisor program presence:** each expected runtime unit exists as a Supervisor program. Checked only when the process manager is reachable.
-6. **Supervisor program shape:** rendered command, working directory, restart policy, user, and runtime environment match gateway configuration.
-7. **Lifecycle notifier material:** the crash event hooks that Orbit manages, gateway endpoint material, and gateway CA material required to write durable `crashed` events exist and match the selected process definitions.
-8. **Stale runtime units:** Supervisor programs that Orbit owns, whose encoded app, workspace, or process identity no longer maps to active gateway configuration, are reported as process-family drift.
+### Registry configuration
+
+Every selected process definition has a valid app reference, process name, command, restart policy, and crash-notification policy.
+
+### Owning app and workspace expansion
+
+The owning app resolves to an active app record and the expected runtime contexts are the main app instance plus every active workspace for that app.
+
+### Process manager availability
+
+The node has Supervisor installed, the `supervisord` daemon is reachable, and its control socket is responsive. When this layer fails, the probe stops and reports `process.runtime_backend_unavailable` instead of cascading to downstream checks.
+
+### Runtime-unit identity
+
+Each expected runtime context maps to exactly one runtime unit name that Orbit owns, using `orbit_<app>_<workspace|main>_<process>`.
+
+### Supervisor program presence
+
+Each expected runtime unit exists as a Supervisor program. Checked only when the process manager is reachable.
+
+### Supervisor program shape
+
+The rendered command, working directory, restart policy, user, and runtime environment match gateway configuration.
+
+### Lifecycle notifier material
+
+The crash event hooks that Orbit manages, gateway endpoint material, and gateway CA material required to write durable `crashed` events exist and match the selected process definitions.
+
+### Stale runtime units
+
+Supervisor programs that Orbit owns are reported as process-family drift when their encoded app, workspace, or process identity no longer maps to active gateway configuration.
+
+### Lifecycle events as history
 
 Latest lifecycle events are history, not desired state. The processes probe may read them to explain observed runtime state, but it does not repair or adopt event history.
 
@@ -87,7 +112,18 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/ProcessesFamilyDoctorContractTest.php` | Processes-family dispatch, probe-layer selection, process issue codes, process fix map, denied process adopt cases, scope filtering as it affects process probes, and assertion that `process.runtime_backend_unavailable` short-circuits downstream layer checks. |
-| `tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff for registry configuration, app and workspace expansion, process manager availability, runtime-unit identity, missing/extra/drifted programs, restart policy drift, runtime environment drift, event notifier drift, and exclusion of non-process drift from issue codes. |
+| `tests/Feature/Doctor/ProcessesFamilyDoctorContractTest.php` | Processes-family contract for the global doctor command (see breakdown below). |
+| `tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff behavior for the processes family (see breakdown below). |
 | `tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with Supervisor-rendered process runtime units. Docker-eligible. |
 | `tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --fix --family=process --restore` repair of missing or divergent Supervisor programs and lifecycle event notifier material. Docker-eligible. |
+
+`ProcessesFamilyDoctorContractTest` covers processes-family dispatch,
+probe-layer selection, process issue codes, the process fix map, denied
+process adopt cases, and scope filtering for process probes. It also asserts
+that `process.runtime_backend_unavailable` short-circuits downstream layers.
+
+`ProcessesProbeTest` covers registry configuration, app and workspace
+expansion, process manager availability, runtime-unit identity,
+missing/extra/drifted programs, restart policy drift, runtime environment
+drift, event notifier drift, and exclusion of non-process drift from issue
+codes.

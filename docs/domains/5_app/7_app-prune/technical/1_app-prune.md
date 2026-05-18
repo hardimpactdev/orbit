@@ -89,9 +89,8 @@ If `dry_run` is `false`:
   - Phase B runs the workspace removal cleanup order: stop traffic, stop
     inherited processes, run teardown steps, remove the workspace FPM pool, and
     remove the worktree.
-  - SSH reachability of the app node for cleanup is not a pre-prune prerequisite. If Phase
-    B cannot finish after workspace configuration removal, the workspace removal still
-    succeeds with warnings.
+  - SSH reachability of the app node for cleanup is not a pre-prune prerequisite.
+  - A Phase B step that cannot finish after workspace configuration removal still completes the workspace removal with warnings.
   - Partial Phase B failures become `success.meta.warnings[]` using the same
     family warning vocabulary and `next_command` handoffs as
     `workspace:remove`.

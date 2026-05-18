@@ -92,7 +92,7 @@ This command follows the shared
   first byte.
 - Record response status, byte count, completion state, error details, and
   response headers.
-- A completed HTTP response is a successful profile result even when the status is not 2xx, because the request was measured.
+- A completed HTTP response is a successful profile result regardless of status code, because the request was measured.
 
 ### Toolbar Enrichment Rules
 
@@ -133,9 +133,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Profile request failed | The timed HTTP request could not complete. | Failure with request/timing diagnostics |
 
 The shared exit status policy applies: `0` for successful profile results,
-including completed non-2xx HTTP responses; `1` for Orbit-handled command
-failures; and `2` only for console-runtime invalid usage before Orbit can apply
-this command contract.
+including HTTP responses that completed with a non-2xx status; `1` for
+Orbit-handled command failures; and `2` only for console-runtime invalid usage
+before Orbit can apply this command contract.
 
 ## Doctor Relationship
 

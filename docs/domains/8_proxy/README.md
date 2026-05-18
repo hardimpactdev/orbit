@@ -41,7 +41,11 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   authority could mint trusted certificates for arbitrary hosts if compromised.
 - App nodes serve TLS material only. They do not become certificate authorities
   and do not sign certificates for apps, workspaces, or tools.
-- For DNS hostname routes, Orbit-managed TLS also includes compatibility material applied on the app node that lets common Laravel Vite TLS detection paths find the route certificate. This belongs to proxy convergence because it is derived from route TLS configuration. It is not a separate app command.
+- For DNS hostname routes, the TLS managed by Orbit also applies
+  compatibility material on the app node. That material lets common Laravel
+  Vite TLS detection paths find the route certificate.
+- DNS hostname compatibility material belongs to proxy convergence because it
+  is derived from route TLS configuration. It is not a separate app command.
 - Internal IP-only routes receive gateway-issued leaf certificates for the IP
   target and do not require hostname compatibility material.
 - Proxy reads use gateway configuration by default. Live proxy backend reality belongs

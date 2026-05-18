@@ -29,13 +29,17 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable hosted roles. Accepted canonical values: `app-development`, `app-production`, `database`. Legacy compatibility values: `control`, `app`, `gateway`. `gateway` remains a bootstrap path, not a public hosted-role assignment. |
+| `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable hosted roles (see role values below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-development`, or `app-production`. | Joined client/control identity with no hosted roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating operator node for first-gateway convergence. |
 | `environment` | `--environment` | Only when legacy `--role=app` is used. | Canonical hosted-role input, gateway bootstrap, and joined client/control identity. | None. | Legacy compatibility mapper: `development` => `app-development`; `production` => `app-production`. |
 | `tld` | `--tld` | `app-development`, or legacy `--role=app --environment=development`. | Joined client/control identity, gateway bootstrap, `database`, `app-production`, or legacy `--role=app --environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Joined client/control identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+
+Canonical role values are `app-development`, `app-production`, and `database`.
+Legacy compatibility values `control`, `app`, and `gateway` are accepted; the
+`gateway` value remains a bootstrap path, not a public hosted-role assignment.
 
 ## Input Resolution
 
@@ -245,7 +249,11 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Owns the canonical input contract: fields, sources, required/forbidden conditions, defaults, value validation, `control_name` required only for first-gateway bootstrap, and post-input path eligibility timing. Asserts resolved input and validation outcomes — not resolver internals. Input-mode prompting and gateway-side authorization outcomes belong to the split contracts. |
+| `tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Owns the canonical input contract: fields, sources, required/forbidden conditions, defaults, value validation, `control_name` required only for first-gateway bootstrap, and post-input path eligibility timing. |
+
+The contract owner asserts resolved input and validation outcomes — not
+resolver internals. Input-mode prompting and gateway-side authorization
+outcomes belong to the split contracts.
 
 Input-mode-specific test mapping lives in:
 

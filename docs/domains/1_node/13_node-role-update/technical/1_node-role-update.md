@@ -9,7 +9,7 @@
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
 - Gateway callers execute locally.
-- Non-gateway callers require gateway authorization through the existing grant pattern.
+- Callers other than the gateway must be authorized by the gateway through the existing grant pattern.
 
 ## Signature
 
