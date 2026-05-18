@@ -47,7 +47,7 @@ it('installs dig when needed before resolving DNS over WireGuard', function (): 
     );
 
     expect($command)->toContain('command -v dig')
-        ->and($command)->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils')
+        ->and($command)->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils >/dev/null')
         ->and($command)->toContain("dig +time=15 +short 'gateway-1.gateway' @'10.6.0.1'");
 });
 
@@ -79,4 +79,31 @@ it('resolves URL hostnames through gateway DNS before curl reachability checks',
         ->and($command)->toContain("'gateway-1.gateway:443:'\"\$resolved_ip\"")
         ->and($command)->toContain('curl -k -s -o /dev/null -w "%{http_code}" --max-time 15')
         ->and($command)->toContain("'https://gateway-1.gateway/'");
+});
+
+it('allows removed apps to become unreachable instead of returning an HTTP status', function (): void {
+    $command = null;
+    $instance = m::mock(E2EInstance::class);
+    $key = new SshKeyPair('/tmp/private', '/tmp/public');
+
+    $instance->shouldReceive('ssh')
+        ->once()
+        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use ($key, &$command): bool {
+            $command = $sshCommand;
+
+            return $user === 'orbit'
+                && $sshKey === $key
+                && $timeoutSeconds === 120;
+        })
+        ->andReturn(e2eReachabilityResult(output: '000'));
+
+    E2EReachability::assertHttpNotServing(
+        control: $instance,
+        controlUser: 'orbit',
+        key: $key,
+        url: 'https://docs.test/',
+    );
+
+    expect($command)->toContain(' || true')
+        ->and($command)->toContain("'docs.test:443:'\"\$resolved_ip\"");
 });

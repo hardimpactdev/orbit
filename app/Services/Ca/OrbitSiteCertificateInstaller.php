@@ -32,6 +32,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
             cert: File::get($local['cert']),
             keyPath: $remote['key'],
             key: File::get($local['key']),
+            traversalDirs: $this->traversalDirsFor($node, dirname($remote['cert'])),
         ), ['throw' => true]);
 
         return $remote;
@@ -52,16 +53,26 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         ];
     }
 
-    private function installScript(string $certPath, string $cert, string $keyPath, string $key): string
+    /**
+     * @param  list<string>  $traversalDirs
+     */
+    private function installScript(string $certPath, string $cert, string $keyPath, string $key, array $traversalDirs): string
     {
+        $dirs = implode(' ', array_map(escapeshellarg(...), $traversalDirs));
+
         return sprintf(
             <<<'SH'
 set -e
-install -d -m 0755 %s
-printf %%s %s | base64 -d > %s
-printf %%s %s | base64 -d > %s
-chmod 0644 %s
-chmod 0600 %s
+sudo install -d -m 0755 %s
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+sudo chmod 0644 %s
+sudo chmod 0600 %s
+if getent group caddy >/dev/null 2>&1; then
+    sudo chgrp caddy %s %s
+    sudo chmod g+rx %s
+    sudo chmod 0640 %s
+fi
 SH,
             escapeshellarg(dirname($certPath)),
             escapeshellarg(base64_encode($cert)),
@@ -70,7 +81,26 @@ SH,
             escapeshellarg($keyPath),
             escapeshellarg($certPath),
             escapeshellarg($keyPath),
+            $dirs,
+            escapeshellarg($keyPath),
+            $dirs,
+            escapeshellarg($keyPath),
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function traversalDirsFor(Node $node, string $certDir): array
+    {
+        $home = $this->nodeHome($node);
+
+        return array_values(array_unique([
+            $home,
+            "{$home}/.config",
+            "{$home}/.config/orbit",
+            $certDir,
+        ]));
     }
 
     private function nodeHome(Node $node): string

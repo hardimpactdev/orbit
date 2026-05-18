@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Models\App;
 use App\Models\ProxyRoute;
+use App\Services\Gateway\CaddyGlobalConfig;
 use RuntimeException;
 use Throwable;
 
@@ -16,6 +17,7 @@ final readonly class EnsureAppProxyRoute
     public function __construct(
         private RemoteShell $remoteShell,
         private SiteCertificateInstaller $siteCertificateInstaller,
+        private CaddyGlobalConfig $caddyGlobalConfig,
     ) {}
 
     /**
@@ -55,6 +57,7 @@ final readonly class EnsureAppProxyRoute
 
         try {
             $this->siteCertificateInstaller->ensureFor($app->node, $domain);
+            $this->ensureGlobalCaddyfile($app);
         } catch (Throwable) {
             return [[
                 'code' => 'proxy.enactment_failed',
@@ -138,6 +141,34 @@ sudo systemctl reload caddy
 SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
+        );
+    }
+
+    private function ensureGlobalCaddyfile(App $app): void
+    {
+        if ($app->node === null) {
+            throw new RuntimeException("App '{$app->name}' has no owning node.");
+        }
+
+        $readResult = $this->remoteShell->run(
+            $app->node,
+            'sudo test -f /etc/caddy/Caddyfile && sudo cat /etc/caddy/Caddyfile || true',
+            ['throw' => true],
+        );
+
+        $updated = $this->caddyGlobalConfig->ensure($readResult->stdout);
+
+        if ($updated === $readResult->stdout) {
+            return;
+        }
+
+        $this->remoteShell->run(
+            $app->node,
+            sprintf(
+                'printf %%s %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null',
+                escapeshellarg(base64_encode($updated)),
+            ),
+            ['throw' => true],
         );
     }
 

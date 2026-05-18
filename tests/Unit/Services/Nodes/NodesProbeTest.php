@@ -919,7 +919,7 @@ describe('external service stubs', function (): void {
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=orbit_network',
-            'address=/.test/10.6.0.5',
+            'address=/test/10.6.0.5',
             '',
         ]));
 
@@ -976,7 +976,7 @@ describe('external service stubs', function (): void {
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=orbit_network',
-            'address=/.test/10.6.0.99',
+            'address=/test/10.6.0.99',
             '',
         ]));
 
@@ -1009,7 +1009,7 @@ describe('external service stubs', function (): void {
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=public',
-            'address=/.test/10.6.0.5',
+            'address=/test/10.6.0.5',
             '',
         ]));
 
@@ -1178,7 +1178,7 @@ describe('reconciliation', function (): void {
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=public',
-            'address=/.test/10.6.0.99',
+            'address=/test/10.6.0.99',
             '',
         ]));
 
@@ -1197,7 +1197,7 @@ describe('reconciliation', function (): void {
 
         expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
             ->toContain('# bind-scope=orbit_network')
-            ->toContain('address=/.test/10.6.0.5');
+            ->toContain('address=/test/10.6.0.5');
     });
 });
 

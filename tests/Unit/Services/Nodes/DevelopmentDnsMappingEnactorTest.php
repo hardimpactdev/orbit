@@ -42,7 +42,7 @@ it('converges a gateway-owned development dns mapping from active app node inten
     expect(File::get("{$this->configDir}/test.conf"))
         ->toContain('orbit-managed=node-development-dns')
         ->toContain('node=app-1')
-        ->toContain('address=/.test/10.6.0.7');
+        ->toContain('address=/test/10.6.0.7');
 });
 
 it('does not create mappings for production app nodes', function (): void {

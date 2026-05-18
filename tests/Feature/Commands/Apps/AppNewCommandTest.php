@@ -65,9 +65,9 @@ it('creates source on the target app node before writing gateway app intent', fu
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(4)
+        ->and($remoteShell->runs)->toHaveCount(6)
         ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
-        ->and($remoteShell->runs[0]['script'])->toContain("mkdir -p '/home/orbit/apps/docs'")
+        ->and($remoteShell->runs[0]['script'])->toContain("sudo install -d -m 755 -o 'orbit' -g 'orbit' '/home/orbit/apps' '/home/orbit/apps/docs'")
         ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
         ->and($payload['success']['data']['result']['action'])->toBe('created')
         ->and($payload['success']['data']['app'])->toMatchArray([
@@ -288,7 +288,7 @@ it('accepts active app-production nodes for production app creation on the gatew
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(4)
+        ->and($remoteShell->runs)->toHaveCount(6)
         ->and($payload['success']['data']['app']['environment'])->toBe('production')
         ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com');
 });
@@ -559,6 +559,7 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
         ->and($fpmPool)->toContain('[orbit-docs]')
         ->and($fpmPool)->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
+        ->and($fpmPool)->toContain('listen.group = caddy')
         ->and($remoteShell->scripts[2])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
         ->and($remoteShell->scripts[2])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
         ->and($remoteShell->scripts[2])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
@@ -595,7 +596,8 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
     ]);
 
     $route = ProxyRoute::query()->where('domain', 'docs.test')->first();
-    $caddySite = base64_decode((string) str($remoteShell->scripts[3])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $globalCaddyfile = base64_decode((string) str($remoteShell->scripts[4])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $caddySite = base64_decode((string) str($remoteShell->scripts[5])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($exitCode)->toBe(0)
         ->and($route)->not->toBeNull()
@@ -611,13 +613,16 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
             ],
         ])
         ->and($certificates->hosts)->toBe(['docs.test'])
-        ->and($remoteShell->scripts[3])->toContain('/etc/caddy/sites/docs.test.caddy')
+        ->and($remoteShell->scripts[3])->toContain('sudo cat /etc/caddy/Caddyfile')
+        ->and($globalCaddyfile)->toContain('import /etc/caddy/sites/*.caddy')
+        ->and($globalCaddyfile)->toContain('(security_headers)')
+        ->and($remoteShell->scripts[5])->toContain('/etc/caddy/sites/docs.test.caddy')
         ->and($caddySite)->toContain('docs.test {')
         ->and($caddySite)->toContain('tls /home/orbit/.config/orbit/certs/docs.test.crt /home/orbit/.config/orbit/certs/docs.test.key')
         ->and($caddySite)->toContain('root * /home/orbit/apps/docs/public')
         ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite))
-        ->and($remoteShell->scripts[3])->toContain('sudo systemctl reload caddy');
+        ->and($remoteShell->scripts[5])->toContain('sudo systemctl reload caddy');
 });
 
 it('uses the production domain as the app-owned proxy route domain', function (): void {
@@ -665,6 +670,8 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
     ]));

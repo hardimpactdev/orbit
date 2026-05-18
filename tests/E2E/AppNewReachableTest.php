@@ -48,9 +48,13 @@ it('serves a freshly provisioned development app from the control over its TLD h
         $appIp = $app->waitForIpv4();
 
         E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
+        E2ENetwork::routeWireGuardPeer($control, '10.6.0.4', $appIp, '10.6.0.3');
         E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
         E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.4', $appIp, '10.6.0.2');
         E2ENetwork::routeWireGuardPeer($app, '10.6.0.2', $gatewayIp, '10.6.0.4');
+        E2ENetwork::routeWireGuardPeer($app, '10.6.0.3', $controlIp, '10.6.0.4');
+
+        e2eGrantNodeAccessOnGateway($gateway, $key);
 
         E2ECommand::ssh(
             $gateway,

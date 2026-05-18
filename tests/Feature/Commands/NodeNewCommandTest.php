@@ -808,7 +808,7 @@ describe('node:new', function (): void {
         expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
             ->toContain('orbit-managed=node-development-dns')
             ->toContain('node=app-dev-1')
-            ->toContain('address=/.test/10.6.0.3');
+            ->toContain('address=/test/10.6.0.3');
 
         Process::assertRan(fn ($process): bool => ! str_contains($process->command, '--role=')
             && str_contains($process->command, '--source-archive='));

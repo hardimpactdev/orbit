@@ -21,6 +21,8 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     $gatewayWireGuardIp = $lease->gatewayApiIp();
+    $gatewayLanIp = $topology->instance('gateway')->waitForIpv4();
+    $devLanIp = $topology->instance('dev')->waitForIpv4();
     $wireGuardCidr = firewallDoctorAdoptWireGuardCidr($gatewayWireGuardIp);
 
     try {
@@ -29,8 +31,9 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $topology->ssh(
             'dev',
             sprintf(
-                'sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw && sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
+                'sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw && sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-wg-ssh" && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-lan-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
                 escapeshellarg("{$gatewayWireGuardIp}/32"),
+                escapeshellarg("{$gatewayLanIp}/32"),
                 escapeshellarg($wireGuardCidr),
             ),
             timeoutSeconds: 180,
@@ -45,7 +48,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
             sprintf(
                 'cd %s && php artisan tinker --execute=%s',
                 escapeshellarg($gatewayCheckout),
-                escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->first(); if ($node) { $node->update(["platform" => "ubuntu", "status" => "active"]); echo "updated"; } else { echo "not found"; }'),
+                escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->first(); if ($node) { $node->update(["platform" => "ubuntu", "status" => "active", "host" => "'.$devLanIp.'", "wireguard_address" => null]); echo "updated"; } else { echo "not found"; }'),
             ),
             timeoutSeconds: 120,
         );

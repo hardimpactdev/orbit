@@ -144,7 +144,7 @@ final readonly class DnsRuntimeProbe
     {
         $expected = $this->configBuilder->build(Node::query()->get());
         File::put($this->confPath(), $expected);
-        $result = Process::timeout(15)->run('docker exec orbit-dns kill -HUP 1');
+        $result = Process::timeout(30)->run('docker restart orbit-dns');
 
         return $result->successful();
     }
