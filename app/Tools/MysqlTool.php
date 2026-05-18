@@ -18,6 +18,12 @@ final class MysqlTool extends DockerComposeTool
     }
 
     #[\Override]
+    public function installScript(array $config = []): string
+    {
+        return $this->installWithAptPackages($config, 'default-mysql-client');
+    }
+
+    #[\Override]
     public function probeMetadata(): array
     {
         return [

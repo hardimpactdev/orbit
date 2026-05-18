@@ -55,14 +55,17 @@ These tools are expected to exist through node provisioning or host bootstrap.
 Orbit adopts, observes, and keeps them converged, but `tool:install` does not
 create them from scratch unless the tool file says otherwise.
 
-1. [`caddy`](caddy.md)
-2. [`supervisor`](supervisor.md)
-3. [`docker`](docker.md)
-4. [`viteplus`](viteplus.md)
-5. [`php-cli`](php-cli.md)
-6. [`gh`](gh.md)
-7. [`composer`](composer.md)
-8. [`dns`](dns.md)
+| Tool | Notes |
+| --- | --- |
+| [`caddy`](caddy.md) | HTTP server and proxy runtime |
+| [`supervisor`](supervisor.md) | Process supervisor runtime |
+| [`docker`](docker.md) | Container runtime substrate |
+| [`viteplus`](viteplus.md) | Development frontend runtime helper |
+| [`php-cli`](php-cli.md) | PHP command-line runtime |
+| [`gh`](gh.md) | GitHub CLI utility |
+| [`composer`](composer.md) | PHP dependency manager |
+| [`dns`](dns.md) | Gateway DNS infrastructure |
+| [`sqlite3`](sqlite3.md) | Local SQLite CLI utility |
 
 ## Installable Tools
 

@@ -61,6 +61,10 @@ configuration owned by the tool definition, not an HTTP proxy route.
 MySQL is a managed database capability. App database selection and application
 migrations remain app or deployment concerns.
 
+Installing `mysql` also installs the `default-mysql-client` package on the same
+node so operators and local automation have the matching `mysql` CLI available
+only where the managed MySQL service is installed.
+
 `tool:install mysql` requires the target node to have an active `database`
 role assignment. Orbit does not select an app database host here. Installing
 MySQL on an app node is allowed only when that same node also has an active
@@ -68,5 +72,5 @@ MySQL on an app node is allowed only when that same node also has an active
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the managed MySQL container, expected lifecycle
-state, logs availability, and safe repair/adoption boundaries.
+`doctor --family=tool` verifies the MySQL client capability, managed service
+intent, and safe repair/adoption boundaries.

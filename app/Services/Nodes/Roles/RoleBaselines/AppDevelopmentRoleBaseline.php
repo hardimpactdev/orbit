@@ -7,12 +7,16 @@ namespace App\Services\Nodes\Roles\RoleBaselines;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Tools\ToolCatalog;
 use RuntimeException;
 
 class AppDevelopmentRoleBaseline implements RoleBaseline
 {
+    use ManagesNodeToolBaseline;
+
     public function __construct(
         private readonly DevelopmentDnsMappingEnactor $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor,
+        private readonly ?ToolCatalog $toolCatalog = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -26,6 +30,8 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'not_applicable') {
+            $this->convergeTool($node, 'sqlite3', 'installed');
+
             return;
         }
 
@@ -43,6 +49,8 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->removeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'failed') {
+            $this->removeTools($node, ['sqlite3']);
+
             return;
         }
 
@@ -54,5 +62,10 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
     private function isValidTld(string $tld): bool
     {
         return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
+    }
+
+    protected function toolCatalog(): ToolCatalog
+    {
+        return $this->toolCatalog ?? app(ToolCatalog::class);
     }
 }

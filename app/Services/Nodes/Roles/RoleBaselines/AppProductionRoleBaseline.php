@@ -34,11 +34,12 @@ class AppProductionRoleBaseline implements RoleBaseline
         }
 
         $this->convergeTools($node, ['caddy', 'php', 'supervisor']);
+        $this->convergeTool($node, 'sqlite3', 'installed');
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $this->removeTools($node, ['caddy', 'php', 'supervisor']);
+        $this->removeTools($node, ['caddy', 'php', 'sqlite3', 'supervisor']);
     }
 
     protected function toolCatalog(): ToolCatalog

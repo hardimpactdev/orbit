@@ -65,6 +65,21 @@ generic node record. Each role assignment has typed settings:
 Changing role settings is a desired-state change and triggers the same baseline
 convergence path as adding the role.
 
+## Hosted Role Baselines
+
+Role baselines are code-defined desired state, not editable package lists.
+
+| Role | Baseline intent |
+| --- | --- |
+| `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
+| `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
+| `database` | Docker running as the substrate for managed database service tools |
+
+Database clients belong to the service tool that needs them. The `postgres`
+tool installs `postgresql-client`, and the `mysql` tool installs
+`default-mysql-client`; the `database` role baseline does not install them
+preemptively.
+
 ## Role Assignment Lifecycle
 
 Role assignments use these lifecycle statuses:

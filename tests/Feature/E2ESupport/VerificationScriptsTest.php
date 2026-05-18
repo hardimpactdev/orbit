@@ -255,6 +255,13 @@ it('installs the SSH client as a control-node provisioning prerequisite', functi
     expect($script)->toContain('openssh-client');
 });
 
+it('does not install the SQLite CLI as a universal host prerequisite', function (): void {
+    $script = file_get_contents(base_path('bin/install-orbit'));
+
+    expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
+        ->and($script)->toContain('"php${PHP_VERSION}-sqlite3"');
+});
+
 it('aligns orbit checkout ownership with the home parent so non-root users can write', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 

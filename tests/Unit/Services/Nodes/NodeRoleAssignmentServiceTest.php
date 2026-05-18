@@ -168,7 +168,29 @@ describe('node role assignment service', function (): void {
             ->first();
 
         expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('running');
+            ->and($tool->expected_state)->toBe('running')
+            ->and(NodeTool::query()
+                ->where('node_id', $node->id)
+                ->whereIn('name', ['mysql', 'postgres', 'sqlite3'])
+                ->exists())->toBeFalse();
+    });
+
+    it('materializes sqlite3 as a desired tool for development app roles', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'wireguard_address' => '10.6.0.20',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']);
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'sqlite3')
+            ->first();
+
+        expect($tool)->not->toBeNull()
+            ->and($tool->expected_state)->toBe('installed');
     });
 
     it('materializes the production app runtime baseline as desired tools', function (): void {
@@ -182,14 +204,19 @@ describe('node role assignment service', function (): void {
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'php', 'supervisor'])
+            ->whereIn('name', ['caddy', 'php', 'sqlite3', 'supervisor'])
             ->orderBy('name')
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'php', 'supervisor'])
-            ->and($tools->pluck('expected_state')->unique()->all())
-            ->toBe(['running']);
+            ->toBe(['caddy', 'php', 'sqlite3', 'supervisor'])
+            ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
+            ->toBe([
+                'caddy' => 'running',
+                'php' => 'running',
+                'sqlite3' => 'installed',
+                'supervisor' => 'running',
+            ]);
     });
 
     it('rejects conflicting roles', function (): void {

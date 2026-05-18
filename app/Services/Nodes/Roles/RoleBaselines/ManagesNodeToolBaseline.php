@@ -16,22 +16,27 @@ trait ManagesNodeToolBaseline
     protected function convergeTools(Node $node, array $tools): void
     {
         foreach ($tools as $tool) {
-            if (! $this->toolCatalog()->supports($tool)) {
-                continue;
-            }
-
-            NodeTool::query()->updateOrCreate(
-                [
-                    'node_id' => $node->id,
-                    'name' => $tool,
-                ],
-                [
-                    'expected_state' => 'running',
-                    'expected_version' => null,
-                    'config' => null,
-                ],
-            );
+            $this->convergeTool($node, $tool);
         }
+    }
+
+    protected function convergeTool(Node $node, string $tool, string $expectedState = 'running'): void
+    {
+        if (! $this->toolCatalog()->supports($tool)) {
+            return;
+        }
+
+        NodeTool::query()->updateOrCreate(
+            [
+                'node_id' => $node->id,
+                'name' => $tool,
+            ],
+            [
+                'expected_state' => $expectedState,
+                'expected_version' => null,
+                'config' => null,
+            ],
+        );
     }
 
     /**

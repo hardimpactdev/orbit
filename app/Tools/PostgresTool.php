@@ -18,6 +18,12 @@ final class PostgresTool extends DockerComposeTool
     }
 
     #[\Override]
+    public function installScript(array $config = []): string
+    {
+        return $this->installWithAptPackages($config, 'postgresql-client');
+    }
+
+    #[\Override]
     public function probeMetadata(): array
     {
         return [

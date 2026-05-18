@@ -17,6 +17,15 @@ abstract class DockerComposeTool extends BaseTool
         return $this->dockerComposeInstallScript($this->service(), $config);
     }
 
+    protected function installWithAptPackages(array $config, string ...$packages): string
+    {
+        return implode("\n", [
+            'set -e',
+            $this->aptInstallScript(...$packages),
+            $this->dockerComposeInstallScript($this->service(), $config),
+        ]);
+    }
+
     public function removeScript(array $config = []): string
     {
         return $this->dockerComposeRemoveScript($this->service(), $config);

@@ -53,6 +53,7 @@ use App\Tools\PolyscopeServerTool;
 use App\Tools\PostgresTool;
 use App\Tools\RedisTool;
 use App\Tools\ReverbTool;
+use App\Tools\Sqlite3Tool;
 use App\Tools\SupervisorTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
@@ -92,6 +93,7 @@ class AppServiceProvider extends ServiceProvider
             $app->make(ComposerTool::class),
             $app->make(DnsTool::class),
             $app->make(PhpTool::class),
+            $app->make(Sqlite3Tool::class),
             $app->make(PostgresTool::class),
             $app->make(MysqlTool::class),
             $app->make(RedisTool::class),

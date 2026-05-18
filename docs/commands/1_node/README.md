@@ -64,6 +64,20 @@ Active role assignments must satisfy this matrix:
 | `app-production` | `database` | `gateway`, `app-development` |
 | `database` | `app-development`, `app-production` | `gateway` |
 
+### Hosted role baselines
+
+Hosted roles materialize baseline tool intent when a role assignment converges.
+
+| Role | Baseline intent |
+| --- | --- |
+| `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
+| `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
+| `database` | Docker running as the substrate for managed database service tools |
+
+The `database` role does not preinstall every database client. Service-specific
+tools install their own helpers: `postgres` installs `postgresql-client`, and
+`mysql` installs `default-mysql-client`.
+
 ## Thin CLI and gateway authority
 
 The Orbit CLI is a thin gateway client. It gathers input, calls the gateway,
@@ -155,7 +169,7 @@ These rules apply to all node commands and define the invariants the family enfo
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.
-- Role removal blocks when Orbit-managed dependents still require the role.
+- Role removal blocks while dependents managed by Orbit still require the role.
   `--force` removes Orbit-owned dependents and configuration but preserves data.
   `--force --purge-data` deletes role-owned data only where an explicit command
   contract supports that purge.

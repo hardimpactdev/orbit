@@ -70,6 +70,17 @@ abstract class BaseTool implements ToolDefinition
         return "docker compose -f '{$composePath}' stop '{$service}' && docker compose -f '{$composePath}' rm -f '{$service}'";
     }
 
+    protected function aptInstallScript(string ...$packages): string
+    {
+        $packageList = implode(' ', array_map(escapeshellarg(...), $packages));
+
+        return <<<BASH
+export DEBIAN_FRONTEND=noninteractive
+sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq {$packageList}
+BASH;
+    }
+
     /**
      * @return array<string, string>
      */
