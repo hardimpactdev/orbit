@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bff69a4822e2139e1b839d401ce7b0a7",
+    "content-hash": "dd53ef9571e979ab88e5a3b4f313c750",
     "packages": [
         {
             "name": "beyondcode/polyscope",
@@ -1162,16 +1162,16 @@
         },
         {
             "name": "hardimpactdev/librarian",
-            "version": "0.0.1",
+            "version": "0.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/hardimpactdev/librarian.git",
-                "reference": "550a812c8bd05ae7a11eac8833dffa55219ba068"
+                "reference": "655776a0022fbe49b2bb6da0750d83f73a26a84c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/hardimpactdev/librarian/zipball/550a812c8bd05ae7a11eac8833dffa55219ba068",
-                "reference": "550a812c8bd05ae7a11eac8833dffa55219ba068",
+                "url": "https://api.github.com/repos/hardimpactdev/librarian/zipball/655776a0022fbe49b2bb6da0750d83f73a26a84c",
+                "reference": "655776a0022fbe49b2bb6da0750d83f73a26a84c",
                 "shasum": ""
             },
             "require": {
@@ -1226,7 +1226,7 @@
             ],
             "support": {
                 "issues": "https://github.com/hardimpactdev/librarian/issues",
-                "source": "https://github.com/hardimpactdev/librarian/tree/0.0.1"
+                "source": "https://github.com/hardimpactdev/librarian/tree/0.0.2"
             },
             "funding": [
                 {
@@ -1234,7 +1234,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-05-18T13:51:22+00:00"
+            "time": "2026-05-18T19:44:16+00:00"
         },
         {
             "name": "hardimpactdev/opencode-sdk-laravel",
