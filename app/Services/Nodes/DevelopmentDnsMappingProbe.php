@@ -69,7 +69,7 @@ class DevelopmentDnsMappingProbe
 
     private function targetFrom(string $content, string $tld): ?string
     {
-        if (preg_match('/address=\/\\.'.preg_quote($tld, '/').'\/(.+)/', $content, $matches) !== 1) {
+        if (preg_match('/^address=\/(?:\\.)?'.preg_quote($tld, '/').'\/(.+)$/m', $content, $matches) !== 1) {
             return null;
         }
 

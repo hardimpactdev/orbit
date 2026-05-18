@@ -236,7 +236,7 @@ it('adopts a compatible existing app node for canonical app-development', functi
             return Process::result(output: "app-public-key\t10.6.0.9/32\n");
         }
 
-        if ($command === 'docker exec orbit-dns kill -HUP 1') {
+        if ($command === 'docker restart orbit-dns') {
             return Process::result();
         }
 
