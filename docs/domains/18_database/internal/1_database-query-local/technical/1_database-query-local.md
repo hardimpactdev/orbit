@@ -24,6 +24,8 @@ orbit database:query-local
   statement classification, limit, and an execution correlation identifier.
 - Any non-JSON, partial JSON, or unsupported top-level shape fails with
   `error.code=validation_failed`.
+- Write-capable SQL without explicit write consent fails with
+  `error.code=database_query.write_not_allowed`.
 
 ## Behavior Contract
 
@@ -43,6 +45,7 @@ orbit database:query-local
 ## Failure Semantics
 
 - `validation_failed` for malformed stdin payloads.
+- `database_query.write_not_allowed` for write-capable SQL without write consent.
 - `database_query.execution_failed` for SQLite open or execution failures.
 
 ## Activity Logging
