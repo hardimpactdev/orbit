@@ -141,6 +141,36 @@ it('enforces env prefix uniqueness per workspace target', function (): void {
     ]))->toThrow(QueryException::class);
 });
 
+it('requires each target row to belong to exactly one app or workspace', function (): void {
+    $app = App::factory()->create();
+    $workspace = Workspace::factory()->create();
+
+    $connectionId = DB::table('database_connections')->insertGetId([
+        'slug' => 'exclusive-target',
+        'driver' => 'pgsql',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    expect(fn () => DB::table('database_connection_targets')->insert([
+        'database_connection_id' => $connectionId,
+        'app_id' => null,
+        'workspace_id' => null,
+        'env_prefix' => 'DB',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]))->toThrow(QueryException::class);
+
+    expect(fn () => DB::table('database_connection_targets')->insert([
+        'database_connection_id' => $connectionId,
+        'app_id' => $app->id,
+        'workspace_id' => $workspace->id,
+        'env_prefix' => 'ANALYTICS_DB',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]))->toThrow(QueryException::class);
+});
+
 it('cascades target rows when the database connection is deleted', function (): void {
     $app = App::factory()->create();
 
