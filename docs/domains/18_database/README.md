@@ -104,7 +104,45 @@ database doctor.
 
 ## Commands
 
-Public database commands are defined in this domain as they are converted.
+The `database:*` family covers registry reads and writes, target mapping, and
+audited SQL or schema inspection.
+
+### Registry and inspection
+
+Use these commands to browse stored connection state before you change it.
+
+1. [`orbit database:list`](1_database-list/database-list.md)
+2. [`orbit database:show <connection>`](2_database-show/database-show.md)
+
+### Connection lifecycle
+
+Use these commands to create, update, or remove reusable connection records.
+
+3. [`orbit database:add <slug>`](3_database-add/database-add.md)
+4. [`orbit database:update <connection>`](4_database-update/database-update.md)
+5. [`orbit database:remove <connection>`](5_database-remove/database-remove.md)
+
+### Target mapping
+
+Use these commands to bind stored connections into app or workspace env space.
+
+6. [`orbit database:attach <connection>`](6_database-attach/database-attach.md)
+7. [`orbit database:detach <connection>`](7_database-detach/database-detach.md)
+
+### Query and schema
+
+Use these commands to inspect or query a resolved stored connection.
+
+8. [`orbit database:query <target>`](8_database-query/database-query.md)
+9. [`orbit database:tables <target>`](9_database-tables/database-tables.md)
+10. [`orbit database:schema <target>`](10_database-schema/database-schema.md)
+11. [`orbit database:describe <target> <table>`](11_database-describe/database-describe.md)
+
+## Internal Commands
+
+These hidden commands support gateway orchestration and are not public workflow entrypoints.
+
+- [`database:query-local`](internal/1_database-query-local/database-query-local.md)
 
 ## Related
 
