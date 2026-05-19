@@ -12,6 +12,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use Illuminate\Support\Str;
 
 final readonly class DatabaseConnectionAdopter
 {
@@ -38,9 +39,9 @@ final readonly class DatabaseConnectionAdopter
                     ->first();
                 $baseSlug = sprintf(
                     '%s-%s%s',
-                    $workspace->name,
-                    $workspace->app->name,
-                    $prefix === 'DB' ? '' : '-'.str($prefix)->lower()->replace('_', '-')
+                    Str::slug($workspace->name),
+                    Str::slug($workspace->app->name),
+                    $prefix === 'DB' ? '' : '-'.Str::slug($prefix)
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload);
@@ -69,8 +70,8 @@ final readonly class DatabaseConnectionAdopter
                     ->first();
                 $baseSlug = sprintf(
                     '%s%s',
-                    $app->name,
-                    $prefix === 'DB' ? '' : '-'.str($prefix)->lower()->replace('_', '-')
+                    Str::slug($app->name),
+                    $prefix === 'DB' ? '' : '-'.Str::slug($prefix)
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload);

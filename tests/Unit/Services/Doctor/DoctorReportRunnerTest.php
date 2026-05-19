@@ -310,6 +310,41 @@ describe('DoctorReportRunner', function (): void {
             ->and($runner->categoriesForNode($databaseNode))->not->toContain('database_connection');
     });
 
+    it('does not mark database connection unverifiable issues as adoptable', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-unverifiable');
+        File::ensureDirectoryExists($path);
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing env', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing env', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, ['database_connection']);
+        $issue = collect($report['issues'])->firstWhere('key', 'database_connection.unverifiable');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['adoptable'] ?? null)->toBeFalse();
+    });
+
     it('restores database connection env drift through family dispatch', function (): void {
         $node = createDoctorRunnerAppHostNode();
         $path = storage_path('framework/testing/doctor-database-restore');

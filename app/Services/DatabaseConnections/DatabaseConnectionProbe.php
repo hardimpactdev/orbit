@@ -47,10 +47,12 @@ final readonly class DatabaseConnectionProbe
 
             foreach (array_intersect_key($expected, $observed) as $key => $value) {
                 if ((string) $observed[$key] !== (string) $value) {
-                    $mismatched[$key] = [
-                        'expected' => (string) $value,
-                        'observed' => (string) $observed[$key],
-                    ];
+                    $mismatched[$key] = $this->isSecretKey($key)
+                        ? 'masked'
+                        : [
+                            'expected' => (string) $value,
+                            'observed' => (string) $observed[$key],
+                        ];
                 }
             }
 
@@ -233,13 +235,6 @@ final readonly class DatabaseConnectionProbe
                 'summary' => 'database_connection.env_extra',
                 'detail' => $detail,
             ];
-            $issues[] = [
-                'family' => 'database_connection',
-                'key' => 'database_connection.target_extra',
-                'kind' => 'extra',
-                'summary' => 'database_connection.target_extra',
-                'detail' => $detail,
-            ];
         }
 
         return $issues;
@@ -284,5 +279,11 @@ final readonly class DatabaseConnectionProbe
     private function shouldUseLocalFilesystem(Node $node): bool
     {
         return $node->role === 'gateway';
+    }
+
+    private function isSecretKey(string $key): bool
+    {
+        return str_ends_with($key, '_PASSWORD')
+            || str_contains($key, 'PASSWORD');
     }
 }

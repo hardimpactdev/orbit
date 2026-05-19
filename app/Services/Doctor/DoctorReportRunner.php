@@ -845,7 +845,11 @@ final readonly class DoctorReportRunner
             ...$issue,
             'restorable' => in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
             'adoptable' => (($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value)
-                || $family === 'database_connection',
+                || ($family === 'database_connection' && in_array($key, [
+                    'database_connection.env_extra',
+                    'database_connection.target_extra',
+                    'database_connection.env_mismatch',
+                ], true)),
         ];
     }
 

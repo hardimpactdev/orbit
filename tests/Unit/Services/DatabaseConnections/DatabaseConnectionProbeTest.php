@@ -52,6 +52,40 @@ describe('DatabaseConnectionProbe', function (): void {
             ]);
     });
 
+    it('masks plaintext password values in mismatch details', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-secret-mismatch');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=observed-secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'stored-secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+            ->firstWhere('key', 'database_connection.env_mismatch');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['detail']['mismatched_keys']['DB_PASSWORD'] ?? null)->toBe('masked')
+            ->and(json_encode($issue, JSON_THROW_ON_ERROR))->not->toContain('stored-secret')
+            ->and(json_encode($issue, JSON_THROW_ON_ERROR))->not->toContain('observed-secret');
+    });
+
     it('reads remote env files through remote shell for hosted workspaces', function (): void {
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
@@ -87,7 +121,7 @@ describe('DatabaseConnectionProbe', function (): void {
             ->and($shell->scripts[0])->toContain("cat '/srv/docs/.worktrees/feature/.env'");
     });
 
-    it('reports env and target extra issues for observed supported prefixes without mappings', function (): void {
+    it('reports one actionable extra issue per unmapped observed supported prefix', function (): void {
         $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-extra-app');
         File::ensureDirectoryExists($path);
@@ -116,9 +150,9 @@ ENV);
         $keys = collect($issues)->pluck('key')->all();
 
         expect($keys)->toContain('database_connection.env_extra')
-            ->toContain('database_connection.target_extra')
+            ->not->toContain('database_connection.target_extra')
             ->and(collect($issues)->where('key', 'database_connection.env_extra')->count())->toBe(2)
-            ->and(collect($issues)->where('key', 'database_connection.target_extra')->count())->toBe(2);
+            ->and(collect($issues)->count())->toBe(2);
     });
 
     it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {

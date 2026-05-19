@@ -62,6 +62,32 @@ describe('DatabaseConnectionAdopter', function (): void {
             ->and(DatabaseConnection::query()->where('slug', 'feature-docs')->exists())->toBeTrue();
     });
 
+    it('normalizes adopted app and workspace slugs from human names', function (): void {
+        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $appPath = storage_path('framework/testing/database-adopter-normalized-app');
+        File::ensureDirectoryExists($appPath);
+        File::put($appPath.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\nANALYTICS_DB_CONNECTION=mysql\nANALYTICS_DB_HOST=analytics.internal\nANALYTICS_DB_PORT=3306\nANALYTICS_DB_DATABASE=analytics\nANALYTICS_DB_USERNAME=analytics\nANALYTICS_DB_PASSWORD=top-secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'Docs API!',
+            'path' => $appPath,
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'Feature Branch #1',
+            'path' => storage_path('framework/testing/database-adopter-normalized-workspace'),
+        ]);
+        File::ensureDirectoryExists($workspace->path);
+        File::put($workspace->path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=feature_docs\nDB_USERNAME=feature\nDB_PASSWORD=secret\n");
+
+        app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        expect(DatabaseConnection::query()->where('slug', 'docs-api')->exists())->toBeTrue()
+            ->and(DatabaseConnection::query()->where('slug', 'docs-api-analytics-db')->exists())->toBeTrue()
+            ->and(DatabaseConnection::query()->where('slug', 'feature-branch-1-docs-api')->exists())->toBeTrue();
+    });
+
     it('reuses an existing app target connection instead of creating slug duplicates on rerun', function (): void {
         $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-idempotent-app');
