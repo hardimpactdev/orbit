@@ -7,7 +7,9 @@ namespace App\Services\DatabaseConnections;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Node;
 use App\Models\Workspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use InvalidArgumentException;
 
@@ -20,16 +22,50 @@ final class DatabaseConnectionRegistry
     /**
      * @return Collection<int, DatabaseConnection>
      */
-    public function list(): Collection
+    public function list(?App $app = null, ?Workspace $workspace = null, ?Node $node = null): Collection
     {
         return DatabaseConnection::query()
+            ->with(['node', 'targets.app', 'targets.workspace'])
+            ->when(
+                $app instanceof App,
+                fn (Builder $query): Builder => $query->whereHas(
+                    'targets',
+                    fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app->id)
+                ),
+            )
+            ->when(
+                $workspace instanceof Workspace,
+                fn (Builder $query): Builder => $query->whereHas(
+                    'targets',
+                    fn (Builder $targetQuery): Builder => $targetQuery->where('workspace_id', $workspace->id)
+                ),
+            )
+            ->when(
+                $node instanceof Node,
+                fn (Builder $query): Builder => $query
+                    ->where(function (Builder $nested): void {
+                        $nested->whereNotNull('node_id');
+                    })
+                    ->orWhere(function (Builder $nested) use ($node): void {
+                        $nested->whereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id))
+                            ->orWhereHas('targets.workspace.app', fn (Builder $workspaceQuery): Builder => $workspaceQuery->where('node_id', $node->id));
+                    }),
+            )
+            ->when(
+                $node instanceof Node,
+                fn (Builder $query): Builder => $query->where(function (Builder $nested) use ($node): void {
+                    $nested->where('node_id', $node->id)
+                        ->orWhereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id))
+                        ->orWhereHas('targets.workspace.app', fn (Builder $workspaceQuery): Builder => $workspaceQuery->where('node_id', $node->id));
+                }),
+            )
             ->orderBy('slug')
             ->get();
     }
 
     public function show(string $slug): DatabaseConnection|DatabaseConnectionRegistryFailure
     {
-        return $this->findConnection($slug);
+        return $this->findConnection($slug, withRelations: true);
     }
 
     public function create(string $slug, array $attributes): DatabaseConnection|DatabaseConnectionRegistryFailure
@@ -123,6 +159,9 @@ final class DatabaseConnectionRegistry
             return DatabaseConnectionRegistryFailure::hasTargets($slug, $targetCount);
         }
 
+        DatabaseConnectionTarget::query()
+            ->where('database_connection_id', $connection->id)
+            ->delete();
         $connection->delete();
 
         return true;
@@ -148,9 +187,15 @@ final class DatabaseConnectionRegistry
         return $this->detach($slug, 'workspace', $workspace->id, $envPrefix);
     }
 
-    private function findConnection(string $slug): DatabaseConnection|DatabaseConnectionRegistryFailure
+    private function findConnection(string $slug, bool $withRelations = false): DatabaseConnection|DatabaseConnectionRegistryFailure
     {
-        $connection = DatabaseConnection::query()->where('slug', $slug)->first();
+        $query = DatabaseConnection::query();
+
+        if ($withRelations) {
+            $query->with(['node', 'targets.app', 'targets.workspace']);
+        }
+
+        $connection = $query->where('slug', $slug)->first();
 
         if (! $connection instanceof DatabaseConnection) {
             return DatabaseConnectionRegistryFailure::notFound($slug);
