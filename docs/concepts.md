@@ -69,7 +69,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Hosted role settings**
 - **Agent role TLD setting**
 - **Agent role baseline**
-- **Orbit-agent runtime user**
+- **Agent runtime user**
 - **Role assignment status**
 - **Caller identity**
 - **Node identity**

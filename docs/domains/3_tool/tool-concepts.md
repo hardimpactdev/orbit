@@ -22,7 +22,7 @@ These terms define the core vocabulary used across tool command contracts and th
 - **Agent tool category:** Tool category `agent`. Tools in this category are
   first-party autonomous agent runtimes (`openclaw`, `hermes`) that require
   the `agent` hosted node role and run as the shared unprivileged
-  `orbit-agent` user.
+  `agent` user.
 - **Tool row:** Gateway-owned record of expected state for one tool on one
   node, including expected lifecycle state, expected version when tracked,
   install paths, and probe and repair settings.
@@ -44,7 +44,7 @@ These terms describe how Orbit relates to each tool in the catalog.
   provisioning so doctor has one gateway-owned source of truth per node.
 - **Agent tool:** Installable tool in the `agent` category. Requires the
   `agent` hosted role on the node, runs as the shared unprivileged
-  `orbit-agent` user, and is supervised by Supervisor.
+  `agent` user, and is supervised by Supervisor.
 - **Agent tool internal route:** Tool-owned proxy route under the agent
   role TLD, such as `https://openclaw.agent`. Reachable only over the
   Orbit/WireGuard network.

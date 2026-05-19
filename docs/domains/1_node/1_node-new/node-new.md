@@ -120,7 +120,7 @@ host.
 Provisions an isolated agent host. The `agent` role assignment carries a
 `tld` setting (default `agent`) and applies a baseline of Caddy,
 Supervisor, WireGuard/node identity material, and the shared unprivileged
-`orbit-agent` runtime user.
+`agent` runtime user.
 
 Requires `--host`. `--tld` is optional; the default is `agent`. The TLD
 must be unique across active TLD-backed role assignments.

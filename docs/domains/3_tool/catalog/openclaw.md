@@ -11,7 +11,7 @@ model in Orbit.
 | --- | --- |
 | Slug | `openclaw` |
 | Label | OpenClaw |
-| Backend | Supervisor-managed runtime as `orbit-agent` |
+| Backend | Supervisor-managed runtime as `agent` |
 | Support model | Installable and removable by Orbit |
 | Category | `agent` |
 | Required node role | `agent` |
@@ -63,7 +63,7 @@ and has no public ingress baseline.
 ## Orbit Notes
 
 OpenClaw is a first-party autonomous agent tool. Orbit installs and runs
-it as the shared unprivileged `orbit-agent` user, never as the privileged
+it as the shared unprivileged `agent` user, never as the privileged
 `orbit` maintenance user. `tool:update openclaw` runs OpenClaw's native
 update path through the Orbit-managed binary and then restarts the
 Supervisor program that wraps it.

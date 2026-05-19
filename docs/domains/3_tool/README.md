@@ -78,8 +78,8 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Installable and removable by Orbit | `communication` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`polyscope-server`](catalog/polyscope-server.md) | Polyscope Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
 | [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
-| [`openclaw`](catalog/openclaw.md) | OpenClaw | Supervisor-managed runtime as `orbit-agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`hermes`](catalog/hermes.md) | Hermes | Supervisor-managed runtime as `orbit-agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`openclaw`](catalog/openclaw.md) | OpenClaw | Supervisor-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`hermes`](catalog/hermes.md) | Hermes | Supervisor-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless

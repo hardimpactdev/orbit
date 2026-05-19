@@ -79,7 +79,7 @@ The node probe reads gateway node records and checks these layers:
    resolver. For `agent`, assignments have a `tld` value, the gateway maps
    `*.{tld}` to the agent node's WireGuard address through the same DNS
    configuration model, and the agent node baseline includes Caddy,
-   Supervisor, and the shared unprivileged `orbit-agent` runtime user.
+   Supervisor, and the shared unprivileged `agent` runtime user.
    `app-production`, `database`, and `gateway` assignments have no role
    settings in v1.
 12. **Node-related defaults:** local `node:default` preferences point at

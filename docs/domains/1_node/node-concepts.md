@@ -43,8 +43,8 @@ Each term below has a precise meaning in the node command family.
   `hermes.agent`.
 - **Agent role baseline:** Code-defined desired state for an `agent` node:
   Caddy, Supervisor, WireGuard/node identity and trust material, and the
-  shared unprivileged `orbit-agent` runtime user.
-- **Orbit-agent runtime user:** Shared unprivileged Linux user that owns agent
+  shared unprivileged `agent` runtime user.
+- **Agent runtime user:** Shared unprivileged Linux user that owns agent
   tool runtimes on an `agent` node. Agent tools never run as the privileged
   `orbit` maintenance user.
 - **Role assignment status:** Lifecycle state of one role assignment:
@@ -104,7 +104,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
 | `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `caddy` and `supervisor` running, the shared unprivileged `orbit-agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 
 Database clients belong to the service tool that needs them. The `postgres`
 tool installs `postgresql-client`, and the `mysql` tool installs

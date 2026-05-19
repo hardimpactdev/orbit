@@ -75,7 +75,7 @@ Hosted roles materialize baseline tool intent when a role assignment converges.
 | `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
 | `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `caddy` and `supervisor` running, the shared unprivileged `orbit-agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 
 The `database` role does not preinstall every database client. Service-specific
 tools install their own helpers: `postgres` installs `postgresql-client`, and

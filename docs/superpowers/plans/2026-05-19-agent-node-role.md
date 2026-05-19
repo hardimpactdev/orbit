@@ -17,7 +17,7 @@
 - `agent` can only be selected during `node:new`; `node role:add agent` is rejected because adding it to an existing node bypasses the isolation model.
 - `agent` has role settings with `tld`, defaulting to `agent`.
 - The agent TLD uses the same gateway-owned development DNS mapping pattern as `app-development`: `*.agent` resolves to the agent node's WireGuard address.
-- The `agent` role baseline includes Caddy, Supervisor, WireGuard/node identity/trust material, and an unprivileged shared `orbit-agent` runtime user.
+- The `agent` role baseline includes Caddy, Supervisor, WireGuard/node identity/trust material, and an unprivileged shared `agent` runtime user.
 - Agent tools do not run as the privileged `orbit` maintenance/apply user.
 - OpenClaw and Hermes are normal `tool` catalog entries with category `agent`, not a separate state family.
 - OpenClaw and Hermes may both be installed and running on the same agent node.
@@ -91,7 +91,7 @@ Out of scope:
 ### Product Docs
 
 - Modify: `docs/architecture.md` — make the `agent` hosted role official, describe exclusivity, node-level traceability, and scoped grants.
-- Modify: `docs/tech-stack.md` — document the `agent` role baseline, `orbit-agent` runtime user, Caddy UI routes, and OpenClaw/Hermes tool runtime.
+- Modify: `docs/tech-stack.md` — document the `agent` role baseline, `agent` runtime user, Caddy UI routes, and OpenClaw/Hermes tool runtime.
 - Modify: `docs/concepts.md` — add indexed concepts for `Agent hosted role`, `Node access permission`, `Permission preset`, `Gateway-admin grant`, and agent tools.
 - Modify: `docs/domains/1_node/README.md` — update role model, compatibility matrix, grant model, and `node:new` grant setup behavior.
 - Modify: `docs/domains/1_node/node-concepts.md` — add `agent`, TLD settings, role exclusivity, scoped permissions, explicit self-grants, gateway-admin semantics.
@@ -130,7 +130,7 @@ Out of scope:
 - Modify: `app/Services/Nodes/Roles/NodeRoleRegistry.php` — register `agent`, exclusive conflicts, Ubuntu support, settings class, creation-only assignability.
 - Modify: `app/Services/Nodes/Roles/NodeRoleAssignments.php` — add agent helpers and include agent in managed tool host eligibility where appropriate.
 - Modify: `app/Services/Nodes/Roles/NodeRoleAssignmentService.php` — support agent TLD uniqueness, generalize DNS mapping cleanup from app-development to TLD-backed roles, sync legacy node fields for `agent`.
-- Create: `app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php` — converge Caddy, Supervisor, shared `orbit-agent` user, and agent TLD DNS mapping.
+- Create: `app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php` — converge Caddy, Supervisor, shared `agent` user, and agent TLD DNS mapping.
 - Modify: `app/Services/Nodes/Roles/NodeRoleBaselineConverger.php` — wire `AgentRoleBaseline`.
 - Modify: `app/Services/Nodes/DevelopmentDnsMappingEnactor.php` — generalize naming from development-only where needed, or add explicit agent-role entry points that reuse the same backend.
 - Modify: `app/Actions/Nodes/ReenactNodeArtifacts.php` and node doctor services — reapply agent role baseline and TLD mapping.
@@ -157,7 +157,7 @@ Out of scope:
 - Create: `app/Tools/OpenClawTool.php` — install, update, credentials, doctor probe metadata, service metadata.
 - Create: `app/Tools/HermesTool.php` — install, update, credentials, doctor probe metadata, service metadata.
 - Modify: `app/Providers/AppServiceProvider.php` — register OpenClaw and Hermes definitions.
-- Modify: `app/Services/Tools/ToolInstaller.php` — install agent tools as `orbit-agent`, create tool-owned internal proxy routes, store credentials metadata, and warn for multiple running agent tools.
+- Modify: `app/Services/Tools/ToolInstaller.php` — install agent tools as `agent`, create tool-owned internal proxy routes, store credentials metadata, and warn for multiple running agent tools.
 - Modify: `app/Services/Tools/ToolUpdater.php` — enforce `tool:update:agent-tools` for agent self-update and prevent baseline tool self-update.
 - Modify: `app/Services/Tools/ToolLifecycleManager.php` — enforce restart-only self lifecycle for agent self-grants.
 - Modify: `app/Services/Tools/ToolCredentialsReader.php` — require `tool:credentials` and do not include credentials in `tool:read`.
@@ -256,7 +256,7 @@ Create catalog docs for `openclaw` and `hermes` with:
 Support model: Installable and removable by Orbit
 Category: `agent`
 Required role: `agent`
-Backend: Supervisor-managed runtime as `orbit-agent`
+Backend: Supervisor-managed runtime as `agent`
 Service endpoint: internal HTTPS route under the agent role TLD
 Credentials: web UI token/password metadata via `tool:credentials` when supported
 Doctor: version, lifecycle, config, credentials metadata, route health
@@ -630,8 +630,8 @@ $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
 The user creation script must create an unprivileged user:
 
 ```bash
-id -u orbit-agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash orbit-agent
-sudo passwd -l orbit-agent >/dev/null 2>&1 || true
+id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent
+sudo passwd -l agent >/dev/null 2>&1 || true
 ```
 
 - [ ] **Step 6: Generalize TLD uniqueness**
@@ -869,21 +869,21 @@ Backfill existing tools with their documented categories.
 Minimum Linux install path:
 
 ```bash
-sudo -u orbit-agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
+sudo -u agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
 ```
 
 Minimum verify commands:
 
 ```bash
-sudo -u orbit-agent -H bash -lc 'openclaw --version'
-sudo -u orbit-agent -H bash -lc 'openclaw doctor'
-sudo -u orbit-agent -H bash -lc 'openclaw gateway status'
+sudo -u agent -H bash -lc 'openclaw --version'
+sudo -u agent -H bash -lc 'openclaw doctor'
+sudo -u agent -H bash -lc 'openclaw gateway status'
 ```
 
 Update path:
 
 ```bash
-sudo -u orbit-agent -H bash -lc 'npm install -g openclaw@latest'
+sudo -u agent -H bash -lc 'npm install -g openclaw@latest'
 ```
 
 If current upstream docs provide a safer native update command, use that instead and record the source in `openclaw.md`.
@@ -893,19 +893,19 @@ If current upstream docs provide a safer native update command, use that instead
 Minimum Linux install path:
 
 ```bash
-sudo -u orbit-agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash'
+sudo -u agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash'
 ```
 
 Verify:
 
 ```bash
-sudo -u orbit-agent -H bash -lc 'hermes doctor'
+sudo -u agent -H bash -lc 'hermes doctor'
 ```
 
 Update:
 
 ```bash
-sudo -u orbit-agent -H bash -lc 'hermes update'
+sudo -u agent -H bash -lc 'hermes update'
 ```
 
 - [ ] **Step 6: Register tools**
@@ -1084,7 +1084,7 @@ Node doctor reports:
 - missing agent DNS mapping;
 - missing Caddy baseline tool;
 - missing Supervisor baseline tool;
-- missing `orbit-agent` user;
+- missing `agent` user;
 - invalid scoped grant permission.
 
 - [ ] **Step 2: Add tool doctor tests**
@@ -1202,7 +1202,7 @@ Spec coverage:
 
 - Agent role as creation-only hosted role: Tasks 1, 5, 6.
 - Role exclusivity and TLD settings: Tasks 1, 5.
-- Caddy/Supervisor/WireGuard-ish baseline and `orbit-agent` user: Task 5.
+- Caddy/Supervisor/WireGuard-ish baseline and `agent` user: Task 5.
 - Scoped permissions and self-grants: Tasks 1, 2, 3, 4, 6.
 - `node:permissions` as a gateway-admin upsert path: Task 6.
 - Directional `node:new` grant setup for access-to and access-from relationships: Task 6.

@@ -54,7 +54,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | `orbit-scheduler` Artisan-command daemon supervised by Supervisor |
 | Process logs | Supervisor-managed stdout/stderr log files |
 | Service containers | Docker Compose for databases, caches, mail, and utilities on hosted nodes that need them |
-| Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` hosted role and run as the shared unprivileged `orbit-agent` user |
+| Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` hosted role and run as the shared unprivileged `agent` user |
 | Network | WireGuard |
 | Public DNS/CDN | Cloudflare integration for production domains |
 
@@ -182,7 +182,7 @@ Docker Compose runs supporting services on hosted nodes that need them — datab
 
 ### Agent runtime
 
-Nodes with the `agent` hosted role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges Caddy, Supervisor, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `orbit-agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The agent role has typed settings with a single field `tld` (default `agent`); the gateway maps `*.{tld}` to the agent node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-development` uses.
+Nodes with the `agent` hosted role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges Caddy, Supervisor, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The agent role has typed settings with a single field `tld` (default `agent`); the gateway maps `*.{tld}` to the agent node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-development` uses.
 
 Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, supervised by Supervisor like any other long-running process, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self grant does not include that permission. Multiple agent tools may be installed and run on the same agent node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Hosted node](architecture.md#hosted-node).
 

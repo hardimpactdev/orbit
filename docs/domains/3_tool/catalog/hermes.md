@@ -11,7 +11,7 @@ model in Orbit.
 | --- | --- |
 | Slug | `hermes` |
 | Label | Hermes |
-| Backend | Supervisor-managed runtime as `orbit-agent` |
+| Backend | Supervisor-managed runtime as `agent` |
 | Support model | Installable and removable by Orbit |
 | Category | `agent` |
 | Required node role | `agent` |
@@ -62,7 +62,7 @@ has no public ingress baseline.
 ## Orbit Notes
 
 Hermes is a first-party autonomous agent tool. Orbit installs and runs it
-as the shared unprivileged `orbit-agent` user. `tool:update hermes` runs
+as the shared unprivileged `agent` user. `tool:update hermes` runs
 Hermes's native update path through the Orbit-managed binary and then
 restarts the Supervisor program that wraps it.
 
