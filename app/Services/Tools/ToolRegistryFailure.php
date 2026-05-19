@@ -82,4 +82,13 @@ final readonly class ToolRegistryFailure
             ],
         );
     }
+
+    public static function authorization(string $message): self
+    {
+        return new self(
+            code: 'authorization_failed',
+            message: $message,
+            meta: [],
+        );
+    }
 }

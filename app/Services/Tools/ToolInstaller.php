@@ -8,7 +8,9 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteRenderer;
 
 final readonly class ToolInstaller
 {
@@ -54,6 +56,15 @@ final readonly class ToolInstaller
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
         }
 
+        if ($this->catalog->category($tool) === 'agent') {
+            $agentConfig = $this->agentToolConfig($tool, $targetNode, $config);
+            $routeConflict = $this->checkToolProxyRouteConflict($tool, $targetNode, $agentConfig);
+
+            if ($routeConflict instanceof ToolRegistryFailure) {
+                return $routeConflict;
+            }
+        }
+
         $row = NodeTool::query()->updateOrCreate(
             [
                 'node_id' => $targetNode->id,
@@ -78,7 +89,9 @@ final readonly class ToolInstaller
             );
         }
 
-        $credentialsScript = $this->catalog->credentialsScript($tool, $config);
+        $agentConfig = $this->agentToolConfig($tool, $targetNode, $config);
+
+        $credentialsScript = $this->catalog->credentialsScript($tool, $agentConfig);
 
         if ($credentialsScript !== null) {
             $credResult = $this->remoteShell->run($targetNode, $credentialsScript, ['throw' => false]);
@@ -95,12 +108,140 @@ final readonly class ToolInstaller
 
         $row->refresh();
 
+        if ($this->catalog->category($tool) === 'agent') {
+            $routeResult = $this->createToolProxyRoute($tool, $targetNode, $agentConfig);
+
+            if ($routeResult instanceof ToolRegistryFailure) {
+                return $routeResult;
+            }
+        }
+
         return [
             'name' => $tool,
             'node' => $targetNode->name,
             'state' => $row->expected_state,
             'version' => $row->expected_version,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function agentToolConfig(string $tool, Node $node, array $config): array
+    {
+        if ($this->catalog->category($tool) !== 'agent') {
+            return $config;
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+        $hostname = $tld !== '' ? "{$tool}.{$tld}" : $tool;
+
+        return array_merge($config, ['hostname' => $hostname]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function checkToolProxyRouteConflict(string $tool, Node $node, array $config): ?ToolRegistryFailure
+    {
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+        $domain = $tld !== '' ? "{$tool}.{$tld}" : $tool;
+
+        $existing = ProxyRoute::query()
+            ->where('domain', $domain)
+            ->first();
+
+        if (! $existing instanceof ProxyRoute) {
+            return null;
+        }
+
+        if ($existing->owner_type !== 'tool') {
+            return ToolRegistryFailure::validation(
+                'domain',
+                $domain,
+                "Proxy route '{$domain}' is already owned by {$existing->owner_type}.",
+                ['domain' => $domain, 'owner_type' => $existing->owner_type],
+            );
+        }
+
+        $existingOwner = is_array($existing->config) ? ($existing->config['owner_name'] ?? null) : null;
+
+        if ($existingOwner !== $tool) {
+            return ToolRegistryFailure::validation(
+                'domain',
+                $domain,
+                "Proxy route '{$domain}' is already owned by tool '{$existingOwner}'.",
+                ['domain' => $domain, 'existing_tool' => $existingOwner],
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function createToolProxyRoute(string $tool, Node $node, array $config): ?ToolRegistryFailure
+    {
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+        $domain = $tld !== '' ? "{$tool}.{$tld}" : $tool;
+        $upstream = $config['upstream'] ?? 'http://127.0.0.1:8080';
+
+        $existing = ProxyRoute::query()
+            ->where('domain', $domain)
+            ->first();
+
+        if ($existing instanceof ProxyRoute) {
+            if ($existing->owner_type !== 'tool') {
+                return ToolRegistryFailure::validation(
+                    'domain',
+                    $domain,
+                    "Proxy route '{$domain}' is already owned by {$existing->owner_type}.",
+                    ['domain' => $domain, 'owner_type' => $existing->owner_type],
+                );
+            }
+
+            $existingOwner = is_array($existing->config) ? ($existing->config['owner_name'] ?? null) : null;
+
+            if ($existingOwner !== $tool) {
+                return ToolRegistryFailure::validation(
+                    'domain',
+                    $domain,
+                    "Proxy route '{$domain}' is already owned by tool '{$existingOwner}'.",
+                    ['domain' => $domain, 'existing_tool' => $existingOwner],
+                );
+            }
+        }
+
+        $routeConfig = [
+            'target' => ['type' => 'upstream', 'value' => $upstream],
+            'upstream' => $upstream,
+            'owner_name' => $tool,
+        ];
+
+        $sourceHash = app(ProxyRouteRenderer::class)->sourceHash(new ProxyRoute([
+            'node_id' => $node->id,
+            'domain' => $domain,
+            'kind' => 'proxy',
+            'owner_type' => 'tool',
+            'config' => $routeConfig,
+        ]));
+
+        ProxyRoute::query()->updateOrCreate(
+            ['domain' => $domain],
+            [
+                'node_id' => $node->id,
+                'app_id' => null,
+                'workspace_id' => null,
+                'owner_type' => 'tool',
+                'kind' => 'proxy',
+                'config' => $routeConfig,
+                'source_hash' => $sourceHash,
+            ],
+        );
+
+        return null;
     }
 
     private function resolveTargetNode(?string $node, ?string $app, ?string $requiredRole): Node|ToolRegistryFailure

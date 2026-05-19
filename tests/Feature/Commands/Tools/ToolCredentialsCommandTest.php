@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Tools\CredentialsToolRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -186,5 +188,46 @@ describe('tool:credentials command contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['credentials']['tool'])->toBe('redis');
+    });
+
+    it('rejects agent self without tool:credentials permission', function (): void {
+        config(['orbit.is_gateway' => true]);
+
+        $agentNode = Node::factory()->create([
+            'name' => 'agent-1',
+            'role' => 'app',
+            'status' => 'active',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $agentNode->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+
+        LocalNodeDefault::query()->updateOrCreate(
+            ['id' => 1],
+            ['default_node_name' => 'agent-1'],
+        );
+
+        NodeTool::factory()->create([
+            'node_id' => $agentNode->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+            'credentials' => [
+                'fields' => [
+                    'url' => 'https://openclaw.agent',
+                    'username' => 'orbit',
+                    'password' => 'secret',
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('tool:credentials', ['tool' => 'openclaw', '--node' => 'agent-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('authorization_failed')
+            ->and($payload['error']['message'])->toContain('not authorized');
     });
 });
