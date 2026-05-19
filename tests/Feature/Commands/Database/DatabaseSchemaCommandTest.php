@@ -77,6 +77,44 @@ describe('database schema commands', function (): void {
             ->and($remotePayload['full'])->toBeTrue();
     });
 
+    it('lists tables in human output with the prompts table primitive', function (): void {
+        configureDatabaseSchemaGatewayCaller();
+        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'docs-db',
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/docs/database/database.sqlite',
+            'username' => null,
+        ]);
+        app()->instance(RemoteShell::class, new DatabaseSchemaCommandRemoteShell(new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'columns' => ['name'],
+                        'rows' => [['name' => 'users']],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        )));
+
+        $exitCode = Artisan::call('database:tables', ['target' => $connection->slug]);
+        $stdout = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($stdout)->toContain('Showing 1 table(s).')
+            ->and($stdout)->toContain('NAME')
+            ->and($stdout)->toContain('users')
+            ->and($stdout)->not->toContain('+---');
+    });
+
     it('describes a table in human output without leaking passwords', function (): void {
         configureDatabaseSchemaGatewayCaller();
         $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
@@ -113,8 +151,12 @@ describe('database schema commands', function (): void {
         $stdout = Artisan::output();
 
         expect($exitCode)->toBe(0)
+            ->and($stdout)->toContain("Showing description for table 'users'.")
+            ->and($stdout)->toContain('NAME')
+            ->and($stdout)->toContain('TYPE')
             ->and($stdout)->toContain('email')
             ->and($stdout)->toContain('varchar')
+            ->and($stdout)->not->toContain('+---')
             ->and($stdout)->not->toContain('never-print-me');
     });
 

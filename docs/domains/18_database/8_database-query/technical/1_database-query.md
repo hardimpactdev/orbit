@@ -27,9 +27,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `sql` | `--sql` | Always. | n/a | Non-empty SQL string. |
 | `connection` | `--connection` | Required when the target has more than one attached connection. | Unique attached mapping. | Visible connection slug attached to the target. |
 | `limit` | `--limit` | Optional. | `50`. | Positive integer row cap for row-returning statements. |
-| `full` | `--full` | Optional. | `false`. | Disables truncation in human output only. |
+| `full` | `--full` | Optional. | `false`. | Disables result truncation within the JSON response. |
 | `write` | `--write` | Required for write-capable SQL. | `false`. | Explicit consent for non-read-only execution. |
-| `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
+| `json` | `--json` | Optional. | `false`. | Accepted for consistency; this command emits strict JSON in both modes. |
 
 ## Behavior Contract
 
@@ -53,7 +53,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Renderer Contracts
 
-- [Human renderer](6.1_database-query_output-render_human.md)
+- [Human renderer](6.1_database-query_output-render_human.md) — documents why no human renderer is available.
 - [JSON renderer](6.2_database-query_output-render_json.md)
 
 ## Failure Semantics

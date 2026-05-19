@@ -255,6 +255,71 @@ describe('database registry commands', function (): void {
             ->and(DatabaseConnectionTarget::query()->count())->toBe(0);
     });
 
+    it('renders registry mutations as status lines in human mode', function (): void {
+        configureDatabaseRegistryGatewayCaller();
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        $createExitCode = Artisan::call('database:add', [
+            'slug' => 'human-db',
+            '--driver' => 'pgsql',
+            '--host' => 'postgres.internal',
+            '--port' => '5432',
+            '--database' => 'orbit',
+            '--username' => 'orbit',
+            '--password' => 'secret',
+            '--node' => 'db-node',
+        ]);
+        $createOutput = Artisan::output();
+
+        $updateExitCode = Artisan::call('database:update', [
+            'connection' => 'human-db',
+            '--slug' => 'human-renamed-db',
+        ]);
+        $updateOutput = Artisan::output();
+
+        $attachExitCode = Artisan::call('database:attach', [
+            'connection' => 'human-renamed-db',
+            '--app' => 'docs',
+            '--env-prefix' => 'DB',
+        ]);
+        $attachOutput = Artisan::output();
+
+        $detachExitCode = Artisan::call('database:detach', [
+            'connection' => 'human-renamed-db',
+            '--app' => 'docs',
+            '--env-prefix' => 'DB',
+        ]);
+        $detachOutput = Artisan::output();
+
+        $removeExitCode = Artisan::call('database:remove', [
+            'connection' => 'human-renamed-db',
+            '--force' => true,
+        ]);
+        $removeOutput = Artisan::output();
+
+        $combinedOutput = implode("\n", [
+            $createOutput,
+            $updateOutput,
+            $attachOutput,
+            $detachOutput,
+            $removeOutput,
+        ]);
+
+        expect($createExitCode)->toBe(0)
+            ->and($updateExitCode)->toBe(0)
+            ->and($attachExitCode)->toBe(0)
+            ->and($detachExitCode)->toBe(0)
+            ->and($removeExitCode)->toBe(0)
+            ->and($combinedOutput)->toContain("Database connection 'human-db' created.")
+            ->and($combinedOutput)->toContain("Database connection 'human-renamed-db' updated.")
+            ->and($combinedOutput)->toContain("Attached database connection 'human-renamed-db' to app 'docs' with prefix 'DB'.")
+            ->and($combinedOutput)->toContain("Detached database connection 'human-renamed-db' from app 'docs' prefix 'DB'.")
+            ->and($combinedOutput)->toContain("Database connection 'human-renamed-db' removed.")
+            ->and($combinedOutput)->not->toContain('+---')
+            ->and($combinedOutput)->not->toContain('secret');
+    });
+
     it('requires force for json removal', function (): void {
         configureDatabaseRegistryGatewayCaller();
         DatabaseConnection::factory()->create(['slug' => 'primary-db']);

@@ -60,7 +60,11 @@ final class DatabaseDescribeCommand extends Command implements Loggable
                     return $this->respondDatabaseFailure($result);
                 }
 
-                return $this->respondDatabaseSuccess($result['result']['data'] ?? [], $result['result']['meta'] ?? []);
+                return $this->respondDatabaseSuccess(
+                    $result['result']['data'] ?? [],
+                    $result['result']['meta'] ?? [],
+                    humanSummary: "Showing description for table '{$table}'.",
+                );
             }
 
             $connection = $this->resolveDatabaseConnection($selector);
@@ -75,7 +79,12 @@ final class DatabaseDescribeCommand extends Command implements Loggable
             $result = $executor->describe($connection, $table);
             $this->databaseActivityProperties($audit->schema('describe', $connection, (string) $this->argument('target'), $result['meta'], $table));
 
-            return $this->respondDatabaseSuccess($result['data'], $result['meta'], $connection);
+            return $this->respondDatabaseSuccess(
+                $result['data'],
+                $result['meta'],
+                $connection,
+                humanSummary: "Showing description for table '{$table}'.",
+            );
         } catch (Throwable $throwable) {
             return $this->respondDatabaseFailure($throwable);
         }

@@ -82,6 +82,7 @@ describe('database:query', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['rows'])->toBe([['id' => 1, 'name' => 'Ada']])
             ->and($payload['success']['meta']['connection'])->toBe('docs-db')
+            ->and(Artisan::output())->not->toContain('+---')
             ->and($shell->node->is($node))->toBeTrue()
             ->and($shell->script)->toBe('orbit database:query-local')
             ->and($shell->options)->toHaveKey('input')

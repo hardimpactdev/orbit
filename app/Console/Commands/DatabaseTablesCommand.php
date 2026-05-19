@@ -54,7 +54,13 @@ final class DatabaseTablesCommand extends Command implements Loggable
                     return $this->respondDatabaseFailure($result);
                 }
 
-                return $this->respondDatabaseSuccess($result['result']['data'] ?? [], $result['result']['meta'] ?? []);
+                $data = $result['result']['data'] ?? [];
+
+                return $this->respondDatabaseSuccess(
+                    $data,
+                    $result['result']['meta'] ?? [],
+                    humanSummary: $this->tablesSummary($data),
+                );
             }
 
             $connection = $this->resolveDatabaseConnection($selector);
@@ -69,9 +75,24 @@ final class DatabaseTablesCommand extends Command implements Loggable
             $result = $executor->tables($connection);
             $this->databaseActivityProperties($audit->schema($operation, $connection, (string) $this->argument('target'), $result['meta']));
 
-            return $this->respondDatabaseSuccess($result['data'], $result['meta'], $connection);
+            return $this->respondDatabaseSuccess(
+                $result['data'],
+                $result['meta'],
+                $connection,
+                humanSummary: $this->tablesSummary($result['data']),
+            );
         } catch (Throwable $throwable) {
             return $this->respondDatabaseFailure($throwable);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function tablesSummary(array $data): string
+    {
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+
+        return sprintf('Showing %d table(s).', count($rows));
     }
 }

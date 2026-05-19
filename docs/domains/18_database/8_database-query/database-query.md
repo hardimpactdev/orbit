@@ -16,6 +16,9 @@ orbit database:query {target} --sql=<sql> [--connection=<slug>] [--limit=50] [--
 `target` resolves an app or workspace context. `--connection` is optional when
 the target has exactly one attached mapping for the selected prefix.
 
+Output is always strict JSON. `--json` is accepted for consistency with other
+commands, but this command never prints a human table.
+
 ## Technical Contract
 
 See [`database-query` technical contract](technical/1_database-query.md).

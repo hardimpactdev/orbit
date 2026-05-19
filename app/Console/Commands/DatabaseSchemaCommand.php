@@ -51,7 +51,14 @@ final class DatabaseSchemaCommand extends Command implements Loggable
                     return $this->respondDatabaseFailure($result);
                 }
 
-                return $this->respondDatabaseSuccess($result['result']['data'] ?? [], $result['result']['meta'] ?? []);
+                return $this->respondDatabaseSuccess(
+                    $result['result']['data'] ?? [],
+                    $result['result']['meta'] ?? [],
+                    humanSummary: sprintf(
+                        "Showing schema metadata for database connection '%s'.",
+                        (string) ($result['result']['meta']['connection'] ?? $this->argument('target')),
+                    ),
+                );
             }
 
             $connection = $this->resolveDatabaseConnection($selector);
@@ -66,7 +73,12 @@ final class DatabaseSchemaCommand extends Command implements Loggable
             $result = $executor->schema($connection);
             $this->databaseActivityProperties($audit->schema('schema', $connection, (string) $this->argument('target'), $result['meta']));
 
-            return $this->respondDatabaseSuccess($result['data'], $result['meta'], $connection);
+            return $this->respondDatabaseSuccess(
+                $result['data'],
+                $result['meta'],
+                $connection,
+                humanSummary: "Showing schema metadata for database connection '{$connection->slug}'.",
+            );
         } catch (Throwable $throwable) {
             return $this->respondDatabaseFailure($throwable);
         }
