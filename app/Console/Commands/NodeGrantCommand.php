@@ -473,7 +473,7 @@ class NodeGrantCommand extends Command
             required: true,
         );
 
-        return array_map('strval', $selected);
+        return array_map(strval(...), $selected);
     }
 
     private function wantsJson(): bool

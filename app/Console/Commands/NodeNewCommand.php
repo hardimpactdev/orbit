@@ -2942,16 +2942,7 @@ SCRIPT,
                 if ($excludeNodeId !== null && $allNode->id === $excludeNodeId) {
                     continue;
                 }
-
-                $alreadyIncluded = false;
-
-                foreach ($targets as $target) {
-                    if ($target->id === $allNode->id) {
-                        $alreadyIncluded = true;
-
-                        break;
-                    }
-                }
+                $alreadyIncluded = array_any($targets, fn ($target) => $target->id === $allNode->id);
 
                 if (! $alreadyIncluded) {
                     $targets[] = $allNode;

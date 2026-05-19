@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api;
 
+use Closure;
 use Illuminate\Contracts\Validation\Validator as ValidationContract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -86,7 +87,7 @@ class NodePermissionsApiRequest extends FormRequest
     }
 
     /**
-     * @return array<string, array<int, string>>
+     * @return list<Closure(Validator): void>
      */
     public function after(): array
     {

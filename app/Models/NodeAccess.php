@@ -7,6 +7,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property list<string> $permissions
+ */
 class NodeAccess extends Model
 {
     protected $table = 'node_access';
