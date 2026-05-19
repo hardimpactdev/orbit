@@ -26,6 +26,9 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     config(['orbit.is_gateway' => true]);
 
+    $this->tempStorage = sys_get_temp_dir().'/orbit-agent-node-new-test-'.uniqid();
+    app()->useStoragePath($this->tempStorage);
+
     $this->fakeInstaller = new class extends OrbitHostInstaller
     {
         public int $calls = 0;
@@ -130,8 +133,11 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/gateway-ca'));
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    MockClient::destroyGlobal();
+
+    if (isset($this->tempStorage) && File::isDirectory($this->tempStorage)) {
+        File::deleteDirectory($this->tempStorage);
+    }
 });
 
 it('creates an agent node with default self-grant', function (): void {

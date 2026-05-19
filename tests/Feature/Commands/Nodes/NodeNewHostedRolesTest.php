@@ -27,6 +27,9 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     config(['orbit.is_gateway' => true]);
 
+    $this->tempStorage = sys_get_temp_dir().'/orbit-node-new-hosted-roles-test-'.uniqid();
+    app()->useStoragePath($this->tempStorage);
+
     $this->fakeInstaller = new class extends OrbitHostInstaller
     {
         public int $calls = 0;
@@ -139,8 +142,10 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
-    File::deleteDirectory(storage_path('app/orbit/gateway-ca'));
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+
+    if (isset($this->tempStorage) && File::isDirectory($this->tempStorage)) {
+        File::deleteDirectory($this->tempStorage);
+    }
 });
 
 it('creates a joined client identity with no hosted roles by default', function (): void {
