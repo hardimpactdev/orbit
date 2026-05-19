@@ -73,4 +73,45 @@ describe('DatabaseConnectionEnvMapper', function (): void {
             'ANALYTICS_DB_DATABASE' => '/srv/apps/orbit/database/database.sqlite',
         ]);
     });
+
+    it('prefers sqlite path over database when both are present', function (): void {
+        $payload = new DatabaseConnectionPayload(
+            driver: 'sqlite',
+            host: null,
+            port: null,
+            database: 'fallback.sqlite',
+            path: '/srv/apps/orbit/database/database.sqlite',
+            username: null,
+            password: null,
+        );
+
+        $mapped = app(DatabaseConnectionEnvMapper::class)->toEnvValues('DB', $payload);
+
+        expect($mapped)->toBe([
+            'DB_CONNECTION' => 'sqlite',
+            'DB_DATABASE' => '/srv/apps/orbit/database/database.sqlite',
+        ]);
+    });
+});
+
+describe('DatabaseConnectionPayload', function (): void {
+    it('rejects a missing driver', function (): void {
+        expect(fn () => DatabaseConnectionPayload::fromArray([
+            'host' => 'db.internal',
+        ]))->toThrow(\InvalidArgumentException::class, 'driver');
+    });
+
+    it('rejects an unsupported driver', function (): void {
+        expect(fn () => DatabaseConnectionPayload::fromArray([
+            'driver' => 'sqlserver',
+        ]))->toThrow(\InvalidArgumentException::class, 'sqlserver');
+    });
+
+    it('accepts the supported drivers', function (string $driver): void {
+        $payload = DatabaseConnectionPayload::fromArray([
+            'driver' => $driver,
+        ]);
+
+        expect($payload->driver)->toBe($driver);
+    })->with(['mysql', 'pgsql', 'sqlite']);
 });

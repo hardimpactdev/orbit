@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
+use InvalidArgumentException;
+
 final readonly class DatabaseConnectionPayload
 {
+    private const SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
+
     public function __construct(
         public string $driver,
         public ?string $host,
@@ -23,9 +27,18 @@ final readonly class DatabaseConnectionPayload
     {
         $credentials = is_array($payload['credentials'] ?? null) ? $payload['credentials'] : [];
         $password = $payload['password'] ?? $credentials['password'] ?? null;
+        $driver = $payload['driver'] ?? null;
+
+        if (! is_string($driver) || $driver === '') {
+            throw new InvalidArgumentException('Database connection driver is required.');
+        }
+
+        if (! in_array($driver, self::SUPPORTED_DRIVERS, true)) {
+            throw new InvalidArgumentException(sprintf('Unsupported database connection driver [%s].', $driver));
+        }
 
         return new self(
-            driver: is_string($payload['driver'] ?? null) ? $payload['driver'] : '',
+            driver: $driver,
             host: is_string($payload['host'] ?? null) ? $payload['host'] : null,
             port: is_int($payload['port'] ?? null) ? $payload['port'] : (is_numeric($payload['port'] ?? null) ? (int) $payload['port'] : null),
             database: is_string($payload['database'] ?? null) ? $payload['database'] : null,
