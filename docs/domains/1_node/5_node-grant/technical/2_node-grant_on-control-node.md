@@ -36,6 +36,8 @@ The forwarded request includes:
 
 - `node_grant.consuming_node`;
 - `node_grant.serving_node`;
+- `node_grant.preset` or `node_grant.permissions`;
+- `node_grant.force`;
 - the selected output renderer;
 - the authenticated operator-caller WireGuard identity.
 
@@ -45,8 +47,9 @@ mutates gateway-owned fleet configuration, the operator-role caller must have
 access to the gateway node. Access to the target nodes alone does not
 authorize the grant write.
 
-Non-gateway callers must already hold a consuming→gateway grant to manage node
-access grants. This prerequisite is enforced by gateway-owned access policy.
+Non-gateway callers must already hold a consuming→gateway grant whose
+permissions include `node:grant` or `*` to manage node access grants. This
+prerequisite is enforced by gateway-owned access policy.
 
 ## Error Contract
 
@@ -74,6 +77,9 @@ This operator node is not authorized to grant node access.
   authorized to operate on the gateway node.
 - Fail before side effects when `node_grant.consuming_node` or
   `node_grant.serving_node` is missing, invalid, or violates policy.
+- Fail before side effects when the permission input is missing, conflicts,
+  references an unknown permission or preset, normalizes to an empty set, or
+  requests an elevated gateway grant without consent.
 
 ## Test Mapping
 

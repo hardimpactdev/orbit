@@ -6,6 +6,9 @@ Add one hosted role assignment to a node.
 
 ## Usage
 
+You can run this command to add an additional hosted role assignment to an
+existing node.
+
 ```bash
 orbit node role:add [node] [role] [--tld=] [--json]
 ```
@@ -15,6 +18,10 @@ orbit node role:add [node] [role] [--tld=] [--json]
 This command validates the role assignment, applies role-local options, and reports convergence progress.
 
 - `gateway` cannot be added through this command.
+- `agent` cannot be added through this command. The `agent` role is
+  exclusive and is only selectable during `node:new`. `node role:add ...
+  agent` fails with `validation_failed` and the explanation that
+  `node:new --role=agent` is the only path that may create it.
 - `app-development` requires `--tld`.
 - `app-production` and `database` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.

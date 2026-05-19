@@ -80,6 +80,9 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.dns_container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
 | `tool.dns_port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
 | `tool.dns_config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `node.tld` + `node.wireguard_address` state. |
+| `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the active agent role TLD. |
+| `tool.agent_user_missing` | An agent tool is installed on a node whose `orbit-agent` user is absent or not configured as the tool's runtime user. |
+| `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
 
 The three `tool.dns_*` codes are owned by the gateway DNS bootstrap contract; see
 [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md) for the runtime layout
@@ -101,6 +104,9 @@ This table shows what `doctor --restore` does for each fixable issue code.
 | `tool.dns_container_missing` | Re-run the orbit-dns installer (renders compose file + dnsmasq.conf + `docker compose up -d`). Requires wg-easy to be running first. |
 | `tool.dns_port_not_listening` | Restart the `orbit-dns` container. |
 | `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from the gateway intent and SIGHUP `orbit-dns` (no container restart). |
+| `tool.agent_route_missing` | Recreate the tool-owned internal proxy route for the agent tool under the active agent role TLD. |
+| `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `orbit-agent` user. |
+| `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, or

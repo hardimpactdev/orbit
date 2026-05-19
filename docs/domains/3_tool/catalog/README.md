@@ -72,14 +72,27 @@ create them from scratch unless the tool file says otherwise.
 These tools are provisioned by `tool:install`, removed by `tool:remove`, and
 verified by `doctor --family=tool`.
 
+### Runtime, database, cache, and communication
+
+These installable tools cover the PHP runtime, managed databases, caches,
+mail, and websocket capability.
+
 1. [`php`](php.md)
 2. [`postgres`](postgres.md)
 3. [`mysql`](mysql.md)
 4. [`redis`](redis.md)
 5. [`mailpit`](mailpit.md)
 6. [`reverb`](reverb.md)
+
+### Agent IDE servers and autonomous agent tools
+
+These installable tools support agent IDE sessions and first-party
+autonomous agents that run under the `agent` hosted role.
+
 7. [`polyscope-server`](polyscope-server.md)
 8. [`opencode-server`](opencode-server.md)
+9. [`openclaw`](openclaw.md)
+10. [`hermes`](hermes.md)
 
 ## File Contract
 

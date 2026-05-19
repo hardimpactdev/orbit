@@ -55,6 +55,27 @@ These terms describe family-owned doctor contracts and the actions they produce.
 
 Families own the concrete issue codes that produce doctor kinds. Doctor actions may complete, skip, fail, or conflict; remaining drift must stay visible after action execution.
 
+### Doctor permissions
+
+These terms describe how doctor modes map to scoped node-access permissions.
+
+- **Doctor verify permission:** `doctor:verify`. Required to read drift in
+  doctor verify mode. Included in the `operator` preset and the `agent`
+  self preset by default.
+- **Doctor restore permission:** `doctor:restore`. Required to apply gateway
+  configuration to node reality through `doctor --restore` or
+  `doctor --fix` with the restore direction. Not included in the `operator`
+  preset by default.
+- **Doctor adopt permission:** `doctor:adopt`. Required to record observed
+  node reality into gateway configuration through `doctor --adopt` or
+  `doctor --fix` with the adopt direction. Not included in the `operator`
+  preset by default.
+- **Operator preset doctor boundary:** Authorization rule that the
+  `operator` preset includes `doctor:verify` but excludes both
+  `doctor:restore` and `doctor:adopt` and every `firewall_rule:write`
+  permission. Restore, adopt, and firewall writes require an admin-class
+  preset or explicit permissions on the grant.
+
 ## Activity
 
 Activity logging and history reads live in the activity family. See [`docs/domains/17_activity/activity-concepts.md`](../17_activity/activity-concepts.md).

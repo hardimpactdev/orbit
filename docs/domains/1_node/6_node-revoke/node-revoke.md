@@ -51,8 +51,16 @@ operator callers forward the request to the gateway over HTTPS through WireGuard
 A configured operator caller may revoke its own consuming→gateway grant. The
 interactive confirmation calls out that the machine will lose Orbit gateway
 access, and the JSON success payload sets `self_lockout=true`. Recovering
-gateway access afterwards requires running `node:grant <control> <gateway>`
-from the gateway itself.
+gateway access afterwards requires running
+`node:grant <control> <gateway> --preset=gateway-admin --force` from the
+gateway itself.
+
+Revoking a self-grant (`consuming_node == serving_node`) is allowed and is
+the way to remove a node's explicit self-access. Revoking a gateway-admin
+grant still goes through this command. A gateway-admin grant is a grant
+from a consumer to the gateway whose permissions include `*`. It does not
+get a separate confirmation because every revoke already requires
+destructive consent.
 
 This control-API self-lockout case is distinct from gateway-local direct
 mutation. Gateway-local revokes are gateway-owned writes and do not report
@@ -96,6 +104,8 @@ state after both endpoint identities are known.
 Use these commands to manage access grants and inspect node state.
 
 - [`node:grant`](../5_node-grant/node-grant.md) — create a node access grant
+- [`node:permissions`](../15_node-permissions/node-permissions.md) — view or
+  update permissions on an existing grant
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`node:remove`](../8_node-remove/node-remove.md) — remove a node and all its

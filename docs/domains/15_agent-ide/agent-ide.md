@@ -1,4 +1,4 @@
-# Agent IDE
+# Agent Ide
 
 ## Purpose
 

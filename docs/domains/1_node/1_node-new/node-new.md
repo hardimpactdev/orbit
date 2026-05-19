@@ -17,7 +17,7 @@ initiating operator node and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<hosted-role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
+orbit node:new [name] [--role=<hosted-role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -33,6 +33,9 @@ orbit node:new client-1
 orbit node:new dev-1 --role=app-development --host=app-1.ssh.example.com --tld=test
 orbit node:new web-1 --role=app-production --role=database --host=203.0.113.20
 orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=control-1
+orbit node:new agent-1 --role=agent --host=192.0.2.10 --tld=agent --self-grant=default
+orbit node:new agent-1 --role=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
+orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-preset=operator
 ```
 
 ## Arguments and options
@@ -40,8 +43,10 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
 - `--role`: repeatable initial hosted role assignment. Supported hosted roles:
-  `app-development`, `app-production`, and `database`. No hosted role means a
-  joined client/control identity. `gateway` remains an internal bootstrap path.
+  `app-development`, `app-production`, `database`, and `agent`. No hosted
+  role means a joined client/control identity. `gateway` remains an internal
+  bootstrap path. `agent` is exclusive and may only be selected during
+  `node:new`; combining it with another hosted role fails before side effects.
 - `--host`: required for gateway bootstrap and for any initial hosted role that
   provisions a host. This is the SSH/bootstrap endpoint and never the canonical
   node address.
@@ -52,10 +57,28 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
 - `--environment`: legacy compatibility input only. `--role=app` with
   `--environment=development` maps to `--role=app-development`; `--role=app`
   with `--environment=production` maps to `--role=app-production`.
-- `--tld`: required for `app-development`. Development TLD for the node,
-  without a leading dot.
+- `--tld`: required for `app-development`. Used by `agent` as the agent
+  TLD (default `agent`). Must be a single lowercase DNS label without a
+  leading dot.
 - `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
   steady-state `nodes.user` after the gateway-managed SSH user is set up.
+- `--self-grant`: `default` to apply the role-union self-preset, `custom`
+  to drive the self-grant interactively, or omitted to fall back to the
+  documented default for non-interactive runs (`default`).
+- `--agent-tool`: repeatable. Names an agent tool slug to install during
+  provisioning when `--role=agent`. Forbidden when the node has no `agent`
+  role. Zero, one, or many may be supplied; no default agent tool is
+  installed when this flag is omitted.
+- `--grant-to`: node selector (a specific node name or `all`) for grants
+  from the new node to other nodes. `all` expands to all current eligible
+  serving nodes only; future nodes are not auto-granted.
+- `--grant-to-preset` / `--grant-to-permissions`: initial permission set
+  for the `--grant-to` direction. Mutually exclusive.
+- `--grant-from`: node selector (a specific node name or `all`) for grants
+  from other nodes to the new node. `all` expands to all current eligible
+  consuming nodes only.
+- `--grant-from-preset` / `--grant-from-permissions`: initial permission
+  set for the `--grant-from` direction. Mutually exclusive.
 - `--json`: Output JSON.
 
 ## Hosted Roles
@@ -88,9 +111,31 @@ Creates an active hosted role assignment for database responsibilities. It may
 be combined with `app-development` or `app-production` on the same provisioned
 host.
 
-`app-development` and `app-production` are mutually exclusive. Gateway conflicts
-with every hosted role and is not command-assignable through the public hosted
-role flow.
+`app-development` and `app-production` are mutually exclusive. Gateway and
+`agent` each conflict with every other hosted role and with each other.
+`gateway` is not command-assignable through the public hosted role flow.
+
+**`agent`**
+
+Provisions an isolated agent host. The `agent` role assignment carries a
+`tld` setting (default `agent`) and applies a baseline of Caddy,
+Supervisor, WireGuard/node identity material, and the shared unprivileged
+`orbit-agent` runtime user.
+
+Requires `--host`. `--tld` is optional; the default is `agent`. The TLD
+must be unique across active TLD-backed role assignments.
+
+`--agent-tool=<tool>` may be repeated to select agent tools to install
+during provisioning. Supported agent tools are `openclaw` and `hermes`.
+Selecting more than one agent tool emits the same multiple-agent-tool
+warning that `tool:install` uses: interactive callers confirm before
+proceeding, machine-readable callers receive a structured
+`tool.multiple_agent_tools_running` warning and the command proceeds. No
+agent tool is installed when `--agent-tool` is omitted.
+
+`agent` cannot be added through `node role:add`. Combining `--role=agent`
+with `--role=app-development`, `--role=app-production`, `--role=database`,
+or `--role=gateway` fails before side effects.
 
 **Gateway bootstrap**
 
@@ -159,6 +204,33 @@ by node doctor.
 `node:new` does not set the local default development app node. Run
 [`node:default`](../9_node-default/node-default.md) explicitly when the operator wants that
 local targeting preference.
+
+## Grant Setup
+
+`node:new` always creates an explicit self-grant for the new node. Self-grants
+are required for self-access; they are never implicit. The self-grant preset
+for each hosted role is the union of role-default self-grant permissions
+across all active hosted roles on the node. Permission conflicts between
+hosted roles indicate role incompatibility rather than deny rules.
+
+For interactive runs, `node:new` asks two grant questions:
+
+- "Does this node need access to other nodes?" Default `no`. When `yes`, the
+  caller selects target serving nodes and the permission set for those
+  outbound grants.
+- "Should other nodes need access to this node?" Default `no`. When `yes`,
+  the caller selects consuming nodes and the permission set for those
+  inbound grants.
+
+Non-interactive runs use the directional flags `--grant-to`,
+`--grant-to-preset`, `--grant-to-permissions`, `--grant-from`,
+`--grant-from-preset`, and `--grant-from-permissions`. The selector `all`
+expands to every current eligible node only — future nodes are not added
+automatically.
+
+Agent setup does not offer `gateway-admin` by default. `node:new` itself
+requires the caller to hold a grant to the gateway with `node:new` or `*`.
+The normal way to grant that authority is the `gateway-admin` preset.
 
 It does not configure tools, user apps, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands

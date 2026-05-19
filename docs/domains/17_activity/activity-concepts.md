@@ -50,7 +50,11 @@ Each activity entry carries the following fields.
 - **Causer (actor):** Node identity that initiated the action, resolved from
   the WireGuard identity middleware on every gateway API call. The causer
   answers "who did this." For gateway-internal apply work that no operator
-  initiated directly, causer is the gateway node identity.
+  initiated directly, causer is the gateway node identity. For work
+  initiated by an autonomous agent tool running on an `agent` node, causer
+  is the agent node identity. Orbit does not attribute activity to a
+  per-tool sub-identity, because per-tool identities are spoofable
+  without a stronger identity mechanism than the node handshake.
 - **Properties:** Structured audit fields declared by the command or
   controller. Properties never include secrets, raw command argv, raw
   request bodies, or full credentials. Property keys are declared per
@@ -176,3 +180,7 @@ These are the hard limits for the activity command domain.
   profile command and the process manager, not to activity history.
 - **Activity is not the live state:** Activity describes what happened.
   Doctor and family probes describe what is true now.
+- **Agent activity attribution boundary:** Activity emitted while an
+  autonomous agent tool is working on an `agent` node is attributed to
+  the agent node identity. Orbit does not claim per-tool sub-identities,
+  so a single causer covers every agent tool running on the node.

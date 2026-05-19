@@ -1,4 +1,4 @@
-# DNS
+# Dns
 
 ## Purpose
 

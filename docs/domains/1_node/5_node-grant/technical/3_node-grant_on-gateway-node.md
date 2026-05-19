@@ -29,11 +29,15 @@ execution.
 3. Validate both nodes resolve to existing active node records in gateway
    configuration. Reject `provisioning` records as `node.not_found`. Live
    reachability is not probed; that belongs to `doctor --family=node`.
-4. Evaluate node access policy (including self-grant prohibition, surfaced as
-   `error.meta.reason = self_grant`).
-5. If the grant already exists, return idempotent success.
-6. If the grant does not exist, create the `node_access` record.
-7. Return the result.
+4. Resolve and normalize the initial permission set from `--preset` or
+   `--permissions`.
+5. Evaluate node access policy. Self-grants are accepted because self-access
+   must be explicit.
+6. If the grant already exists, return idempotent success with the existing
+   permission set unchanged.
+7. If the grant does not exist, create the `node_access` record with the
+   normalized permission set.
+8. Return the result and any redundant-permission warnings.
 
 ## Failure Semantics
 
@@ -41,8 +45,10 @@ execution.
   `node.status = provisioning` are treated as not found).
 - Fail before side effects when the grant violates node access policy. The
   JSON renderer reports the specific reason via `error.meta.reason`.
-- Fail before side effects when `consuming_node == serving_node`, with
-  `error.meta.reason = self_grant`.
+- Accept self-grants (`consuming_node == serving_node`).
+- Fail before side effects when the permission input is missing, conflicts,
+  references an unknown permission or preset, normalizes to an empty set, or
+  requests an elevated gateway grant without consent.
 - Idempotent success when the grant already exists.
 
 ## Test Mapping

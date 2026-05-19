@@ -9,8 +9,8 @@ The node family owns these facts:
 
 - gateway-owned node records, role assignments, and access policy: name,
   assignment status, platform-version identifier, host/endpoint metadata,
-  WireGuard address, role-assignment settings, and `node_access` grant
-  integrity;
+  WireGuard address, role-assignment settings, `node_access` grant integrity,
+  and the scoped permission set stored on each grant;
 - local caller identity: presented WireGuard identity, local gateway
   endpoint/trust config, and gateway-client endpoint and trust artifacts
   that the gateway manages on the hosted node;
@@ -19,10 +19,10 @@ The node family owns these facts:
 - node bootstrap artifacts: gateway runtime readiness, hosted-node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the hosted node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
-- node-related defaults: `app-development` assignment TLD settings, development
-  DNS mappings for those TLDs, DNS resolver safety, local `node:default`
-  preferences for `--self`, and PHP CLI and agent IDE defaults at the node
-  level.
+- node-related defaults: `app-development` and `agent` assignment TLD
+  settings, development and agent DNS mappings for those TLDs, DNS resolver
+  safety, local `node:default` preferences for `--self`, and PHP CLI and
+  agent IDE defaults at the node level.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -39,8 +39,10 @@ The node probe reads gateway node records and checks these layers:
    treat `active`, `pending`, and `error` assignments as unresolved conflicts
    and ignore `removing`.
 2. **Access policy integrity:** every node access grant references active node
-   records. Stale grant rows that point at missing or non-active nodes are node
-   family drift.
+   records, and the stored permission set on each grant normalizes against the
+   permission registry. Stale grant rows that point at missing or non-active
+   nodes are node family drift, and grants that store unknown permission
+   strings or redundant permissions are node family drift.
 3. **Local caller identity:** for `--self`, a presented WireGuard identity
    resolves to exactly one active gateway-known node record. Pre-first-gateway-
    bootstrap callers without identity are accepted as the bootstrap path.
@@ -70,13 +72,16 @@ The node probe reads gateway node records and checks these layers:
     `firewall_rule`.
 11. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
-   drift. In v1 this means `app-development` assignments have a `tld` value,
-   the hosted node's local TLD default matches the active assignment, and the
-   gateway maps `*.{tld}` to the node's WireGuard address through the
-   development DNS configuration model for the node family. The gateway development DNS
+   drift. For `app-development`, assignments have a `tld` value, the hosted
+   node's local TLD default matches the active assignment, and the gateway
+   maps `*.{tld}` to the node's WireGuard address. The gateway development DNS
    resolver must be WireGuard-reachable and must not expose a public open
-   resolver. `app-production`, `database`, and `gateway` assignments have no
-   role settings in v1.
+   resolver. For `agent`, assignments have a `tld` value, the gateway maps
+   `*.{tld}` to the agent node's WireGuard address through the same DNS
+   configuration model, and the agent node baseline includes Caddy,
+   Supervisor, and the shared unprivileged `orbit-agent` runtime user.
+   `app-production`, `database`, and `gateway` assignments have no role
+   settings in v1.
 12. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` hosted nodes when `--self` inspects the CLI's
    local configuration, PHP CLI defaults at the node level point at installed
@@ -134,6 +139,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
 | `node.role_baseline_mismatch` | Active role-owned baseline artifacts no longer match the role assignment's desired state. |
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
+| `node.access_permission_invalid` | A node access grant stores an unknown permission string or a permission set that does not normalize cleanly against the permission registry. |
 | `node.identity_unresolved` | The caller presents no WireGuard identity or an identity that does not resolve to exactly one active node record. |
 | `node.gateway_api_unreachable` | A joined-client or hosted-node CLI caller cannot reach the configured gateway API over WireGuard. |
 | `node.gateway_ca_mismatch` | The gateway API presents a certificate chain that does not match the configured gateway trust. |
@@ -163,6 +169,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
+| `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |

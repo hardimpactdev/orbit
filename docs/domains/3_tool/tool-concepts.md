@@ -16,6 +16,13 @@ These terms define the core vocabulary used across tool command contracts and th
 - **Tool definition:** Per-tool catalog entry that declares the tool's support
   model, role and platform eligibility, managed artifacts, service endpoints,
   credential behavior, and supported tool actions.
+- **Tool category:** Catalog-declared classification for a tool, such as
+  `always`, `runtime`, `database`, `cache`, `development`, `communication`,
+  `infrastructure`, or `agent`. Used by authorization and routing rules.
+- **Agent tool category:** Tool category `agent`. Tools in this category are
+  first-party autonomous agent runtimes (`openclaw`, `hermes`) that require
+  the `agent` hosted node role and run as the shared unprivileged
+  `orbit-agent` user.
 - **Tool row:** Gateway-owned record of expected state for one tool on one
   node, including expected lifecycle state, expected version when tracked,
   install paths, and probe and repair settings.
@@ -35,6 +42,21 @@ These terms describe how Orbit relates to each tool in the catalog.
   not own.
 - **Role baseline tool:** Tool materialized as a tool row during node
   provisioning so doctor has one gateway-owned source of truth per node.
+- **Agent tool:** Installable tool in the `agent` category. Requires the
+  `agent` hosted role on the node, runs as the shared unprivileged
+  `orbit-agent` user, and is supervised by Supervisor.
+- **Agent tool internal route:** Tool-owned proxy route under the agent
+  role TLD, such as `https://openclaw.agent`. Reachable only over the
+  Orbit/WireGuard network.
+- **Agent tool credentials:** Web UI access metadata returned by
+  `tool:credentials` for agent tools. Reading agent tool credentials
+  requires the explicit `tool:credentials` permission; the default agent
+  self grant does not include that permission.
+- **Multi-agent-tool warning:** Warning emitted when more than one agent
+  tool is installed or running on the same agent node. Interactive callers
+  confirm; non-interactive callers receive
+  `tool.multiple_agent_tools_running` under `success.meta.warnings[]` and
+  the command proceeds.
 - **Unmanaged inventory:** Tools observed on a node without a gateway tool
   row. Not drift unless adopted through `doctor --fix --family=tool --adopt`.
 

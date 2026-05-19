@@ -25,13 +25,14 @@ Each firewall rule is defined by the following fields.
 
 This term defines which nodes firewall commands may target.
 
-- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway` or `app`. Operator nodes, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
+- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway`, `app-development`, `app-production`, or `agent`. Operator nodes, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
 
 ## Policy Boundaries
 
 These terms define what firewall commands may and may not change.
 
 - **Bootstrap policy:** Role-baseline firewall policy applied during node provisioning, including Orbit/WireGuard management access and public ingress decisions specific to each node role. Owned by the node domain.
+- **Operator preset firewall boundary:** Authorization rule that the `operator` permission preset includes `firewall_rule:read` (firewall list/show plus `doctor --family=firewall_rule` findings) but excludes every `firewall_rule:write` permission. Firewall writes require an `admin`-class preset or an explicit `firewall_rule:write` permission on the grant.
 - **Firewall-family boundaries:** Firewall commands own editable rule configuration on eligible nodes.
   - They do not edit bootstrap policy.
   - They do not create public SSH exceptions for app nodes.

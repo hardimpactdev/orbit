@@ -17,7 +17,11 @@ owning family concept document.
 - **Adopt** — doctor direction that records observed node reality into gateway configuration. Flag: `--adopt`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
 - **Fix** — interactive doctor resolution flow that asks per drifted item whether to restore or adopt. Flag: `--fix`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
 - **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
-- **Node access grant** — gateway-stored permission that lets one node operate on another after WireGuard identity is authenticated. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
+- **Node access grant** — gateway-stored edge that lets one node operate on another after WireGuard identity is authenticated. The grant edge is the first authorization gate; the scoped permissions stored on it are the second. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
+- **Node access permission** — normalized permission string stored on a node access grant; decides what the consuming node may do on the serving node. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Permission preset** — code-defined named bundle of node access permissions, such as `agent-self`, `operator`, `developer`, `admin`, `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Gateway-admin grant** — a consumer-to-gateway grant whose permissions include `*` (the `gateway-admin` preset); confers fleet-wide super-admin authority including authority over future nodes. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Agent hosted role** — exclusive hosted role for autonomous agent workloads; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Operator node** — any joined node acting through gateway-known WireGuard identity plus grants. It is a capability term, not a hosted role, and can coexist with hosted roles. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](domains/7_process/process-concepts.md).
@@ -59,8 +63,13 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Hosted node**
 - **Operator node**
 - **Hosted role**
+- **Agent hosted role**
+- **Hosted role assignability**
 - **Role assignment**
 - **Hosted role settings**
+- **Agent role TLD setting**
+- **Agent role baseline**
+- **Orbit-agent runtime user**
 - **Role assignment status**
 - **Caller identity**
 - **Node identity**
@@ -73,7 +82,27 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Node reality**
 - **Consuming node**
 - **Serving node**
-- **Gateway-owned development DNS mapping**
+- **Node access permission**
+- **Permission registry**
+- **Permission implication**
+- **Permission normalization**
+- **Wildcard permission**
+- **Namespace wildcard permission**
+- **Permission preset**
+- **Agent self preset**
+- **Operator preset**
+- **Read-only preset**
+- **Developer preset**
+- **Admin preset**
+- **Gateway-admin preset**
+- **Self grant**
+- **Gateway-admin grant**
+- **Cross-node grant**
+- **Directional grant setup**
+- **Agent tool selection**
+- **Multi-agent-tool warning**
+- **Development DNS mapping owned by the gateway**
+- **Agent DNS mapping owned by the gateway**
 - **Development DNS configuration model**
 - **Development DNS applier**
 - **Development DNS probe**
@@ -368,12 +397,18 @@ Source: [Tool Concepts](domains/3_tool/tool-concepts.md).
 - **Tool**
 - **Tool catalog**
 - **Tool definition**
+- **Tool category**
+- **Agent tool category**
 - **Tool row**
 - **Required baseline tool**
 - **Installable tool**
 - **Managed tool**
 - **Observational tool**
 - **Role baseline tool**
+- **Agent tool**
+- **Agent tool internal route**
+- **Agent tool credentials**
+- **Multi-agent-tool warning**
 - **Unmanaged inventory**
 - **Tool-owned service endpoint**
 - **Tool credentials**

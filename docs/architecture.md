@@ -55,7 +55,7 @@ The gateway exposes the typed API that the CLI talks to. It holds SSH access to 
 
 A hosted node is a workload host with one or more active hosted role assignments. Hosted roles are fixed code-defined bundles: `app-development`, `app-production`, `database`, and `agent`. `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate hosted role.
 
-The `agent` role (currently in design) hosts an autonomous agent — OpenClaw or Hermes as first-party tools — that operates Orbit through the gateway API on the fleet's behalf. An agent node combines that workload role with operator grants, so the agent can call the gateway like any other caller.
+The `agent` role hosts first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. An agent node combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no public ingress baseline. Activity emitted while autonomous agent tools work is attributed to the agent node identity — Orbit does not claim per-tool sub-identities.
 
 Hosted nodes do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on a hosted node, but only as a joined client that calls the gateway like any other caller.
 
@@ -96,15 +96,17 @@ Every Orbit command needs two things: an identity and permission.
 
 **Permission** is controlled by the gateway. Operation is WireGuard identity plus gateway grants, not an operator role. For each node, the gateway stores which other nodes are allowed to manage it. A joined client can only act on the hosted nodes it has been granted access to. The same applies to gateway-owned data: only nodes granted access to the gateway can read gateway policy or activity history.
 
+Authorization is two gates: a grant edge between a consuming node and a serving node decides whether the consuming node can reach the serving node at all, and the scoped permission set stored on that grant decides what the consuming node may do once it does. A grant with no permissions denies every action. Permissions are normalized permission strings such as `node:read`, `tool:restart`, `firewall_rule:read`, or `doctor:verify`; wildcards `node:*` and `*` are dynamic and include future permissions added in that namespace. Self-grants are explicit and required — a node does not implicitly have access to itself. A grant from a node to the gateway with `*` (the `gateway-admin` preset) is the fleet-wide super-admin grant: it covers every current node and every node added in the future. `node:new` itself requires a gateway-admin grant on the calling node, or an explicit `node:new` permission on its grant to the gateway.
+
 An **operator node** is any joined node acting through that identity-and-grants path. Operator is a capability term, not a hosted role. A node can therefore be both a hosted node and an operator node at the same time when it has a gateway-known identity and the required grants.
 
 This grant model lets you scope access naturally:
 
-- A developer's joined client might have access to `app-development` nodes but not `app-production`.
-- A CI runner's joined client might have access only to the apps it deploys.
-- A hosted node's local CLI can manage its own apps and workspaces but not other hosted nodes in the fleet.
+- A developer's joined client might have a `developer` preset to `app-development` nodes and no grant at all to `app-production`.
+- A CI runner's joined client might have an `operator` preset only to the apps it deploys.
+- A hosted node's self-grant gives its own local CLI the actions it needs on itself — for example, an agent node's self-grant includes `tool:restart` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
 
-Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no hosted-node config edit, no SSH key removal needed.
+Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no hosted-node config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
 
 ### Command and API model
 
@@ -183,7 +185,7 @@ The agent IDE adapter is configured per node, with optional override per app. Wh
 
 Agent IDE adapters are extension points. New IDEs can be supported by writing an adapter without touching the rest of Orbit.
 
-This integration is for human-driven coding sessions. Autonomous agents that operate the fleet on their own — OpenClaw, Hermes — run under the `agent` hosted role instead.
+This integration is for human-driven coding sessions. Autonomous agents that operate the fleet on their own — OpenClaw, Hermes — run as ordinary managed tools under the `agent` hosted role instead. There is no default agent tool: an agent node may be created with zero, one, or several agent tools selected. Running multiple agent tools on the same agent node is allowed, but Orbit warns about weaker node-level traceability whenever a second running agent tool is started or installed — interactive callers see a confirmation prompt, machine-readable callers receive a structured warning under `success.meta.warnings[]` and the command proceeds when input is otherwise valid.
 
 ### Identity names
 

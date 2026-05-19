@@ -30,7 +30,8 @@ Orbit distinguishes three concepts:
   normal role commands and conflicts with every hosted role.
 - **Hosted node roles:** composable roles that prepare a node to serve a kind of
   workload. The initial hosted roles are `app-development`, `app-production`,
-  and `database`.
+  `database`, and `agent`. `agent` is exclusive and selectable only during
+  `node:new`; `node role:add` rejects it.
 - **Joined client identity:** a CLI installation that has gateway configuration
   and a gateway-issued WireGuard identity. A joined client may have no hosted
   roles. It can request self-scoped actions and can operate other nodes only
@@ -59,10 +60,11 @@ Active role assignments must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | none | `app-development`, `app-production`, `database` |
-| `app-development` | `database` | `gateway`, `app-production` |
-| `app-production` | `database` | `gateway`, `app-development` |
-| `database` | `app-development`, `app-production` | `gateway` |
+| `gateway` | none | `app-development`, `app-production`, `database`, `agent` |
+| `app-development` | `database` | `gateway`, `app-production`, `agent` |
+| `app-production` | `database` | `gateway`, `app-development`, `agent` |
+| `database` | `app-development`, `app-production` | `gateway`, `agent` |
+| `agent` | none | `gateway`, `app-development`, `app-production`, `database` |
 
 ### Hosted role baselines
 
@@ -73,10 +75,15 @@ Hosted roles materialize baseline tool intent when a role assignment converges.
 | `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
 | `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
 | `database` | Docker running as the substrate for managed database service tools |
+| `agent` | `caddy` and `supervisor` running, the shared unprivileged `orbit-agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 
 The `database` role does not preinstall every database client. Service-specific
 tools install their own helpers: `postgres` installs `postgresql-client`, and
 `mysql` installs `default-mysql-client`.
+
+The `agent` role does not preinstall any agent tool. OpenClaw and Hermes are
+ordinary entries in the `tool` catalog with category `agent`; `node:new
+--role=agent` may optionally install zero, one, or several of them.
 
 ## Thin CLI and gateway authority
 
@@ -156,16 +163,36 @@ These rules apply to all node commands and define the invariants the family enfo
 - Nodes may store a default agent IDE adapter for apps and workspaces on that
   node. App-level settings override the node default.
 - Node access grants decide which consuming nodes may operate on which serving
-  nodes.
+  nodes. Authorization runs two gates: the grant edge from consuming to
+  serving must exist, and the scoped permission set stored on that edge must
+  allow the requested action.
 - Every CLI-to-gateway command is authenticated by WireGuard node identity and
   authorized through the node access policy that the gateway owns. Grants are not
   transport-specific and do not grant SSH.
-- A non-gateway consuming node must have access to the serving node that owns
-  the requested resource before it can read or mutate that resource. Gateway
-  policy and history operations require access to the gateway node.
-- Role settings live on the role assignment. In v1, `app-development` stores
-  `tld`; `app-production`, `database`, and `gateway` have no assignment
-  settings.
+- A non-gateway consuming node must have a grant to the serving node that owns
+  the requested resource, and that grant must include a permission that allows
+  the requested action, before it can read or mutate the resource. Gateway
+  policy and history operations require a grant to the gateway node with the
+  matching permission. A grant to the gateway whose permissions include `*`
+  (the `gateway-admin` preset) is the fleet-wide super-admin grant.
+- Permissions support normalization, implication, and dynamic wildcards.
+  Redundant permissions are removed before storage, unknown permissions are
+  rejected, and wildcards `node:*` or `*` include future permissions that
+  belong to the matched namespace.
+- Self-grants are explicit. A node does not implicitly have access to itself.
+  Role baseline self-grants are created during `node:new` from each hosted
+  role's self preset.
+- `node:grant` creates the initial grant edge and the initial permissions on
+  it. It does not edit an existing grant's permission set.
+- `node:permissions` owns viewing, updating, and upserting the permission set
+  for a grant. It is gateway-admin only and may create a missing grant edge
+  when the caller submits a valid non-empty permission set through
+  interactive selection, `--preset`, `--permissions`, or `--add`. Read-only
+  `node:permissions` and `--remove` require an existing grant and fail with
+  `node.grant_not_found` otherwise.
+- Role settings live on the role assignment. In v1, `app-development` and
+  `agent` each store a `tld` (the `agent` default is `agent`);
+  `app-production`, `database`, and `gateway` have no assignment settings.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.
@@ -296,6 +323,25 @@ Node access grants use role-agnostic relationship terms:
 A serving node can be a hosted node or a gateway when policy allows it. Role
 constraints belong to access policy, not to the argument names.
 
+Each grant carries a normalized permission set stored on the grant row. The
+permission set is what the consuming node may do on the serving node once the
+grant edge already permits the call. Presets such as `agent-self`, `operator`,
+`developer`, `admin`, and `gateway-admin` expand into normalized permission
+sets; custom permissions can be supplied as a comma-separated list. Examples:
+
+```json
+["node:read", "tool:read", "tool:restart", "tool:update:agent-tools", "doctor:verify"]
+```
+
+```json
+["*"]
+```
+
+`*` is dynamic: it matches every current permission and every permission added
+to the registry in the future. `gateway-admin` is the explicit preset that
+expands to `*` on a grant to the gateway. `node:*` follows the same rule
+inside the `node:` namespace.
+
 ## Node Identity Issuance
 
 Every CLI caller must present a gateway-known WireGuard identity before it can
@@ -380,10 +426,12 @@ Use these commands to list and inspect nodes registered in the gateway.
 
 ### Access Policy
 
-Use these commands to manage which nodes may consume resources from which serving nodes.
+Use these commands to manage which nodes may consume resources from which
+serving nodes and what scoped permissions each grant carries.
 
 4. [`orbit node:grant [consuming_node] [serving_node]`](5_node-grant/node-grant.md)
 5. [`orbit node:revoke [consuming_node] [serving_node]`](6_node-revoke/node-revoke.md)
+6. [`orbit node:permissions [consuming_node] [serving_node]`](15_node-permissions/node-permissions.md)
 
 ### Lifecycle and verification
 

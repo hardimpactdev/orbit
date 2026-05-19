@@ -7,25 +7,31 @@
 **Effects:** `write`.
 
 **Prerequisites:**
-- The gateway authenticates the CLI and authorizes `node:grant` only when the
-  caller's gateway-known role is `control` or `gateway`. App-role callers are
-  rejected.
+- The gateway authenticates the CLI through the WireGuard identity path.
+- The caller holds a grant to the gateway whose permissions include
+  `node:grant` or `*`. Callers without that permission receive
+  `authorization_failed`.
 - Gateway callers can read and write gateway-owned node configuration.
 - Operator callers have configured gateway access as defined in
   [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md).
 
 **Post-input path eligibility:**
 - Both `consuming_node` and `serving_node` resolve to existing active node
-  records in gateway configuration. Records with `node.status = provisioning` are
-  rejected as `node.not_found`.
-- The requested grant does not violate node access policy.
-- Self-grant (`consuming_node == serving_node`) is treated as a policy
-  violation with `error.meta.reason = self_grant`.
+  records in gateway configuration. Records with `node.status = provisioning`
+  are rejected as `node.not_found`.
+- Self-grants (`consuming_node == serving_node`) are accepted. Explicit
+  self-access is required and is not implicit.
+- Exactly one of `--preset` or `--permissions` is supplied in non-interactive
+  mode. Combining them, or supplying neither, fails with
+  `validation_failed`.
+- The resolved initial permission set normalizes to a non-empty set.
+- Elevated grants (`gateway-admin` or any custom set containing `*` on a
+  grant to the gateway) require interactive confirmation or `--force`.
 
 ## Signature
 
 ```bash
-orbit node:grant [consuming_node] [serving_node] [--json]
+orbit node:grant [consuming_node] [serving_node] [--preset=<preset>] [--permissions=<list>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -37,27 +43,34 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `consuming_node` | `[consuming_node]` | Always. | Never. | None. | Must match an existing active node record in gateway configuration. |
 | `serving_node` | `[serving_node]` | Always. | Never. | None. | Must match an existing active node record in gateway configuration. |
+| `preset` | `--preset` | One of `--preset` or `--permissions` is required in non-interactive mode. | When `--permissions` is supplied. | None. | Must be a known preset name. Presets do not embed wildcard permissions except `gateway-admin`. |
+| `permissions` | `--permissions` | One of `--preset` or `--permissions` is required in non-interactive mode. | When `--preset` is supplied. | None. | Comma-separated list of registry-known permissions; normalized before storage. |
+| `force` | `--force` | Required to apply `gateway-admin` or any custom permission set containing `*` to a grant whose serving node is the gateway in non-interactive mode. | Never. | `false`. | Boolean flag. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
 1. Resolve `node_grant.consuming_node` from `[consuming_node]`.
-2. Validate `node_grant.consuming_node` immediately: must match an existing active
-   node record in gateway configuration. Records with `node.status = provisioning` are
-   rejected as `node.not_found`.
+2. Validate `node_grant.consuming_node` immediately: must match an existing
+   active node record in gateway configuration. Records with
+   `node.status = provisioning` are rejected as `node.not_found`.
 3. Resolve `node_grant.serving_node` from `[serving_node]`.
-4. Validate `node_grant.serving_node` immediately: must match an existing active
-   node record in gateway configuration. Records with `node.status = provisioning` are
-   rejected as `node.not_found`.
-5. Evaluate node access policy.
-   - If `consuming_node == serving_node`, fail before side effects with a policy
-     violation carrying `error.meta.reason = self_grant`.
-   - If the requested relationship violates any other node access policy rule,
-     fail before side effects with an unspecified denial reason until that rule
-     is named in the renderer-specific reason enum.
-6. Send the typed request to the gateway over HTTPS through WireGuard. The
-   gateway authenticates the caller's WireGuard identity and authorizes the
-   request through gateway-owned access policy before any side effects.
+4. Validate `node_grant.serving_node` immediately: must match an existing
+   active node record in gateway configuration. Records with
+   `node.status = provisioning` are rejected as `node.not_found`.
+5. Resolve the initial permission set:
+   - If `--preset` is supplied, expand it through the permission registry.
+   - If `--permissions` is supplied, parse the comma-separated list and
+     validate each entry against the registry.
+   - Normalize the resolved set. Reject an empty normalized result with
+     `validation_failed`.
+6. Apply elevated-grant consent: when the resolved permission set contains
+   `*` on a grant whose serving node is the gateway, require interactive
+   confirmation or `--force`.
+7. Send the typed request to the gateway over HTTPS through WireGuard. The
+   gateway authenticates the caller's WireGuard identity, then checks for a
+   grant to the gateway whose permissions include `node:grant` or `*`
+   before any side effects.
 
 ## Behavior Contract
 
@@ -72,19 +85,33 @@ This command follows the shared
 ### Grant Policy Rules
 
 - Evaluate node access policy for the requested grant.
-- If the grant violates policy, fail before side effects with
-  `node.grant_policy_violation` and a stable `error.meta.reason` discriminator
-  (e.g., `self_grant`).
+- Self-grants are accepted. Explicit self-access is required; node access
+  policy no longer rejects same-node grants.
+- If the grant violates any remaining policy rule, fail before side effects
+  with `node.grant_policy_violation` and a stable `error.meta.reason`
+  discriminator.
+
+### Permission Rules
+
+- Resolve the initial permission set from `--preset` or `--permissions`.
+- Normalize the resolved set. Redundant permissions (implied or duplicated)
+  are removed and reported under `success.meta.warnings[]`. Unknown
+  permission strings or unknown preset names fail with `validation_failed`.
+- Reject an empty normalized result with `validation_failed`.
+- Apply elevated-grant consent when the normalized result contains `*` on a
+  grant to the gateway.
 
 ### Grant Write Rules
 
 - If the grant already exists, succeed without mutation, report
-  `action=granted`, and set `already_granted=true`.
+  `action=granted`, set `already_granted=true`, and return the existing
+  permission set without modification. Point the caller to
+  `node:permissions` for later permission edits.
 - If the grant does not exist, create the `node_access` record from
-  `consuming_node` to `serving_node`, report `action=granted`, and set
-  `already_granted=false`.
-- Return the grant result, both node names, and whether the grant was newly
-  created or already present.
+  `consuming_node` to `serving_node` with the normalized permission set,
+  report `action=granted`, and set `already_granted=false`.
+- Return the grant result, both node names, the normalized permission set,
+  and whether the grant was newly created or already present.
 
 ### Scope Boundaries
 
@@ -107,7 +134,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Consuming node not found | No active node record matches `consuming_node` (records with `node.status = provisioning` are treated as not found). | Failure |
 | Serving node not found | No active node record matches `serving_node` (records with `node.status = provisioning` are treated as not found). | Failure |
-| Grant policy violation | The requested relationship violates node access policy. Self-grant is reported with `error.meta.reason = self_grant`. | Failure |
+| Grant policy violation | The requested relationship violates node access policy. The stable `error.meta.reason` discriminator names the rule. | Failure |
+| Mode conflict | Both `--preset` and `--permissions` were supplied. | Failure |
+| Empty permission set | The resolved permission set normalizes to the empty set. | Failure |
+| Unknown permission | Any supplied permission string is not registry-known. | Failure |
+| Unknown preset | The named preset is not registry-known. | Failure |
+| Elevated-grant consent missing | `gateway-admin` or `*` to the gateway was requested without `--force` in non-interactive mode. | Failure |
 
 ## Doctor Relationship
 
@@ -136,7 +168,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, consuming/serving node not found, grant policy violation including self-grant, operator-caller forwarding, app-node denial, and JSON envelope. |
+| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, mode conflicts, unknown permissions and presets, elevated-grant consent, self-grant acceptance, operator-caller forwarding, app-node denial, JSON envelope, exhaustive `error.code` coverage, and warning payload shape under `success.meta.warnings[]`. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
 | `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
