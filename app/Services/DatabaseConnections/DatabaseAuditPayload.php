@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\DatabaseConnections;
 
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 
 final readonly class DatabaseAuditPayload
 {
@@ -31,23 +32,33 @@ final readonly class DatabaseAuditPayload
      */
     public function query(DatabaseConnection $connection, string $target, string $sql, array $options = [], array $meta = [], array $extra = []): array
     {
-        try {
-            $classification = $this->classifier->classify($sql);
-            $statementClass = $classification->mode;
-        } catch (\Throwable) {
-            $statementClass = 'unknown';
-        }
+        return $this->compact([
+            ...$this->connection($connection),
+            ...$this->target($connection, $target),
+            ...$this->queryAttempt($target, $sql, $options, $meta),
+            ...$this->resultMeta($meta),
+            ...$extra,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    public function queryAttempt(string $target, string $sql, array $options = [], array $meta = [], array $extra = []): array
+    {
+        $statementClass = $this->statementClass($sql);
 
         return $this->compact([
             'operation' => 'query',
-            ...$this->connection($connection),
-            ...$this->target($connection, $target),
+            'target' => $target,
             'statement_hash' => hash('sha256', $sql),
             'statement_type' => $this->statementType($sql),
             'statement_class' => $statementClass,
             'mode' => $meta['mode'] ?? $statementClass,
             'write_requested' => (bool) ($options['write'] ?? false),
-            ...$this->resultMeta($meta),
             ...$extra,
         ]);
     }
@@ -95,10 +106,23 @@ final readonly class DatabaseAuditPayload
                 return $row->app?->name === $target || $row->workspace?->name === $target;
             });
 
+        $targetType = null;
+        $targetName = null;
+
+        if ($targetRow instanceof DatabaseConnectionTarget) {
+            if ($targetRow->app !== null) {
+                $targetType = 'app';
+                $targetName = $targetRow->app->name;
+            } elseif ($targetRow->workspace !== null) {
+                $targetType = 'workspace';
+                $targetName = $targetRow->workspace->name;
+            }
+        }
+
         return $this->compact([
             'target' => $target,
-            'target_type' => $targetRow?->app !== null ? 'app' : ($targetRow?->workspace !== null ? 'workspace' : null),
-            'target_name' => $targetRow?->app?->name ?? $targetRow?->workspace?->name,
+            'target_type' => $targetType,
+            'target_name' => $targetName,
             'env_prefix' => $targetRow?->env_prefix,
         ]);
     }
@@ -127,6 +151,15 @@ final readonly class DatabaseAuditPayload
         $token = strtolower(strtok($remaining, " \t\r\n(") ?: 'unknown');
 
         return $token !== '' ? $token : 'unknown';
+    }
+
+    private function statementClass(string $sql): string
+    {
+        try {
+            return $this->classifier->classify($sql)->mode;
+        } catch (\Throwable) {
+            return 'unknown';
+        }
     }
 
     private function stripLeadingComments(string $sql): string

@@ -38,7 +38,7 @@ final readonly class DatabaseConnectionSelector
             );
         }
 
-        return $this->resolveConnection($connectionSlug ?? $target);
+        return $this->resolveConnection($target);
     }
 
     private function resolveConnection(string $slug): DatabaseConnection|DatabaseConnectionRegistryFailure
@@ -89,7 +89,7 @@ final readonly class DatabaseConnectionSelector
         return DatabaseConnectionRegistryFailure::ambiguousTarget(
             $target,
             $targets
-                ->map(fn (DatabaseConnectionTarget $target): string => $target->connection?->slug ?? '')
+                ->map(fn (DatabaseConnectionTarget $target): string => $target->connection instanceof DatabaseConnection ? $target->connection->slug : '')
                 ->filter()
                 ->values()
                 ->all(),

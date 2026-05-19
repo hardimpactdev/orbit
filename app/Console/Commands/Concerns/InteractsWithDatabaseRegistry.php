@@ -87,6 +87,13 @@ trait InteractsWithDatabaseRegistry
             ]);
 
             return $exitCode;
+        } catch (Throwable $throwable) {
+            $this->databaseActivityProperties([
+                ...$this->databaseActivityProperties,
+                'exit_status' => 'failed',
+            ]);
+
+            throw $throwable;
         } finally {
             $this->finalizeActivityLog();
         }

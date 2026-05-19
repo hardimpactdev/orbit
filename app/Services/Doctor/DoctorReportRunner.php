@@ -542,7 +542,13 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $nodeName = $target->app?->node?->name ?? $target->workspace?->app?->node?->name;
+        $nodeName = null;
+
+        if ($target->app instanceof App) {
+            $nodeName = $target->app->node?->name;
+        } elseif ($target->workspace instanceof Workspace) {
+            $nodeName = $target->workspace->app?->node?->name;
+        }
 
         try {
             $this->databaseConnectionRestorer->restore($target);

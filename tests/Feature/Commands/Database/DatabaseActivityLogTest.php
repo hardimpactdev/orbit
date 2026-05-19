@@ -126,6 +126,55 @@ describe('database command activity logs', function (): void {
             ->and($loggedJson)->not->toContain('never-log-password');
     });
 
+    it('logs failed registry attempts with non-secret context', function (): void {
+        configureDatabaseActivityGatewayCaller();
+
+        $exitCode = Artisan::call('database:add', [
+            'slug' => 'primary-db',
+            '--driver' => 'pgsql',
+            '--node' => 'missing-node',
+            '--password' => 'never-log-password',
+        ]);
+
+        $entry = Activity::query()->where('event', 'database:add')->first();
+        $properties = $entry?->properties;
+        $loggedJson = json_encode($properties, JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($entry)->not->toBeNull()
+            ->and($properties->get('operation'))->toBe('add')
+            ->and($properties->get('connection'))->toBe('primary-db')
+            ->and($properties->get('driver'))->toBe('pgsql')
+            ->and($properties->get('node'))->toBe('missing-node')
+            ->and($properties->get('exit_status'))->toBe('failed')
+            ->and($loggedJson)->not->toContain('never-log-password');
+    });
+
+    it('logs failed query resolution with statement fingerprint but not SQL text', function (): void {
+        configureDatabaseActivityGatewayCaller();
+
+        $sql = 'select email from users where token = "raw-token-value"';
+        $exitCode = Artisan::call('database:query', [
+            'target' => 'missing-target',
+            '--sql' => $sql,
+        ]);
+
+        $entry = Activity::query()->where('event', 'database:query')->first();
+        $properties = $entry?->properties;
+        $loggedJson = json_encode($properties, JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($entry)->not->toBeNull()
+            ->and($properties->get('operation'))->toBe('query')
+            ->and($properties->get('target'))->toBe('missing-target')
+            ->and($properties->get('statement_hash'))->toBe(hash('sha256', $sql))
+            ->and($properties->get('statement_type'))->toBe('select')
+            ->and($properties->get('statement_class'))->toBe('read')
+            ->and($properties->get('exit_status'))->toBe('failed')
+            ->and($loggedJson)->not->toContain('select email from users')
+            ->and($loggedJson)->not->toContain('raw-token-value');
+    });
+
     it('logs write affected row counts without SQL text', function (): void {
         configureDatabaseActivityGatewayCaller();
         $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);

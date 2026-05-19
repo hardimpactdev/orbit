@@ -7,6 +7,7 @@ namespace App\Services\DatabaseConnections;
 use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Node;
 use App\Models\Workspace;
 use RuntimeException;
 
@@ -41,7 +42,7 @@ final readonly class DatabaseConnectionRestorer
             escapeshellarg(base64_encode($updated)),
             escapeshellarg($path),
         );
-        $result = $this->remoteShell->run($target->app?->node ?? $target->workspace?->app?->node, $script, ['throw' => false]);
+        $result = $this->remoteShell->run($this->targetNode($target), $script, ['throw' => false]);
 
         if (! $result->successful()) {
             throw new RuntimeException($result->output());
@@ -75,8 +76,7 @@ final readonly class DatabaseConnectionRestorer
             return (string) file_get_contents($path);
         }
 
-        $node = $target->app?->node ?? $target->workspace?->app?->node;
-        $result = $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), ['throw' => false]);
+        $result = $this->remoteShell->run($this->targetNode($target), sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), ['throw' => false]);
 
         return $result->successful() ? $result->stdout : '';
     }
@@ -96,8 +96,21 @@ final readonly class DatabaseConnectionRestorer
 
     private function shouldUseLocalFilesystem(DatabaseConnectionTarget $target): bool
     {
-        $node = $target->app?->node ?? $target->workspace?->app?->node;
+        $node = $this->targetNode($target);
 
-        return $node?->role === 'gateway';
+        return $node->role === 'gateway';
+    }
+
+    private function targetNode(DatabaseConnectionTarget $target): Node
+    {
+        if ($target->app instanceof App && $target->app->node instanceof Node) {
+            return $target->app->node;
+        }
+
+        if ($target->workspace instanceof Workspace && $target->workspace->app instanceof App && $target->workspace->app->node instanceof Node) {
+            return $target->workspace->app->node;
+        }
+
+        throw new RuntimeException('Database connection target has no owning node.');
     }
 }

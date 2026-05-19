@@ -42,6 +42,12 @@ final class DatabaseDescribeCommand extends Command implements Loggable
                 return $this->respondFailure('validation_failed', 'Table is required.', ['field' => 'table']);
             }
 
+            $this->databaseActivityProperties($audit->registry('describe', extra: [
+                'target' => $this->stringArgument('target'),
+                'selected_connection' => $this->stringOption('connection'),
+                'table' => $table,
+            ]));
+
             if (! $this->isGatewayCaller()) {
                 $result = $this->sendGatewayRequest(new SchemaDatabaseConnectionRequest(
                     operation: 'describe',

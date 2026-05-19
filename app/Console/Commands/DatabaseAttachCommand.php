@@ -37,6 +37,13 @@ final class DatabaseAttachCommand extends Command implements Loggable
     private function runDatabaseAttach(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseAuditPayload $audit): int
     {
         $slug = (string) $this->argument('connection');
+        $this->databaseActivityProperties($audit->registry('attach', extra: [
+            'connection' => $slug,
+            'app' => $this->stringOption('app'),
+            'workspace' => $this->stringOption('workspace'),
+            'env_prefix' => $this->stringOption('env-prefix') ?? 'DB',
+        ]));
+
         $scope = $this->isGatewayCaller()
             ? $this->resolveTargetScope()
             : $this->resolveTargetScopeForForwarding();
@@ -45,8 +52,11 @@ final class DatabaseAttachCommand extends Command implements Loggable
             return $this->respondFailure($scope->code, $scope->message, $scope->meta);
         }
 
+        $targetLabel = '';
+
         if ($this->isGatewayCaller()) {
             [$type, $owner, $envPrefix] = $scope;
+            $targetLabel = $owner->name;
             $result = $type === 'app'
                 ? $registry->attachToApp($slug, $owner, $envPrefix)
                 : $registry->attachToWorkspace($slug, $owner, $envPrefix);
@@ -68,6 +78,7 @@ final class DatabaseAttachCommand extends Command implements Loggable
             $connection = $payloads->toArray($connectionModel);
         } else {
             [$type, $target, $envPrefix] = $scope;
+            $targetLabel = $target;
             $result = $this->sendGatewayRequest(new AttachDatabaseConnectionTargetRequest($slug, array_filter([
                 'app' => $type === 'app' ? $target : null,
                 'workspace' => $type === 'workspace' ? $target : null,
@@ -85,7 +96,6 @@ final class DatabaseAttachCommand extends Command implements Loggable
             return $this->respondSuccess(['connection' => $connection]);
         }
 
-        $targetLabel = $this->isGatewayCaller() ? $owner->name : $target;
         $this->line("Attached database connection '{$slug}' to {$type} '{$targetLabel}' with prefix '{$envPrefix}'.");
 
         return self::SUCCESS;

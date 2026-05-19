@@ -38,6 +38,11 @@ final class DatabaseTablesCommand extends Command implements Loggable
     private function runSchemaOperation(string $operation, DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
     {
         try {
+            $this->databaseActivityProperties($audit->registry($operation, extra: [
+                'target' => $this->stringArgument('target'),
+                'selected_connection' => $this->stringOption('connection'),
+            ]));
+
             if (! $this->isGatewayCaller()) {
                 $result = $this->sendGatewayRequest(new SchemaDatabaseConnectionRequest(
                     operation: $operation,

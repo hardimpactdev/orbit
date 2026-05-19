@@ -7,8 +7,10 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Controller;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
 use App\Services\DatabaseConnections\DatabaseConnectionPayloadMapper;
@@ -321,11 +323,12 @@ final class DatabaseConnectionController extends Controller implements Loggable
         $connection = $this->selector->resolve($target, $this->stringValue($request->input('connection')));
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
-            $this->activityProperties = [
-                'operation' => 'query',
-                'target' => $target,
+            $this->activityProperties = $this->audit->queryAttempt($target, $sql, [
+                'write' => $request->boolean('write'),
+            ], extra: [
+                'selected_connection' => $this->stringValue($request->input('connection')),
                 'exit_status' => 'failed',
-            ];
+            ]);
 
             return $this->failureResponse($connection);
         }
@@ -552,6 +555,8 @@ final class DatabaseConnectionController extends Controller implements Loggable
             $this->activityProperties = [
                 'operation' => $operation,
                 'target' => $target,
+                'selected_connection' => $this->stringValue($request->query('connection')),
+                'table' => $this->stringValue($request->query('table')),
                 'exit_status' => 'failed',
             ];
 

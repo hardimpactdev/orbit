@@ -43,6 +43,12 @@ final class DatabaseAddCommand extends Command implements Loggable
     {
         $slug = (string) $this->argument('slug');
         $nodeSelector = $this->stringOption('node');
+        $this->databaseActivityProperties($audit->registry('add', extra: [
+            'connection' => $slug,
+            'driver' => $this->stringOption('driver'),
+            'node' => $nodeSelector,
+        ]));
+
         $node = $this->isGatewayCaller() && $nodeSelector !== null
             ? $resolver->resolveNode($nodeSelector)
             : null;

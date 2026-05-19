@@ -45,6 +45,14 @@ final class DatabaseUpdateCommand extends Command implements Loggable
     {
         $slug = (string) $this->argument('connection');
         $nodeSelector = $this->stringOption('node');
+        $this->databaseActivityProperties($audit->registry('update', extra: [
+            'connection' => $slug,
+            'requested_connection' => $this->stringOption('slug'),
+            'driver' => $this->stringOption('driver'),
+            'node' => $nodeSelector,
+            'clear_password' => $this->option('clear-password') ? true : null,
+        ]));
+
         $node = $this->isGatewayCaller() && $nodeSelector !== null
             ? $resolver->resolveNode($nodeSelector)
             : null;

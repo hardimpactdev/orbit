@@ -53,6 +53,9 @@ final class DatabaseQueryCommand extends Command implements Loggable
             }
 
             $options = $this->queryOptions();
+            $this->databaseActivityProperties($audit->queryAttempt((string) $this->argument('target'), $sql, $options, extra: [
+                'selected_connection' => $this->stringOption('connection'),
+            ]));
 
             if (! $this->isGatewayCaller()) {
                 $result = $this->sendGatewayRequest(new QueryDatabaseConnectionRequest(

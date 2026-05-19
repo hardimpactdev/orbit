@@ -30,7 +30,7 @@ class DatabaseConnectionTargetFactory extends Factory
     public function forApp(?App $app = null): static
     {
         return $this->state(fn (): array => [
-            'app_id' => $app?->id ?? App::factory(),
+            'app_id' => $app instanceof App ? $app->id : App::factory(),
             'workspace_id' => null,
         ]);
     }
@@ -39,7 +39,7 @@ class DatabaseConnectionTargetFactory extends Factory
     {
         return $this->state(fn (): array => [
             'app_id' => null,
-            'workspace_id' => $workspace?->id ?? Workspace::factory(),
+            'workspace_id' => $workspace instanceof Workspace ? $workspace->id : Workspace::factory(),
         ]);
     }
 }

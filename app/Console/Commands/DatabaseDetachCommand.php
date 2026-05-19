@@ -36,6 +36,13 @@ final class DatabaseDetachCommand extends Command implements Loggable
     private function runDatabaseDetach(DatabaseConnectionRegistry $registry, DatabaseAuditPayload $audit): int
     {
         $slug = (string) $this->argument('connection');
+        $this->databaseActivityProperties($audit->registry('detach', extra: [
+            'connection' => $slug,
+            'app' => $this->stringOption('app'),
+            'workspace' => $this->stringOption('workspace'),
+            'env_prefix' => $this->stringOption('env-prefix') ?? 'DB',
+        ]));
+
         $scope = $this->isGatewayCaller()
             ? $this->resolveTargetScope()
             : $this->resolveTargetScopeForForwarding();
@@ -44,8 +51,11 @@ final class DatabaseDetachCommand extends Command implements Loggable
             return $this->respondFailure($scope->code, $scope->message, $scope->meta);
         }
 
+        $targetLabel = '';
+
         if ($this->isGatewayCaller()) {
             [$type, $owner, $envPrefix] = $scope;
+            $targetLabel = $owner->name;
             $connectionModel = $registry->show($slug);
 
             if ($connectionModel instanceof DatabaseConnection) {
@@ -66,6 +76,7 @@ final class DatabaseDetachCommand extends Command implements Loggable
             }
         } else {
             [$type, $target, $envPrefix] = $scope;
+            $targetLabel = $target;
             $result = $this->sendGatewayRequest(new DetachDatabaseConnectionTargetRequest($slug, array_filter([
                 'app' => $type === 'app' ? $target : null,
                 'workspace' => $type === 'workspace' ? $target : null,
@@ -83,13 +94,12 @@ final class DatabaseDetachCommand extends Command implements Loggable
                     'action' => 'detached',
                     'connection' => $slug,
                     'target_type' => $type,
-                    'target' => $this->isGatewayCaller() ? $owner->name : $target,
+                    'target' => $targetLabel,
                     'env_prefix' => $envPrefix,
                 ],
             ]);
         }
 
-        $targetLabel = $this->isGatewayCaller() ? $owner->name : $target;
         $this->line("Detached database connection '{$slug}' from {$type} '{$targetLabel}' prefix '{$envPrefix}'.");
 
         return self::SUCCESS;
