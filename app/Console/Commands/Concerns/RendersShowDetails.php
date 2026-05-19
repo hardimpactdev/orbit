@@ -22,6 +22,10 @@ trait RendersShowDetails
             $label = $labels[$index];
             $prefix = $index === $last ? '└' : '├';
             $this->line($prefix.'  '.str_pad($label, $width + 3).$this->showDetailValue($value));
+
+            if ($index !== $last) {
+                $this->line('│');
+            }
         }
     }
 

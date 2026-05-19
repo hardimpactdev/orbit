@@ -127,6 +127,18 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->not->toContain('○');
     });
 
+    it('renders spacer rows between detail properties', function (): void {
+        DB::table('nodes')->insert(nodeShowHumanRow());
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0);
+        expect($output)->toMatch('/├  Role\s+app\n│\n├  Environment/')
+            ->and($output)->toMatch('/├  Consuming\s+—\n│\n└  Serving\s+—/')
+            ->and($output)->not->toMatch('/└  Serving\s+—\n│/');
+    });
+
     it('renders registry success output with all fields for app node', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
         assignNodeShowHumanRole('app-1', 'app-development', ['tld' => 'test']);

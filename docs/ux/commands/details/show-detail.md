@@ -26,6 +26,8 @@ These rules govern all uses of `show-detail` in Orbit commands.
 - The second line is a blank tree continuation line: `│`.
 - Each property renders as `├  <Property><padding><Value>` except the final row,
   which uses `└`.
+- A blank tree continuation line `│` renders between property rows. No spacer
+  renders after the final `└` row.
 - Property labels use human title case, not raw JSON keys.
 - Values are one-line summaries. Lists render comma-separated.
 - Missing values render as `—` (em dash) for human display; JSON keeps `null`.
@@ -38,11 +40,17 @@ These rules govern all uses of `show-detail` in Orbit commands.
 ┌  Database connection: ditis-hr
 │
 ├  Driver   pgsql
+│
 ├  Host     127.0.0.1
+│
 ├  Port     5434
+│
 ├  Name     ditis_hr
+│
 ├  User     orbit
+│
 ├  Apps     ditis-hr.test
+│
 └  Node     beast
 ```
 
