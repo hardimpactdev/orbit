@@ -184,7 +184,7 @@ When the two diverge, one of these happened: an apply step failed or only partia
 
 A **state family** is one type of thing Orbit tracks — like apps, processes, or schedules. For each one, the gateway stores how it should be set up, and applies that to the right node.
 
-Orbit has eight state families:
+Orbit has nine state families:
 
 | Family | Owns | Concept doc |
 |---|---|---|
@@ -196,6 +196,7 @@ Orbit has eight state families:
 | `schedule` | Recurring tasks for apps, nodes, and Orbit | [Schedule Concepts](domains/9_schedule/schedule-concepts.md) |
 | `tool` | Tools installed on each node | [Tool Concepts](domains/3_tool/tool-concepts.md) |
 | `firewall_rule` | What network traffic each node allows | [Firewall Concepts](domains/4_firewall/firewall-concepts.md) |
+| `database_connection` | Reusable database connection intent mapped into app and workspace `.env` files | [Database Concepts](domains/18_database/database-concepts.md) |
 
 These names are how Orbit thinks about each thing. The tools behind them — Caddy for proxy routes, UFW for firewall rules, Supervisor for processes — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 

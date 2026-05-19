@@ -29,6 +29,8 @@ owning family concept document.
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
+- **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected app or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/18_database/database-doctor.md).
+- **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected app or workspace `.env` and records them into gateway state. See [Database Doctor](domains/18_database/database-doctor.md).
 
 ## Product Families
 
@@ -42,6 +44,7 @@ Permanent state-family keys are singular product names:
 - `schedule`
 - `tool`
 - `firewall_rule`
+- `database_connection`
 
 See [Architecture: State Families](architecture.md#state-families).
 
@@ -204,6 +207,21 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Schedule lock**
 - **Run-history hook**
 - **Schedule-family boundaries**
+<!-- /concept-index -->
+
+## Database Concepts
+
+Source: [Database Concepts](domains/18_database/database-concepts.md).
+
+<!-- concept-index:domains/18_database/database-concepts.md -->
+- **Database connection**
+- **Database connection target**
+- **Environment prefix**
+- **Database connection restore**
+- **Database connection adopt**
+- **Database query execution**
+- **SQLite locality**
+- **Database-family boundaries**
 <!-- /concept-index -->
 
 ## Deploy Concepts
