@@ -46,6 +46,15 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--environment', $request, 'environment');
         $this->addStringOption($arguments, '--tld', $request, 'tld');
         $this->addStringOption($arguments, '--user', $request, 'user');
+        $this->addStringOption($arguments, '--self-grant', $request, 'self_grant');
+        $this->addStringOption($arguments, '--self-grant-permissions', $request, 'self_grant_permissions');
+        $this->addArrayOption($arguments, '--grant-to', $request, 'grant_to');
+        $this->addStringOption($arguments, '--grant-to-preset', $request, 'grant_to_preset');
+        $this->addStringOption($arguments, '--grant-to-permissions', $request, 'grant_to_permissions');
+        $this->addArrayOption($arguments, '--grant-from', $request, 'grant_from');
+        $this->addStringOption($arguments, '--grant-from-preset', $request, 'grant_from_preset');
+        $this->addStringOption($arguments, '--grant-from-permissions', $request, 'grant_from_permissions');
+        $this->addArrayOption($arguments, '--agent-tool', $request, 'agent_tools');
 
         $exitCode = $this->callNodeNewInGatewayContext($arguments);
 
@@ -94,6 +103,24 @@ final readonly class NodeStoreController implements Loggable
         }
 
         $arguments[$option] = $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function addArrayOption(array &$arguments, string $option, Request $request, string $key): void
+    {
+        $value = $request->input($key);
+
+        if (! is_array($value) || $value === []) {
+            return;
+        }
+
+        $filtered = array_values(array_filter($value, fn ($item): bool => is_string($item) && $item !== ''));
+
+        if ($filtered !== []) {
+            $arguments[$option] = $filtered;
+        }
     }
 
     /**

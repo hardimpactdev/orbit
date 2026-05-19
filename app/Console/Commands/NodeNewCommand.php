@@ -15,8 +15,11 @@ use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\Access\NodePermissionNormalizer;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeIdentityArtifactProbe;
 use App\Services\Nodes\NodeRegistryWriter;
@@ -25,6 +28,9 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
+use App\Services\Tools\ToolCatalog;
+use App\Services\Tools\ToolInstaller;
+use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
@@ -38,10 +44,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
@@ -53,6 +61,15 @@ use function Laravel\Prompts\text;
     {--environment= : App-node environment: development or production}
     {--tld= : Development app-node TLD}
     {--user=root : SSH user for provisioning}
+    {--self-grant= : Self-grant mode: default or custom (agent nodes only)}
+    {--self-grant-permissions= : Custom self-grant permissions (comma-separated)}
+    {--grant-to=* : Grant this node access to another node. Repeatable. Use "all" for all eligible nodes.}
+    {--grant-to-preset= : Preset for grant-to permissions}
+    {--grant-to-permissions= : Custom permissions for grant-to (comma-separated)}
+    {--grant-from=* : Grant another node access to this node. Repeatable. Use "all" for all eligible nodes.}
+    {--grant-from-preset= : Preset for grant-from permissions}
+    {--grant-from-permissions= : Custom permissions for grant-from (comma-separated)}
+    {--agent-tool=* : Agent tool to install. Repeatable: openclaw, hermes}
     {--json : Output JSON}')]
 #[Description('Create or provision a node in the Orbit fleet')]
 class NodeNewCommand extends Command
@@ -86,6 +103,14 @@ class NodeNewCommand extends Command
 
         if (is_int($requestedRoles)) {
             return $requestedRoles;
+        }
+
+        if ($this->arrayOption('agent-tool') !== [] && ! in_array(NodeRoleName::Agent->value, $requestedRoles['hosted'], true)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Agent tools can only be specified for agent nodes.',
+                meta: ['field' => 'agent-tool'],
+            );
         }
 
         $gatewayConfigured = $this->gatewayConfigured();
@@ -389,6 +414,15 @@ class NodeNewCommand extends Command
                     environment: null,
                     tld: $inputs['tld'],
                     user: $inputs['sshUser'],
+                    selfGrant: $this->stringOption('self-grant'),
+                    selfGrantPermissions: $this->stringOption('self-grant-permissions'),
+                    grantTo: $this->arrayOption('grant-to'),
+                    grantToPreset: $this->stringOption('grant-to-preset'),
+                    grantToPermissions: $this->stringOption('grant-to-permissions'),
+                    grantFrom: $this->arrayOption('grant-from'),
+                    grantFromPreset: $this->stringOption('grant-from-preset'),
+                    grantFromPermissions: $this->stringOption('grant-from-permissions'),
+                    agentTools: $this->arrayOption('agent-tool'),
                 ))
                 ->dto();
         } catch (GatewayApiException $exception) {
@@ -411,7 +445,7 @@ class NodeNewCommand extends Command
         }
 
         if ($this->wantsJson()) {
-            return $this->jsonSuccess($dto->data);
+            return $this->jsonSuccess($dto->data, $dto->meta);
         }
 
         $this->info("Created node {$name}.");
@@ -457,6 +491,11 @@ class NodeNewCommand extends Command
             NodeRoleName::AppProduction->value,
             NodeRoleName::Agent->value,
         ]) !== [];
+
+        $preflight = $this->preflightAgentSetup($roles);
+        if (is_int($preflight)) {
+            return $preflight;
+        }
 
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
         $wireguardAddress = $this->nextWireguardAddress();
@@ -532,6 +571,30 @@ class NodeNewCommand extends Command
             );
         }
 
+        $warnings = [];
+
+        if (in_array(NodeRoleName::Agent->value, $roles, true)) {
+            $selfGrantResult = $this->setupAgentSelfGrant($node);
+            if (is_int($selfGrantResult)) {
+                return $selfGrantResult;
+            }
+
+            $grantToResult = $this->setupGrantTo($node);
+            if (is_int($grantToResult)) {
+                return $grantToResult;
+            }
+
+            $grantFromResult = $this->setupGrantFrom($node);
+            if (is_int($grantFromResult)) {
+                return $grantFromResult;
+            }
+
+            $agentToolResult = $this->setupAgentTools($node, $warnings);
+            if (is_int($agentToolResult)) {
+                return $agentToolResult;
+            }
+        }
+
         $payload = [
             'result' => [
                 'action' => 'created',
@@ -573,7 +636,10 @@ class NodeNewCommand extends Command
         }
 
         if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
+            return $this->jsonSuccess(
+                $payload,
+                $warnings !== [] ? ['warnings' => $warnings] : [],
+            );
         }
 
         $this->info("Created node {$name}.");
@@ -619,7 +685,7 @@ class NodeNewCommand extends Command
         }
 
         if ($this->wantsJson()) {
-            return $this->jsonSuccess($dto->data);
+            return $this->jsonSuccess($dto->data, $dto->meta);
         }
 
         $this->info("Created app node {$name}.");
@@ -672,7 +738,7 @@ class NodeNewCommand extends Command
         }
 
         if ($this->wantsJson()) {
-            return $this->jsonSuccess($dto->data);
+            return $this->jsonSuccess($dto->data, $dto->meta);
         }
 
         $this->info('Gateway is already provisioned.');
@@ -2183,6 +2249,24 @@ SCRIPT,
         return is_string($value) && $value !== '' ? $value : null;
     }
 
+    /**
+     * @return list<string>
+     */
+    private function arrayOption(string $name): array
+    {
+        $value = $this->option($name);
+
+        if (is_string($value) && $value !== '') {
+            return [$value];
+        }
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, fn ($item): bool => is_string($item) && $item !== ''));
+    }
+
     private function resolveGatewayTld(): string
     {
         $value = $this->stringOption('tld');
@@ -2660,6 +2744,410 @@ SCRIPT,
         return null;
     }
 
+    private function setupAgentSelfGrant(Node $node): ?int
+    {
+        $selfGrantMode = $this->stringOption('self-grant') ?? 'default';
+        $selfGrantPermissions = $this->stringOption('self-grant-permissions');
+
+        if (! in_array($selfGrantMode, ['default', 'custom'], true)) {
+            return $this->validationFailed('self-grant', 'Self-grant mode must be one of default or custom.');
+        }
+
+        $permissions = match ($selfGrantMode) {
+            'default' => app(NodePermissionPresets::class)->permissions('agent-self'),
+            'custom' => $this->resolveGrantPermissions(null, $selfGrantPermissions),
+        };
+
+        if (is_int($permissions)) {
+            return $permissions;
+        }
+
+        NodeAccess::query()->firstOrCreate([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+        ], [
+            'permissions' => $permissions,
+        ]);
+
+        return null;
+    }
+
+    private function setupGrantTo(Node $node): ?int
+    {
+        $targets = $this->arrayOption('grant-to');
+
+        if ($targets === []) {
+            return null;
+        }
+
+        $preset = $this->stringOption('grant-to-preset');
+        $permissionsInput = $this->stringOption('grant-to-permissions');
+
+        $permissions = $this->resolveGrantPermissions($preset, $permissionsInput);
+        if (is_int($permissions)) {
+            return $permissions;
+        }
+
+        $resolvedTargets = $this->resolveGrantTargets($targets, $node->id);
+        if (is_int($resolvedTargets)) {
+            return $resolvedTargets;
+        }
+
+        foreach ($resolvedTargets as $targetNode) {
+            NodeAccess::query()->firstOrCreate([
+                'consumer_node_id' => $node->id,
+                'serving_node_id' => $targetNode->id,
+            ], [
+                'permissions' => $permissions,
+            ]);
+        }
+
+        return null;
+    }
+
+    private function setupGrantFrom(Node $node): ?int
+    {
+        $sources = $this->arrayOption('grant-from');
+
+        if ($sources === []) {
+            return null;
+        }
+
+        $preset = $this->stringOption('grant-from-preset');
+        $permissionsInput = $this->stringOption('grant-from-permissions');
+
+        $permissions = $this->resolveGrantPermissions($preset, $permissionsInput);
+        if (is_int($permissions)) {
+            return $permissions;
+        }
+
+        $resolvedSources = $this->resolveGrantTargets($sources, $node->id);
+        if (is_int($resolvedSources)) {
+            return $resolvedSources;
+        }
+
+        foreach ($resolvedSources as $sourceNode) {
+            NodeAccess::query()->firstOrCreate([
+                'consumer_node_id' => $sourceNode->id,
+                'serving_node_id' => $node->id,
+            ], [
+                'permissions' => $permissions,
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, string>  $options
+     * @return list<Node>|int
+     */
+    private function resolveGrantTargets(array $options, ?int $excludeNodeId = null): array|int
+    {
+        $targets = [];
+        $hasAll = false;
+
+        foreach ($options as $option) {
+            if (! is_string($option) || $option === '') {
+                continue;
+            }
+
+            if ($option === 'all') {
+                $hasAll = true;
+
+                continue;
+            }
+
+            $targetNode = Node::query()
+                ->where('name', $option)
+                ->where('status', 'active')
+                ->first();
+
+            if (! $targetNode instanceof Node) {
+                return $this->failCommand(
+                    code: 'node.not_found',
+                    message: "Grant target node '{$option}' not found.",
+                    meta: ['node' => $option],
+                );
+            }
+
+            $targets[] = $targetNode;
+        }
+
+        if ($hasAll) {
+            $allNodes = Node::query()
+                ->where('status', 'active')
+                ->get();
+
+            foreach ($allNodes as $allNode) {
+                if ($excludeNodeId !== null && $allNode->id === $excludeNodeId) {
+                    continue;
+                }
+
+                $alreadyIncluded = false;
+
+                foreach ($targets as $target) {
+                    if ($target->id === $allNode->id) {
+                        $alreadyIncluded = true;
+
+                        break;
+                    }
+                }
+
+                if (! $alreadyIncluded) {
+                    $targets[] = $allNode;
+                }
+            }
+        }
+
+        return $targets;
+    }
+
+    /**
+     * @return list<string>|int
+     */
+    private function resolveGrantPermissions(?string $preset, ?string $permissionsInput): array|int
+    {
+        if ($preset !== null && $permissionsInput !== null) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Use either --preset or --permissions, not both.',
+                meta: ['fields' => ['preset', 'permissions']],
+            );
+        }
+
+        if ($preset !== null) {
+            if ($preset === 'gateway-admin') {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Gateway-admin is not offered by default. Use node:grant with --force to create a gateway-admin grant.',
+                    meta: ['field' => 'preset', 'preset' => 'gateway-admin'],
+                );
+            }
+
+            try {
+                return app(NodePermissionPresets::class)->permissions($preset);
+            } catch (InvalidArgumentException $e) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: $e->getMessage(),
+                    meta: ['field' => 'preset', 'preset' => $preset],
+                );
+            }
+        }
+
+        if ($permissionsInput !== null) {
+            $permissions = array_map(trim(...), explode(',', $permissionsInput));
+            $permissions = array_values(array_filter($permissions));
+
+            if ($permissions === []) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Permission set cannot be empty.',
+                    meta: ['field' => 'permissions'],
+                );
+            }
+
+            try {
+                $normalized = app(NodePermissionNormalizer::class)->normalize($permissions);
+            } catch (InvalidArgumentException $e) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: $e->getMessage(),
+                    meta: ['field' => 'permissions'],
+                );
+            }
+
+            return $normalized->permissions;
+        }
+
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Use --preset or --permissions to specify grant permissions.',
+            meta: ['fields' => ['preset', 'permissions']],
+        );
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function preflightAgentSetup(array $roles): ?int
+    {
+        $hasAgentRole = in_array(NodeRoleName::Agent->value, $roles, true);
+
+        $tools = $this->arrayOption('agent-tool');
+        if ($tools !== [] && ! $hasAgentRole) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Agent tools can only be specified for agent nodes.',
+                meta: ['field' => 'agent-tool'],
+            );
+        }
+
+        $selfGrantMode = $this->stringOption('self-grant');
+        if ($selfGrantMode !== null && ! in_array($selfGrantMode, ['default', 'custom'], true)) {
+            return $this->validationFailed('self-grant', 'Self-grant mode must be one of default or custom.');
+        }
+
+        $selfGrantPermissions = $this->stringOption('self-grant-permissions');
+        if ($selfGrantPermissions !== null && $selfGrantMode !== 'custom') {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Use --self-grant=custom when supplying --self-grant-permissions.',
+                meta: ['fields' => ['self-grant', 'self-grant-permissions']],
+            );
+        }
+
+        $grantToTargets = $this->arrayOption('grant-to');
+        if ($grantToTargets !== []) {
+            $resolved = $this->resolveGrantTargets($grantToTargets);
+            if (is_int($resolved)) {
+                return $resolved;
+            }
+        }
+
+        $grantFromSources = $this->arrayOption('grant-from');
+        if ($grantFromSources !== []) {
+            $resolved = $this->resolveGrantTargets($grantFromSources);
+            if (is_int($resolved)) {
+                return $resolved;
+            }
+        }
+
+        $grantToPreset = $this->stringOption('grant-to-preset');
+        $grantToPermissions = $this->stringOption('grant-to-permissions');
+        if ($grantToTargets === [] && ($grantToPreset !== null || $grantToPermissions !== null)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Use --grant-to to specify target nodes when supplying --grant-to-preset or --grant-to-permissions.',
+                meta: ['fields' => ['grant-to', 'grant-to-preset', 'grant-to-permissions']],
+            );
+        }
+        if ($grantToTargets !== []) {
+            $permissions = $this->resolveGrantPermissions($grantToPreset, $grantToPermissions);
+            if (is_int($permissions)) {
+                return $permissions;
+            }
+        }
+
+        $grantFromPreset = $this->stringOption('grant-from-preset');
+        $grantFromPermissions = $this->stringOption('grant-from-permissions');
+        if ($grantFromSources === [] && ($grantFromPreset !== null || $grantFromPermissions !== null)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Use --grant-from to specify source nodes when supplying --grant-from-preset or --grant-from-permissions.',
+                meta: ['fields' => ['grant-from', 'grant-from-preset', 'grant-from-permissions']],
+            );
+        }
+        if ($grantFromSources !== []) {
+            $permissions = $this->resolveGrantPermissions($grantFromPreset, $grantFromPermissions);
+            if (is_int($permissions)) {
+                return $permissions;
+            }
+        }
+
+        if ($selfGrantMode === 'custom' || $selfGrantPermissions !== null) {
+            $permissions = $this->resolveGrantPermissions(null, $selfGrantPermissions);
+            if (is_int($permissions)) {
+                return $permissions;
+            }
+        }
+
+        if ($hasAgentRole && $tools !== []) {
+            $catalog = app(ToolCatalog::class);
+            $resolvedTools = [];
+            foreach ($tools as $tool) {
+                if (! $catalog->supports($tool)) {
+                    return $this->failCommand(
+                        code: 'validation_failed',
+                        message: "Unknown agent tool '{$tool}'.",
+                        meta: ['field' => 'agent-tool', 'tool' => $tool],
+                    );
+                }
+
+                if ($catalog->category($tool) !== 'agent') {
+                    return $this->failCommand(
+                        code: 'validation_failed',
+                        message: "Tool '{$tool}' is not an agent tool.",
+                        meta: ['field' => 'agent-tool', 'tool' => $tool],
+                    );
+                }
+
+                $resolvedTools[] = $tool;
+            }
+
+            if (count($resolvedTools) > 1 && ! $this->option('json') && $this->isInteractiveInput()) {
+                $this->warn('Multiple agent tools selected: '.implode(', ', $resolvedTools));
+                if (! confirm('Continue installing all tools?', default: false)) {
+                    return $this->failCommand(
+                        code: 'user_cancelled',
+                        message: 'Agent tool installation cancelled by user.',
+                        meta: [],
+                    );
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array{code: string, tools: list<string>}>  $warnings
+     */
+    private function setupAgentTools(Node $node, array &$warnings): ?int
+    {
+        $tools = $this->arrayOption('agent-tool');
+
+        if ($tools === []) {
+            return null;
+        }
+
+        $resolvedTools = [];
+
+        foreach ($tools as $tool) {
+            $catalog = app(ToolCatalog::class);
+
+            if (! $catalog->supports($tool)) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: "Unknown agent tool '{$tool}'.",
+                    meta: ['field' => 'agent-tool', 'tool' => $tool],
+                );
+            }
+
+            if ($catalog->category($tool) !== 'agent') {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: "Tool '{$tool}' is not an agent tool.",
+                    meta: ['field' => 'agent-tool', 'tool' => $tool],
+                );
+            }
+
+            $resolvedTools[] = $tool;
+        }
+
+        if (count($resolvedTools) > 1) {
+            $warnings[] = [
+                'code' => 'tool.multiple_agent_tools_running',
+                'tools' => $resolvedTools,
+            ];
+        }
+
+        foreach ($resolvedTools as $tool) {
+            $result = app(ToolInstaller::class)->install($tool, $node->name, null, 'installed');
+
+            if ($result instanceof ToolRegistryFailure) {
+                return $this->failCommand(
+                    code: $result->code,
+                    message: $result->message,
+                    meta: $result->meta,
+                );
+            }
+        }
+
+        return null;
+    }
+
     private function defaultControlName(): ?string
     {
         $hostname = gethostname();
@@ -2813,13 +3301,19 @@ SCRIPT,
     /**
      * @param  array<string, mixed>  $data
      */
-    private function jsonSuccess(array $data): int
+    private function jsonSuccess(array $data, array $meta = []): int
     {
-        $this->line(json_encode([
+        $response = [
             'success' => [
                 'data' => $data,
             ],
-        ], JSON_THROW_ON_ERROR));
+        ];
+
+        if ($meta !== []) {
+            $response['success']['meta'] = $meta;
+        }
+
+        $this->line(json_encode($response, JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
     }

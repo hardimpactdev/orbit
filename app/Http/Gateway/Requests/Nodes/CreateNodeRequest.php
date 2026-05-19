@@ -25,6 +25,15 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $environment,
         public readonly ?string $tld,
         public readonly ?string $user,
+        public readonly ?string $selfGrant = null,
+        public readonly ?string $selfGrantPermissions = null,
+        public readonly array $grantTo = [],
+        public readonly ?string $grantToPreset = null,
+        public readonly ?string $grantToPermissions = null,
+        public readonly array $grantFrom = [],
+        public readonly ?string $grantFromPreset = null,
+        public readonly ?string $grantFromPermissions = null,
+        public readonly array $agentTools = [],
     ) {}
 
     public function resolveEndpoint(): string
@@ -37,7 +46,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return [
+        $body = [
             'name' => $this->name,
             'role' => $this->role,
             'roles' => $this->roles,
@@ -46,10 +55,51 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
             'tld' => $this->tld,
             'user' => $this->user,
         ];
+
+        if ($this->selfGrant !== null) {
+            $body['self_grant'] = $this->selfGrant;
+        }
+
+        if ($this->selfGrantPermissions !== null) {
+            $body['self_grant_permissions'] = $this->selfGrantPermissions;
+        }
+
+        if ($this->grantTo !== []) {
+            $body['grant_to'] = $this->grantTo;
+        }
+
+        if ($this->grantToPreset !== null) {
+            $body['grant_to_preset'] = $this->grantToPreset;
+        }
+
+        if ($this->grantToPermissions !== null) {
+            $body['grant_to_permissions'] = $this->grantToPermissions;
+        }
+
+        if ($this->grantFrom !== []) {
+            $body['grant_from'] = $this->grantFrom;
+        }
+
+        if ($this->grantFromPreset !== null) {
+            $body['grant_from_preset'] = $this->grantFromPreset;
+        }
+
+        if ($this->grantFromPermissions !== null) {
+            $body['grant_from_permissions'] = $this->grantFromPermissions;
+        }
+
+        if ($this->agentTools !== []) {
+            $body['agent_tools'] = $this->agentTools;
+        }
+
+        return $body;
     }
 
     public function createDtoFromResponse(Response $response): NodeCreateResponse
     {
-        return new NodeCreateResponse(data: $this->unwrapData($response));
+        return new NodeCreateResponse(
+            data: $this->unwrapData($response),
+            meta: $this->unwrapMeta($response),
+        );
     }
 }
