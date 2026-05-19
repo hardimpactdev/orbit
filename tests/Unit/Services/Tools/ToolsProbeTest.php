@@ -7,6 +7,8 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
+use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Tools\ToolsProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -26,6 +28,47 @@ function createToolsProbeAppHostNode(array $attributes = []): Node
         'status' => 'active',
         ...$attributes,
     ]);
+}
+
+function createToolsProbeAgentNode(): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'control',
+        'status' => 'active',
+        'tld' => 'agent',
+    ]);
+    $node->roleAssignments()->create([
+        'role' => 'agent',
+        'status' => 'active',
+        'settings' => ['tld' => 'agent'],
+    ]);
+
+    return $node;
+}
+
+/**
+ * @return array{target: array{type: string, value: string}, upstream: string, owner_name: string}
+ */
+function toolsProbeAgentRouteConfig(string $tool): array
+{
+    $upstream = 'http://127.0.0.1:8080';
+
+    return [
+        'target' => ['type' => 'upstream', 'value' => $upstream],
+        'upstream' => $upstream,
+        'owner_name' => $tool,
+    ];
+}
+
+function toolsProbeAgentRouteSourceHash(Node $node, string $tool): string
+{
+    return app(ProxyRouteRenderer::class)->sourceHash(new ProxyRoute([
+        'node_id' => $node->id,
+        'domain' => "{$tool}.agent",
+        'kind' => 'proxy',
+        'owner_type' => 'tool',
+        'config' => toolsProbeAgentRouteConfig($tool),
+    ]));
 }
 
 describe('ToolsProbe', function (): void {
@@ -214,6 +257,168 @@ describe('ToolsProbe', function (): void {
                 'expected_hash' => str_repeat('a', 64),
                 'observed_hash' => str_repeat('b', 64),
             ]);
+    });
+
+    it('detects missing agent tool proxy route', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+            ]);
+    });
+
+    it('passes when agent tool proxy route exists', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'source_hash' => toolsProbeAgentRouteSourceHash($node, 'openclaw'),
+            'config' => toolsProbeAgentRouteConfig('openclaw'),
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing'))->toBeNull();
+    });
+
+    it('detects drift when agent tool proxy route is owned by a different tool', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'config' => ['owner_name' => 'hermes'],
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+                'route_owner' => 'hermes',
+            ]);
+    });
+
+    it('detects drift when agent tool proxy route has the wrong kind', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'upstream',
+            'source_hash' => str_repeat('a', 64),
+            'config' => toolsProbeAgentRouteConfig('openclaw'),
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+                'expected_kind' => 'proxy',
+                'observed_kind' => 'upstream',
+            ]);
+    });
+
+    it('detects drift when agent tool proxy route config or source hash is stale', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('b', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
+                'upstream' => 'http://127.0.0.1:9999',
+                'owner_name' => 'openclaw',
+            ],
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+                'expected_upstream' => 'http://127.0.0.1:8080',
+                'observed_upstream' => 'http://127.0.0.1:9999',
+            ]);
+    });
+
+    it('detects missing agent tool credentials metadata', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+            'credentials' => null,
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_credentials_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('passes when agent tool credentials metadata exists', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_credentials_missing'))->toBeNull();
+    });
+
+    it('detects missing agent user for agent tools', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'running',
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 1));
+
+        $drift = $probe->diff($tool, $probe->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.agent_user_missing')?->kind)->toBe(DriftKind::Missing);
     });
 });
 

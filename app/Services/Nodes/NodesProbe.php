@@ -17,7 +17,10 @@ use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\Access\NodePermissionNormalizer;
+use App\Services\Nodes\Access\NodePermissionRegistry;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDefinition;
@@ -239,10 +242,7 @@ final readonly class NodesProbe
             }
 
             $baselineDrift = $this->baselineDriftForAssignment($node, $assignment);
-
-            if ($baselineDrift instanceof DriftEntry) {
-                $drift[] = $baselineDrift;
-            }
+            $drift = array_merge($drift, $baselineDrift);
         }
 
         return $drift;
@@ -326,17 +326,28 @@ final readonly class NodesProbe
         ], true);
     }
 
-    private function baselineDriftForAssignment(Node $node, NodeRoleAssignment $assignment): ?DriftEntry
+    /**
+     * @return list<DriftEntry>
+     */
+    private function baselineDriftForAssignment(Node $node, NodeRoleAssignment $assignment): array
     {
-        if ($assignment->role !== NodeRoleName::AppDevelopment->value) {
-            return null;
-        }
+        return match ($assignment->role) {
+            NodeRoleName::AppDevelopment->value => $this->baselineDriftForAppDevelopment($node, $assignment),
+            NodeRoleName::Agent->value => $this->baselineDriftForAgent($node, $assignment),
+            default => [],
+        };
+    }
 
+    /**
+     * @return list<DriftEntry>
+     */
+    private function baselineDriftForAppDevelopment(Node $node, NodeRoleAssignment $assignment): array
+    {
         $settings = $assignment->settings ?? [];
         $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
 
         if (! is_string($tld) || trim($tld) === '') {
-            return null;
+            return [];
         }
 
         $mapping = $this->developmentDnsMappingProbe()->inspect(
@@ -344,17 +355,19 @@ final readonly class NodesProbe
         );
 
         if (($mapping['expected_target'] ?? null) === null) {
-            return new DriftEntry(
-                family: $this->key(),
-                key: 'node.role_baseline_mismatch',
-                kind: DriftKind::Missing,
-                summary: "Role baseline for '{$assignment->role}' on node {$node->name} is incomplete.",
-                detail: [
-                    ...$mapping,
-                    'role' => $assignment->role,
-                    'tld' => $tld,
-                ],
-            );
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_baseline_mismatch',
+                    kind: DriftKind::Missing,
+                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is incomplete.",
+                    detail: [
+                        ...$mapping,
+                        'role' => $assignment->role,
+                        'tld' => $tld,
+                    ],
+                ),
+            ];
         }
 
         if (
@@ -363,20 +376,107 @@ final readonly class NodesProbe
             || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
             || ($mapping['public_exposure'] ?? false) === true
         ) {
-            return new DriftEntry(
-                family: $this->key(),
-                key: 'node.role_baseline_mismatch',
-                kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
-                summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
-                detail: [
-                    ...$mapping,
-                    'role' => $assignment->role,
-                    'tld' => $tld,
-                ],
-            );
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_baseline_mismatch',
+                    kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
+                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
+                    detail: [
+                        ...$mapping,
+                        'role' => $assignment->role,
+                        'tld' => $tld,
+                    ],
+                ),
+            ];
         }
 
-        return null;
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function baselineDriftForAgent(Node $node, NodeRoleAssignment $assignment): array
+    {
+        $drift = [];
+
+        $settings = $assignment->settings ?? [];
+        $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+
+        if (! is_string($tld) || trim($tld) === '') {
+            $tld = is_string($node->tld) ? trim($node->tld) : null;
+        }
+
+        if (is_string($tld) && trim($tld) !== '') {
+            $mapping = $this->developmentDnsMappingProbe()->inspectForTld(
+                $node,
+                $tld,
+            );
+
+            if (
+                ($mapping['expected_target'] ?? null) === null
+                || ($mapping['exists'] ?? false) !== true
+                || ($mapping['actual_target'] ?? null) !== ($mapping['expected_target'] ?? null)
+                || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
+                || ($mapping['public_exposure'] ?? false) === true
+            ) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_baseline_mismatch',
+                    kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
+                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
+                    detail: [
+                        ...$mapping,
+                        'role' => $assignment->role,
+                        'tld' => $tld,
+                        'component' => 'dns_mapping',
+                    ],
+                );
+            }
+        }
+
+        foreach (['caddy', 'supervisor'] as $tool) {
+            if (! NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists()) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_baseline_mismatch',
+                    kind: DriftKind::Missing,
+                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing required tool {$tool}.",
+                    detail: [
+                        'role' => $assignment->role,
+                        'tool' => $tool,
+                    ],
+                );
+            }
+        }
+
+        if ($this->remoteShell instanceof RemoteShell) {
+            try {
+                $result = $this->remoteShell->run($node, 'id -u agent >/dev/null 2>&1', [
+                    'timeout' => 10,
+                    'throw' => false,
+                ]);
+
+                if (! $result->successful()) {
+                    $drift[] = new DriftEntry(
+                        family: $this->key(),
+                        key: 'node.role_baseline_mismatch',
+                        kind: DriftKind::Missing,
+                        summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing the agent runtime user.",
+                        detail: [
+                            'role' => $assignment->role,
+                            'component' => 'agent_user',
+                        ],
+                    );
+                }
+            } catch (Throwable) {
+                // If SSH fails, skip the agent user check rather than reporting
+                // an unverifiable drift. SSH reachability is its own check.
+            }
+        }
+
+        return $drift;
     }
 
     private function developmentNodeFromAssignment(Node $node, string $tld): Node
@@ -517,7 +617,99 @@ final readonly class NodesProbe
             );
         }
 
+        $drift = array_merge($drift, $this->checkAccessPermissionValidity($node));
+
         return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkAccessPermissionValidity(Node $node): array
+    {
+        $drift = [];
+        $registry = $this->nodePermissionRegistry();
+        $normalizer = $this->nodePermissionNormalizer();
+
+        $grants = NodeAccess::query()
+            ->where(function ($query) use ($node): void {
+                $query->where('consumer_node_id', $node->id)
+                    ->orWhere('serving_node_id', $node->id);
+            })
+            ->get();
+
+        foreach ($grants as $grant) {
+            /** @var list<string> $permissions */
+            $permissions = $grant->permissions ?? [];
+
+            if ($permissions === []) {
+                continue;
+            }
+
+            $unknown = array_values(array_filter(
+                $permissions,
+                fn (string $permission): bool => ! $registry->isKnown($permission),
+            ));
+
+            if ($unknown !== []) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.access_permission_invalid',
+                    kind: DriftKind::Divergent,
+                    summary: 'Node access grant stores unknown permission strings: '.implode(', ', $unknown).'.',
+                    detail: [
+                        'consumer_node_id' => $grant->consumer_node_id,
+                        'serving_node_id' => $grant->serving_node_id,
+                        'unknown_permissions' => $unknown,
+                    ],
+                );
+
+                continue;
+            }
+
+            try {
+                $normalized = $normalizer->normalize($permissions);
+
+                if ($normalized !== $permissions) {
+                    $drift[] = new DriftEntry(
+                        family: $this->key(),
+                        key: 'node.access_permission_invalid',
+                        kind: DriftKind::Divergent,
+                        summary: 'Node access grant stores redundant permissions that do not normalize cleanly.',
+                        detail: [
+                            'consumer_node_id' => $grant->consumer_node_id,
+                            'serving_node_id' => $grant->serving_node_id,
+                            'stored_permissions' => $permissions,
+                            'normalized_permissions' => $normalized,
+                        ],
+                    );
+                }
+            } catch (Throwable) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.access_permission_invalid',
+                    kind: DriftKind::Divergent,
+                    summary: 'Node access grant stores permission strings that fail normalization.',
+                    detail: [
+                        'consumer_node_id' => $grant->consumer_node_id,
+                        'serving_node_id' => $grant->serving_node_id,
+                        'stored_permissions' => $permissions,
+                    ],
+                );
+            }
+        }
+
+        return $drift;
+    }
+
+    private function nodePermissionRegistry(): NodePermissionRegistry
+    {
+        return app(NodePermissionRegistry::class);
+    }
+
+    private function nodePermissionNormalizer(): NodePermissionNormalizer
+    {
+        return app(NodePermissionNormalizer::class);
     }
 
     /**

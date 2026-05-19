@@ -14,6 +14,7 @@ use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Platform\PlatformDetector;
@@ -1812,6 +1813,262 @@ describe('public IP metadata exclusion', function (): void {
         $ipIssues = array_filter($drift, fn (DriftEntry $e): bool => str_contains($e->key, 'public'));
 
         expect($ipIssues)->toHaveCount(0);
+    });
+});
+
+describe('agent role baseline', function (): void {
+    it('detects missing agent DNS mapping', function (): void {
+        $node = Node::create([
+            'name' => 'agent-1',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+            'tld' => 'agent',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'dns_mapping'));
+
+        expect($baseline)->toHaveCount(1);
+        expect($baseline[0]->kind)->toBe(DriftKind::Missing);
+        expect($baseline[0]->detail['component'] ?? null)->toBe('dns_mapping');
+    });
+
+    it('detects missing caddy baseline tool for agent nodes', function (): void {
+        $node = Node::create([
+            'name' => 'agent-1',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+            'tld' => 'agent',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=agent-1',
+            '# bind-scope=orbit_network',
+            'address=/agent/10.6.0.5',
+            '',
+        ]));
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['tool'] ?? null) === 'caddy'));
+
+        expect($baseline)->toHaveCount(1);
+        expect($baseline[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects missing supervisor baseline tool for agent nodes', function (): void {
+        $node = Node::create([
+            'name' => 'agent-1',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+            'tld' => 'agent',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=agent-1',
+            '# bind-scope=orbit_network',
+            'address=/agent/10.6.0.5',
+            '',
+        ]));
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['tool'] ?? null) === 'supervisor'));
+
+        expect($baseline)->toHaveCount(1);
+        expect($baseline[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects missing agent runtime user for agent nodes', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'no such user', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'agent-1',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+            'tld' => 'agent',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=agent-1',
+            '# bind-scope=orbit_network',
+            'address=/agent/10.6.0.5',
+            '',
+        ]));
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'supervisor']);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'agent_user'));
+
+        expect($baseline)->toHaveCount(1);
+        expect($baseline[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('passes when agent DNS mapping is correct', function (): void {
+        $node = Node::create([
+            'name' => 'agent-1',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+            'tld' => 'agent',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=agent-1',
+            '# bind-scope=orbit_network',
+            'address=/agent/10.6.0.5',
+            '',
+        ]));
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'supervisor']);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch');
+
+        expect($baseline)->toHaveCount(0);
+    });
+});
+
+describe('access permission validity', function (): void {
+    it('passes when no grants exist', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $permission = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid');
+
+        expect($permission)->toHaveCount(0);
+    });
+
+    it('detects unknown permissions on grants', function (): void {
+        $consumer = Node::create([
+            'name' => 'consumer',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        $serving = Node::create([
+            'name' => 'serving',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        NodeAccess::create([
+            'consumer_node_id' => $consumer->id,
+            'serving_node_id' => $serving->id,
+            'permissions' => ['tool:read', 'tool:nope'],
+        ]);
+
+        $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
+        $permission = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid'));
+
+        expect($permission)->toHaveCount(1);
+        expect($permission[0]->kind)->toBe(DriftKind::Divergent);
+        expect($permission[0]->detail['unknown_permissions'] ?? null)->toBe(['tool:nope']);
+    });
+
+    it('detects redundant permissions on grants', function (): void {
+        $consumer = Node::create([
+            'name' => 'consumer',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        $serving = Node::create([
+            'name' => 'serving',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        NodeAccess::create([
+            'consumer_node_id' => $consumer->id,
+            'serving_node_id' => $serving->id,
+            'permissions' => ['tool:read', 'tool:logs'],
+        ]);
+
+        $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
+        $permission = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid'));
+
+        expect($permission)->toHaveCount(1);
+        expect($permission[0]->kind)->toBe(DriftKind::Divergent);
+        expect($permission[0]->detail['stored_permissions'] ?? null)->toBe(['tool:read', 'tool:logs']);
     });
 });
 

@@ -8,9 +8,14 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteRenderer;
+use Throwable;
 
 final readonly class ToolsProbe
 {
@@ -104,6 +109,9 @@ final readonly class ToolsProbe
             ...$this->checkLifecycleState($tool, $snapshot),
             ...$this->checkConfigState($tool, $snapshot),
             ...$this->checkCredentialState($tool, $snapshot),
+            ...$this->checkAgentRoute($tool),
+            ...$this->checkAgentCredentials($tool),
+            ...$this->checkAgentUser($tool),
         ];
     }
 
@@ -437,5 +445,244 @@ final readonly class ToolsProbe
         $hash = $managedSecret['hash'] ?? null;
 
         return is_string($hash) && $hash !== '' ? $hash : null;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkAgentRoute(NodeTool $tool): array
+    {
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        if ($catalog->category($tool->name) !== 'agent') {
+            return [];
+        }
+
+        $tool->loadMissing('node');
+
+        if (! $tool->node instanceof Node) {
+            return [];
+        }
+
+        $tld = $this->agentTldForNode($tool->node);
+
+        if ($tld === null) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} cannot verify proxy route because the node has no active agent role TLD.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                    ],
+                ),
+            ];
+        }
+
+        $domain = "{$tool->name}.{$tld}";
+        $route = ProxyRoute::query()
+            ->where('node_id', $tool->node->id)
+            ->where('domain', $domain)
+            ->where('owner_type', 'tool')
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} is missing the internal proxy route under the agent role TLD.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                        'domain' => $domain,
+                    ],
+                ),
+            ];
+        }
+
+        $routeOwner = is_array($route->config) ? ($route->config['owner_name'] ?? null) : null;
+
+        if ($routeOwner !== $tool->name) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_route_missing',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool {$tool->name} proxy route is owned by a different tool.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                        'domain' => $domain,
+                        'route_owner' => $routeOwner,
+                    ],
+                ),
+            ];
+        }
+
+        $expectedConfig = $this->agentProxyRouteConfig($tool->name);
+        $expectedHash = $this->agentProxyRouteSourceHash($tool->node, $domain, $expectedConfig);
+        $routeConfig = is_array($route->config) ? $route->config : [];
+
+        if (
+            $route->kind !== 'proxy'
+            || ($routeConfig['target']['type'] ?? null) !== ($expectedConfig['target']['type'] ?? null)
+            || ($routeConfig['target']['value'] ?? null) !== ($expectedConfig['target']['value'] ?? null)
+            || ($routeConfig['upstream'] ?? null) !== ($expectedConfig['upstream'] ?? null)
+            || $route->source_hash !== $expectedHash
+        ) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_route_missing',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool {$tool->name} proxy route does not match Orbit's managed agent route shape.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                        'domain' => $domain,
+                        'expected_kind' => 'proxy',
+                        'observed_kind' => $route->kind,
+                        'expected_upstream' => $expectedConfig['upstream'],
+                        'observed_upstream' => $routeConfig['target']['value'] ?? $routeConfig['upstream'] ?? null,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array{target: array{type: string, value: string}, upstream: string, owner_name: string}
+     */
+    private function agentProxyRouteConfig(string $tool): array
+    {
+        $upstream = 'http://127.0.0.1:8080';
+
+        return [
+            'target' => ['type' => 'upstream', 'value' => $upstream],
+            'upstream' => $upstream,
+            'owner_name' => $tool,
+        ];
+    }
+
+    /**
+     * @param  array{target: array{type: string, value: string}, upstream: string, owner_name: string}  $config
+     */
+    private function agentProxyRouteSourceHash(Node $node, string $domain, array $config): string
+    {
+        return app(ProxyRouteRenderer::class)->sourceHash(new ProxyRoute([
+            'node_id' => $node->id,
+            'domain' => $domain,
+            'kind' => 'proxy',
+            'owner_type' => 'tool',
+            'config' => $config,
+        ]));
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkAgentCredentials(NodeTool $tool): array
+    {
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        if (! $catalog->hasCapability($tool->name, 'credentials')) {
+            return [];
+        }
+
+        if ($catalog->category($tool->name) !== 'agent') {
+            return [];
+        }
+
+        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
+
+        if ($credentials === []) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_credentials_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} declares credentials but no managed credential metadata is present.",
+                    detail: [
+                        'tool' => $tool->name,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkAgentUser(NodeTool $tool): array
+    {
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        if ($catalog->category($tool->name) !== 'agent') {
+            return [];
+        }
+
+        $tool->loadMissing('node');
+
+        if (! $tool->node instanceof Node) {
+            return [];
+        }
+
+        if (! ($this->remoteShell instanceof RemoteShell)) {
+            return [];
+        }
+
+        try {
+            $result = $this->remoteShell->run($tool->node, 'id -u agent >/dev/null 2>&1', [
+                'timeout' => 10,
+                'throw' => false,
+            ]);
+
+            if (! $result->successful()) {
+                return [
+                    new DriftEntry(
+                        family: $this->key(),
+                        key: 'tool.agent_user_missing',
+                        kind: DriftKind::Missing,
+                        summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
+                        detail: [
+                            'tool' => $tool->name,
+                            'node' => $tool->node->name,
+                        ],
+                    ),
+                ];
+            }
+        } catch (Throwable) {
+            return [];
+        }
+
+        return [];
+    }
+
+    private function agentTldForNode(Node $node): ?string
+    {
+        $assignment = app(NodeRoleAssignments::class)->activeAssignment($node, NodeRoleName::Agent->value);
+
+        if ($assignment instanceof NodeRoleAssignment) {
+            $settings = $assignment->settings ?? [];
+            $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+
+            if (is_string($tld) && trim($tld) !== '') {
+                return trim($tld);
+            }
+        }
+
+        if (is_string($node->tld) && trim($node->tld) !== '') {
+            return trim($node->tld);
+        }
+
+        return null;
     }
 }
