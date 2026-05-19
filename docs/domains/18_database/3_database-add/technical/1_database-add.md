@@ -25,10 +25,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `slug` | `argument` | Always. | Never. | Globally unique connection slug. |
 | `driver` | `--driver` | Always. | Never. | `mysql`, `pgsql`, or `sqlite`. |
 | `host` | `--host` | `driver` is `mysql` or `pgsql`. | `driver=sqlite`. | Non-empty host. |
-| `port` | `--port` | Optional. | `driver=sqlite`. | Positive integer; defaults to driver standard. |
+| `port` | `--port` | `driver` is `mysql` or `pgsql`. | `driver=sqlite`. | Positive integer. |
 | `database` | `--database` | `driver` is `mysql` or `pgsql`. | Optional for `sqlite`. | Non-empty database name. |
 | `path` | `--path` | `driver=sqlite`. | `driver` is `mysql` or `pgsql`. | Absolute SQLite path. |
-| `username` | `--username` | Optional. | Never. | Non-secret username. |
+| `username` | `--username` | `driver` is `mysql` or `pgsql`. | Never. | Non-secret username. |
 | `password` | `--password` | Optional. | Never. | Secret; stored only in encrypted credentials. |
 | `node` | `--node` | Required when `driver=sqlite`; optional otherwise. | Never. | Visible node slug. SQLite always requires an owning node plus file path. |
 | `json` | `--json` | Optional. | Never. | Selects the JSON renderer. |
