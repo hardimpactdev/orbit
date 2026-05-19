@@ -40,6 +40,12 @@ final class DatabaseConnectionRegistry
             return $slugValidation;
         }
 
+        $slugUniqueness = $this->validateSlugUniqueness($slug);
+
+        if ($slugUniqueness instanceof DatabaseConnectionRegistryFailure) {
+            return $slugUniqueness;
+        }
+
         $payload = $this->payloadFromAttributes($attributes);
 
         if ($payload instanceof DatabaseConnectionRegistryFailure) {
@@ -72,6 +78,12 @@ final class DatabaseConnectionRegistry
 
         if ($slugValidation instanceof DatabaseConnectionRegistryFailure) {
             return $slugValidation;
+        }
+
+        $slugUniqueness = $this->validateSlugUniqueness($targetSlug, $connection->id);
+
+        if ($slugUniqueness instanceof DatabaseConnectionRegistryFailure) {
+            return $slugUniqueness;
         }
 
         $payload = $this->payloadFromAttributes($attributes);
@@ -176,6 +188,20 @@ final class DatabaseConnectionRegistry
 
             return DatabaseConnectionRegistryFailure::validation($field, $attributes['driver'] ?? null, $exception->getMessage());
         }
+    }
+
+    private function validateSlugUniqueness(string $slug, ?int $ignoreId = null): ?DatabaseConnectionRegistryFailure
+    {
+        $exists = DatabaseConnection::query()
+            ->where('slug', $slug)
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->exists();
+
+        if ($exists) {
+            return DatabaseConnectionRegistryFailure::validation('slug', $slug, "Database connection slug '{$slug}' is already in use.");
+        }
+
+        return null;
     }
 
     private function validatePayload(DatabaseConnectionPayload $payload, array $attributes): ?DatabaseConnectionRegistryFailure

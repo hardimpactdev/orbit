@@ -75,6 +75,7 @@ describe('DatabaseConnectionRegistry', function (): void {
     it('rejects invalid create and update payloads cleanly', function (): void {
         $registry = app(DatabaseConnectionRegistry::class);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
+        DatabaseConnection::factory()->create(['slug' => 'analytics-db']);
 
         $invalidSlug = $registry->create('Primary_DB', [
             'driver' => 'pgsql',
@@ -84,7 +85,7 @@ describe('DatabaseConnectionRegistry', function (): void {
             'username' => 'orbit',
         ]);
 
-        $missingTcpFields = $registry->create('analytics-db', [
+        $missingTcpFields = $registry->create('secondary-db', [
             'driver' => 'mysql',
             'host' => 'db.internal',
         ]);
@@ -98,6 +99,15 @@ describe('DatabaseConnectionRegistry', function (): void {
             'driver' => 'sqlserver',
         ]);
 
+        $duplicateSlug = $registry->update($connection->slug, [
+            'slug' => 'analytics-db',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'orbit',
+            'username' => 'orbit',
+        ]);
+
         expect($invalidSlug)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($invalidSlug->code)->toBe('validation_failed')
             ->and($missingTcpFields)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
@@ -105,7 +115,9 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->and($missingSqliteFields)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($missingSqliteFields->meta['field'])->toBe('payload')
             ->and($unsupportedDriver)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
-            ->and($unsupportedDriver->meta['field'])->toBe('driver');
+            ->and($unsupportedDriver->meta['field'])->toBe('driver')
+            ->and($duplicateSlug)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
+            ->and($duplicateSlug->meta['field'])->toBe('slug');
     });
 
     it('attaches and detaches app and workspace targets with conflict handling', function (): void {
