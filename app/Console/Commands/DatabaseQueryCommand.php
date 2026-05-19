@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\RunsDatabaseConnectionCommands;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\QueryDatabaseConnectionRequest;
 use App\Models\DatabaseConnection;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
 use App\Services\DatabaseConnections\DatabaseConnectionSelector;
 use Illuminate\Console\Attributes\Description;
@@ -26,16 +29,26 @@ use Throwable;
     {--max-json-bytes= : Maximum JSON result size before row truncation}
     {--json : Output JSON}')]
 #[Description('Execute a database query against a registered connection')]
-final class DatabaseQueryCommand extends Command
+final class DatabaseQueryCommand extends Command implements Loggable
 {
     use RunsDatabaseConnectionCommands;
 
-    public function handle(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor): int
+    public function handle(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
+    {
+        return $this->withDatabaseActivity(ActivityLogType::Read, fn (): int => $this->runDatabaseQuery($selector, $executor, $audit));
+    }
+
+    private function runDatabaseQuery(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
     {
         try {
             $sql = $this->stringOption('sql');
 
             if ($sql === null) {
+                $this->databaseActivityProperties([
+                    'operation' => 'query',
+                    'target' => $this->stringArgument('target'),
+                ]);
+
                 return $this->respondFailure('validation_failed', 'SQL is required.', ['field' => 'sql']);
             }
 
@@ -62,7 +75,14 @@ final class DatabaseQueryCommand extends Command
                 return $this->respondDatabaseFailure($connection, forceJson: true);
             }
 
+            $this->databaseActivitySubject($connection);
+            $this->databaseActivityProperties($audit->query($connection, (string) $this->argument('target'), $sql, $options));
+            $this->databaseActivityEffect($options['write'] === true ? ActivityLogType::Write : ActivityLogType::Read);
+
             $result = $executor->query($connection, $sql, $options);
+            $this->databaseActivityProperties($audit->query($connection, (string) $this->argument('target'), $sql, $options, $result['meta'], [
+                'affected_rows' => $result['data']['affected_rows'] ?? null,
+            ]));
 
             return $this->respondDatabaseSuccess($result['data'], $result['meta'], $connection, forceJson: true);
         } catch (Throwable $throwable) {

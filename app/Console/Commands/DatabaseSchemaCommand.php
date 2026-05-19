@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\RunsDatabaseConnectionCommands;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\SchemaDatabaseConnectionRequest;
 use App\Models\DatabaseConnection;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
 use App\Services\DatabaseConnections\DatabaseConnectionSelector;
 use Illuminate\Console\Attributes\Description;
@@ -20,11 +23,16 @@ use Throwable;
     {--connection= : Connection slug when the target maps to multiple connections}
     {--json : Output JSON}')]
 #[Description('Show schema for a registered database connection')]
-final class DatabaseSchemaCommand extends Command
+final class DatabaseSchemaCommand extends Command implements Loggable
 {
     use RunsDatabaseConnectionCommands;
 
-    public function handle(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor): int
+    public function handle(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
+    {
+        return $this->withDatabaseActivity(ActivityLogType::Read, fn (): int => $this->runDatabaseSchema($selector, $executor, $audit));
+    }
+
+    private function runDatabaseSchema(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
     {
         try {
             if (! $this->isGatewayCaller()) {
@@ -47,7 +55,11 @@ final class DatabaseSchemaCommand extends Command
                 return $this->respondDatabaseFailure($connection);
             }
 
+            $this->databaseActivitySubject($connection);
+            $this->databaseActivityProperties($audit->schema('schema', $connection, (string) $this->argument('target')));
+
             $result = $executor->schema($connection);
+            $this->databaseActivityProperties($audit->schema('schema', $connection, (string) $this->argument('target'), $result['meta']));
 
             return $this->respondDatabaseSuccess($result['data'], $result['meta'], $connection);
         } catch (Throwable $throwable) {

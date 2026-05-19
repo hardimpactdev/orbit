@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\InteractsWithDatabaseRegistry;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\AttachDatabaseConnectionTargetRequest;
+use App\Models\DatabaseConnection;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionPayloadMapper;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
@@ -21,11 +25,16 @@ use Illuminate\Console\Command;
     {--env-prefix=DB : Target env prefix}
     {--json : Output JSON}')]
 #[Description('Attach a database connection to an app or workspace')]
-final class DatabaseAttachCommand extends Command
+final class DatabaseAttachCommand extends Command implements Loggable
 {
     use InteractsWithDatabaseRegistry;
 
-    public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads): int
+    public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseAuditPayload $audit): int
+    {
+        return $this->withDatabaseActivity(ActivityLogType::Write, fn (): int => $this->runDatabaseAttach($registry, $payloads, $audit));
+    }
+
+    private function runDatabaseAttach(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseAuditPayload $audit): int
     {
         $slug = (string) $this->argument('connection');
         $scope = $this->isGatewayCaller()
@@ -46,7 +55,17 @@ final class DatabaseAttachCommand extends Command
                 return $this->respondFailure($result->code, $result->message, $result->meta);
             }
 
-            $connection = $payloads->toArray($registry->show($slug));
+            $connectionModel = $registry->show($slug);
+            if ($connectionModel instanceof DatabaseConnection) {
+                $this->databaseActivitySubject($connectionModel);
+                $this->databaseActivityProperties($audit->registry('attach', $connectionModel, [
+                    'target_type' => $type,
+                    'target_name' => $owner->name,
+                    'env_prefix' => $envPrefix,
+                ]));
+            }
+
+            $connection = $payloads->toArray($connectionModel);
         } else {
             [$type, $target, $envPrefix] = $scope;
             $result = $this->sendGatewayRequest(new AttachDatabaseConnectionTargetRequest($slug, array_filter([

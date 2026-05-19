@@ -4,17 +4,94 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Concerns;
 
+use App\Concerns\LogsCommandActivity;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Models\App;
+use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
 use App\Services\DatabaseConnections\DatabaseConnectionTargetResolver;
+use Illuminate\Database\Eloquent\Model;
 use Throwable;
 
 trait InteractsWithDatabaseRegistry
 {
+    use LogsCommandActivity;
+
+    private ActivityLogType $databaseActivityEffect = ActivityLogType::Read;
+
+    private ?Model $databaseActivitySubject = null;
+
+    /**
+     * @var array<string, mixed>
+     */
+    private array $databaseActivityProperties = [];
+
+    public function effect(): ActivityLogType
+    {
+        return $this->databaseActivityEffect;
+    }
+
+    public function subject(): ?Model
+    {
+        return $this->databaseActivitySubject;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return $this->databaseActivityProperties;
+    }
+
+    protected function databaseActivityEffect(ActivityLogType $effect): void
+    {
+        $this->databaseActivityEffect = $effect;
+    }
+
+    /**
+     * @param  array<string, mixed>  $properties
+     */
+    protected function databaseActivityProperties(array $properties): void
+    {
+        $this->databaseActivityProperties = array_filter($properties, static fn (mixed $value): bool => $value !== null);
+    }
+
+    protected function databaseActivitySubject(?DatabaseConnection $connection): void
+    {
+        $this->databaseActivitySubject = $connection;
+    }
+
+    /**
+     * @param  callable(): int  $callback
+     */
+    protected function withDatabaseActivity(ActivityLogType $effect, callable $callback): int
+    {
+        $this->databaseActivityEffect($effect);
+
+        if (! $this->isGatewayCaller()) {
+            return $callback();
+        }
+
+        $this->bootActivityLog();
+
+        try {
+            $exitCode = $callback();
+            $this->databaseActivityProperties([
+                ...$this->databaseActivityProperties,
+                'exit_status' => $exitCode === self::SUCCESS ? 'success' : 'failed',
+            ]);
+
+            return $exitCode;
+        } finally {
+            $this->finalizeActivityLog();
+        }
+    }
+
     private function isGatewayCaller(): bool
     {
         return (bool) config('orbit.is_gateway', false);

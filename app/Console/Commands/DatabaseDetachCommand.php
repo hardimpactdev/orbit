@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\InteractsWithDatabaseRegistry;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\DetachDatabaseConnectionTargetRequest;
+use App\Models\DatabaseConnection;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
 use Illuminate\Console\Attributes\Description;
@@ -20,11 +24,16 @@ use Illuminate\Console\Command;
     {--env-prefix=DB : Target env prefix}
     {--json : Output JSON}')]
 #[Description('Detach a database connection from an app or workspace')]
-final class DatabaseDetachCommand extends Command
+final class DatabaseDetachCommand extends Command implements Loggable
 {
     use InteractsWithDatabaseRegistry;
 
-    public function handle(DatabaseConnectionRegistry $registry): int
+    public function handle(DatabaseConnectionRegistry $registry, DatabaseAuditPayload $audit): int
+    {
+        return $this->withDatabaseActivity(ActivityLogType::Write, fn (): int => $this->runDatabaseDetach($registry, $audit));
+    }
+
+    private function runDatabaseDetach(DatabaseConnectionRegistry $registry, DatabaseAuditPayload $audit): int
     {
         $slug = (string) $this->argument('connection');
         $scope = $this->isGatewayCaller()
@@ -37,6 +46,17 @@ final class DatabaseDetachCommand extends Command
 
         if ($this->isGatewayCaller()) {
             [$type, $owner, $envPrefix] = $scope;
+            $connectionModel = $registry->show($slug);
+
+            if ($connectionModel instanceof DatabaseConnection) {
+                $this->databaseActivitySubject($connectionModel);
+                $this->databaseActivityProperties($audit->registry('detach', $connectionModel, [
+                    'target_type' => $type,
+                    'target_name' => $owner->name,
+                    'env_prefix' => $envPrefix,
+                ]));
+            }
+
             $result = $type === 'app'
                 ? $registry->detachFromApp($slug, $owner, $envPrefix)
                 : $registry->detachFromWorkspace($slug, $owner, $envPrefix);

@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\InteractsWithDatabaseRegistry;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\AddDatabaseConnectionRequest;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionPayloadMapper;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
@@ -27,11 +30,16 @@ use Illuminate\Console\Command;
     {--password= : Database password}
     {--json : Output JSON}')]
 #[Description('Create a database connection in the registry')]
-final class DatabaseAddCommand extends Command
+final class DatabaseAddCommand extends Command implements Loggable
 {
     use InteractsWithDatabaseRegistry;
 
-    public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseConnectionTargetResolver $resolver): int
+    public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseConnectionTargetResolver $resolver, DatabaseAuditPayload $audit): int
+    {
+        return $this->withDatabaseActivity(ActivityLogType::Write, fn (): int => $this->runDatabaseAdd($registry, $payloads, $resolver, $audit));
+    }
+
+    private function runDatabaseAdd(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseConnectionTargetResolver $resolver, DatabaseAuditPayload $audit): int
     {
         $slug = (string) $this->argument('slug');
         $nodeSelector = $this->stringOption('node');
@@ -64,6 +72,8 @@ final class DatabaseAddCommand extends Command
                 return $this->respondFailure($result->code, $result->message, $result->meta);
             }
 
+            $this->databaseActivitySubject($result);
+            $this->databaseActivityProperties($audit->registry('add', $result));
             $connection = $payloads->toArray($result);
         } else {
             $result = $this->sendGatewayRequest(new AddDatabaseConnectionRequest([

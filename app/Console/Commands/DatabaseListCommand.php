@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\InteractsWithDatabaseRegistry;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\ListDatabaseConnectionsRequest;
 use App\Models\DatabaseConnection;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionPayloadMapper;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
@@ -21,12 +24,23 @@ use Illuminate\Console\Command;
     {--node= : Filter by node selector}
     {--json : Output JSON}')]
 #[Description('List database connections tracked by the registry')]
-final class DatabaseListCommand extends Command
+final class DatabaseListCommand extends Command implements Loggable
 {
     use InteractsWithDatabaseRegistry;
 
-    public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads): int
+    public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseAuditPayload $audit): int
     {
+        return $this->withDatabaseActivity(ActivityLogType::Read, fn (): int => $this->runDatabaseList($registry, $payloads, $audit));
+    }
+
+    private function runDatabaseList(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseAuditPayload $audit): int
+    {
+        $this->databaseActivityProperties($audit->registry('list', extra: array_filter([
+            'app' => $this->stringOption('app'),
+            'workspace' => $this->stringOption('workspace'),
+            'node' => $this->stringOption('node'),
+        ], static fn (mixed $value): bool => $value !== null)));
+
         if ($this->stringOption('app') !== null && $this->stringOption('workspace') !== null) {
             return $this->respondFailure(
                 'validation_failed',
@@ -46,6 +60,12 @@ final class DatabaseListCommand extends Command
             $connections = $registry->list($app, $workspace, $node)
                 ->map(fn (DatabaseConnection $connection): array => $payloads->toArray($connection))
                 ->all();
+            $this->databaseActivityProperties($audit->registry('list', extra: array_filter([
+                'app' => $this->stringOption('app'),
+                'workspace' => $this->stringOption('workspace'),
+                'node' => $this->stringOption('node'),
+                'count' => count($connections),
+            ], static fn (mixed $value): bool => $value !== null)));
         } else {
             $result = $this->sendGatewayRequest(new ListDatabaseConnectionsRequest(
                 app: $this->stringOption('app'),

@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Controller;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
 use App\Services\DatabaseConnections\DatabaseConnectionPayloadMapper;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
@@ -41,6 +42,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
         private readonly NodeRoleAssignments $roles,
         private readonly DatabaseConnectionSelector $selector,
         private readonly DatabaseConnectionExecutor $executor,
+        private readonly DatabaseAuditPayload $audit,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -319,23 +321,40 @@ final class DatabaseConnectionController extends Controller implements Loggable
         $connection = $this->selector->resolve($target, $this->stringValue($request->input('connection')));
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
+            $this->activityProperties = [
+                'operation' => 'query',
+                'target' => $target,
+                'exit_status' => 'failed',
+            ];
+
             return $this->failureResponse($connection);
         }
 
         $this->activitySubject = $connection;
-        $this->activityProperties = ['target' => $target, 'connection' => $connection->slug];
+        $options = [
+            'write' => $request->boolean('write'),
+            'full' => $request->boolean('full'),
+            'limit' => $request->input('limit'),
+            'timeout' => $request->input('timeout'),
+            'max_json_bytes' => $request->input('max_json_bytes'),
+        ];
+        $this->activityProperties = $this->audit->query($connection, $target, $sql, $options);
+        $this->activityEffect = $options['write'] === true ? ActivityLogType::Write : ActivityLogType::Read;
 
         try {
-            $result = $this->executor->query($connection, $sql, [
-                'write' => $request->boolean('write'),
-                'full' => $request->boolean('full'),
-                'limit' => $request->input('limit'),
-                'timeout' => $request->input('timeout'),
-                'max_json_bytes' => $request->input('max_json_bytes'),
+            $result = $this->executor->query($connection, $sql, $options);
+            $this->activityProperties = $this->audit->query($connection, $target, $sql, $options, $result['meta'], [
+                'affected_rows' => $result['data']['affected_rows'] ?? null,
+                'exit_status' => 'success',
             ]);
 
             return $this->operationResponse($result['data'], $result['meta'], $connection);
         } catch (DatabaseQueryRunnerFailure $failure) {
+            $this->activityProperties = $this->audit->query($connection, $target, $sql, $options, $failure->meta, [
+                'exit_status' => 'failed',
+                'error_code' => $failure->errorCode,
+            ]);
+
             return $this->queryFailureResponse($failure);
         }
     }
@@ -530,22 +549,37 @@ final class DatabaseConnectionController extends Controller implements Loggable
         $connection = $this->selector->resolve($target, $this->stringValue($request->query('connection')));
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
+            $this->activityProperties = [
+                'operation' => $operation,
+                'target' => $target,
+                'exit_status' => 'failed',
+            ];
+
             return $this->failureResponse($connection);
         }
 
         $this->activitySubject = $connection;
-        $this->activityProperties = ['target' => $target, 'connection' => $connection->slug];
+        $table = $operation === 'describe' ? $this->stringValue($request->query('table')) ?? '' : null;
+        $this->activityProperties = $this->audit->schema($operation, $connection, $target, table: $table);
 
         try {
             $result = match ($operation) {
                 'tables' => $this->executor->tables($connection),
                 'schema' => $this->executor->schema($connection),
-                'describe' => $this->executor->describe($connection, $this->stringValue($request->query('table')) ?? ''),
+                'describe' => $this->executor->describe($connection, $table ?? ''),
                 default => $this->executor->schema($connection),
             };
+            $this->activityProperties = $this->audit->schema($operation, $connection, $target, $result['meta'], $table, [
+                'exit_status' => 'success',
+            ]);
 
             return $this->operationResponse($result['data'], $result['meta'], $connection);
         } catch (DatabaseQueryRunnerFailure $failure) {
+            $this->activityProperties = $this->audit->schema($operation, $connection, $target, $failure->meta, $table, [
+                'exit_status' => 'failed',
+                'error_code' => $failure->errorCode,
+            ]);
+
             return $this->queryFailureResponse($failure);
         }
     }

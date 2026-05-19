@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\RunsDatabaseConnectionCommands;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Database\SchemaDatabaseConnectionRequest;
 use App\Models\DatabaseConnection;
+use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
 use App\Services\DatabaseConnections\DatabaseConnectionSelector;
 use Illuminate\Console\Attributes\Description;
@@ -21,11 +24,16 @@ use Throwable;
     {--connection= : Connection slug when the target maps to multiple connections}
     {--json : Output JSON}')]
 #[Description('Describe a table for a registered database connection')]
-final class DatabaseDescribeCommand extends Command
+final class DatabaseDescribeCommand extends Command implements Loggable
 {
     use RunsDatabaseConnectionCommands;
 
-    public function handle(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor): int
+    public function handle(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
+    {
+        return $this->withDatabaseActivity(ActivityLogType::Read, fn (): int => $this->runDatabaseDescribe($selector, $executor, $audit));
+    }
+
+    private function runDatabaseDescribe(DatabaseConnectionSelector $selector, DatabaseConnectionExecutor $executor, DatabaseAuditPayload $audit): int
     {
         try {
             $table = $this->stringArgument('table');
@@ -55,7 +63,11 @@ final class DatabaseDescribeCommand extends Command
                 return $this->respondDatabaseFailure($connection);
             }
 
+            $this->databaseActivitySubject($connection);
+            $this->databaseActivityProperties($audit->schema('describe', $connection, (string) $this->argument('target'), table: $table));
+
             $result = $executor->describe($connection, $table);
+            $this->databaseActivityProperties($audit->schema('describe', $connection, (string) $this->argument('target'), $result['meta'], $table));
 
             return $this->respondDatabaseSuccess($result['data'], $result['meta'], $connection);
         } catch (Throwable $throwable) {
