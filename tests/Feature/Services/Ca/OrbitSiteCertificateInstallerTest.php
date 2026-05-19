@@ -47,16 +47,22 @@ it('installs Orbit CA leaf certificates into the node Orbit cert directory', fun
 
     $paths = (new OrbitSiteCertificateInstaller($ca, $shell))->ensureFor($appNode, 'cta.example.test');
 
+    $script = $shell->scripts[0];
+
     expect($paths)->toBe([
         'cert' => '/home/deploy/.config/orbit/certs/cta.example.test.crt',
         'key' => '/home/deploy/.config/orbit/certs/cta.example.test.key',
     ])
         ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->scripts[0])->toContain('sudo install -d -m 0755 \'/home/deploy/.config/orbit/certs\'')
-        ->and($shell->scripts[0])->toContain('sudo chmod 0644 \'/home/deploy/.config/orbit/certs/cta.example.test.crt\'')
-        ->and($shell->scripts[0])->toContain('sudo chmod 0600 \'/home/deploy/.config/orbit/certs/cta.example.test.key\'')
-        ->and($shell->scripts[0])->toContain('sudo chgrp caddy \'/home/deploy\' \'/home/deploy/.config\' \'/home/deploy/.config/orbit\' \'/home/deploy/.config/orbit/certs\' \'/home/deploy/.config/orbit/certs/cta.example.test.key\'')
-        ->and($shell->scripts[0])->toContain('sudo chmod 0640 \'/home/deploy/.config/orbit/certs/cta.example.test.key\'');
+        ->and($script)->toContain('sudo install -d -m 0755 \'/home/deploy/.config/orbit/certs\'')
+        ->and($script)->toContain('sudo chmod 0644 \'/home/deploy/.config/orbit/certs/cta.example.test.crt\'')
+        ->and($script)->toContain('sudo chmod 0600 \'/home/deploy/.config/orbit/certs/cta.example.test.key\'')
+        ->and($script)->toContain('systemctl show caddy -p Group --value')
+        ->and($script)->toContain('systemctl show caddy -p User --value')
+        ->and($script)->toContain('id -gn "$orbit_caddy_user"')
+        ->and($script)->toContain('getent group caddy')
+        ->and($script)->toContain('sudo chgrp "$orbit_caddy_group" \'/home/deploy\' \'/home/deploy/.config\' \'/home/deploy/.config/orbit\' \'/home/deploy/.config/orbit/certs\' \'/home/deploy/.config/orbit/certs/cta.example.test.key\'')
+        ->and($script)->toContain('sudo chmod 0640 \'/home/deploy/.config/orbit/certs/cta.example.test.key\'');
 });
 
 final class OrbitSiteCertificateInstallerTestShell implements RemoteShell

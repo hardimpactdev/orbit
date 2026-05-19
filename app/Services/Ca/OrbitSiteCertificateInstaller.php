@@ -68,8 +68,21 @@ printf %%s %s | base64 -d | sudo tee %s >/dev/null
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo chmod 0644 %s
 sudo chmod 0600 %s
-if getent group caddy >/dev/null 2>&1; then
-    sudo chgrp caddy %s %s
+orbit_caddy_group=""
+if command -v systemctl >/dev/null 2>&1 && systemctl cat caddy >/dev/null 2>&1; then
+    orbit_caddy_group=$(systemctl show caddy -p Group --value 2>/dev/null | awk 'NF{print $1; exit}')
+    if [ -z "$orbit_caddy_group" ]; then
+        orbit_caddy_user=$(systemctl show caddy -p User --value 2>/dev/null | awk 'NF{print $1; exit}')
+        if [ -n "$orbit_caddy_user" ] && [ "$orbit_caddy_user" != "root" ]; then
+            orbit_caddy_group=$(id -gn "$orbit_caddy_user" 2>/dev/null || true)
+        fi
+    fi
+fi
+if [ -z "$orbit_caddy_group" ] && getent group caddy >/dev/null 2>&1; then
+    orbit_caddy_group="caddy"
+fi
+if [ -n "$orbit_caddy_group" ]; then
+    sudo chgrp "$orbit_caddy_group" %s %s
     sudo chmod g+rx %s
     sudo chmod 0640 %s
 fi
