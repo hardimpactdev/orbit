@@ -12,7 +12,7 @@ trait RendersShowDetails
     protected function renderShowDetails(string $title, array $properties): void
     {
         $labels = array_keys($properties);
-        $width = max(array_map(static fn (string $label): int => mb_strlen($label), $labels));
+        $width = max(array_map(mb_strlen(...), $labels));
         $last = count($properties) - 1;
 
         $this->line("┌  {$title}");

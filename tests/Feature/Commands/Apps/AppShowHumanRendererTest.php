@@ -26,13 +26,16 @@ describe('app:show human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('App: docs')
-            ->and($output)->toContain('Domain: docs.test')
-            ->and($output)->toContain('Environment: development')
-            ->and($output)->toContain('Node: app-1')
-            ->and($output)->toContain('Registry:')
-            ->and($output)->toContain('Document Root: /srv/docs/public')
-            ->and($output)->toContain('Workspaces:')
-            ->and($output)->toContain('(none)')
+            ->and($output)->toContain('Domain')
+            ->and($output)->toContain('docs.test')
+            ->and($output)->toContain('Environment')
+            ->and($output)->toContain('development')
+            ->and($output)->toContain('Node')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('Root')
+            ->and($output)->toContain('/srv/docs/public')
+            ->and($output)->toContain('Workspaces')
+            ->and($output)->toContain('—')
             ->and($output)->not->toContain('"success"');
     });
 

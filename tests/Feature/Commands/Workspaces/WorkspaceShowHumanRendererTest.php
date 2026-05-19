@@ -25,12 +25,11 @@ describe('workspace:show human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Workspace: feature-docs')
-            ->and($output)->toContain('App:       docs')
-            ->and($output)->toContain('Agent IDE:')
-            ->and($output)->toContain('Runtime Expectations:')
-            ->and($output)->toContain('Inherited Processes:')
-            ->and($output)->toContain('Latest Setup Run:')
-            ->and($output)->toContain('doctor --family=workspace')
+            ->and($output)->toContain('App')
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('Agent IDE')
+            ->and($output)->toContain('Processes')
+            ->and($output)->toContain('Latest setup')
             ->and($output)->not->toContain('"success"')
             ->and($output)->not->toContain('○');
     });

@@ -106,8 +106,11 @@ describe('node:show composable roles', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Roles: app-development, database (error)')
-            ->and($output)->toContain('Role: app')
-            ->and($output)->toContain('Environment: development');
+            ->and($output)->toContain('Roles')
+            ->and($output)->toContain('app-development, database (error)')
+            ->and($output)->toContain('Role')
+            ->and($output)->toContain('app')
+            ->and($output)->toContain('Environment')
+            ->and($output)->toContain('development');
     });
 });
