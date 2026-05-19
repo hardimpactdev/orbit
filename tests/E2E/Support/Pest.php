@@ -264,6 +264,7 @@ foreach ([{$consumerValue}, {$servingValue}] as \$name) {
     'consumer_node_id' => \$nodes->get({$consumerValue}),
     'serving_node_id' => \$nodes->get({$servingValue}),
 ], [
+    'permissions' => json_encode(['*']),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -298,6 +299,7 @@ foreach ([{$consumerValue}, {$servingValue}] as \$name) {
     'consumer_node_id' => \$nodes->get({$consumerValue}),
     'serving_node_id' => \$nodes->get({$servingValue}),
 ], [
+    'permissions' => json_encode(['*']),
     'created_at' => now(),
     'updated_at' => now(),
 ]);

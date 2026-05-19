@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -70,6 +71,7 @@ function grantGatewayManagementAccess(int $callerId, int $gatewayId): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $callerId,
         'serving_node_id' => $gatewayId,
+        'permissions' => json_encode(['*']),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -255,6 +257,7 @@ describe('NodeGrantController', function (): void {
         DB::table('node_access')->insert([
             'consumer_node_id' => $consumingId,
             'serving_node_id' => $servingId,
+            'permissions' => json_encode(['*']),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -584,5 +587,36 @@ describe('NodeGrantController', function (): void {
             ->assertJsonPath('error.meta.reason', 'self_grant');
 
         expect(DB::table('node_access')->count())->toBe(1);
+    });
+
+    it('stores normalized permissions', function (): void {
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $grant = NodeAccess::query()->create([
+            'consumer_node_id' => $consumingId,
+            'serving_node_id' => $servingId,
+            'permissions' => ['app:read', 'app:write'],
+        ]);
+
+        $defaultedGrantId = (int) DB::table('node_access')->insertGetId([
+            'consumer_node_id' => $servingId,
+            'serving_node_id' => $consumingId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        expect($grant->fresh()?->permissions)
+            ->toBe(['app:read', 'app:write'])
+            ->and(NodeAccess::query()->find($defaultedGrantId)?->permissions)
+            ->toBe(['*']);
     });
 });

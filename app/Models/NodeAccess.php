@@ -11,10 +11,23 @@ class NodeAccess extends Model
 {
     protected $table = 'node_access';
 
+    protected $attributes = [
+        'permissions' => '["*"]',
+    ];
+
     protected $fillable = [
         'consumer_node_id',
         'serving_node_id',
+        'permissions',
     ];
+
+    #[\Override]
+    protected function casts(): array
+    {
+        return [
+            'permissions' => 'array',
+        ];
+    }
 
     public function consumer(): BelongsTo
     {
