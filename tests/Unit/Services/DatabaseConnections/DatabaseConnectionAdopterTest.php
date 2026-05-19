@@ -136,6 +136,65 @@ ENV);
             ->and(DatabaseConnection::query()->where('slug', 'docs')->exists())->toBeTrue()
             ->and(DatabaseConnection::query()->where('slug', 'docs-analytics-db')->exists())->toBeTrue();
     });
+
+    it('preserves existing non-null values when adopting a partial mapped env payload', function (): void {
+        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-adopter-partial-update');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_PORT=6432\nDB_USERNAME=partial-user\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'stored-host',
+            'port' => 5432,
+            'database' => 'stored_db',
+            'username' => 'stored-user',
+            'credentials' => ['password' => 'stored-secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        $connection->refresh();
+
+        expect($results)->toHaveCount(1)
+            ->and($connection)->toMatchArray([
+                'driver' => 'pgsql',
+                'host' => 'stored-host',
+                'port' => 6432,
+                'database' => 'stored_db',
+                'username' => 'partial-user',
+            ])
+            ->and($connection->credentials)->toMatchArray(['password' => 'stored-secret']);
+    });
+
+    it('does not create a new connection from an otherwise empty env group', function (): void {
+        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-adopter-empty-group');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        expect($results)->toBe([])
+            ->and(DatabaseConnection::query()->count())->toBe(0)
+            ->and(DatabaseConnectionTarget::query()->count())->toBe(0);
+    });
 });
 
 final class DatabaseConnectionAdopterRemoteShell implements RemoteShell

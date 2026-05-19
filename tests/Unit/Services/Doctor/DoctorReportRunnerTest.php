@@ -439,6 +439,56 @@ describe('DoctorReportRunner', function (): void {
             ])
             ->and($connection->credentials)->toMatchArray(['password' => 'observed-secret']);
     });
+
+    it('returns a failed action when database connection restore throws', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-restore-failure');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['database_connection']);
+        $failedAction = collect($report['actions'])->firstWhere('status', 'failed');
+
+        expect($report['healthy'])->toBeFalse()
+            ->and($report['summary']['failed'])->toBeGreaterThanOrEqual(1)
+            ->and($failedAction)->toMatchArray([
+                'family' => 'database_connection',
+                'node' => 'app-1',
+                'mode' => 'restore',
+                'status' => 'failed',
+            ])
+            ->and($failedAction['key'])->toBeIn(['database_connection.env_missing', 'database_connection.env_mismatch'])
+            ->and($failedAction)->toMatchArray([
+                'mode' => 'restore',
+                'status' => 'failed',
+            ])
+            ->and($failedAction['details']['error'] ?? null)->toContain('permission denied');
+    });
 });
 
 final class DoctorReportRunnerRemoteShell implements RemoteShell

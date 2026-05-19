@@ -542,8 +542,24 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $this->databaseConnectionRestorer->restore($target);
         $nodeName = $target->app?->node?->name ?? $target->workspace?->app?->node?->name;
+
+        try {
+            $this->databaseConnectionRestorer->restore($target);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'database_connection',
+                'node' => $nodeName,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
 
         return [
             'family' => 'database_connection',

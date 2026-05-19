@@ -116,7 +116,7 @@ final readonly class DatabaseConnectionAdopter
                 continue;
             }
 
-            $payloads[$prefix] = DatabaseConnectionPayload::fromArray([
+            $payload = DatabaseConnectionPayload::fromArray([
                 'driver' => $driver,
                 'host' => $values["{$prefix}_HOST"] ?? null,
                 'port' => $values["{$prefix}_PORT"] ?? null,
@@ -125,6 +125,12 @@ final readonly class DatabaseConnectionAdopter
                 'username' => $values["{$prefix}_USERNAME"] ?? null,
                 'password' => $values["{$prefix}_PASSWORD"] ?? null,
             ]);
+
+            if (! $this->payloadHasMeaningfulValues($payload)) {
+                continue;
+            }
+
+            $payloads[$prefix] = $payload;
         }
 
         return $payloads;
@@ -167,15 +173,19 @@ final readonly class DatabaseConnectionAdopter
         if ($target?->connection instanceof DatabaseConnection) {
             $target->connection->fill([
                 'driver' => $payload->driver,
-                'host' => $payload->host,
-                'port' => $payload->port,
-                'database' => $payload->database,
-                'path' => $payload->path,
-                'username' => $payload->username,
-                'credentials' => $payload->credentials(),
+                'host' => $payload->host ?? $target->connection->host,
+                'port' => $payload->port ?? $target->connection->port,
+                'database' => $payload->database ?? $target->connection->database,
+                'path' => $payload->path ?? $target->connection->path,
+                'username' => $payload->username ?? $target->connection->username,
+                'credentials' => $this->mergeCredentials($target->connection, $payload),
             ])->save();
 
             return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
+        }
+
+        if (! $this->payloadHasMeaningfulValues($payload)) {
+            throw new \RuntimeException('Unreachable empty payload.');
         }
 
         $connection = $this->upsertConnection(
@@ -184,6 +194,33 @@ final readonly class DatabaseConnectionAdopter
         );
 
         return [$connection, AdoptAction::Created, 'database_connection.target_extra'];
+    }
+
+    private function payloadHasMeaningfulValues(DatabaseConnectionPayload $payload): bool
+    {
+        if ($payload->driver === 'sqlite') {
+            return ($payload->path ?? $payload->database) !== null;
+        }
+
+        return $payload->host !== null
+            || $payload->port !== null
+            || $payload->database !== null
+            || $payload->username !== null
+            || $payload->password !== null;
+    }
+
+    /**
+     * @return array{password?: string}
+     */
+    private function mergeCredentials(DatabaseConnection $connection, DatabaseConnectionPayload $payload): array
+    {
+        $credentials = is_array($connection->credentials) ? $connection->credentials : [];
+
+        if ($payload->password !== null) {
+            $credentials['password'] = $payload->password;
+        }
+
+        return $credentials;
     }
 
     /**
