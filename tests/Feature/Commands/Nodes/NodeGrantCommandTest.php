@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Nodes\GrantNodeRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +87,7 @@ describe('node:grant base contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         expect($exitCode)->toBe(0);
@@ -104,11 +106,13 @@ describe('node:grant base contract', function (): void {
         Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -157,7 +161,7 @@ describe('node:grant base contract', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('serving_node');
     });
 
-    it('fails with node.grant_policy_violation for self-grant', function (): void {
+    it('allows self-grants', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
@@ -168,14 +172,148 @@ describe('node:grant base contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'control-1',
+            '--preset' => 'operator',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['action'])->toBe('granted')
+            ->and(DB::table('node_access')->count())->toBe(1);
+    });
+
+    it('creates a grant with --preset permissions', function (): void {
+        setupGrantGatewayCaller();
+        DB::table('nodes')->insert(nodeGrantRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeGrantRow());
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $grant = DB::table('node_access')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['action'])->toBe('granted')
+            ->and($grant->permissions)->toBe(json_encode(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
+    });
+
+    it('creates a grant with --permissions', function (): void {
+        setupGrantGatewayCaller();
+        DB::table('nodes')->insert(nodeGrantRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeGrantRow());
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'node:read,tool:read',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $grant = DB::table('node_access')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['action'])->toBe('granted')
+            ->and($grant->permissions)->toBe(json_encode(['node:read', 'tool:read']));
+    });
+
+    it('does not modify existing grant permissions', function (): void {
+        setupGrantGatewayCaller();
+        DB::table('nodes')->insert(nodeGrantRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeGrantRow());
+
+        Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'node:read',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $grant = DB::table('node_access')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['already_granted'])->toBeTrue()
+            ->and($grant->permissions)->toBe(json_encode(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
+    });
+
+    it('warns about redundant permissions', function (): void {
+        setupGrantGatewayCaller();
+        DB::table('nodes')->insert(nodeGrantRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeGrantRow());
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'node:read,node:list',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('node.redundant_permissions')
+            ->and($payload['success']['meta']['warnings'][0]['permissions'])->toBe(['node:list']);
+    });
+
+    it('requires --force for gateway-admin grants', function (): void {
+        setupGrantGatewayCaller();
+        DB::table('nodes')->insert(nodeGrantRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        $gatewayId = (int) DB::table('nodes')->insertGetId(nodeGrantRow([
+            'name' => 'target-gateway',
+            'role' => 'gateway',
+            'environment' => null,
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gatewayId,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'target-gateway',
+            '--preset' => 'gateway-admin',
             '--json' => true,
         ]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('node.grant_policy_violation')
-            ->and($payload['error']['meta']['reason'])->toBe('self_grant');
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('force');
     });
 
     it('rejects control-node callers with gateway_unavailable', function (): void {
@@ -191,6 +329,7 @@ describe('node:grant base contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -217,6 +356,7 @@ describe('node:grant control forwarding', function (): void {
                     'serving_node' => 'app-1',
                     'action' => 'granted',
                     'already_granted' => false,
+                    'permissions' => ['*'],
                 ],
             ],
         ]);
@@ -224,6 +364,7 @@ describe('node:grant control forwarding', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -235,6 +376,7 @@ describe('node:grant control forwarding', function (): void {
                 'serving_node' => 'app-1',
                 'action' => 'granted',
                 'already_granted' => false,
+                'permissions' => ['*'],
             ])
             ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse()
             ->and(DB::table('node_access')->count())->toBe(0);
@@ -243,6 +385,7 @@ describe('node:grant control forwarding', function (): void {
             && $request->body()->all() === [
                 'consuming_node' => 'control-1',
                 'serving_node' => 'app-1',
+                'preset' => 'operator',
             ]);
     });
 
@@ -259,6 +402,7 @@ describe('node:grant control forwarding', function (): void {
                     'serving_node' => 'app-1',
                     'action' => 'granted',
                     'already_granted' => true,
+                    'permissions' => ['*'],
                 ],
             ],
         ]);
@@ -266,6 +410,7 @@ describe('node:grant control forwarding', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         expect($exitCode)->toBe(0);
@@ -283,6 +428,7 @@ describe('node:grant control forwarding', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -354,6 +500,7 @@ describe('node:grant safety', function (): void {
         Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         $after = (array) DB::table('nodes')->where('name', 'app-1')->first();

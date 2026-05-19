@@ -7,8 +7,9 @@ namespace App\Http\Requests\Api;
 use Illuminate\Contracts\Validation\Validator as ValidationContract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Validator;
 
-class GrantNodeApiRequest extends FormRequest
+class NodePermissionsApiRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -25,7 +26,8 @@ class GrantNodeApiRequest extends FormRequest
             'serving_node' => ['required', 'string', 'filled', 'max:255'],
             'preset' => ['nullable', 'string', 'filled', 'max:255'],
             'permissions' => ['nullable', 'string', 'filled', 'max:4096'],
-            'force' => ['nullable', 'boolean'],
+            'add' => ['nullable', 'string', 'filled', 'max:4096'],
+            'remove' => ['nullable', 'string', 'filled', 'max:4096'],
         ];
     }
 
@@ -53,11 +55,18 @@ class GrantNodeApiRequest extends FormRequest
         return is_string($value) ? $value : null;
     }
 
-    public function force(): bool
+    public function addInput(): ?string
     {
-        $value = $this->input('force');
+        $value = $this->input('add');
 
-        return $value === true || $value === 'true' || $value === '1' || $value === 1;
+        return is_string($value) ? $value : null;
+    }
+
+    public function removeInput(): ?string
+    {
+        $value = $this->input('remove');
+
+        return is_string($value) ? $value : null;
     }
 
     #[\Override]
@@ -76,11 +85,37 @@ class GrantNodeApiRequest extends FormRequest
         ], 422));
     }
 
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $modeCount = 0;
+                foreach (['preset', 'permissions', 'add', 'remove'] as $field) {
+                    if ($this->input($field) !== null) {
+                        $modeCount++;
+                    }
+                }
+
+                if ($modeCount > 1) {
+                    $validator->errors()->add('mode', 'Use only one of preset, permissions, add, or remove.');
+                }
+            },
+        ];
+    }
+
     private function messageFor(string $field): string
     {
         return match ($field) {
             'serving_node' => 'Serving node is required.',
-            default => 'Consuming node is required.',
+            'consuming_node' => 'Consuming node is required.',
+            'preset' => 'Preset must be a non-empty string.',
+            'permissions' => 'Permissions must be a non-empty string.',
+            'add' => 'Add permissions must be a non-empty string.',
+            'remove' => 'Remove permissions must be a non-empty string.',
+            default => 'Invalid input provided.',
         };
     }
 }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\GrantNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,37 +16,9 @@ uses(RefreshDatabase::class);
 beforeEach(fn (): null => MockClient::destroyGlobal());
 afterEach(fn (): null => MockClient::destroyGlobal());
 
-/**
- * @param  array<string, mixed>  $overrides
- * @return array<string, mixed>
- */
-function nodeGrantAppContractRow(array $overrides = []): array
-{
-    return array_merge([
-        'name' => 'app-1',
-        'role' => 'app',
-        'host' => '10.6.0.7',
-        'wireguard_address' => '10.6.0.7',
-        'user' => 'nckrtl',
-        'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active',
-        'environment' => 'development',
-        'platform' => 'ubuntu_24-04',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ], $overrides);
-}
-
 function setupNodeGrantAppCaller(): void
 {
     config(['orbit.is_gateway' => false]);
-
-    DB::table('nodes')->insert(nodeGrantAppContractRow([
-        'name' => 'app-caller',
-        'role' => 'app',
-        'host' => '10.6.0.99',
-        'wireguard_address' => '10.6.0.99',
-    ]));
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.6.0.2',
@@ -54,12 +27,37 @@ function setupNodeGrantAppCaller(): void
     ])->save();
 }
 
+function nodeGrantAppIdentityEnvelope(string $role = 'app'): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'self' => [
+                    'name' => 'app-caller',
+                    'role' => $role,
+                    'status' => 'active',
+                    'platform' => 'unknown',
+                    'addresses' => ['wireguard' => '10.6.0.99'],
+                ],
+                'gateway' => [
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'platform' => 'unknown',
+                    'addresses' => ['wireguard' => '10.6.0.2'],
+                ],
+            ],
+        ],
+    ];
+}
+
 /**
  * @param  array<string, mixed>|string  $body
  */
 function fakeNodeGrantAppGateway(array|string $body, int $status = 200): MockClient
 {
     return MockClient::global([
+        ShowGatewayIdentityRequest::class => MockResponse::make(nodeGrantAppIdentityEnvelope('app'), 200),
         GrantNodeRequest::class => MockResponse::make($body, $status),
     ]);
 }
@@ -71,7 +69,7 @@ describe('node:grant on app node contract', function (): void {
         $mock = fakeNodeGrantAppGateway([
             'error' => [
                 'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control or gateway node.',
+                'message' => 'This command may only be run from an operator or gateway node.',
                 'meta' => [
                     'caller_role' => 'app',
                 ],
@@ -99,7 +97,7 @@ describe('node:grant on app node contract', function (): void {
 
         $error = [
             'code' => 'caller_role_not_allowed',
-            'message' => 'This command may only be run from a control or gateway node.',
+            'message' => 'This command may only be run from an operator or gateway node.',
             'meta' => [
                 'caller_role' => 'app',
             ],
@@ -126,7 +124,7 @@ describe('node:grant on app node contract', function (): void {
         fakeNodeGrantAppGateway([
             'error' => [
                 'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control or gateway node.',
+                'message' => 'This command may only be run from an operator or gateway node.',
                 'meta' => [
                     'caller_role' => 'app',
                 ],
@@ -139,7 +137,72 @@ describe('node:grant on app node contract', function (): void {
         ]);
 
         expect($exitCode)->toBe(1)
-            ->and(Artisan::output())->toContain('This command may only be run from a control or gateway node.')
+            ->and(Artisan::output())->toContain('This command may only be run from an operator or gateway node.')
             ->and(DB::table('node_access')->count())->toBe(0);
+    });
+
+    it('forwards supplied preset permissions and force options for app-role CLI callers', function (): void {
+        setupNodeGrantAppCaller();
+
+        $mock = fakeNodeGrantAppGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'granted',
+                    'already_granted' => false,
+                    'permissions' => ['app:read', 'node:read'],
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and(DB::table('node_access')->count())->toBe(0);
+
+        $mock->assertSent(fn (GrantNodeRequest $request): bool => $request->body()->all() === [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'preset' => 'operator',
+            'force' => true,
+        ]);
+    });
+
+    it('falls back to control behavior when gateway identity is unavailable', function (): void {
+        setupNodeGrantAppCaller();
+
+        MockClient::global([
+            ShowGatewayIdentityRequest::class => MockResponse::make('', 500),
+            GrantNodeRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'app-1',
+                        'action' => 'granted',
+                        'already_granted' => false,
+                        'permissions' => ['app:read'],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['permissions'])->toBe(['app:read']);
     });
 });

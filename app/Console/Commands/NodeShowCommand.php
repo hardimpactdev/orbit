@@ -176,8 +176,8 @@ class NodeShowCommand extends Command
             ],
             'agent_ide' => $this->agentIdePayloadFromGatewayData($nodeData),
             'grants' => [
-                'consuming_nodes' => $nodeData['grants']['consuming_nodes'] ?? [],
-                'serving_nodes' => $nodeData['grants']['serving_nodes'] ?? [],
+                'consuming_nodes' => $this->normalizeGrantNodes($nodeData['grants']['consuming_nodes'] ?? []),
+                'serving_nodes' => $this->normalizeGrantNodes($nodeData['grants']['serving_nodes'] ?? []),
             ],
         ];
     }
@@ -192,11 +192,28 @@ class NodeShowCommand extends Command
      *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
-     *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
+     *     grants: array{
+     *         consuming_nodes: array<int, array{name: string, permissions: list<string>}>,
+     *         serving_nodes: array<int, array{name: string, permissions: list<string>}>,
+     *     }
      * }
      */
     private function nodePayload(Node $node): array
     {
+        $consumingGrants = $node->consumingNodes
+            ->map(fn (Node $n): array => [
+                'name' => $n->name,
+                'permissions' => $this->decodePermissions($n->pivot->permissions ?? null),
+            ])
+            ->all();
+
+        $servingGrants = $node->servingNodes
+            ->map(fn (Node $n): array => [
+                'name' => $n->name,
+                'permissions' => $this->decodePermissions($n->pivot->permissions ?? null),
+            ])
+            ->all();
+
         return [
             'name' => $node->name,
             'role' => $node->role,
@@ -213,8 +230,8 @@ class NodeShowCommand extends Command
             ],
             'agent_ide' => NodeAgentIdeDefaults::payloadFor($node),
             'grants' => [
-                'consuming_nodes' => $node->consumingNodes()->pluck('name')->all(),
-                'serving_nodes' => $node->servingNodes()->pluck('name')->all(),
+                'consuming_nodes' => $consumingGrants,
+                'serving_nodes' => $servingGrants,
             ],
         ];
     }
@@ -229,22 +246,23 @@ class NodeShowCommand extends Command
      *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
-     *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
+     *     grants: array{
+     *         consuming_nodes: array<int, array{name: string, permissions: list<string>}>,
+     *         serving_nodes: array<int, array{name: string, permissions: list<string>}>,
+     *     }
      * }  $node
      */
     private function renderHuman(array $node): void
     {
         $rolesLabel = $this->humanRolesLabel($node['roles']);
-        $consuming = $node['grants']['consuming_nodes'];
-        $serving = $node['grants']['serving_nodes'];
 
         $properties = [
             'Role' => $node['role'],
             'Environment' => $node['environment'],
             'Platform' => $node['platform'],
             'WireGuard' => $node['addresses']['wireguard'],
-            'Consuming' => $consuming,
-            'Serving' => $serving,
+            'Consuming' => $this->humanGrantLabels($node['grants']['consuming_nodes']),
+            'Serving' => $this->humanGrantLabels($node['grants']['serving_nodes']),
         ];
 
         if ($rolesLabel !== null) {
@@ -256,6 +274,18 @@ class NodeShowCommand extends Command
         }
 
         $this->renderShowDetails("Node: {$node['name']}", $properties);
+    }
+
+    /**
+     * @param  array<int, array{name: string, permissions: list<string>}>  $grants
+     * @return list<string>
+     */
+    private function humanGrantLabels(array $grants): array
+    {
+        return array_map(
+            static fn (array $grant): string => "{$grant['name']}: ".implode(', ', $grant['permissions']),
+            $grants,
+        );
     }
 
     /**
@@ -330,6 +360,65 @@ class NodeShowCommand extends Command
                 'status' => $status,
                 'settings' => $this->normalizeRoleSettings($role['settings'] ?? null),
             ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function decodePermissions(mixed $permissions): array
+    {
+        if ($permissions === null) {
+            return ['*'];
+        }
+
+        if (is_array($permissions)) {
+            return $permissions;
+        }
+
+        if (is_string($permissions)) {
+            $decoded = json_decode($permissions, associative: true);
+
+            return is_array($decoded) ? $decoded : ['*'];
+        }
+
+        return ['*'];
+    }
+
+    /**
+     * @param  list<mixed>  $grants
+     * @return list<array{name: string, permissions: list<string>}>
+     */
+    private function normalizeGrantNodes(mixed $grants): array
+    {
+        if (! is_array($grants)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($grants as $grant) {
+            if (is_array($grant) && is_string($grant['name'] ?? null)) {
+                $permissions = [];
+                if (is_array($grant['permissions'] ?? null)) {
+                    foreach ($grant['permissions'] as $perm) {
+                        if (is_string($perm)) {
+                            $permissions[] = $perm;
+                        }
+                    }
+                }
+                $normalized[] = [
+                    'name' => $grant['name'],
+                    'permissions' => $permissions !== [] ? $permissions : ['*'],
+                ];
+            } elseif (is_string($grant)) {
+                $normalized[] = [
+                    'name' => $grant,
+                    'permissions' => ['*'],
+                ];
+            }
         }
 
         return $normalized;

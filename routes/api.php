@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeDefaultController;
 use App\Http\Controllers\Api\NodeGrantController;
 use App\Http\Controllers\Api\NodeListController;
+use App\Http\Controllers\Api\NodePermissionsController;
 use App\Http\Controllers\Api\NodeRemoveController;
 use App\Http\Controllers\Api\NodeRevokeController;
 use App\Http\Controllers\Api\NodeRoleAddController;
@@ -207,6 +208,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::put('/nodes/default', [NodeDefaultController::class, 'set']);
         Route::delete('/nodes/default', [NodeDefaultController::class, 'clear']);
         Route::post('/nodes/grant', NodeGrantController::class);
+        Route::post('/nodes/permissions', NodePermissionsController::class);
         Route::post('/nodes/revoke', NodeRevokeController::class);
         Route::get('/nodes/{name}/roles', NodeRoleListController::class);
         Route::post('/nodes/{name}/roles', NodeRoleAddController::class);

@@ -115,16 +115,15 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->not->toContain('"error"');
     });
 
-    it('does not render a progress tree', function (): void {
+    it('renders a detail tree without progress markers', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->not->toContain('┌')
-            ->and($output)->not->toContain('└')
-            ->and($output)->not->toContain('│')
+        expect($output)->toContain('┌  Node: app-1')
+            ->and($output)->toContain('└  Serving')
             ->and($output)->not->toContain('○');
     });
 
@@ -137,14 +136,18 @@ describe('node:show human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: app-1')
-            ->and($output)->toContain('Role: app')
-            ->and($output)->toContain('Roles: app-development')
-            ->and($output)->toContain('Environment: development')
-            ->and($output)->toContain('Platform: ubuntu_24-04')
-            ->and($output)->toContain('WireGuard: 10.6.0.7')
-            ->and($output)->toContain('Grants:')
-            ->and($output)->toContain('Consuming: (none)')
-            ->and($output)->toContain('Serving: (none)');
+            ->and($output)->toContain('Role')
+            ->and($output)->toContain('app')
+            ->and($output)->toContain('Roles')
+            ->and($output)->toContain('app-development')
+            ->and($output)->toContain('Environment')
+            ->and($output)->toContain('development')
+            ->and($output)->toContain('Platform')
+            ->and($output)->toContain('ubuntu_24-04')
+            ->and($output)->toContain('WireGuard')
+            ->and($output)->toContain('10.6.0.7')
+            ->and($output)->toContain('Consuming')
+            ->and($output)->toContain('Serving');
     });
 
     it('omits environment line for non-app roles', function (): void {
@@ -159,22 +162,26 @@ describe('node:show human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: gateway-2')
-            ->and($output)->toContain('Role: gateway')
-            ->and($output)->not->toContain('Environment:')
-            ->and($output)->toContain('Platform: ubuntu_24-04')
-            ->and($output)->toContain('WireGuard: 10.6.0.7');
+            ->and($output)->toContain('Role')
+            ->and($output)->toContain('gateway')
+            ->and($output)->toContain('Environment')
+            ->and($output)->toContain('—')
+            ->and($output)->toContain('Platform')
+            ->and($output)->toContain('ubuntu_24-04')
+            ->and($output)->toContain('WireGuard')
+            ->and($output)->toContain('10.6.0.7');
     });
 
-    it('renders grants section with (none) when grants are empty', function (): void {
+    it('renders grant rows as empty when grants are empty', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('Grants:')
-            ->and($output)->toContain('Consuming: (none)')
-            ->and($output)->toContain('Serving: (none)');
+        expect($output)->toContain('Consuming')
+            ->and($output)->toContain('Serving')
+            ->and($output)->toContain('—');
     });
 
     it('renders real grant data from gateway registry', function (): void {
@@ -209,9 +216,10 @@ describe('node:show human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('Grants:')
-            ->and($output)->toContain('Consuming: control-1, control-2')
-            ->and($output)->toContain('Serving: control-1');
+        expect($output)->toContain('Consuming')
+            ->and($output)->toContain('control-1: *')
+            ->and($output)->toContain('control-2: *')
+            ->and($output)->toContain('Serving');
     });
 
     it('renders missing node prose error', function (): void {

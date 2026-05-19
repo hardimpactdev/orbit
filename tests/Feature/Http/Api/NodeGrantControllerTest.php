@@ -130,6 +130,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -168,6 +169,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk();
@@ -200,6 +202,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -228,6 +231,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -265,6 +269,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -305,6 +310,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertForbidden()
@@ -337,6 +343,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertForbidden()
@@ -368,6 +375,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertForbidden()
@@ -397,6 +405,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertForbidden()
@@ -433,6 +442,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk();
@@ -475,6 +485,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertOk();
@@ -524,6 +535,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'missing-control',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertNotFound()
@@ -552,6 +564,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertNotFound()
@@ -563,11 +576,9 @@ describe('NodeGrantController', function (): void {
         expect(DB::table('node_access')->count())->toBe(1);
     });
 
-    it('rejects self-grants as policy violations', function (): void {
-        $callerId = createGrantCallerNode();
-        $gatewayId = createGrantGatewayNode();
-        grantGatewayManagementAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiGrantNodeRow([
+    it('allows self-grants', function (): void {
+        createGrantCallerNode('gateway');
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
             'role' => 'control',
             'environment' => null,
@@ -577,16 +588,150 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'control-1',
+            'preset' => 'operator',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'granted')
+            ->assertJsonPath('success.data.already_granted', false);
+
+        expect(DB::table('node_access')->count())->toBe(1);
+    });
+
+    it('creates a grant with preset permissions', function (): void {
+        createGrantCallerNode('gateway');
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'preset' => 'operator',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'granted')
+            ->assertJsonPath('success.data.already_granted', false);
+
+        $grant = NodeAccess::query()
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->first();
+
+        expect($grant)->not->toBeNull();
+        expect($grant->permissions)->toBe(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']);
+    });
+
+    it('requires force for gateway-admin grants', function (): void {
+        createGrantCallerNode('gateway');
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'target-gateway',
+            'role' => 'gateway',
+            'host' => '10.6.0.12',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        assignApiGrantGatewayRole($gatewayId);
+        DB::table('nodes')->insert(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'target-gateway',
+            'preset' => 'gateway-admin',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.grant_policy_violation')
-            ->assertJsonPath('error.message', 'A node cannot be granted access to itself.')
-            ->assertJsonPath('error.meta.consuming_node', 'control-1')
-            ->assertJsonPath('error.meta.serving_node', 'control-1')
-            ->assertJsonPath('error.meta.reason', 'self_grant');
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force');
+    });
 
-        expect(DB::table('node_access')->count())->toBe(1);
+    it('allows gateway-admin grants with force', function (): void {
+        createGrantCallerNode('gateway');
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'target-gateway',
+            'role' => 'gateway',
+            'host' => '10.6.0.12',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        assignApiGrantGatewayRole($servingId);
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'target-gateway',
+            'preset' => 'gateway-admin',
+            'force' => true,
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'granted');
+
+        $grant = NodeAccess::query()
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->first();
+
+        expect($grant)->not->toBeNull();
+        expect($grant->permissions)->toBe(['*']);
+    });
+
+    it('does not modify existing grant permissions', function (): void {
+        createGrantCallerNode('gateway');
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $consumingId,
+            'serving_node_id' => $servingId,
+            'permissions' => json_encode(['node:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'preset' => 'operator',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'granted')
+            ->assertJsonPath('success.data.already_granted', true)
+            ->assertJsonMissingPath('success.meta');
+
+        $grant = NodeAccess::query()
+            ->where('consumer_node_id', $consumingId)
+            ->where('serving_node_id', $servingId)
+            ->first();
+
+        expect($grant->permissions)->toBe(['node:read']);
     });
 
     it('stores normalized permissions', function (): void {

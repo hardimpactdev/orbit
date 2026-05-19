@@ -11,5 +11,6 @@ final readonly class NodeRevokeResponse
         public string $servingNode,
         public bool $alreadyAbsent,
         public bool $selfLockout,
+        public bool $wasGatewayAdmin = false,
     ) {}
 }

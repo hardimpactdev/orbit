@@ -394,7 +394,7 @@ it('rejects host input for database-only hosted roles before side effects', func
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'validation_failed',
-            'message' => 'Only app-development, app-production, and gateway use host provisioning.',
+            'message' => 'Only app-development, app-production, agent, and gateway use host provisioning.',
             'meta' => ['field' => 'host'],
         ])
         ->and(Node::query()->where('name', 'db-with-host')->exists())->toBeFalse()

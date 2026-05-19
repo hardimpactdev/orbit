@@ -17,6 +17,7 @@ describe('node role assignments', function (): void {
         $legacyAppOnlyNode = Node::factory()->create(['role' => 'app', 'status' => 'active']);
         $pendingAppNode = Node::factory()->create(['role' => 'app', 'status' => 'active']);
         $databaseNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+        $agentNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $developmentNode->id,
@@ -40,6 +41,11 @@ describe('node role assignments', function (): void {
             'role' => 'database',
             'status' => 'active',
         ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $agentNode->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
 
         $assignments = app(NodeRoleAssignments::class);
 
@@ -51,6 +57,7 @@ describe('node role assignments', function (): void {
                 $developmentNode->id,
                 $productionNode->id,
                 $databaseNode->id,
+                $agentNode->id,
             ])
             ->and($assignments->nodeHasActiveAppHostRole($developmentNode))->toBeTrue()
             ->and($assignments->nodeHasActiveAppHostRole($productionNode))->toBeTrue()
@@ -58,6 +65,7 @@ describe('node role assignments', function (): void {
             ->and($assignments->nodeHasActiveAppHostRole($pendingAppNode))->toBeFalse()
             ->and($assignments->nodeHasActiveAppHostRole($databaseNode))->toBeFalse()
             ->and($assignments->nodeHasActiveToolHostRole($databaseNode))->toBeTrue()
+            ->and($assignments->nodeHasActiveToolHostRole($agentNode))->toBeTrue()
             ->and($assignments->activeAppHostEnvironment($developmentNode))->toBe('development')
             ->and($assignments->activeAppHostEnvironment($productionNode))->toBe('production')
             ->and($assignments->activeAppHostEnvironment($legacyAppOnlyNode))->toBeNull();

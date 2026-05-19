@@ -100,6 +100,7 @@ describe('node:revoke non-interactive input mode contract', function (): void {
                     'action' => 'revoked',
                     'already_absent' => false,
                     'self_lockout' => true,
+                    'was_gateway_admin' => false,
                 ],
             ],
         ]);
@@ -134,6 +135,7 @@ describe('node:revoke non-interactive input mode contract', function (): void {
                     'action' => 'revoked',
                     'already_absent' => false,
                     'self_lockout' => true,
+                    'was_gateway_admin' => false,
                 ],
             ],
         ]);
@@ -155,6 +157,7 @@ describe('node:revoke non-interactive input mode contract', function (): void {
                         'action' => 'revoked',
                         'already_absent' => false,
                         'self_lockout' => true,
+                        'was_gateway_admin' => false,
                     ],
                 ],
             ]);

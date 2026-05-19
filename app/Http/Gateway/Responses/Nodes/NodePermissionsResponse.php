@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Gateway\Responses\Nodes;
 
-final readonly class NodeGrantResponse
+final readonly class NodePermissionsResponse
 {
     /**
      * @param  list<array{code: string, family: string, message: string, next_command: string|null, permissions: list<string>}>  $warnings
@@ -12,9 +12,9 @@ final readonly class NodeGrantResponse
     public function __construct(
         public string $consumingNode,
         public string $servingNode,
-        public bool $alreadyGranted,
-        public string $action = 'granted',
+        public string $action,
         public ?array $permissions = null,
+        public ?string $mode = null,
         public array $warnings = [],
     ) {}
 }

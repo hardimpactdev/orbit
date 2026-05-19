@@ -247,13 +247,7 @@ final class NodePermissionRegistry
      */
     public function allows(array $permissions, string $required): bool
     {
-        foreach ($permissions as $permission) {
-            if ($permission === $required || $this->isCoveredBy($required, $permission)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($permissions, fn ($permission) => $permission === $required || $this->isCoveredBy($required, $permission));
     }
 
     /**

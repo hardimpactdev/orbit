@@ -311,6 +311,7 @@ describe('node:revoke control forwarding', function (): void {
                 'action' => 'revoked',
                 'already_absent' => false,
                 'self_lockout' => false,
+                'was_gateway_admin' => false,
             ])
             ->and(DB::table('node_access')->count())->toBe(0);
 
@@ -335,6 +336,7 @@ describe('node:revoke control forwarding', function (): void {
                     'action' => 'revoked',
                     'already_absent' => true,
                     'self_lockout' => false,
+                    'was_gateway_admin' => false,
                 ],
             ],
         ]);
@@ -362,6 +364,7 @@ describe('node:revoke control forwarding', function (): void {
                     'action' => 'revoked',
                     'already_absent' => false,
                     'self_lockout' => true,
+                    'was_gateway_admin' => false,
                 ],
             ],
         ]);
@@ -446,6 +449,7 @@ describe('node:revoke control forwarding', function (): void {
                     'action' => 'revoked',
                     'already_absent' => false,
                     'self_lockout' => false,
+                    'was_gateway_admin' => false,
                 ],
             ],
         ]);
@@ -474,6 +478,7 @@ describe('node:revoke control forwarding', function (): void {
                     'action' => 'revoked',
                     'already_absent' => false,
                     'self_lockout' => false,
+                    'was_gateway_admin' => false,
                 ],
             ],
         ]);

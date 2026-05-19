@@ -48,6 +48,7 @@ final class RevokeNodeRequest extends GatewayRequest implements HasBody
             servingNode: is_string($data['serving_node'] ?? null) ? $data['serving_node'] : $this->servingNode,
             alreadyAbsent: is_bool($data['already_absent'] ?? null) ? $data['already_absent'] : false,
             selfLockout: is_bool($data['self_lockout'] ?? null) ? $data['self_lockout'] : false,
+            wasGatewayAdmin: is_bool($data['was_gateway_admin'] ?? null) ? $data['was_gateway_admin'] : false,
         );
     }
 }

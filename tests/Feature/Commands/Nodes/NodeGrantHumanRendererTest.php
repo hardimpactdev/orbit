@@ -97,6 +97,7 @@ describe('node:grant human renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
         $output = Artisan::output();
 
@@ -117,6 +118,7 @@ describe('node:grant human renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
         $output = Artisan::output();
 
@@ -127,7 +129,7 @@ describe('node:grant human renderer contract', function (): void {
             ->and($output)->not->toContain('○');
     });
 
-    it('renders new grant success prose', function (): void {
+    it('renders new grant success prose with permissions', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
@@ -139,14 +141,17 @@ describe('node:grant human renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain("Granted 'control-1' access to 'app-1'");
+        expect($output)->toContain("Granted 'control-1' access to 'app-1'")
+            ->and($output)->toContain('Permissions:')
+            ->and($output)->toContain('app:read');
     });
 
-    it('renders already-granted success prose', function (): void {
+    it('renders already-granted success prose with follow-up and permissions', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
@@ -158,16 +163,21 @@ describe('node:grant human renderer contract', function (): void {
         Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain("'control-1' already has access to 'app-1'");
+        expect($output)->toContain("'control-1' already has access to 'app-1'")
+            ->and($output)->toContain('Run `orbit node:permissions control-1 app-1` to view or modify permissions.')
+            ->and($output)->toContain('Permissions:')
+            ->and($output)->toContain('app:read');
     });
 
     it('renders consuming-node-not-found prose error', function (): void {
@@ -202,7 +212,7 @@ describe('node:grant human renderer contract', function (): void {
         expect($output)->toContain("Serving node 'missing' not found.");
     });
 
-    it('renders grant policy violation prose error for self-grant', function (): void {
+    it('renders new grant success prose for self-grant with permissions', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
@@ -213,11 +223,14 @@ describe('node:grant human renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'control-1',
+            '--preset' => 'operator',
         ]);
         $output = Artisan::output();
 
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain("Grant from 'control-1' to 'control-1' violates node access policy.");
+        expect($exitCode)->toBe(0);
+        expect($output)->toContain("Granted 'control-1' access to 'control-1'")
+            ->and($output)->toContain('Permissions:')
+            ->and($output)->toContain('app:read');
     });
 
     it('renders gateway-unavailable prose error', function (): void {

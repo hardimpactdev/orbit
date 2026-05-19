@@ -131,8 +131,13 @@ describe('node:show role paths', function (): void {
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.7',
                             'grants' => [
-                                'consuming_nodes' => ['control-1', 'control-2'],
-                                'serving_nodes' => ['control-1'],
+                                'consuming_nodes' => [
+                                    ['name' => 'control-1', 'permissions' => ['*']],
+                                    ['name' => 'control-2', 'permissions' => ['*']],
+                                ],
+                                'serving_nodes' => [
+                                    ['name' => 'control-1', 'permissions' => ['*']],
+                                ],
                             ],
                         ],
                     ],
@@ -144,8 +149,13 @@ describe('node:show role paths', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['grants']['consuming_nodes'])->toBe(['control-1', 'control-2'])
-            ->and($payload['success']['data']['node']['grants']['serving_nodes'])->toBe(['control-1']);
+            ->and($payload['success']['data']['node']['grants']['consuming_nodes'])->toBe([
+                ['name' => 'control-1', 'permissions' => ['*']],
+                ['name' => 'control-2', 'permissions' => ['*']],
+            ])
+            ->and($payload['success']['data']['node']['grants']['serving_nodes'])->toBe([
+                ['name' => 'control-1', 'permissions' => ['*']],
+            ]);
     });
 
     it('handles gateway forwarding error for control caller', function (): void {

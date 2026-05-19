@@ -62,6 +62,9 @@ class Node extends Model
         ];
     }
 
+    /**
+     * @return BelongsToMany<Node, $this>
+     */
     public function consumingNodes(): BelongsToMany
     {
         return $this->belongsToMany(
@@ -69,9 +72,12 @@ class Node extends Model
             table: 'node_access',
             foreignPivotKey: 'serving_node_id',
             relatedPivotKey: 'consumer_node_id',
-        );
+        )->withPivot('permissions');
     }
 
+    /**
+     * @return BelongsToMany<Node, $this>
+     */
     public function servingNodes(): BelongsToMany
     {
         return $this->belongsToMany(
@@ -79,7 +85,7 @@ class Node extends Model
             table: 'node_access',
             foreignPivotKey: 'consumer_node_id',
             relatedPivotKey: 'serving_node_id',
-        );
+        )->withPivot('permissions');
     }
 
     /**

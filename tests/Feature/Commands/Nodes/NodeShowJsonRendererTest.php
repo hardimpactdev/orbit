@@ -296,8 +296,13 @@ describe('node:show JSON renderer contract', function (): void {
 
         $grants = $payload['success']['data']['node']['grants'];
 
-        expect($grants['consuming_nodes'])->toBe(['control-1', 'control-2'])
-            ->and($grants['serving_nodes'])->toBe(['control-1']);
+        expect($grants['consuming_nodes'])->toBe([
+            ['name' => 'control-1', 'permissions' => ['*']],
+            ['name' => 'control-2', 'permissions' => ['*']],
+        ])
+            ->and($grants['serving_nodes'])->toBe([
+                ['name' => 'control-1', 'permissions' => ['*']],
+            ]);
     });
 
     it('has no live-check fields', function (): void {

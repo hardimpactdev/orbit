@@ -182,7 +182,7 @@ class NodeRevokeCommand extends Command
             );
         }
 
-        return $this->respondSuccess($dto->consumingNode, $dto->servingNode, $dto->alreadyAbsent, $dto->selfLockout);
+        return $this->respondSuccess($dto->consumingNode, $dto->servingNode, $dto->alreadyAbsent, $dto->selfLockout, $dto->wasGatewayAdmin);
     }
 
     /**
@@ -220,7 +220,7 @@ class NodeRevokeCommand extends Command
         return $consumerName === $selfName && $servingName === $gatewayName;
     }
 
-    private function respondSuccess(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout): int
+    private function respondSuccess(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout, bool $wasGatewayAdmin = false): int
     {
         $data = [
             'consuming_node' => $consumerName,
@@ -228,6 +228,7 @@ class NodeRevokeCommand extends Command
             'action' => 'revoked',
             'already_absent' => $alreadyAbsent,
             'self_lockout' => $isSelfLockout,
+            'was_gateway_admin' => $wasGatewayAdmin,
         ];
 
         if ($this->wantsJson()) {
@@ -248,6 +249,10 @@ class NodeRevokeCommand extends Command
 
         if ($isSelfLockout) {
             $this->line('  This machine no longer has Orbit gateway access.');
+        }
+
+        if ($wasGatewayAdmin) {
+            $this->line('  This revoked a gateway-admin grant.');
         }
 
         return self::SUCCESS;
@@ -349,10 +354,13 @@ class NodeRevokeCommand extends Command
             }
         }
 
-        $alreadyAbsent = ! NodeAccess::query()
+        $grant = NodeAccess::query()
             ->where('consumer_node_id', $consumer->id)
             ->where('serving_node_id', $serving->id)
-            ->exists();
+            ->first();
+
+        $alreadyAbsent = $grant === null;
+        $wasGatewayAdmin = $grant !== null && in_array('*', $grant->permissions ?? ['*'], true);
 
         $operation = function () use ($consumer, $serving): string {
             NodeAccess::query()
@@ -373,7 +381,7 @@ class NodeRevokeCommand extends Command
             $operation();
         }
 
-        return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
+        return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $isSelfLockout, $wasGatewayAdmin);
     }
 
     /**

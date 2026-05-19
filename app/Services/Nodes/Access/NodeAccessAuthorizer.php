@@ -11,8 +11,8 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 class NodeAccessAuthorizer
 {
     public function __construct(
-        private NodePermissionRegistry $registry,
-        private NodeRoleAssignments $nodeRoleAssignments,
+        private readonly NodePermissionRegistry $registry,
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     public function allows(Node $consumer, Node $serving, string $permission): bool

@@ -2,13 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\NodeGrantCommand;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\GrantNodeRequest;
 use App\Models\LocalGatewaySettings;
+use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
@@ -53,12 +60,37 @@ function setupNodeGrantControlCaller(): void
     ])->save();
 }
 
+function nodeGrantControlIdentityEnvelope(): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'self' => [
+                    'name' => 'control-1',
+                    'role' => 'control',
+                    'status' => 'active',
+                    'platform' => 'unknown',
+                    'addresses' => ['wireguard' => '10.6.0.8'],
+                ],
+                'gateway' => [
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'platform' => 'unknown',
+                    'addresses' => ['wireguard' => '10.6.0.2'],
+                ],
+            ],
+        ],
+    ];
+}
+
 /**
  * @param  array<string, mixed>|string  $body
  */
 function fakeNodeGrantControlGateway(array|string $body, int $status = 200): MockClient
 {
     return MockClient::global([
+        ShowGatewayIdentityRequest::class => MockResponse::make(nodeGrantControlIdentityEnvelope(), 200),
         GrantNodeRequest::class => MockResponse::make($body, $status),
     ]);
 }
@@ -74,6 +106,7 @@ describe('node:grant on control node contract', function (): void {
                     'serving_node' => 'app-1',
                     'action' => 'granted',
                     'already_granted' => false,
+                    'permissions' => ['app:read', 'node:read'],
                 ],
             ],
         ]);
@@ -81,6 +114,7 @@ describe('node:grant on control node contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -92,6 +126,7 @@ describe('node:grant on control node contract', function (): void {
                 'serving_node' => 'app-1',
                 'action' => 'granted',
                 'already_granted' => false,
+                'permissions' => ['app:read', 'node:read'],
             ])
             ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse()
             ->and(DB::table('node_access')->count())->toBe(0);
@@ -100,6 +135,7 @@ describe('node:grant on control node contract', function (): void {
             && $request->body()->all() === [
                 'consuming_node' => 'control-1',
                 'serving_node' => 'app-1',
+                'preset' => 'operator',
             ]);
     });
 
@@ -113,6 +149,7 @@ describe('node:grant on control node contract', function (): void {
                     'serving_node' => 'app-1',
                     'action' => 'granted',
                     'already_granted' => true,
+                    'permissions' => ['app:read', 'node:read'],
                 ],
             ],
         ]);
@@ -120,10 +157,113 @@ describe('node:grant on control node contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         expect($exitCode)->toBe(0);
         expect(Artisan::output())->toContain("'control-1' already has access to 'app-1'");
+    });
+
+    it('fails locally when missing preset or permissions on control node with json', function (): void {
+        setupNodeGrantControlCaller();
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe('Use --preset or --permissions to specify grant permissions.')
+            ->and($payload['error']['meta'])->toBe(['fields' => ['preset', 'permissions']]);
+    });
+
+    it('fails when gateway response omits required permissions', function (): void {
+        setupNodeGrantControlCaller();
+
+        fakeNodeGrantControlGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'granted',
+                    'already_granted' => false,
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('gateway_response_invalid')
+            ->and($payload['error']['message'])->toBe('Gateway response missing required permissions field.');
+    });
+
+    it('forwards interactive prompt permissions to the gateway as comma-separated string', function (): void {
+        setupNodeGrantControlCaller();
+
+        $mock = fakeNodeGrantControlGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'granted',
+                    'already_granted' => false,
+                    'permissions' => ['node:read', 'tool:read'],
+                ],
+            ],
+        ]);
+
+        $command = new NodeGrantCommand;
+        $command->setLaravel(app());
+
+        $input = new ArrayInput([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ]);
+        $output = new BufferedOutput;
+
+        $definition = $command->getDefinition();
+        if (! $definition->hasArgument('consuming_node')) {
+            $definition->addArgument(new InputArgument('consuming_node', InputArgument::REQUIRED));
+            $definition->addArgument(new InputArgument('serving_node', InputArgument::REQUIRED));
+            $definition->addOption(new InputOption('preset', null, InputOption::VALUE_OPTIONAL));
+            $definition->addOption(new InputOption('permissions', null, InputOption::VALUE_OPTIONAL));
+            $definition->addOption(new InputOption('force', null, InputOption::VALUE_NONE));
+            $definition->addOption(new InputOption('json', null, InputOption::VALUE_NONE));
+        }
+        $input->bind($definition);
+        $input->validate();
+
+        $inputProp = (new ReflectionClass(Command::class))->getProperty('input');
+        $inputProp->setAccessible(true);
+        $inputProp->setValue($command, $input);
+
+        $outputProp = (new ReflectionClass(Command::class))->getProperty('output');
+        $outputProp->setAccessible(true);
+        $outputProp->setValue($command, $output);
+
+        $sendMethod = new ReflectionMethod($command, 'sendForwardGrantRequest');
+        $sendMethod->setAccessible(true);
+        $exitCode = $sendMethod->invoke($command, 'control-1', 'app-1', null, null, ['node:read', 'tool:read'], true, false);
+
+        expect($exitCode)->toBe(0);
+
+        $mock->assertSent(fn (GrantNodeRequest $request): bool => $request->body()->all() === [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'permissions' => 'node:read,tool:read',
+        ]);
     });
 
     it('preserves structured gateway errors when forwarding', function (array $error): void {
@@ -134,6 +274,7 @@ describe('node:grant on control node contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -168,4 +309,52 @@ describe('node:grant on control node contract', function (): void {
             ],
         ]],
     ]);
+
+    it('preserves gateway warning metadata in forwarded --json success responses', function (): void {
+        setupNodeGrantControlCaller();
+
+        fakeNodeGrantControlGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'granted',
+                    'already_granted' => false,
+                    'permissions' => ['node:read', 'node:list'],
+                ],
+                'meta' => [
+                    'warnings' => [
+                        [
+                            'code' => 'node.redundant_permissions',
+                            'family' => 'node',
+                            'message' => 'Redundant permissions were removed: node:list.',
+                            'next_command' => null,
+                            'permissions' => ['node:list'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'node:read,node:list',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['permissions'])->toBe(['node:read', 'node:list'])
+            ->and($payload['success']['meta']['warnings'])->toBe([
+                [
+                    'code' => 'node.redundant_permissions',
+                    'family' => 'node',
+                    'message' => 'Redundant permissions were removed: node:list.',
+                    'next_command' => null,
+                    'permissions' => ['node:list'],
+                ],
+            ]);
+    });
 });

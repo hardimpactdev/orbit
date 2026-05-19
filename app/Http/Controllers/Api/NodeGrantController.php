@@ -9,11 +9,13 @@ use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\GrantNodeApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Nodes\Access\NodePermissionNormalizer;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
+use InvalidArgumentException;
 
 final readonly class NodeGrantController implements Loggable
 {
@@ -66,15 +68,31 @@ final readonly class NodeGrantController implements Loggable
             return $serving;
         }
 
-        if ($consumer->id === $serving->id) {
+        $permissions = $this->resolvePermissions($request);
+        if ($permissions instanceof JsonResponse) {
+            return $permissions;
+        }
+
+        if ($permissions === null) {
             return $this->error(
-                code: 'node.grant_policy_violation',
-                message: 'A node cannot be granted access to itself.',
-                meta: [
-                    'consuming_node' => $consumerName,
-                    'serving_node' => $servingName,
-                    'reason' => 'self_grant',
-                ],
+                code: 'validation_failed',
+                message: 'Use preset or permissions to specify grant permissions.',
+                meta: ['fields' => ['preset', 'permissions']],
+                status: 422,
+            );
+        }
+
+        $normalized = app(NodePermissionNormalizer::class)->normalize($permissions);
+        $permissions = $normalized->permissions;
+
+        $isGatewayAdmin = in_array('*', $permissions, true)
+            && $this->nodeRoleAssignments->nodeIsGateway($serving);
+
+        if ($isGatewayAdmin && ! $request->force()) {
+            return $this->error(
+                code: 'validation_failed',
+                message: 'Use force to create a gateway-admin grant.',
+                meta: ['field' => 'force'],
                 status: 422,
             );
         }
@@ -82,34 +100,115 @@ final readonly class NodeGrantController implements Loggable
         $grant = NodeAccess::query()->firstOrCreate([
             'consumer_node_id' => $consumer->id,
             'serving_node_id' => $serving->id,
+        ], [
+            'permissions' => $permissions,
         ]);
 
-        return response()->json([
-            'success' => [
-                'data' => [
-                    'consuming_node' => $consumer->name,
-                    'serving_node' => $serving->name,
-                    'action' => 'granted',
-                    'already_granted' => ! $grant->wasRecentlyCreated,
-                ],
-            ],
-        ]);
+        $alreadyGranted = ! $grant->wasRecentlyCreated;
+        $action = 'granted';
+
+        $warnings = [];
+
+        if ($grant->wasRecentlyCreated) {
+            $originalPermissions = $request->permissionsInput() !== null
+                ? array_map(trim(...), explode(',', $request->permissionsInput()))
+                : app(NodePermissionPresets::class)->permissions($request->preset());
+
+            $normalizedForWarning = app(NodePermissionNormalizer::class)->normalize($originalPermissions);
+            if ($normalizedForWarning->removed !== []) {
+                $warnings[] = [
+                    'code' => 'node.redundant_permissions',
+                    'family' => 'node',
+                    'message' => 'Redundant permissions were removed: '.implode(', ', $normalizedForWarning->removed).'.',
+                    'next_command' => null,
+                    'permissions' => $normalizedForWarning->removed,
+                ];
+            }
+        }
+
+        $data = [
+            'consuming_node' => $consumer->name,
+            'serving_node' => $serving->name,
+            'action' => $action,
+            'already_granted' => $alreadyGranted,
+            'permissions' => $grant->permissions ?? ['*'],
+        ];
+
+        $payload = ['success' => ['data' => $data]];
+
+        if ($warnings !== []) {
+            $payload['success']['meta'] = ['warnings' => $warnings];
+        }
+
+        return response()->json($payload);
+    }
+
+    /**
+     * @return list<string>|JsonResponse|null
+     */
+    private function resolvePermissions(GrantNodeApiRequest $request): array|JsonResponse|null
+    {
+        $preset = $request->preset();
+        $permissionsInput = $request->permissionsInput();
+
+        if ($preset === null && $permissionsInput === null) {
+            return null;
+        }
+
+        if ($preset !== null && $permissionsInput !== null) {
+            return $this->error(
+                code: 'validation_failed',
+                message: 'Use either preset or permissions, not both.',
+                meta: ['fields' => ['preset', 'permissions']],
+                status: 422,
+            );
+        }
+
+        if ($preset !== null) {
+            try {
+                return app(NodePermissionPresets::class)->permissions($preset);
+            } catch (InvalidArgumentException $e) {
+                return $this->error(
+                    code: 'validation_failed',
+                    message: $e->getMessage(),
+                    meta: ['field' => 'preset', 'preset' => $preset],
+                    status: 422,
+                );
+            }
+        }
+
+        if ($permissionsInput !== null) {
+            $permissions = array_map(trim(...), explode(',', $permissionsInput));
+            $permissions = array_values(array_filter($permissions));
+
+            if ($permissions === []) {
+                return $this->error(
+                    code: 'validation_failed',
+                    message: 'Permission set cannot be empty.',
+                    meta: ['field' => 'permissions'],
+                    status: 422,
+                );
+            }
+
+            try {
+                app(NodePermissionNormalizer::class)->validate($permissions);
+            } catch (InvalidArgumentException $e) {
+                return $this->error(
+                    code: 'validation_failed',
+                    message: $e->getMessage(),
+                    meta: ['field' => 'permissions'],
+                    status: 422,
+                );
+            }
+
+            return $permissions;
+        }
+
+        return null;
     }
 
     private function authorizeOperatorCaller(Node $caller): ?JsonResponse
     {
-        if ($this->gatewayQuery()
-            ->whereExists(function (QueryBuilder $query) use ($caller): void {
-                $query
-                    ->selectRaw('1')
-                    ->from('node_access')
-                    ->whereColumn('node_access.serving_node_id', 'nodes.id')
-                    ->where('node_access.consumer_node_id', $caller->id);
-            })
-            ->exists()) {
-            return null;
-        }
-
         $gateway = $this->gatewayQuery()->orderBy('name')->first();
 
         if (! $gateway instanceof Node) {
@@ -120,6 +219,19 @@ final readonly class NodeGrantController implements Loggable
                     'caller_role' => 'control',
                 ],
             );
+        }
+
+        $grant = NodeAccess::query()
+            ->where('consumer_node_id', $caller->id)
+            ->where('serving_node_id', $gateway->id)
+            ->first();
+
+        if ($grant !== null) {
+            $permissions = $grant->permissions ?? ['*'];
+
+            if (in_array('*', $permissions, true) || in_array('node:grant', $permissions, true)) {
+                return null;
+            }
         }
 
         return $this->authorizationFailed(

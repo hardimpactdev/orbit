@@ -104,6 +104,7 @@ describe('node access grant integration', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -115,6 +116,7 @@ describe('node access grant integration', function (): void {
                 'serving_node' => 'app-1',
                 'action' => 'granted',
                 'already_granted' => false,
+                'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
             ])
             ->and(DB::table('node_access')
                 ->where('consumer_node_id', $consumerId)
@@ -128,12 +130,14 @@ describe('node access grant integration', function (): void {
         Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
@@ -148,7 +152,7 @@ describe('node access grant integration', function (): void {
                 ->count())->toBe(1);
     });
 
-    it('enforces the self-grant policy without writing access', function (): void {
+    it('allows self-grants and writes access', function (): void {
         config(['orbit.is_gateway' => true]);
 
         $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
@@ -167,15 +171,21 @@ describe('node access grant integration', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'control-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('node.grant_policy_violation')
-            ->and($payload['error']['meta']['reason'])->toBe('self_grant')
-            ->and(DB::table('node_access')->count())->toBe(0);
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'consuming_node' => 'control-1',
+                'serving_node' => 'control-1',
+                'action' => 'granted',
+                'already_granted' => false,
+                'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+            ])
+            ->and(DB::table('node_access')->count())->toBe(1);
     });
 });
 

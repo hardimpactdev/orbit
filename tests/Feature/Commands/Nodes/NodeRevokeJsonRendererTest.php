@@ -143,6 +143,7 @@ describe('node:revoke JSON renderer contract', function (): void {
                         'action' => 'revoked',
                         'already_absent' => false,
                         'self_lockout' => false,
+                        'was_gateway_admin' => true,
                     ],
                 ],
             ]);
@@ -174,6 +175,7 @@ describe('node:revoke JSON renderer contract', function (): void {
                         'action' => 'revoked',
                         'already_absent' => true,
                         'self_lockout' => false,
+                        'was_gateway_admin' => false,
                     ],
                 ],
             ]);
@@ -207,6 +209,7 @@ describe('node:revoke JSON renderer contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['self_lockout'])->toBeTrue()
+            ->and($payload['success']['data']['was_gateway_admin'])->toBeTrue()
             ->and($payload['success']['data']['action'])->toBe('revoked');
     });
 

@@ -32,6 +32,7 @@ class NodeRoleAssignments
         return [
             ...$this->appHostRoles(),
             NodeRoleName::Database->value,
+            NodeRoleName::Agent->value,
         ];
     }
 

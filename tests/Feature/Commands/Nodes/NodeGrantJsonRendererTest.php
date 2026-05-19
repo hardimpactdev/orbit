@@ -97,6 +97,7 @@ describe('node:grant JSON renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -120,6 +121,7 @@ describe('node:grant JSON renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -132,6 +134,7 @@ describe('node:grant JSON renderer contract', function (): void {
                         'serving_node' => 'app-1',
                         'action' => 'granted',
                         'already_granted' => false,
+                        'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
                     ],
                 ],
             ]);
@@ -149,11 +152,13 @@ describe('node:grant JSON renderer contract', function (): void {
         Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
         ]);
 
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -166,6 +171,7 @@ describe('node:grant JSON renderer contract', function (): void {
                         'serving_node' => 'app-1',
                         'action' => 'granted',
                         'already_granted' => true,
+                        'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
                     ],
                 ],
             ]);
@@ -219,7 +225,7 @@ describe('node:grant JSON renderer contract', function (): void {
             ->and($error['meta'])->toBe(['field' => 'serving_node', 'name' => 'missing']);
     });
 
-    it('returns node.grant_policy_violation error with reason self_grant', function (): void {
+    it('returns success for self-grants', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
@@ -230,23 +236,71 @@ describe('node:grant JSON renderer contract', function (): void {
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',
             'serving_node' => 'control-1',
+            '--preset' => 'operator',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-
-        expect($error['code'])->toBe('node.grant_policy_violation')
-            ->and($error['message'])->toBe('A node cannot be granted access to itself.')
-            ->and($error['meta'])->toBe([
-                'consuming_node' => 'control-1',
-                'serving_node' => 'control-1',
-                'reason' => 'self_grant',
+        expect($exitCode)->toBe(0)
+            ->and($payload)->toBe([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'control-1',
+                        'action' => 'granted',
+                        'already_granted' => false,
+                        'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+                    ],
+                ],
             ]);
+    });
+
+    it('uses correct enum value for action', function (): void {
+        setupGrantGatewayCallerJson();
+        DB::table('nodes')->insert(nodeGrantJsonRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeGrantJsonRow());
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['action'])->toBe('granted');
+    });
+
+    it('uses correct enum value for already_granted', function (): void {
+        setupGrantGatewayCallerJson();
+        DB::table('nodes')->insert(nodeGrantJsonRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeGrantJsonRow());
+
+        Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+        ]);
+
+        $exitCode = Artisan::call('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'operator',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['already_granted'])->toBeTrue();
     });
 
     it('returns gateway_unavailable error with empty object metadata', function (): void {
@@ -312,48 +366,4 @@ describe('node:grant JSON renderer contract', function (): void {
             ->and($error['meta'])->toBe(['field' => 'consuming_node']);
     });
 
-    it('uses correct enum value for action', function (): void {
-        setupGrantGatewayCallerJson();
-        DB::table('nodes')->insert(nodeGrantJsonRow([
-            'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
-        ]));
-        DB::table('nodes')->insert(nodeGrantJsonRow());
-
-        $exitCode = Artisan::call('node:grant', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['action'])->toBe('granted');
-    });
-
-    it('uses correct enum value for already_granted', function (): void {
-        setupGrantGatewayCallerJson();
-        DB::table('nodes')->insert(nodeGrantJsonRow([
-            'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
-        ]));
-        DB::table('nodes')->insert(nodeGrantJsonRow());
-
-        Artisan::call('node:grant', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-        ]);
-
-        $exitCode = Artisan::call('node:grant', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['already_granted'])->toBeTrue();
-    });
 });
