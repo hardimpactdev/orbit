@@ -65,13 +65,19 @@ the previous one.
 ### Hosted node
 
 A hosted node is a workload host with one or more active hosted role
-assignments. Hosted roles are fixed code-defined bundles:
-`app-development`, `app-production`, and `database`. `app-development`
-uses a local TLD for URLs (`myapp.test`, for example); `app-production`
-serves real domains. Staging is a usage pattern of `app-production`, not a
-separate hosted role. Hosted nodes do not own durable Orbit state and do not
-run a local control plane. The Orbit CLI can run on a hosted node, but only as
-a joined client that calls the gateway like any other caller.
+assignments. Hosted roles are fixed code-defined bundles: `app-development`,
+`app-production`, `database`, and `agent`. `app-development` uses a local TLD
+for URLs (`myapp.test`, for example); `app-production` serves real domains.
+Staging is a usage pattern of `app-production`, not a separate hosted role.
+
+The `agent` role (currently in design) hosts an autonomous agent — OpenClaw or
+Hermes as first-party tools — that operates Orbit through the gateway API on
+the fleet's behalf. An agent node combines that workload role with operator
+grants, so the agent can call the gateway like any other caller.
+
+Hosted nodes do not own durable Orbit state and do not run a local control
+plane. The Orbit CLI can run on a hosted node, but only as a joined client
+that calls the gateway like any other caller.
 
 ### VPN
 
@@ -223,11 +229,13 @@ Orbit's extension points and identity rules keep product concepts stable while i
 
 ### Agent IDE integration
 
-AI agents that work on apps typically run inside an agent IDE — PolyScope, OpenCode, or similar. Orbit can integrate with those IDEs so that the agent has a smooth experience: opening a workspace by name, getting notified when a process crashes, receiving messages from the gateway when something needs the agent's attention.
+AI agents that work on apps typically run inside an agent IDE — PolyScope, OpenCode, or similar — on a developer's machine. Orbit can integrate with those IDEs so that the agent has a smooth experience: opening a workspace by name, getting notified when a process crashes, receiving messages from the gateway when something needs the agent's attention.
 
 The agent IDE adapter is configured per node, with optional override per app. When something happens that the active agent should know about — a crash, a deploy failure, a doctor finding — Orbit resolves the effective adapter for the app or workspace and sends the message through. If no session is active, the event is still recorded; nothing is lost.
 
 Agent IDE adapters are extension points. New IDEs can be supported by writing an adapter without touching the rest of Orbit.
+
+This integration is for human-driven coding sessions. Autonomous agents that operate the fleet on their own — OpenClaw, Hermes — run under the `agent` hosted role instead.
 
 ### Identity names
 

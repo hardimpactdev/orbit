@@ -1,29 +1,35 @@
 # Mission
 
-Orbit is an open-source tool for managing the full lifecycle of web apps and the servers they run on — from local development through staging to production. Its mission is to give both humans and AI a single, tightly integrated command surface for that entire pipeline. Configuration work can be handed off to AI so you stay focused on building.
+Orbit is an open-source tool for running your own infrastructure and developing the apps that live on it. It takes an idea from local development to production on a fleet you own, with scaffolding, deployment, services, and ongoing maintenance all behind one command surface. Orbit is designed LLM-first: agents are expected to operate the fleet, while Orbit makes sure it happens in a structured and traceable way rather than letting the LLM just rip. Humans use the same surface and the CLI is tuned for them, but the LLM-first framing is what shapes the design.
 
 ## Why
 
-The web tooling landscape is rich. Herd and Valet handle local dev. Forge and Laravel Cloud handle hosting. Other tools cover the bits in between. Each one is genuinely good at what it does.
+The web tooling landscape is rich. Specialized tools handle local dev, hosting, and everything in between. Each one is genuinely good at what it does.
 
-But going from idea to running a production app still means stitching multiple tools together and switching context at every boundary — a different CLI, a different mental model, a different surface for every step.
+But each tool covers its own slice of the lifecycle, and together they don't form a system. They're islands sitting next to each other. Multiple identity systems, multiple state silos, multiple CLIs, no shared network between them.
 
-Orbit's belief is that one coherent tool spanning local development through to production unlocks something the split stack can't. You stay in one context. You learn one set of commands. Everything — scaffolding a new app, configuring services, shipping deploys, checking for security updates, running maintenance — it all lives behind the same surface.
+That gap is invisible until you want something that only emerges from treating dev → prod as one fleet: showing the app you're building to your phone without a public tunnel, knowing exactly who or what touched any part of the pipeline, moving between machines without re-authenticating to a different service every time. You hand-roll those, or you go without.
+
+For agents the gap is the same shape. An LLM can drive each tool as a separate skill — they all expose machine-readable surfaces now — but it can't share identity, network, or state across them. It has to maintain its own model of which local app maps to which server maps to which environment. Orbit gives the agent that model out of the box, and records every action it takes centrally.
 
 ## How
 
-That coherence matters even more for AI. Tools like the Forge CLI and Laravel Cloud CLI already allow agents to drive parts of the pipeline, but each one has its own contract. Orbit gives agents a single end-to-end surface — the same surface from `orbit app:new` on day one to a security-update sweep on day three hundred. And because Orbit runs on always-on machines, an agent can keep working against a stable environment while you're away from the keyboard.
+Orbit wraps that model in a single command surface — the same commands from `orbit app:new` on day one to a security-update sweep on day three hundred. Because Orbit runs on always-on machines, an agent can keep working against a stable environment while you're away from the keyboard.
 
-Orbit uses a gateway node as the fleet authority and lets joined clients and hosted nodes act through that gateway. Humans, AI agents, and CI call the same command surface; the gateway owns durable state and applies changes to the right nodes.
+That surface sits on a private VPN. Orbit uses a gateway as the fleet authority; every other actor — hosted nodes, developer machines, CI runners, agent nodes running first-party tools like OpenClaw or Hermes — joins the VPN as a peer and acts through the gateway.
+
+There is no SSH path in from outside, and inside the network every action is bound to a revocable grant. Revoke the grant and the actor loses its permissions; disable the peer and it falls off the network entirely. The same mechanism that lets an agent operate the fleet is what lets you shut it down in one command.
+
+Every action flowing through the gateway also makes the fleet auditable by default. Each operation — human, agent, or CI — leaves a trace at a single chokepoint. That record is what you use to debug when something breaks, learn how agents actually use the surface so you can tune it, and catch an agent that drifts off the rails before it does damage.
 
 ## What
 
-Orbit is an open-source Laravel environment control plane. It manages local development, hosted apps, workspaces, services, deployment steps, scheduler entries, process supervision, proxy routes, DNS integration, VPN trust, and drift repair through one CLI.
+Orbit is an open-source tool for web app infrastructure. It manages local development, hosted apps, workspaces, services, deployment steps, scheduler entries, process supervision, proxy routes, DNS integration, and drift repair through one CLI.
 
-To understand how Orbit is designed — gateway and app nodes, state families, the CLI command contract, and how drift is resolved — read [Architecture](architecture.md).
+To understand how Orbit is designed — gateway and hosted nodes, state families, the CLI command contract, and how drift is resolved — read [Architecture](architecture.md).
 
 ## Boundaries
 
-Orbit is open source: no fee for the tool itself, no vendor control plane, no third party between you and your servers, fully sovereign. The trade-off is infrastructure ownership. Orbit is built around a gateway node and one or more app nodes, so you pay for and operate that infrastructure. In exchange, you can develop from a low-powered machine over the network and treat dev, staging, and production as one fleet.
+Orbit is open source: no fee for the tool itself, no third party between you and your servers, fully sovereign. The trade-off is infrastructure ownership. Orbit is built around a gateway node and one or more hosted nodes, so you pay for and operate that infrastructure. In exchange, you can develop from a low-powered machine over the network, see the app you're building on any device on the fleet, and treat dev, staging, and production as one system.
 
 To see the current implementation choices that make that architecture real — Laravel, WireGuard, Caddy, Supervisor, PHP-FPM, and the gateway API runtime — read [Tech Stack](tech-stack.md).

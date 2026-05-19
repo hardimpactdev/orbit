@@ -54,6 +54,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | `orbit-scheduler` Artisan-command daemon supervised by Supervisor |
 | Process logs | Supervisor-managed stdout/stderr log files |
 | Service containers | Docker Compose for databases, caches, mail, and utilities on hosted nodes that need them |
+| Agent runtime (in design) | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` hosted role |
 | Network | WireGuard |
 | Public DNS/CDN | Cloudflare integration for production domains |
 
@@ -209,6 +210,16 @@ infrastructure. Compose files are rendered from gateway-tracked tool
 configuration and applied through `RemoteShell`. Docker is reserved for
 services that aren't part of the PHP request path; PHP-FPM and Caddy run on the
 host directly.
+
+### Agent runtime
+
+Nodes with the `agent` hosted role run an autonomous agent process — OpenClaw
+or Hermes as first-party tools — that operates Orbit through the gateway API.
+The runtime is installed through `orbit tool:install`, supervised by Supervisor
+like any other long-running process, and configured through gateway-tracked
+tool state. Model API credentials live in node configuration and never leave
+the agent node. The `agent` hosted role and its installation flow are currently
+in design; see [Architecture: Hosted node](architecture.md#hosted-node).
 
 ### Network
 
