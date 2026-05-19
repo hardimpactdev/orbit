@@ -8,6 +8,8 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -16,6 +18,9 @@ use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppsProbe;
+use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
+use App\Services\DatabaseConnections\DatabaseConnectionProbe;
+use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
@@ -33,19 +38,22 @@ use App\Services\Workspaces\WorkspacesProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
+    private const array SUPPORTED_FAMILIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
     private const array CONTROL_CATEGORIES = ['node'];
 
     private const array GATEWAY_CATEGORIES = ['node'];
 
-    private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
+    private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
     private const array DATABASE_CATEGORIES = ['node', 'tool'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
+        private DatabaseConnectionProbe $databaseConnectionProbe,
+        private DatabaseConnectionRestorer $databaseConnectionRestorer,
+        private DatabaseConnectionAdopter $databaseConnectionAdopter,
         private WorkspacesProbe $workspacesProbe,
         private ProcessesProbe $processesProbe,
         private ProxyRouteProbe $proxyRouteProbe,
@@ -258,6 +266,15 @@ final readonly class DoctorReportRunner
             }
         }
 
+        if (in_array('database_connection', $selectedFamilies, true)) {
+            foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
+                $issues[] = $this->annotateIssue([
+                    ...$issue,
+                    'node' => $node->name,
+                ]);
+            }
+        }
+
         $summary = $this->summary('verify', $issues, []);
 
         return [
@@ -452,6 +469,21 @@ final readonly class DoctorReportRunner
             }
         }
 
+        if (in_array('database_connection', $families, true)) {
+            foreach ($this->databaseConnectionAdopter->adopt($node) as $result) {
+                $actions[] = [
+                    'family' => $result->family,
+                    'node' => $node->name,
+                    'code' => $result->key,
+                    'key' => $result->key,
+                    'mode' => 'adopt',
+                    'status' => $result->action->value,
+                    'summary' => $result->summary,
+                    'details' => $result->detail,
+                ];
+            }
+        }
+
         return $actions;
     }
 
@@ -476,6 +508,7 @@ final readonly class DoctorReportRunner
 
         return match ($family) {
             'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
+            'database_connection' => $this->applyDatabaseConnectionIssue($key, $detail),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($key, $detail),
@@ -483,6 +516,126 @@ final readonly class DoctorReportRunner
             'schedule' => $this->applyScheduleIssue($key, $detail),
             default => null,
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyDatabaseConnectionIssue(string $key, array $detail): ?array
+    {
+        $targetType = is_string($detail['target_type'] ?? null) ? $detail['target_type'] : null;
+        $targetId = is_int($detail['target_id'] ?? null) ? $detail['target_id'] : (is_numeric($detail['target_id'] ?? null) ? (int) $detail['target_id'] : null);
+        $prefix = is_string($detail['env_prefix'] ?? null) ? $detail['env_prefix'] : null;
+
+        if ($targetType === null || $targetId === null || $prefix === null) {
+            return null;
+        }
+
+        $target = DatabaseConnectionTarget::query()
+            ->with(['app.node', 'workspace.app.node'])
+            ->where('env_prefix', $prefix)
+            ->when($targetType === 'app', fn ($query) => $query->where('app_id', $targetId))
+            ->when($targetType === 'workspace', fn ($query) => $query->where('workspace_id', $targetId))
+            ->first();
+
+        if (! $target instanceof DatabaseConnectionTarget) {
+            if ($key !== 'database_connection.target_missing') {
+                return null;
+            }
+
+            return $this->restoreMissingDatabaseConnectionTarget($key, $detail, $targetType, $targetId, $prefix);
+        }
+
+        $nodeName = null;
+
+        if ($target->app instanceof App) {
+            $nodeName = $target->app->node?->name;
+        } elseif ($target->workspace instanceof Workspace) {
+            $nodeName = $target->workspace->app?->node?->name;
+        }
+
+        try {
+            $this->databaseConnectionRestorer->restore($target);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'database_connection',
+                'node' => $nodeName,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'database_connection',
+            'node' => $nodeName,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Fixed {$key}.",
+            'details' => $detail,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function restoreMissingDatabaseConnectionTarget(string $key, array $detail, string $targetType, int $targetId, string $prefix): ?array
+    {
+        $connectionId = is_int($detail['database_connection_id'] ?? null)
+            ? $detail['database_connection_id']
+            : (is_numeric($detail['database_connection_id'] ?? null) ? (int) $detail['database_connection_id'] : null);
+
+        if ($connectionId === null) {
+            return null;
+        }
+
+        $connection = DatabaseConnection::query()->find($connectionId);
+
+        if (! $connection instanceof DatabaseConnection) {
+            return null;
+        }
+
+        DatabaseConnectionTarget::query()->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => $prefix,
+            'app_id' => $targetType === 'app' ? $targetId : null,
+            'workspace_id' => $targetType === 'workspace' ? $targetId : null,
+        ]);
+
+        $nodeName = $this->databaseConnectionTargetNodeName($targetType, $targetId);
+
+        return [
+            'family' => 'database_connection',
+            'node' => $nodeName,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Fixed {$key}.",
+            'details' => $detail,
+        ];
+    }
+
+    private function databaseConnectionTargetNodeName(string $targetType, int $targetId): ?string
+    {
+        if ($targetType === 'app') {
+            $app = App::query()->with('node')->find($targetId);
+
+            return $app instanceof App ? $app->node?->name : null;
+        }
+
+        $workspace = Workspace::query()->with('app.node')->find($targetId);
+
+        return $workspace instanceof Workspace ? $workspace->app?->node?->name : null;
     }
 
     /**
@@ -749,12 +902,20 @@ final readonly class DoctorReportRunner
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'database_connection.env_missing',
+            'database_connection.env_mismatch',
+            'database_connection.target_missing',
         ];
 
         return [
             ...$issue,
             'restorable' => in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
-            'adoptable' => ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value,
+            'adoptable' => (($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value)
+                || ($family === 'database_connection' && in_array($key, [
+                    'database_connection.env_extra',
+                    'database_connection.target_extra',
+                    'database_connection.env_mismatch',
+                ], true)),
         ];
     }
 
@@ -800,11 +961,54 @@ final readonly class DoctorReportRunner
                 : null,
             $actions,
         ));
+        $resolvedDatabaseTargets = array_values(array_filter(array_map(
+            fn (array $action): ?string => $this->databaseConnectionResolutionKey($action),
+            $actions,
+        )));
 
         return array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ! in_array($issue['key'] ?? null, $resolvedKeys, true),
+            fn (array $issue): bool => ! in_array($issue['key'] ?? null, $resolvedKeys, true)
+                && ! $this->databaseConnectionIssueResolved($issue, $resolvedDatabaseTargets),
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @param  list<string>  $resolvedTargets
+     */
+    private function databaseConnectionIssueResolved(array $issue, array $resolvedTargets): bool
+    {
+        if (($issue['family'] ?? null) !== 'database_connection') {
+            return false;
+        }
+
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $key = implode(':', [
+            (string) ($detail['target_type'] ?? ''),
+            (string) ($detail['target_id'] ?? ''),
+            (string) ($detail['env_prefix'] ?? ''),
+        ]);
+
+        return in_array($key, $resolvedTargets, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     */
+    private function databaseConnectionResolutionKey(array $action): ?string
+    {
+        if (($action['family'] ?? null) !== 'database_connection' || ! in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true)) {
+            return null;
+        }
+
+        $detail = is_array($action['details'] ?? null) ? $action['details'] : [];
+
+        return implode(':', [
+            (string) ($detail['target_type'] ?? ''),
+            (string) ($detail['target_id'] ?? ''),
+            (string) ($detail['env_prefix'] ?? ''),
+        ]);
     }
 
     /**

@@ -48,8 +48,8 @@ These rules govern every command contract in this directory.
 - Documentation domains and doctor state families are related but not
   interchangeable. A command belongs to a documentation domain; drift
   convergence belongs to a stable state family such as `node`, `app`,
-  `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or
-  `schedule`.
+  `workspace`, `process`, `proxy`, `firewall_rule`, `tool`,
+  `schedule`, or `database_connection`.
 - Tool and capability command families are explicitly admitted product
   surfaces, not generated from the tool catalog. Generic lifecycle, inventory,
   logs, credentials, update, reload, and reconfiguration stay under `tool:*`.
@@ -57,9 +57,10 @@ These rules govern every command contract in this directory.
   distinct Orbit workflow whose natural operator vocabulary is the tool or
   capability name. `php:*` owns PHP runtime selection across apps, workspaces,
   and node CLI defaults; future Redis data-plane operations may use
-  `redis:*`. Database backup and restore should use a future `db:*` family
-  with SQLite, MySQL, and PostgreSQL drivers instead of `mysql:*` or
-  `postgres:*` command families.
+  `redis:*`. Database connection inventory, env convergence, schema
+  inspection, audited SQL execution, and database backup/restore workflows
+  belong to `database:*` instead of `mysql:*` or `postgres:*` command
+  families.
 - Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.
 - The CLI is a thin gateway client. Every command call is a request to the
   gateway over HTTPS, regardless of which machine the operator runs it on. The
@@ -160,12 +161,13 @@ Command directories are documentation domains. State families are doctor and
 convergence families. They often align, but they are not the same concept.
 
 Stable state families are `node`, `app`, `workspace`, `process`,
-`proxy`, `firewall_rule`, `tool`, and `schedule`. These are the keys
-accepted by `doctor --family=<family>` and the values carried by warning or
-doctor `family` fields. Machine-readable issue and warning codes use singular
-product prefixes, such as `node.wireguard_peer_missing`,
+`proxy`, `firewall_rule`, `tool`, `schedule`, and `database_connection`.
+These are the keys accepted by `doctor --family=<family>` and the values
+carried by warning or doctor `family` fields. Machine-readable issue and
+warning codes use singular product prefixes, such as `node.wireguard_peer_missing`,
 `app.fpm_config_missing`, `workspace.path_missing`, `process.runtime_unit_missing`,
-`proxy.route_extra`, and `schedule.unit_extra`.
+`proxy.route_extra`, `schedule.unit_extra`, and
+`database_connection.env_missing`.
 
 Warning `family` is `null` only for command-owned warnings that are not doctor
 issue codes and do not point at `doctor` as the recovery command. Warning codes

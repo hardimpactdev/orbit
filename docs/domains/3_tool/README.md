@@ -49,8 +49,10 @@ These rules govern what the tool command family owns and what it may not touch.
   lifecycle and inventory remain under `tool:*`; separate command families are
   admitted only when the workflow is clearer as its own Orbit product surface.
   PHP runtime selection is admitted as `php:*`. Redis-native data-plane
-  operations may use `redis:*`. Database backup and restore should use a future
-  `db:*` family with database drivers, not per-database command families.
+  operations may use `redis:*`. Database connection inventory, env convergence,
+  schema inspection, audited SQL execution, and backup/restore where
+  applicable belong to the `database:*` family, not per-database command
+  families.
 
 ## Supported Tool Catalog
 

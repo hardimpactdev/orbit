@@ -1,0 +1,70 @@
+# Technical Contract: `orbit database:schema`
+
+[Back to public `database:schema` documentation.](../database-schema.md)
+
+**Owner:** `database`.
+
+**Effects:** `read`.
+
+**Prerequisites:**
+- The CLI caller can reach the Orbit gateway.
+- The current node identity is authorized to inspect the selected target.
+
+## Signature
+
+```bash
+orbit database:schema {target} [--connection=<slug>] [--json]
+```
+
+## Input Contract
+
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Default | Validation |
+| --- | --- | --- | --- | --- |
+| `target` | `argument` | Always. | n/a | Visible app or workspace selector. |
+| `connection` | `--connection` | Required when the target has more than one attached connection. | Unique attached mapping. | Visible attached connection slug. |
+| `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
+
+## Behavior Contract
+
+### Schema Snapshot Rules
+
+- Resolves the target and connection using the same mapping rules as
+  [`database:query`](../../8_database-query/technical/1_database-query.md).
+- Returns driver-reported schema metadata for visible tables, columns, and
+  indexes in one response.
+- Follows SQLite locality for `sqlite`.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_database-schema_output-render_human.md)
+- [JSON renderer](6.2_database-schema_output-render_json.md)
+
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /database/schema` |
+| Effect | `read` |
+| Subject | `DatabaseConnection` when resolved; `none` otherwise. |
+| Properties | `connection`, `target`, `target_type`, `driver`, and schema object counts. No raw passwords. |
+| Description | derived |
+
+## Failure Semantics
+
+- `database_connection.not_found` when the selected or inferred connection does not exist.
+- `database_connection.target_not_found` when the target has no matching mapping.
+- `database_query.connection_ambiguous` when `--connection` is required but omitted.
+- `database_query.execution_failed` for schema inspection failures.
+
+## Doctor Relationship
+
+The command reads stored connection intent only. Family drift and `.env`
+convergence stay with [`database-doctor.md`](../../database-doctor.md).
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php` | Target resolution, ambiguity handling, SQLite locality, and schema inspection failure codes. |

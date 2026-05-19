@@ -96,11 +96,11 @@ it('documents the supported verification lanes', function (): void {
         ->not->toContain('Standing Live Node Rule');
 });
 
-it('keeps active porting and orchestration docs on current e2e script names', function (): void {
-    $testingInfra = file_get_contents(base_path('docs/porting/testing-infrastructure.md'));
+it('keeps active testing and orchestration docs on current e2e script names', function (): void {
+    $testing = file_get_contents(base_path('TESTING.md'));
     $orchestration = file_get_contents(base_path('docs/superpowers/plans/solo-orchestration/README.md'));
 
-    expect($testingInfra)
+    expect($testing)
         ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:docker')
         ->toContain('composer test:e2e:incus')

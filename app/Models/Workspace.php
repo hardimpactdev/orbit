@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -24,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read App|null $app
+ * @property-read Collection<int, DatabaseConnection> $databaseConnections
+ * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, WorkspaceRun> $runs
  */
 class Workspace extends Model
@@ -70,6 +73,27 @@ class Workspace extends Model
     public function proxyRoutes(): HasMany
     {
         return $this->hasMany(ProxyRoute::class);
+    }
+
+    /**
+     * @return HasMany<DatabaseConnectionTarget, $this>
+     */
+    public function databaseConnectionTargets(): HasMany
+    {
+        return $this->hasMany(DatabaseConnectionTarget::class);
+    }
+
+    /**
+     * @return BelongsToMany<DatabaseConnection, $this>
+     */
+    public function databaseConnections(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            related: DatabaseConnection::class,
+            table: 'database_connection_targets',
+            foreignPivotKey: 'workspace_id',
+            relatedPivotKey: 'database_connection_id',
+        )->withPivot('env_prefix')->withTimestamps();
     }
 
     public function effectivePhpVersion(): ?string

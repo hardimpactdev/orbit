@@ -35,4 +35,8 @@ return [
         'singular' => 'firewall_rule',
         'doctor_doc' => 'docs/domains/4_firewall/firewall-doctor.md',
     ],
+    'database_connection' => [
+        'singular' => 'database_connection',
+        'doctor_doc' => 'docs/domains/18_database/database-doctor.md',
+    ],
 ];

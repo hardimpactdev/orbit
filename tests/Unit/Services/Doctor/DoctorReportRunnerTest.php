@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -295,6 +297,273 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'skipped',
             ]);
+    });
+
+    it('supports the database connection family on app nodes but not database-only nodes', function (): void {
+        $appNode = createDoctorRunnerAppHostNode();
+        $databaseNode = Node::factory()->create(['role' => 'database', 'status' => 'active']);
+
+        $runner = app(DoctorReportRunner::class);
+
+        expect($runner->supportedFamilies())->toContain('database_connection')
+            ->and($runner->categoriesForNode($appNode))->toContain('database_connection')
+            ->and($runner->categoriesForNode($databaseNode))->not->toContain('database_connection');
+    });
+
+    it('does not mark database connection unverifiable issues as adoptable', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-unverifiable');
+        File::ensureDirectoryExists($path);
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing env', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing env', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, ['database_connection']);
+        $issue = collect($report['issues'])->firstWhere('key', 'database_connection.unverifiable');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['adoptable'] ?? null)->toBeFalse();
+    });
+
+    it('restores database connection env drift through family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-restore');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['database_connection']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 2,
+                'skipped' => 0,
+            ])
+            ->and(collect($report['actions'])->pluck('family')->unique()->all())->toBe(['database_connection'])
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'base64 -d')))->toBeTrue();
+    });
+
+    it('restores missing database connection target mappings through family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-target-missing');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+        ]));
+
+        $probe = app(DoctorReportRunner::class)->probe($node, ['database_connection']);
+        $issue = collect($probe['issues'])->firstWhere('key', 'database_connection.target_missing');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['restorable'] ?? null)->toBeTrue();
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['database_connection']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and(DatabaseConnectionTarget::query()
+                ->where('database_connection_id', $connection->id)
+                ->where('app_id', $app->id)
+                ->where('env_prefix', 'DB')
+                ->exists())->toBeTrue();
+    });
+
+    it('adopts database connection env state for registered apps through family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-adopt');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'adopt', families: ['database_connection']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'adopted' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'database_connection',
+                'node' => 'app-1',
+                'mode' => 'adopt',
+            ])
+            ->and(DatabaseConnection::query()->where('slug', 'docs')->exists())->toBeTrue();
+    });
+
+    it('adopt mode updates gateway database connections from mismatched env without restoring env files', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-adopt-mismatch');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=observed-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=observed-user\nDB_PASSWORD=observed-secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'stored-host',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'stored-user',
+            'credentials' => ['password' => 'stored-secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        $original = File::get($path.'/.env');
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\nDB_HOST=observed-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=observed-user\nDB_PASSWORD=observed-secret\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\nDB_HOST=observed-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=observed-user\nDB_PASSWORD=observed-secret\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\nDB_HOST=observed-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=observed-user\nDB_PASSWORD=observed-secret\n", stderr: '', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'adopt', families: ['database_connection']);
+
+        $connection->refresh();
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'adopted' => 1,
+                'skipped' => 0,
+            ])
+            ->and(File::get($path.'/.env'))->toBe($original)
+            ->and($connection)->toMatchArray([
+                'driver' => 'mysql',
+                'host' => 'observed-host',
+                'port' => 3306,
+                'database' => 'docs_v2',
+                'username' => 'observed-user',
+            ])
+            ->and($connection->credentials)->toMatchArray(['password' => 'observed-secret']);
+    });
+
+    it('returns a failed action when database connection restore throws', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-restore-failure');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=mysql\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['database_connection']);
+        $failedAction = collect($report['actions'])->firstWhere('status', 'failed');
+
+        expect($report['healthy'])->toBeFalse()
+            ->and($report['summary']['failed'])->toBeGreaterThanOrEqual(1)
+            ->and($failedAction)->toMatchArray([
+                'family' => 'database_connection',
+                'node' => 'app-1',
+                'mode' => 'restore',
+                'status' => 'failed',
+            ])
+            ->and($failedAction['key'])->toBeIn(['database_connection.env_missing', 'database_connection.env_mismatch'])
+            ->and($failedAction)->toMatchArray([
+                'mode' => 'restore',
+                'status' => 'failed',
+            ])
+            ->and($failedAction['details']['error'] ?? null)->toContain('permission denied');
     });
 });
 

@@ -114,7 +114,7 @@ describe('doctor role-aware categories', function (): void {
         $runner = app(DoctorReportRunner::class);
 
         expect($runner->categoriesForRole('app'))->toBe([
-            'node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule',
+            'node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection',
         ]);
     });
 
@@ -124,7 +124,7 @@ describe('doctor role-aware categories', function (): void {
         $legacyAppOnly = Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app', 'status' => 'active']);
 
         expect($runner->categoriesForNode($appHost))->toBe([
-            'node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule',
+            'node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection',
         ])
             ->and($runner->categoriesForNode($legacyAppOnly))->toBe(['node']);
     });

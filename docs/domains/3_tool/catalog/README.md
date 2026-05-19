@@ -45,9 +45,9 @@ Admitted examples:
   and node CLI defaults.
 - Future Redis data-plane operations may use `redis:*`, such as a
   Redis-specific flush command.
-- Future database backup and restore workflows should use `db:*` with
-  SQLite, MySQL, and PostgreSQL drivers, not separate `mysql:*` and
-  `postgres:*` families.
+- Database connection inventory, env convergence, schema inspection, audited
+  SQL execution, and database backup/restore workflows belong to `database:*`,
+  not separate `mysql:*` and `postgres:*` families.
 
 ## Required Baseline Tools
 
