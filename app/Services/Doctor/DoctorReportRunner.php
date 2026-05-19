@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -539,7 +540,11 @@ final readonly class DoctorReportRunner
             ->first();
 
         if (! $target instanceof DatabaseConnectionTarget) {
-            return null;
+            if ($key !== 'database_connection.target_missing') {
+                return null;
+            }
+
+            return $this->restoreMissingDatabaseConnectionTarget($key, $detail, $targetType, $targetId, $prefix);
         }
 
         $nodeName = null;
@@ -577,6 +582,60 @@ final readonly class DoctorReportRunner
             'summary' => "Fixed {$key}.",
             'details' => $detail,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function restoreMissingDatabaseConnectionTarget(string $key, array $detail, string $targetType, int $targetId, string $prefix): ?array
+    {
+        $connectionId = is_int($detail['database_connection_id'] ?? null)
+            ? $detail['database_connection_id']
+            : (is_numeric($detail['database_connection_id'] ?? null) ? (int) $detail['database_connection_id'] : null);
+
+        if ($connectionId === null) {
+            return null;
+        }
+
+        $connection = DatabaseConnection::query()->find($connectionId);
+
+        if (! $connection instanceof DatabaseConnection) {
+            return null;
+        }
+
+        DatabaseConnectionTarget::query()->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => $prefix,
+            'app_id' => $targetType === 'app' ? $targetId : null,
+            'workspace_id' => $targetType === 'workspace' ? $targetId : null,
+        ]);
+
+        $nodeName = $this->databaseConnectionTargetNodeName($targetType, $targetId);
+
+        return [
+            'family' => 'database_connection',
+            'node' => $nodeName,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Fixed {$key}.",
+            'details' => $detail,
+        ];
+    }
+
+    private function databaseConnectionTargetNodeName(string $targetType, int $targetId): ?string
+    {
+        if ($targetType === 'app') {
+            $app = App::query()->with('node')->find($targetId);
+
+            return $app instanceof App ? $app->node?->name : null;
+        }
+
+        $workspace = Workspace::query()->with('app.node')->find($targetId);
+
+        return $workspace instanceof Workspace ? $workspace->app?->node?->name : null;
     }
 
     /**
@@ -845,6 +904,7 @@ final readonly class DoctorReportRunner
             'node.role_baseline_mismatch',
             'database_connection.env_missing',
             'database_connection.env_mismatch',
+            'database_connection.target_missing',
         ];
 
         return [

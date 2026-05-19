@@ -6,13 +6,18 @@ namespace App\Services\DatabaseConnections;
 
 use App\Contracts\RemoteShell;
 use App\Models\App;
+use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 
 final readonly class DatabaseConnectionProbe
 {
-    private const SUPPORTED_PREFIXES = ['DB', 'ANALYTICS_DB'];
+    private const SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
+
+    private const NETWORK_REQUIRED_SUFFIXES = ['CONNECTION', 'HOST', 'PORT', 'DATABASE', 'USERNAME'];
+
+    private const SQLITE_REQUIRED_SUFFIXES = ['CONNECTION', 'DATABASE'];
 
     public function __construct(
         private EnvFileEditor $envFileEditor,
@@ -197,7 +202,6 @@ final readonly class DatabaseConnectionProbe
     }
 
     /**
-     * @param  App|Workspace  $target
      * @param  list<string>  $scannedTargets
      * @return list<array<string, mixed>>
      */
@@ -215,16 +219,47 @@ final readonly class DatabaseConnectionProbe
         $values = $this->envFileEditor->parse($contents);
         $issues = [];
 
-        foreach (self::SUPPORTED_PREFIXES as $prefix) {
-            if (! $this->hasSupportedPrefixGroup($values, $prefix)) {
-                continue;
-            }
-
+        foreach ($this->observedPrefixes($values) as $prefix) {
             $detail = $target instanceof App
                 ? ['target_type' => 'app', 'target_id' => $target->id, 'app' => $target->name, 'env_prefix' => $prefix]
                 : ['target_type' => 'workspace', 'target_id' => $target->id, 'workspace' => $target->name, 'app' => $target->app?->name, 'env_prefix' => $prefix];
 
             if (in_array($this->detailKey($detail), $scannedTargets, true)) {
+                continue;
+            }
+
+            $payload = $this->payloadFromObservedValues($values, $prefix);
+
+            if (! $payload instanceof DatabaseConnectionPayload) {
+                $issues[] = [
+                    'family' => 'database_connection',
+                    'key' => 'database_connection.unverifiable',
+                    'kind' => 'unverifiable',
+                    'summary' => 'database_connection.unverifiable',
+                    'detail' => [
+                        ...$detail,
+                        ...$payload,
+                    ],
+                ];
+
+                continue;
+            }
+
+            $connection = $this->matchingConnection($payload, $node);
+
+            if ($connection instanceof DatabaseConnection) {
+                $issues[] = [
+                    'family' => 'database_connection',
+                    'key' => 'database_connection.target_missing',
+                    'kind' => 'missing',
+                    'summary' => 'database_connection.target_missing',
+                    'detail' => [
+                        ...$detail,
+                        'database_connection_id' => $connection->id,
+                        'connection' => $connection->slug,
+                    ],
+                ];
+
                 continue;
             }
 
@@ -242,10 +277,124 @@ final readonly class DatabaseConnectionProbe
 
     /**
      * @param  array<string, string>  $values
+     * @return list<string>
      */
-    private function hasSupportedPrefixGroup(array $values, string $prefix): bool
+    private function observedPrefixes(array $values): array
     {
-        return is_string($values["{$prefix}_CONNECTION"] ?? null) && ($values["{$prefix}_CONNECTION"] ?? '') !== '';
+        $prefixes = [];
+
+        foreach ($values as $key => $value) {
+            $ending = '_CONNECTION';
+
+            if (! str_ends_with($key, $ending)) {
+                continue;
+            }
+
+            $prefix = substr($key, 0, -strlen($ending));
+
+            if ($this->validEnvPrefix($prefix) && in_array($value, self::SUPPORTED_DRIVERS, true)) {
+                $prefixes[] = $prefix;
+            }
+        }
+
+        return array_values(array_unique($prefixes));
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     * @return DatabaseConnectionPayload|array<string, mixed>
+     */
+    private function payloadFromObservedValues(array $values, string $prefix): DatabaseConnectionPayload|array
+    {
+        $driver = $values["{$prefix}_CONNECTION"] ?? null;
+
+        if (! is_string($driver) || $driver === '') {
+            return [
+                'reason' => 'missing_connection_driver',
+                'missing_keys' => ["{$prefix}_CONNECTION"],
+            ];
+        }
+
+        if (! in_array($driver, self::SUPPORTED_DRIVERS, true)) {
+            return ['reason' => 'unsupported_driver'];
+        }
+
+        $missing = $this->missingRequiredKeys($values, $prefix, $driver);
+
+        if ($missing !== []) {
+            return [
+                'reason' => 'partial_env_group',
+                'missing_keys' => $missing,
+            ];
+        }
+
+        return DatabaseConnectionPayload::fromArray([
+            'driver' => $driver,
+            'host' => $driver === 'sqlite' ? null : ($values["{$prefix}_HOST"] ?? null),
+            'port' => $driver === 'sqlite' ? null : ($values["{$prefix}_PORT"] ?? null),
+            'database' => $driver === 'sqlite' ? null : ($values["{$prefix}_DATABASE"] ?? null),
+            'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
+            'username' => $driver === 'sqlite' ? null : ($values["{$prefix}_USERNAME"] ?? null),
+            'password' => $values["{$prefix}_PASSWORD"] ?? null,
+        ]);
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     * @return list<string>
+     */
+    private function missingRequiredKeys(array $values, string $prefix, string $driver): array
+    {
+        $requiredSuffixes = $driver === 'sqlite'
+            ? self::SQLITE_REQUIRED_SUFFIXES
+            : self::NETWORK_REQUIRED_SUFFIXES;
+
+        $missing = [];
+
+        foreach ($requiredSuffixes as $suffix) {
+            $key = "{$prefix}_{$suffix}";
+
+            if (! is_string($values[$key] ?? null) || $values[$key] === '') {
+                $missing[] = $key;
+            }
+        }
+
+        return $missing;
+    }
+
+    private function matchingConnection(DatabaseConnectionPayload $payload, Node $node): ?DatabaseConnection
+    {
+        $connections = DatabaseConnection::query()
+            ->where('driver', $payload->driver)
+            ->get();
+
+        foreach ($connections as $connection) {
+            if ($this->connectionMatchesPayload($connection, $payload, $node)) {
+                return $connection;
+            }
+        }
+
+        return null;
+    }
+
+    private function connectionMatchesPayload(DatabaseConnection $connection, DatabaseConnectionPayload $payload, Node $node): bool
+    {
+        if ($payload->driver === 'sqlite') {
+            return $connection->node_id === $node->id && $connection->path === $payload->path;
+        }
+
+        $password = $connection->credentials['password'] ?? null;
+
+        return $connection->host === $payload->host
+            && $connection->port === $payload->port
+            && $connection->database === $payload->database
+            && $connection->username === $payload->username
+            && (! is_string($payload->password) || $password === $payload->password);
+    }
+
+    private function validEnvPrefix(string $value): bool
+    {
+        return preg_match('/^[A-Z][A-Z0-9_]*$/', $value) === 1;
     }
 
     /**

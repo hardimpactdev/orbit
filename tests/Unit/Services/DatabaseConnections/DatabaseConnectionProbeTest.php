@@ -125,7 +125,7 @@ describe('DatabaseConnectionProbe', function (): void {
         $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-extra-app');
         File::ensureDirectoryExists($path);
-        File::put($path.'/.env', <<<ENV
+        File::put($path.'/.env', <<<'ENV'
 DB_CONNECTION=pgsql
 DB_HOST=db.internal
 DB_PORT=5432
@@ -153,6 +153,116 @@ ENV);
             ->not->toContain('database_connection.target_extra')
             ->and(collect($issues)->where('key', 'database_connection.env_extra')->count())->toBe(2)
             ->and(collect($issues)->count())->toBe(2);
+    });
+
+    it('discovers custom complete prefixes as adoptable env extras', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-custom-prefix');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\nREPORTING_DB_PORT=5432\nREPORTING_DB_DATABASE=reporting\nREPORTING_DB_USERNAME=reporting\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+            ->firstWhere('key', 'database_connection.env_extra');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['detail']['env_prefix'] ?? null)->toBe('REPORTING_DB');
+    });
+
+    it('reports partial observed prefix groups as unverifiable instead of adoptable extras', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-partial-prefix');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $issues = collect(app(DatabaseConnectionProbe::class)->probe($node));
+
+        expect($issues->pluck('key')->all())->toContain('database_connection.unverifiable')
+            ->and($issues->pluck('key')->all())->not->toContain('database_connection.env_extra');
+    });
+
+    it('ignores non-database Laravel connection env values', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-laravel-prefixes');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "SESSION_DRIVER=database\nBROADCAST_CONNECTION=log\nQUEUE_CONNECTION=database\nCACHE_STORE=database\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
+    });
+
+    it('reports a missing target mapping when observed env matches an existing connection', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-target-missing');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+
+        $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+            ->firstWhere('key', 'database_connection.target_missing');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['detail']['database_connection_id'] ?? null)->toBe($connection->id)
+            ->and($issue['detail']['connection'] ?? null)->toBe('docs');
+    });
+
+    it('requires sqlite node ownership when matching missing target mappings', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $otherNode = Node::factory()->create(['name' => 'gateway-2', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-sqlite-node');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        DatabaseConnection::factory()->create([
+            'node_id' => $otherNode->id,
+            'slug' => 'other-docs',
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/docs/database/database.sqlite',
+            'username' => null,
+        ]);
+
+        $keys = collect(app(DatabaseConnectionProbe::class)->probe($node))->pluck('key')->all();
+
+        expect($keys)->not->toContain('database_connection.target_missing')
+            ->and($keys)->toContain('database_connection.env_extra');
     });
 
     it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {

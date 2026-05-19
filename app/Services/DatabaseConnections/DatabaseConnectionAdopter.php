@@ -16,7 +16,11 @@ use Illuminate\Support\Str;
 
 final readonly class DatabaseConnectionAdopter
 {
-    private const SUPPORTED_PREFIXES = ['DB', 'ANALYTICS_DB'];
+    private const SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
+
+    private const NETWORK_REQUIRED_SUFFIXES = ['CONNECTION', 'HOST', 'PORT', 'DATABASE', 'USERNAME'];
+
+    private const SQLITE_REQUIRED_SUFFIXES = ['CONNECTION', 'DATABASE'];
 
     public function __construct(
         private EnvFileEditor $envFileEditor,
@@ -44,7 +48,7 @@ final readonly class DatabaseConnectionAdopter
                     $prefix === 'DB' ? '' : '-'.Str::slug($prefix)
                 );
 
-                [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload);
+                [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
 
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     ['workspace_id' => $workspace->id, 'env_prefix' => $prefix],
@@ -74,7 +78,7 @@ final readonly class DatabaseConnectionAdopter
                     $prefix === 'DB' ? '' : '-'.Str::slug($prefix)
                 );
 
-                [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload);
+                [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
 
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     ['app_id' => $app->id, 'env_prefix' => $prefix],
@@ -110,22 +114,12 @@ final readonly class DatabaseConnectionAdopter
         $values = $this->envFileEditor->parse($contents);
         $payloads = [];
 
-        foreach (self::SUPPORTED_PREFIXES as $prefix) {
-            $driver = $values["{$prefix}_CONNECTION"] ?? null;
+        foreach ($this->observedPrefixes($values) as $prefix) {
+            $payload = $this->payloadFromObservedValues($values, $prefix);
 
-            if (! is_string($driver) || $driver === '') {
+            if (! $payload instanceof DatabaseConnectionPayload) {
                 continue;
             }
-
-            $payload = DatabaseConnectionPayload::fromArray([
-                'driver' => $driver,
-                'host' => $values["{$prefix}_HOST"] ?? null,
-                'port' => $values["{$prefix}_PORT"] ?? null,
-                'database' => $values["{$prefix}_DATABASE"] ?? null,
-                'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
-                'username' => $values["{$prefix}_USERNAME"] ?? null,
-                'password' => $values["{$prefix}_PASSWORD"] ?? null,
-            ]);
 
             if (! $this->payloadHasMeaningfulValues($payload)) {
                 continue;
@@ -137,19 +131,11 @@ final readonly class DatabaseConnectionAdopter
         return $payloads;
     }
 
-    private function upsertConnection(string $slug, DatabaseConnectionPayload $payload): DatabaseConnection
+    private function upsertConnection(string $slug, DatabaseConnectionPayload $payload, Node $node): DatabaseConnection
     {
         return DatabaseConnection::query()->updateOrCreate(
             ['slug' => $slug],
-            [
-                'driver' => $payload->driver,
-                'host' => $payload->host,
-                'port' => $payload->port,
-                'database' => $payload->database,
-                'path' => $payload->path,
-                'username' => $payload->username,
-                'credentials' => $payload->credentials(),
-            ],
+            $this->attributesFromPayload($payload, node: $node),
         );
     }
 
@@ -169,18 +155,10 @@ final readonly class DatabaseConnectionAdopter
     /**
      * @return array{0: DatabaseConnection, 1: AdoptAction, 2: string}
      */
-    private function persistObservedConnection(?DatabaseConnectionTarget $target, string $baseSlug, DatabaseConnectionPayload $payload): array
+    private function persistObservedConnection(?DatabaseConnectionTarget $target, string $baseSlug, DatabaseConnectionPayload $payload, Node $node): array
     {
         if ($target?->connection instanceof DatabaseConnection) {
-            $target->connection->fill([
-                'driver' => $payload->driver,
-                'host' => $payload->host ?? $target->connection->host,
-                'port' => $payload->port ?? $target->connection->port,
-                'database' => $payload->database ?? $target->connection->database,
-                'path' => $payload->path ?? $target->connection->path,
-                'username' => $payload->username ?? $target->connection->username,
-                'credentials' => $this->mergeCredentials($target->connection, $payload),
-            ])->save();
+            $target->connection->fill($this->attributesFromPayload($payload, $target->connection, $node))->save();
 
             return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
         }
@@ -189,12 +167,44 @@ final readonly class DatabaseConnectionAdopter
             throw new \RuntimeException('Unreachable empty payload.');
         }
 
-        $connection = $this->upsertConnection(
+        $connection = $this->matchingConnection($payload, $node) ?? $this->upsertConnection(
             slug: $this->uniqueSlug($baseSlug),
             payload: $payload,
+            node: $node,
         );
 
         return [$connection, AdoptAction::Created, 'database_connection.target_extra'];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function attributesFromPayload(DatabaseConnectionPayload $payload, ?DatabaseConnection $existing = null, ?Node $node = null): array
+    {
+        $credentials = $this->mergeCredentials($existing, $payload);
+
+        if ($payload->driver === 'sqlite') {
+            return [
+                'node_id' => $node instanceof Node ? $node->id : $existing?->node_id,
+                'driver' => $payload->driver,
+                'host' => null,
+                'port' => null,
+                'database' => null,
+                'path' => $payload->path ?? $existing?->path,
+                'username' => null,
+                'credentials' => $credentials,
+            ];
+        }
+
+        return [
+            'driver' => $payload->driver,
+            'host' => $payload->host ?? $existing?->host,
+            'port' => $payload->port ?? $existing?->port,
+            'database' => $payload->database ?? $existing?->database,
+            'path' => null,
+            'username' => $payload->username ?? $existing?->username,
+            'credentials' => $credentials,
+        ];
     }
 
     private function payloadHasMeaningfulValues(DatabaseConnectionPayload $payload): bool
@@ -213,15 +223,124 @@ final readonly class DatabaseConnectionAdopter
     /**
      * @return array{password?: string}
      */
-    private function mergeCredentials(DatabaseConnection $connection, DatabaseConnectionPayload $payload): array
+    private function mergeCredentials(?DatabaseConnection $connection, DatabaseConnectionPayload $payload): array
     {
-        $credentials = is_array($connection->credentials) ? $connection->credentials : [];
+        $credentials = is_array($connection?->credentials) ? $connection->credentials : [];
 
         if ($payload->password !== null) {
             $credentials['password'] = $payload->password;
         }
 
         return $credentials;
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     * @return list<string>
+     */
+    private function observedPrefixes(array $values): array
+    {
+        $prefixes = [];
+
+        foreach ($values as $key => $value) {
+            $ending = '_CONNECTION';
+
+            if (! str_ends_with($key, $ending)) {
+                continue;
+            }
+
+            $prefix = substr($key, 0, -strlen($ending));
+
+            if ($this->validEnvPrefix($prefix) && in_array($value, self::SUPPORTED_DRIVERS, true)) {
+                $prefixes[] = $prefix;
+            }
+        }
+
+        return array_values(array_unique($prefixes));
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     */
+    private function payloadFromObservedValues(array $values, string $prefix): ?DatabaseConnectionPayload
+    {
+        $driver = $values["{$prefix}_CONNECTION"] ?? null;
+
+        if (! is_string($driver) || $driver === '' || ! in_array($driver, self::SUPPORTED_DRIVERS, true)) {
+            return null;
+        }
+
+        if ($this->missingRequiredKeys($values, $prefix, $driver) !== []) {
+            return null;
+        }
+
+        return DatabaseConnectionPayload::fromArray([
+            'driver' => $driver,
+            'host' => $driver === 'sqlite' ? null : ($values["{$prefix}_HOST"] ?? null),
+            'port' => $driver === 'sqlite' ? null : ($values["{$prefix}_PORT"] ?? null),
+            'database' => $driver === 'sqlite' ? null : ($values["{$prefix}_DATABASE"] ?? null),
+            'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
+            'username' => $driver === 'sqlite' ? null : ($values["{$prefix}_USERNAME"] ?? null),
+            'password' => $values["{$prefix}_PASSWORD"] ?? null,
+        ]);
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     * @return list<string>
+     */
+    private function missingRequiredKeys(array $values, string $prefix, string $driver): array
+    {
+        $requiredSuffixes = $driver === 'sqlite'
+            ? self::SQLITE_REQUIRED_SUFFIXES
+            : self::NETWORK_REQUIRED_SUFFIXES;
+
+        $missing = [];
+
+        foreach ($requiredSuffixes as $suffix) {
+            $key = "{$prefix}_{$suffix}";
+
+            if (! is_string($values[$key] ?? null) || $values[$key] === '') {
+                $missing[] = $key;
+            }
+        }
+
+        return $missing;
+    }
+
+    private function matchingConnection(DatabaseConnectionPayload $payload, Node $node): ?DatabaseConnection
+    {
+        $connections = DatabaseConnection::query()
+            ->where('driver', $payload->driver)
+            ->get();
+
+        foreach ($connections as $connection) {
+            if ($this->connectionMatchesPayload($connection, $payload, $node)) {
+                return $connection;
+            }
+        }
+
+        return null;
+    }
+
+    private function connectionMatchesPayload(DatabaseConnection $connection, DatabaseConnectionPayload $payload, Node $node): bool
+    {
+        if ($payload->driver === 'sqlite') {
+            return $connection->node_id === $node->id && $connection->path === $payload->path;
+        }
+
+        $password = $connection->credentials['password'] ?? null;
+
+        return $connection->host === $payload->host
+            && $connection->port === $payload->port
+            && $connection->database === $payload->database
+            && $connection->username === $payload->username
+            && (! is_string($payload->password) || $password === $payload->password);
+    }
+
+    private function validEnvPrefix(string $value): bool
+    {
+        return preg_match('/^[A-Z][A-Z0-9_]*$/', $value) === 1;
     }
 
     /**

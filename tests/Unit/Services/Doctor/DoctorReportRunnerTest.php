@@ -391,6 +391,47 @@ describe('DoctorReportRunner', function (): void {
             ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'base64 -d')))->toBeTrue();
     });
 
+    it('restores missing database connection target mappings through family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-target-missing');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+        ]));
+
+        $probe = app(DoctorReportRunner::class)->probe($node, ['database_connection']);
+        $issue = collect($probe['issues'])->firstWhere('key', 'database_connection.target_missing');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['restorable'] ?? null)->toBeTrue();
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['database_connection']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and(DatabaseConnectionTarget::query()
+                ->where('database_connection_id', $connection->id)
+                ->where('app_id', $app->id)
+                ->where('env_prefix', 'DB')
+                ->exists())->toBeTrue();
+    });
+
     it('adopts database connection env state for registered apps through family dispatch', function (): void {
         $node = createDoctorRunnerAppHostNode();
         $path = storage_path('framework/testing/doctor-database-adopt');

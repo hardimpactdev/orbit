@@ -11,7 +11,6 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -134,7 +133,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-multi-prefix-app');
         File::ensureDirectoryExists($path);
-        File::put($path.'/.env', <<<ENV
+        File::put($path.'/.env', <<<'ENV'
 DB_CONNECTION=pgsql
 DB_HOST=db.internal
 DB_PORT=5432
@@ -163,7 +162,26 @@ ENV);
             ->and(DatabaseConnection::query()->where('slug', 'docs-analytics-db')->exists())->toBeTrue();
     });
 
-    it('preserves existing non-null values when adopting a partial mapped env payload', function (): void {
+    it('adopts custom complete prefixes for the same app', function (): void {
+        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-adopter-custom-prefix-app');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\nREPORTING_DB_PORT=5432\nREPORTING_DB_DATABASE=reporting\nREPORTING_DB_USERNAME=reporting\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        expect($results)->toHaveCount(1)
+            ->and($app->databaseConnectionTargets()->pluck('env_prefix')->all())->toBe(['REPORTING_DB'])
+            ->and(DatabaseConnection::query()->where('slug', 'docs-reporting-db')->exists())->toBeTrue();
+    });
+
+    it('does not adopt partial mapped env payloads', function (): void {
         $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-partial-update');
         File::ensureDirectoryExists($path);
@@ -192,13 +210,13 @@ ENV);
 
         $connection->refresh();
 
-        expect($results)->toHaveCount(1)
+        expect($results)->toBe([])
             ->and($connection)->toMatchArray([
                 'driver' => 'pgsql',
                 'host' => 'stored-host',
-                'port' => 6432,
+                'port' => 5432,
                 'database' => 'stored_db',
-                'username' => 'partial-user',
+                'username' => 'stored-user',
             ])
             ->and($connection->credentials)->toMatchArray(['password' => 'stored-secret']);
     });
@@ -220,6 +238,61 @@ ENV);
         expect($results)->toBe([])
             ->and(DatabaseConnection::query()->count())->toBe(0)
             ->and(DatabaseConnectionTarget::query()->count())->toBe(0);
+    });
+
+    it('stores adopted sqlite database values as path only', function (): void {
+        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-adopter-sqlite');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+        $connection = DatabaseConnection::query()->where('slug', 'docs')->first();
+
+        expect($results)->toHaveCount(1)
+            ->and($connection)->not->toBeNull()
+            ->and($connection?->driver)->toBe('sqlite')
+            ->and($connection?->database)->toBeNull()
+            ->and($connection?->path)->toBe('/srv/docs/database/database.sqlite')
+            ->and($connection?->node_id)->toBe($node->id);
+    });
+
+    it('does not reuse sqlite connections owned by another node', function (): void {
+        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $otherNode = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-adopter-sqlite-node');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        DatabaseConnection::factory()->create([
+            'node_id' => $otherNode->id,
+            'slug' => 'other-docs',
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/docs/database/database.sqlite',
+            'username' => null,
+        ]);
+
+        app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        $connection = DatabaseConnection::query()->where('slug', 'docs')->first();
+
+        expect($connection)->not->toBeNull()
+            ->and($connection?->node_id)->toBe($node->id)
+            ->and(DatabaseConnection::query()->count())->toBe(2);
     });
 });
 
