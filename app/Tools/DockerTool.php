@@ -12,6 +12,12 @@ final class DockerTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'always';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['safe-fix', 'safe-adopt'];

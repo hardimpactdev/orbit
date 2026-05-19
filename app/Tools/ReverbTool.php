@@ -10,4 +10,10 @@ final class ReverbTool extends DockerComposeTool
     {
         return 'reverb';
     }
+
+    #[\Override]
+    public function category(): string
+    {
+        return 'communication';
+    }
 }

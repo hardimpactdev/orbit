@@ -12,6 +12,12 @@ final class DnsTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'infrastructure';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['start', 'stop', 'restart', 'update', 'logs', 'safe-fix', 'safe-adopt'];

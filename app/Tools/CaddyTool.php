@@ -12,6 +12,12 @@ final class CaddyTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'always';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['start', 'stop', 'restart', 'reload', 'reconfigure', 'update', 'logs', 'safe-fix', 'safe-adopt'];

@@ -12,6 +12,12 @@ final class OpenCodeServerTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'development';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'credentials', 'safe-fix'];

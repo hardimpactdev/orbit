@@ -12,6 +12,12 @@ final class Sqlite3Tool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'runtime';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['install', 'update', 'safe-fix', 'safe-adopt'];

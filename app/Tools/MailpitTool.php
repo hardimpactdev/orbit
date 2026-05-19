@@ -10,4 +10,10 @@ final class MailpitTool extends DockerComposeTool
     {
         return 'mailpit';
     }
+
+    #[\Override]
+    public function category(): string
+    {
+        return 'development';
+    }
 }

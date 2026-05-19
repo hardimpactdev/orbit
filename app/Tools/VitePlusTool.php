@@ -10,4 +10,10 @@ final class VitePlusTool extends BaseTool
     {
         return 'viteplus';
     }
+
+    #[\Override]
+    public function category(): string
+    {
+        return 'always';
+    }
 }

@@ -13,6 +13,11 @@ abstract class BaseTool implements ToolDefinition
         return null;
     }
 
+    public function category(): string
+    {
+        return 'general';
+    }
+
     /**
      * @return list<string>
      */

@@ -12,6 +12,12 @@ final class PostgresTool extends DockerComposeTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'database';
+    }
+
+    #[\Override]
     public function requiredNodeRole(): string
     {
         return 'database';

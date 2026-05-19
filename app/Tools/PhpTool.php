@@ -12,6 +12,12 @@ final class PhpTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'runtime';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['install', 'remove', 'update'];

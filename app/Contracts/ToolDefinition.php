@@ -10,6 +10,8 @@ interface ToolDefinition
 
     public function requiredNodeRole(): ?string;
 
+    public function category(): string;
+
     /**
      * @return list<string>
      */

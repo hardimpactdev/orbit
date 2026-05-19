@@ -12,6 +12,12 @@ final class PolyscopeServerTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'development';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'logs', 'safe-fix', 'safe-adopt'];

@@ -12,6 +12,12 @@ final class SupervisorTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'always';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['start', 'stop', 'restart', 'reload', 'logs', 'safe-fix', 'safe-adopt'];

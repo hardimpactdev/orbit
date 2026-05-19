@@ -12,6 +12,12 @@ final class PhpCliTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'always';
+    }
+
+    #[\Override]
     public function probeMetadata(): array
     {
         return [

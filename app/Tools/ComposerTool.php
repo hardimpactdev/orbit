@@ -12,6 +12,12 @@ final class ComposerTool extends BaseTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'always';
+    }
+
+    #[\Override]
     public function capabilities(): array
     {
         return ['update', 'safe-adopt'];

@@ -81,6 +81,32 @@ runs on the same agent node.
 Activity emitted while Hermes is working is attributed to the agent node
 identity. Orbit does not claim per-tool sub-identities.
 
+## Install Command
+
+`tool:install hermes` runs the official Hermes installer as the shared
+`agent` user:
+
+```bash
+sudo -u agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
+```
+
+## Update Command
+
+`tool:update hermes` runs Hermes's native self-update path:
+
+```bash
+sudo -u agent -H bash -lc 'hermes update'
+```
+
+## Verify Commands
+
+`doctor --family=tool` and `tool:show hermes` use this verification
+command:
+
+```bash
+sudo -u agent -H bash -lc 'hermes doctor'
+```
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies that the Supervisor program exists, that

@@ -44,8 +44,10 @@ use App\Tools\ComposerTool;
 use App\Tools\DnsTool;
 use App\Tools\DockerTool;
 use App\Tools\GhTool;
+use App\Tools\HermesTool;
 use App\Tools\MailpitTool;
 use App\Tools\MysqlTool;
+use App\Tools\OpenClawTool;
 use App\Tools\OpenCodeServerTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
@@ -101,6 +103,8 @@ class AppServiceProvider extends ServiceProvider
             $app->make(ReverbTool::class),
             $app->make(PolyscopeServerTool::class),
             $app->make(OpenCodeServerTool::class),
+            $app->make(OpenClawTool::class),
+            $app->make(HermesTool::class),
         ]));
 
         $this->app->singleton(WgEasyServiceInstaller::class, fn (): WgEasyServiceInstaller => new WgEasyServiceInstaller(

@@ -84,6 +84,38 @@ weaker when more than one agent tool runs on the same agent node.
 Activity emitted while OpenClaw is working is attributed to the agent
 node identity. Orbit does not claim per-tool sub-identities.
 
+## Install Command
+
+`tool:install openclaw` runs the official OpenClaw installer as the
+shared `agent` user:
+
+```bash
+sudo -u agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
+```
+
+The `--no-onboard` flag skips the interactive setup wizard so Orbit can
+converge configuration itself.
+
+## Update Command
+
+`tool:update openclaw` upgrades the OpenClaw binary through its native
+npm path:
+
+```bash
+sudo -u agent -H bash -lc 'npm install -g openclaw@latest'
+```
+
+## Verify Commands
+
+`doctor --family=tool` and `tool:show openclaw` use these verification
+commands:
+
+```bash
+sudo -u agent -H bash -lc 'openclaw --version'
+sudo -u agent -H bash -lc 'openclaw doctor'
+sudo -u agent -H bash -lc 'openclaw gateway status'
+```
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies that the Supervisor program exists, that

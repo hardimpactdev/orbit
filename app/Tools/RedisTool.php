@@ -12,6 +12,12 @@ final class RedisTool extends DockerComposeTool
     }
 
     #[\Override]
+    public function category(): string
+    {
+        return 'cache';
+    }
+
+    #[\Override]
     public function probeMetadata(): array
     {
         return [
