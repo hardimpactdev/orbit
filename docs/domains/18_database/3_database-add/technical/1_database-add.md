@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `path` | `--path` | `driver=sqlite`. | `driver` is `mysql` or `pgsql`. | Absolute SQLite path. |
 | `username` | `--username` | Optional. | Never. | Non-secret username. |
 | `password` | `--password` | Optional. | Never. | Secret; stored only in encrypted credentials. |
-| `node` | `--node` | Optional. | Never. | Visible node slug. Required for SQLite when the file owner is otherwise ambiguous. |
+| `node` | `--node` | Required when `driver=sqlite`; optional otherwise. | Never. | Visible node slug. SQLite always requires an owning node plus file path. |
 | `json` | `--json` | Optional. | Never. | Selects the JSON renderer. |
 
 ## Behavior Contract
@@ -45,8 +45,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Driver Shape Rules
 
 - `mysql` and `pgsql` require network fields and may store a nullable owning node.
-- `sqlite` requires `path` and follows SQLite locality: later query execution
-  runs on the node that owns that file.
+- `sqlite` requires both `node` and `path` and follows SQLite locality: later
+  query execution runs on the node that owns that file.
 
 ## Renderer Contracts
 

@@ -21,13 +21,15 @@ orbit database:update {connection} [--node=<node>] [--slug=<slug>] [--driver=<my
 This command follows the shared [Invocation Model](../../../README.md#invocation-model).
 
 At least one mutable field must be supplied. Driver-shape validation matches
-[`database:add`](../../3_database-add/technical/1_database-add.md).
+[`database:add`](../../3_database-add/technical/1_database-add.md), including
+the hard SQLite locality requirement: any update that changes the connection to
+`sqlite`, or changes SQLite locality, must provide both `--node` and `--path`.
 
 ## Behavior Contract
 
 ### Update Rules
 
-- Updates one existing gateway-owned connection record.
+- Updates one existing database connection record stored by the gateway.
 - May rename the slug, change driver shape, or replace secret material.
 - `--clear-password` removes the stored password from encrypted credentials.
 - Existing target mappings remain attached; target `.env` convergence stays with doctor restore.
