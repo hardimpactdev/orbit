@@ -86,13 +86,14 @@ final class DatabaseConnectionRegistry
             return $slugUniqueness;
         }
 
-        $payload = $this->payloadFromAttributes($attributes);
+        $payloadAttributes = $this->mergeUpdateAttributes($connection, $attributes);
+        $payload = $this->payloadFromAttributes($payloadAttributes);
 
         if ($payload instanceof DatabaseConnectionRegistryFailure) {
             return $payload;
         }
 
-        $payloadValidation = $this->validatePayload($payload, $attributes);
+        $payloadValidation = $this->validatePayload($payload, $payloadAttributes);
 
         if ($payloadValidation instanceof DatabaseConnectionRegistryFailure) {
             return $payloadValidation;
@@ -101,7 +102,7 @@ final class DatabaseConnectionRegistry
         $connection->fill([
             'node_id' => array_key_exists('node_id', $attributes) ? $this->normalizeNodeId($attributes['node_id']) : $connection->node_id,
             'slug' => $targetSlug,
-            ...$this->attributesFromPayload($payload),
+            ...$this->attributesFromPayload($payload, $payloadAttributes),
         ]);
         $connection->save();
 
@@ -198,7 +199,7 @@ final class DatabaseConnectionRegistry
             ->exists();
 
         if ($exists) {
-            return DatabaseConnectionRegistryFailure::validation('slug', $slug, "Database connection slug '{$slug}' is already in use.");
+            return DatabaseConnectionRegistryFailure::slugTaken($slug);
         }
 
         return null;
@@ -230,8 +231,10 @@ final class DatabaseConnectionRegistry
     /**
      * @return array<string, mixed>
      */
-    private function attributesFromPayload(DatabaseConnectionPayload $payload): array
+    private function attributesFromPayload(DatabaseConnectionPayload $payload, array $attributes = []): array
     {
+        $credentials = $this->credentialsFromPayload($payload, $attributes);
+
         if ($payload->driver === 'sqlite') {
             return [
                 'driver' => $payload->driver,
@@ -240,7 +243,7 @@ final class DatabaseConnectionRegistry
                 'database' => null,
                 'path' => $payload->path,
                 'username' => null,
-                'credentials' => $payload->credentials(),
+                'credentials' => $credentials,
             ];
         }
 
@@ -251,8 +254,52 @@ final class DatabaseConnectionRegistry
             'database' => $payload->database,
             'path' => null,
             'username' => $payload->username,
-            'credentials' => $payload->credentials(),
+            'credentials' => $credentials,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mergeUpdateAttributes(DatabaseConnection $connection, array $attributes): array
+    {
+        return [
+            'driver' => $attributes['driver'] ?? $connection->driver,
+            'host' => array_key_exists('host', $attributes) ? $attributes['host'] : $connection->host,
+            'port' => array_key_exists('port', $attributes) ? $attributes['port'] : $connection->port,
+            'database' => array_key_exists('database', $attributes) ? $attributes['database'] : $connection->database,
+            'path' => array_key_exists('path', $attributes) ? $attributes['path'] : $connection->path,
+            'username' => array_key_exists('username', $attributes) ? $attributes['username'] : $connection->username,
+            'password' => $this->passwordForUpdate($connection, $attributes),
+            'node_id' => array_key_exists('node_id', $attributes) ? $attributes['node_id'] : $connection->node_id,
+        ];
+    }
+
+    private function passwordForUpdate(DatabaseConnection $connection, array $attributes): ?string
+    {
+        if (($attributes['clear_password'] ?? false) === true) {
+            return null;
+        }
+
+        if (array_key_exists('password', $attributes)) {
+            return is_string($attributes['password']) ? $attributes['password'] : null;
+        }
+
+        $existingPassword = $connection->credentials['password'] ?? null;
+
+        return is_string($existingPassword) ? $existingPassword : null;
+    }
+
+    /**
+     * @return array{password?: string}
+     */
+    private function credentialsFromPayload(DatabaseConnectionPayload $payload, array $attributes): array
+    {
+        if (($attributes['clear_password'] ?? false) === true) {
+            return [];
+        }
+
+        return $payload->credentials();
     }
 
     private function attach(string $slug, string $ownerType, int $ownerId, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure

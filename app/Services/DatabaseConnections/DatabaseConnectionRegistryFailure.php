@@ -40,6 +40,19 @@ final readonly class DatabaseConnectionRegistryFailure
         );
     }
 
+    public static function slugTaken(string $slug): self
+    {
+        return new self(
+            code: 'database_connection.slug_taken',
+            message: "Database connection slug '{$slug}' is already in use.",
+            meta: [
+                'field' => 'slug',
+                'value' => $slug,
+                'slug' => $slug,
+            ],
+        );
+    }
+
     public static function targetConflict(string $ownerType, int $ownerId, string $envPrefix, string $slug): self
     {
         return new self(

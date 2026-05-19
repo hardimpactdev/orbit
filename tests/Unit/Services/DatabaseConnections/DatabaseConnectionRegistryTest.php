@@ -72,10 +72,53 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->and($updated->credentials)->toBe([]);
     });
 
+    it('merges update attributes onto the existing connection and preserves credentials unless cleared', function (): void {
+        $registry = app(DatabaseConnectionRegistry::class);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'primary-db',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'orbit',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+
+        $renamed = $registry->update('primary-db', [
+            'slug' => 'renamed-db',
+        ]);
+
+        expect($renamed)->toBeInstanceOf(DatabaseConnection::class)
+            ->and($renamed)->toMatchArray([
+                'slug' => 'renamed-db',
+                'driver' => 'pgsql',
+                'host' => 'db.internal',
+                'port' => 5432,
+                'database' => 'orbit',
+                'username' => 'orbit',
+            ])
+            ->and($renamed->credentials)->toBe(['password' => 'secret']);
+
+        $updatedPassword = $registry->update('renamed-db', [
+            'password' => 'updated-secret',
+        ]);
+
+        expect($updatedPassword)->toBeInstanceOf(DatabaseConnection::class)
+            ->and($updatedPassword->credentials)->toBe(['password' => 'updated-secret']);
+
+        $clearedPassword = $registry->update('renamed-db', [
+            'clear_password' => true,
+        ]);
+
+        expect($clearedPassword)->toBeInstanceOf(DatabaseConnection::class)
+            ->and($clearedPassword->credentials)->toBe([]);
+    });
+
     it('rejects invalid create and update payloads cleanly', function (): void {
         $registry = app(DatabaseConnectionRegistry::class);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         DatabaseConnection::factory()->create(['slug' => 'analytics-db']);
+        $tooLongSlug = str_repeat('a', 41);
 
         $invalidSlug = $registry->create('Primary_DB', [
             'driver' => 'pgsql',
@@ -88,6 +131,13 @@ describe('DatabaseConnectionRegistry', function (): void {
         $missingTcpFields = $registry->create('secondary-db', [
             'driver' => 'mysql',
             'host' => 'db.internal',
+        ]);
+
+        $missingTcpUsername = $registry->create('tertiary-db', [
+            'driver' => 'mysql',
+            'host' => 'db.internal',
+            'port' => 3306,
+            'database' => 'orbit',
         ]);
 
         $missingSqliteFields = $registry->update($connection->slug, [
@@ -108,16 +158,49 @@ describe('DatabaseConnectionRegistry', function (): void {
             'username' => 'orbit',
         ]);
 
+        $tooLong = $registry->create($tooLongSlug, [
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'orbit',
+            'username' => 'orbit',
+        ]);
+
+        $startsWithHyphen = $registry->create('-primary-db', [
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'orbit',
+            'username' => 'orbit',
+        ]);
+
+        $endsWithHyphen = $registry->create('primary-db-', [
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'orbit',
+            'username' => 'orbit',
+        ]);
+
         expect($invalidSlug)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($invalidSlug->code)->toBe('validation_failed')
             ->and($missingTcpFields)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($missingTcpFields->meta['field'])->toBe('payload')
+            ->and($missingTcpUsername)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
+            ->and($missingTcpUsername->message)->toContain('require username')
             ->and($missingSqliteFields)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($missingSqliteFields->meta['field'])->toBe('payload')
             ->and($unsupportedDriver)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($unsupportedDriver->meta['field'])->toBe('driver')
             ->and($duplicateSlug)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
-            ->and($duplicateSlug->meta['field'])->toBe('slug');
+            ->and($duplicateSlug->code)->toBe('database_connection.slug_taken')
+            ->and($duplicateSlug->meta['field'])->toBe('slug')
+            ->and($tooLong)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
+            ->and($tooLong->meta['field'])->toBe('slug')
+            ->and($startsWithHyphen)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
+            ->and($startsWithHyphen->meta['field'])->toBe('slug')
+            ->and($endsWithHyphen)->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
+            ->and($endsWithHyphen->meta['field'])->toBe('slug');
     });
 
     it('attaches and detaches app and workspace targets with conflict handling', function (): void {
