@@ -4,11 +4,7 @@ This document describes Orbit's architecture at a high level.
 
 ## Components
 
-Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the
-singleton authority role, owns fleet configuration, serves a typed API,
-coordinates the VPN, and applies changes on hosted nodes. Joined clients and
-hosted nodes are spokes. They join the gateway-managed private network for
-secure communication.
+Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singleton authority role, owns fleet configuration, serves a typed API, coordinates the VPN, and applies changes on hosted nodes. Joined clients and hosted nodes are spokes. They join the gateway-managed private network for secure communication.
 
 ```text
               ┌─────────────────────┐
@@ -45,10 +41,7 @@ One hub, one path: there is exactly one place to answer "what should exist?", an
 
 ### Joined client
 
-A joined client is where you drive Orbit from, usually your Mac or Ubuntu
-workstation. It runs the Orbit CLI, presents a WireGuard identity, and
-communicates with the gateway to handle operations. Joined clients do not write
-fleet state directly; they call the gateway and let the gateway do the work.
+A joined client is where you drive Orbit from, usually your Mac or Ubuntu workstation. It runs the Orbit CLI, presents a WireGuard identity, and communicates with the gateway to handle operations. Joined clients do not write fleet state directly; they call the gateway and let the gateway do the work.
 
 ### Gateway node
 
@@ -56,46 +49,23 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 It runs the VPN server every Orbit node joins and acts as Orbit's certificate authority. Steady-state traffic stays on a private network, and HTTPS works without an external CA.
 
-The gateway exposes the typed API that the CLI talks to. It holds SSH access to
-hosted nodes and applies changes on them over that SSH connection. Because the
-gateway owns the fleet configuration, a drifted node can be restored from it,
-and a new hosted node can be provisioned from the same configuration that built
-the previous one.
+The gateway exposes the typed API that the CLI talks to. It holds SSH access to hosted nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new hosted node can be provisioned from the same configuration that built the previous one.
 
 ### Hosted node
 
-A hosted node is a workload host with one or more active hosted role
-assignments. Hosted roles are fixed code-defined bundles: `app-development`,
-`app-production`, `database`, and `agent`. `app-development` uses a local TLD
-for URLs (`myapp.test`, for example); `app-production` serves real domains.
-Staging is a usage pattern of `app-production`, not a separate hosted role.
+A hosted node is a workload host with one or more active hosted role assignments. Hosted roles are fixed code-defined bundles: `app-development`, `app-production`, `database`, and `agent`. `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate hosted role.
 
-The `agent` role (currently in design) hosts an autonomous agent — OpenClaw or
-Hermes as first-party tools — that operates Orbit through the gateway API on
-the fleet's behalf. An agent node combines that workload role with operator
-grants, so the agent can call the gateway like any other caller.
+The `agent` role (currently in design) hosts an autonomous agent — OpenClaw or Hermes as first-party tools — that operates Orbit through the gateway API on the fleet's behalf. An agent node combines that workload role with operator grants, so the agent can call the gateway like any other caller.
 
-Hosted nodes do not own durable Orbit state and do not run a local control
-plane. The Orbit CLI can run on a hosted node, but only as a joined client
-that calls the gateway like any other caller.
+Hosted nodes do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on a hosted node, but only as a joined client that calls the gateway like any other caller.
 
 ### VPN
 
-The VPN is the secure network every Orbit node joins. Steady-state traffic
-flows over it: CLI calls to the gateway, changes the gateway pushes to hosted
-nodes, and events hosted nodes send back. Development nodes and database-only
-nodes do not need a public face. Hosted nodes with `app-production` expose only
-ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable
-only over the VPN. The current VPN implementation is WireGuard; see
-[tech-stack.md](tech-stack.md).
+The VPN is the secure network every Orbit node joins. Steady-state traffic flows over it: CLI calls to the gateway, changes the gateway pushes to hosted nodes, and events hosted nodes send back. Development nodes and database-only nodes do not need a public face. Hosted nodes with `app-production` expose only ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable only over the VPN. The current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
 
 ### CLI
 
-The CLI is the product surface for humans, AI agents, and CI. It runs on joined
-clients, on the gateway itself, and on hosted nodes as a gateway client. Every
-command takes the same path: gather local input, call the gateway typed API
-over the VPN, and render output. Commands that return structured data expose
-`--json`.
+The CLI is the product surface for humans, AI agents, and CI. It runs on joined clients, on the gateway itself, and on hosted nodes as a gateway client. Every command takes the same path: gather local input, call the gateway typed API over the VPN, and render output. Commands that return structured data expose `--json`.
 
 ## Relationships
 
@@ -112,52 +82,29 @@ The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talk
 
 The blast radius of any single caller, including an AI agent driving Orbit, is bounded by the API surface. If a caller needs to be cut off — a runaway agent, a compromised laptop, a former contributor — revoking its VPN access shuts down everything it could do, immediately.
 
-CLI callers can run on a joined client, on the gateway itself, or on a hosted
-node. The caller location changes how local context (current app, current
-workspace) is resolved, but it never changes who writes state — that is always
-the gateway.
+CLI callers can run on a joined client, on the gateway itself, or on a hosted node. The caller location changes how local context (current app, current workspace) is resolved, but it never changes who writes state — that is always the gateway.
 
-Hosted nodes do not accept Orbit API calls from other nodes. They run workloads,
-not orchestration. When something needs to happen on a hosted node, the gateway
-opens the SSH connection and runs the work there. Hosted nodes do send a small
-amount of outbound traffic back to the gateway — process crash notifications
-and scheduler run history — but they never accept inbound RPC.
+Hosted nodes do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on a hosted node, the gateway opens the SSH connection and runs the work there. Hosted nodes do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
 
-The SSH primitive the gateway uses to act on hosted nodes is called
-`RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives
-in [tech-stack.md](tech-stack.md#gateway-to-hosted-node).
+The SSH primitive the gateway uses to act on hosted nodes is called `RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives in [tech-stack.md](tech-stack.md#gateway-to-hosted-node).
 
 ### Authentication and authorization
 
 Every Orbit command needs two things: an identity and permission.
 
-**Identity** comes from the VPN. Every node joins the VPN with its own
-credentials. The gateway knows which node is on the other end of every API
-call.
+**Identity** comes from the VPN. Every node joins the VPN with its own credentials. The gateway knows which node is on the other end of every API call.
 
-**Permission** is controlled by the gateway. Operation is WireGuard identity
-plus gateway grants, not an operator role. For each node, the gateway stores
-which other nodes are allowed to manage it. A joined client can only act on the
-hosted nodes it has been granted access to. The same applies to gateway-owned
-data: only nodes granted access to the gateway can read gateway policy or
-activity history.
+**Permission** is controlled by the gateway. Operation is WireGuard identity plus gateway grants, not an operator role. For each node, the gateway stores which other nodes are allowed to manage it. A joined client can only act on the hosted nodes it has been granted access to. The same applies to gateway-owned data: only nodes granted access to the gateway can read gateway policy or activity history.
 
-An **operator node** is any joined node acting through that identity-and-grants
-path. Operator is a capability term, not a hosted role. A node can therefore be
-both a hosted node and an operator node at the same time when it has a
-gateway-known identity and the required grants.
+An **operator node** is any joined node acting through that identity-and-grants path. Operator is a capability term, not a hosted role. A node can therefore be both a hosted node and an operator node at the same time when it has a gateway-known identity and the required grants.
 
 This grant model lets you scope access naturally:
 
-- A developer's joined client might have access to `app-development` nodes but
-  not `app-production`.
+- A developer's joined client might have access to `app-development` nodes but not `app-production`.
 - A CI runner's joined client might have access only to the apps it deploys.
-- A hosted node's local CLI can manage its own apps and workspaces but not
-  other hosted nodes in the fleet.
+- A hosted node's local CLI can manage its own apps and workspaces but not other hosted nodes in the fleet.
 
-Permissions are revocable from the gateway. Removing a grant immediately
-revokes access — no key rotation, no hosted-node config edit, no SSH key
-removal needed.
+Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no hosted-node config edit, no SSH key removal needed.
 
 ### Command and API model
 

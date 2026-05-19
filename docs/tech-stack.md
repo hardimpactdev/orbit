@@ -66,11 +66,7 @@ Laravel is Orbit's application framework, while command behavior remains documen
 
 ### Application
 
-Orbit is a single Laravel 13 codebase that runs in two execution contexts. On
-the gateway, the full Laravel app serves the typed HTTPS API and runs the
-gateway-local Orbit Scheduler. On joined clients and hosted nodes, the same
-code is invoked as a CLI client that gathers local input, calls the gateway
-over the VPN, and renders the result.
+Orbit is a single Laravel 13 codebase that runs in two execution contexts. On the gateway, the full Laravel app serves the typed HTTPS API and runs the gateway-local Orbit Scheduler. On joined clients and hosted nodes, the same code is invoked as a CLI client that gathers local input, calls the gateway over the VPN, and renders the result.
 
 Orbit runs from source. There is no PHAR or container image to install — the installer checks out the repo, installs dependencies through Composer, and links `orbit` into the local executable path.
 
@@ -78,9 +74,7 @@ Orbit runs from source. There is no PHAR or container image to install — the i
 
 ### Persistent state
 
-The gateway holds Orbit's only durable store: a single SQLite database at
-`~/orbit/database/database.sqlite`. Every state family writes here. Hosted
-nodes do not have their own Orbit database.
+The gateway holds Orbit's only durable store: a single SQLite database at `~/orbit/database/database.sqlite`. Every state family writes here. Hosted nodes do not have their own Orbit database.
 
 See [Architecture: State Model](architecture.md#state-model) and [Architecture: State Families](architecture.md#state-families) for the conceptual model. A few implementation notes:
 
@@ -117,11 +111,7 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 
 See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
 
-VPN administration is the one gateway-local exception. Commands that administer
-VPN clients (`vpn-client:*`) or the VPN web UI (`vpn-web-ui:*`) execute on the
-gateway host. When initiated from a joined client, Orbit reaches the gateway
-over SSH on the Orbit/WireGuard path and runs the gateway-local command there.
-This exception is for gateway infrastructure administration only.
+VPN administration is the one gateway-local exception. Commands that administer VPN clients (`vpn-client:*`) or the VPN web UI (`vpn-web-ui:*`) execute on the gateway host. When initiated from a joined client, Orbit reaches the gateway over SSH on the Orbit/WireGuard path and runs the gateway-local command there. This exception is for gateway infrastructure administration only.
 
 The gateway-to-hosted-node primitive is the `RemoteShell` contract:
 
@@ -134,18 +124,11 @@ The gateway-to-hosted-node primitive is the `RemoteShell` contract:
 
 Scripts are composed on the gateway. Remote shell work is non-interactive — prompts happen on the CLI caller or the gateway API layer, before any side effects begin.
 
-`upload` writes managed files atomically: temp file, chmod, then move into
-place. Writes under managed system paths (`/etc`, `/usr`, `/opt`, `/var`,
-`/root`, `/boot`, `/srv`) use the hosted-node SSH user's passwordless sudo
-contract. User-owned paths are written as the SSH user.
+`upload` writes managed files atomically: temp file, chmod, then move into place. Writes under managed system paths (`/etc`, `/usr`, `/opt`, `/var`, `/root`, `/boot`, `/srv`) use the hosted-node SSH user's passwordless sudo contract. User-owned paths are written as the SSH user.
 
 ### Proxy
 
-Caddy is the proxy on every node. It terminates TLS, serves the gateway API on
-the gateway, and serves app and workspace routes on hosted nodes with
-application roles. App-route certificates are issued by the Orbit root CA, so
-hosted nodes serve HTTPS without ever holding the root CA private key or any
-general signing authority.
+Caddy is the proxy on every node. It terminates TLS, serves the gateway API on the gateway, and serves app and workspace routes on hosted nodes with application roles. App-route certificates are issued by the Orbit root CA, so hosted nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
 
 #### Caddy include boundaries
 
@@ -162,18 +145,13 @@ Installer and doctor repair code must be additive: ensure required imports and m
 
 ### PHP runtime
 
-PHP-FPM runs natively on the gateway and on hosted nodes with application roles
-— not in a container. Native execution keeps request latency predictable and
-avoids container overhead in the request path.
+PHP-FPM runs natively on the gateway and on hosted nodes with application roles — not in a container. Native execution keeps request latency predictable and avoids container overhead in the request path.
 
 Each workspace gets its own PHP-FPM pool so workspaces are isolated from one another. Production apps get a dedicated pool as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it re-renders the affected PHP-FPM pool on the owning node through `RemoteShell`.
 
 ### Process manager
 
-Supervisor (`supervisord`) supervises Orbit-managed long-running processes on
-every gateway and on hosted nodes that run processes. Each process Orbit tracks
-becomes one Supervisor program. Supervisor restarts crashed processes and
-captures stdout/stderr into log files surfaced by `process:logs`.
+Supervisor (`supervisord`) supervises Orbit-managed long-running processes on every gateway and on hosted nodes that run processes. Each process Orbit tracks becomes one Supervisor program. Supervisor restarts crashed processes and captures stdout/stderr into log files surfaced by `process:logs`.
 
 Host init keeps Supervisor itself alive. On Ubuntu, the distro `supervisor.service` unit does that. In Docker E2E topologies, the Docker daemon's container restart policy does — `supervisord` runs as PID 1 inside the container, typically under `tini`.
 
@@ -181,11 +159,7 @@ Other host services — Caddy, PHP-FPM, Docker, and Supervisor itself — run di
 
 ### Scheduler
 
-The Orbit Scheduler is a long-running PHP process invoked as
-`php artisan orbit:scheduler:run`. It is supervised by Supervisor as the
-`orbit_scheduler` program. Both the gateway and every hosted node with local
-schedules run their own scheduler instance for the schedules local to that
-node.
+The Orbit Scheduler is a long-running PHP process invoked as `php artisan orbit:scheduler:run`. It is supervised by Supervisor as the `orbit_scheduler` program. Both the gateway and every hosted node with local schedules run their own scheduler instance for the schedules local to that node.
 
 The daemon runs an internal loop that aligns to wall-clock minute boundaries, performs one evaluation tick, and sleeps until the next boundary:
 
@@ -204,22 +178,11 @@ The daemon's per-tick logic is shared with the `orbit schedule:run` command. The
 
 ### Service containers
 
-Docker Compose runs supporting services on hosted nodes that need them —
-databases, caches, mail servers, websocket utilities, and similar backing
-infrastructure. Compose files are rendered from gateway-tracked tool
-configuration and applied through `RemoteShell`. Docker is reserved for
-services that aren't part of the PHP request path; PHP-FPM and Caddy run on the
-host directly.
+Docker Compose runs supporting services on hosted nodes that need them — databases, caches, mail servers, websocket utilities, and similar backing infrastructure. Compose files are rendered from gateway-tracked tool configuration and applied through `RemoteShell`. Docker is reserved for services that aren't part of the PHP request path; PHP-FPM and Caddy run on the host directly.
 
 ### Agent runtime
 
-Nodes with the `agent` hosted role run an autonomous agent process — OpenClaw
-or Hermes as first-party tools — that operates Orbit through the gateway API.
-The runtime is installed through `orbit tool:install`, supervised by Supervisor
-like any other long-running process, and configured through gateway-tracked
-tool state. Model API credentials live in node configuration and never leave
-the agent node. The `agent` hosted role and its installation flow are currently
-in design; see [Architecture: Hosted node](architecture.md#hosted-node).
+Nodes with the `agent` hosted role run an autonomous agent process — OpenClaw or Hermes as first-party tools — that operates Orbit through the gateway API. The runtime is installed through `orbit tool:install`, supervised by Supervisor like any other long-running process, and configured through gateway-tracked tool state. Model API credentials live in node configuration and never leave the agent node. The `agent` hosted role and its installation flow are currently in design; see [Architecture: Hosted node](architecture.md#hosted-node).
 
 ### Network
 
@@ -245,45 +208,22 @@ curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/instal
 
 The installer prepares the host before Orbit can run. It installs PHP, Composer, Git, and the required PHP extensions, checks out the Orbit source, creates the local SQLite database, runs migrations, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
 
-The installer does not create a joined-client identity for the gateway to
-trust. That identity is minted later — by `node:new --role=gateway` when
-bootstrapping the first gateway, or by a later node enrollment flow before the
-client machine runs `gateway:add`.
+The installer does not create a joined-client identity for the gateway to trust. That identity is minted later — by `node:new --role=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 
 Gateway and hosted nodes are created through `orbit node:new [name]`.
 
-When no gateway is configured yet, use
-`node:new --role=gateway --host=<host> --control-name=<control-name>` to
-bootstrap one. This command bootstraps the gateway runtime, creates the
-joined-client identity that initiated it, installs that identity locally,
-stores local gateway trust and endpoint configuration, and verifies gateway API
-access.
+When no gateway is configured yet, use `node:new --role=gateway --host=<host> --control-name=<control-name>` to bootstrap one. This command bootstraps the gateway runtime, creates the joined-client identity that initiated it, installs that identity locally, stores local gateway trust and endpoint configuration, and verifies gateway API access.
 
-When the joined client already has a WireGuard identity issued by an existing
-gateway, use `gateway:add [gateway_ip]` to join it. This command stores the
-local gateway API endpoint, the gateway WireGuard IP, and the trust material,
-installs local gateway CA trust when missing, and makes that gateway the
-default endpoint for subsequent Orbit commands.
+When the joined client already has a WireGuard identity issued by an existing gateway, use `gateway:add [gateway_ip]` to join it. This command stores the local gateway API endpoint, the gateway WireGuard IP, and the trust material, installs local gateway CA trust when missing, and makes that gateway the default endpoint for subsequent Orbit commands.
 
 ### Platform and roles
 
-The gateway role is Ubuntu-only. Hosted roles run on Ubuntu. Joined clients are
-macOS or Ubuntu. macOS is not a hosted-role platform.
+The gateway role is Ubuntu-only. Hosted roles run on Ubuntu. Joined clients are macOS or Ubuntu. macOS is not a hosted-role platform.
 
-The CLI is always a thin gateway client. It has no client-side role awareness.
-On any machine, the CLI gathers local context (current app, workspace, paths),
-calls the gateway over the VPN, and renders the result. The gateway
-authenticates the WireGuard peer, derives grants from its own node records,
-and decides what to do. When work needs to run on a hosted node (file writes,
-service control, log access), the gateway opens an SSH connection back to that
-node via `RemoteShell` — even if the CLI that initiated the work is on that
-same hosted node.
+The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a hosted node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same hosted node.
 
 One machine in the network is the gateway. That machine sets `ORBIT_IS_GATEWAY=true` in its `.env`, exposing `config('orbit.is_gateway') === true`. Every other machine leaves the flag unset (defaults to `false`). The gateway uses this flag to short-circuit its own HTTP self-calls and hit the local DB and services directly. It finds its own node row through the singleton active `gateway` role assignment in its local registry.
 
-Joined-client and hosted-node machines hold only gateway rows in their local
-`nodes` table — the gateways they know how to reach. Initially empty (fresh
-install), populated by `gateway:add`. There is no self-row on non-gateway
-machines.
+Joined-client and hosted-node machines hold only gateway rows in their local `nodes` table — the gateways they know how to reach. Initially empty (fresh install), populated by `gateway:add`. There is no self-row on non-gateway machines.
 
 Platform-specific behavior — installing packages, writing config files, controlling services — lives behind handlers and services, so the rest of Orbit doesn't branch on OS.
