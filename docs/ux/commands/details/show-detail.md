@@ -22,6 +22,8 @@ Choose a different primitive in the following situations.
 These rules govern all uses of `show-detail` in Orbit commands.
 
 - Primitive name in renderer docs: `show-detail`.
+- The renderer prints one empty terminal line before the title and one empty
+  terminal line after the final row.
 - The title line is `┌  <family nice label singular>: <slug-target>`.
 - The second line is a blank tree continuation line: `│`.
 - Each property renders as `├  <Property><padding><Value>` except the final row,
@@ -37,6 +39,7 @@ These rules govern all uses of `show-detail` in Orbit commands.
 ## Example
 
 ```text
+
 ┌  Database connection: ditis-hr
 │
 ├  Driver   pgsql
@@ -52,6 +55,7 @@ These rules govern all uses of `show-detail` in Orbit commands.
 ├  Apps     ditis-hr.test
 │
 └  Node     beast
+
 ```
 
 ## Implementation

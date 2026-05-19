@@ -15,6 +15,7 @@ trait RendersShowDetails
         $width = max(array_map(mb_strlen(...), $labels));
         $last = count($properties) - 1;
 
+        $this->newLine();
         $this->line("┌  {$title}");
         $this->line('│');
 
@@ -27,6 +28,8 @@ trait RendersShowDetails
                 $this->line('│');
             }
         }
+
+        $this->newLine();
     }
 
     protected function showDetailValue(mixed $value): string

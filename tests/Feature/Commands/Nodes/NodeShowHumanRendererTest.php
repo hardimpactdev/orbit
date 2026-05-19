@@ -139,6 +139,17 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->not->toMatch('/└  Serving\s+—\n│/');
     });
 
+    it('frames the detail tree with leading and trailing empty lines', function (): void {
+        DB::table('nodes')->insert(nodeShowHumanRow());
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0);
+        expect($output)->toMatch('/^\n┌  Node: app-1\n/')
+            ->and($output)->toMatch('/└  Serving\s+—\n\n$/');
+    });
+
     it('renders registry success output with all fields for app node', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
         assignNodeShowHumanRole('app-1', 'app-development', ['tld' => 'test']);
