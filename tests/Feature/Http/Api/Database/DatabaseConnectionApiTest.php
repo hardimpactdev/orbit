@@ -28,10 +28,15 @@ function createDatabaseApiCallerNode(array $overrides = []): Node
 
 function assignDatabaseApiGatewayRole(Node $node): void
 {
+    assignDatabaseApiRole($node, 'gateway');
+}
+
+function assignDatabaseApiRole(Node $node, string $role, string $status = 'active'): void
+{
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'gateway',
-        'status' => 'active',
+        'role' => $role,
+        'status' => $status,
     ]);
 }
 
@@ -59,6 +64,67 @@ describe('database connection api', function (): void {
                 'name' => 'docs',
                 'env_prefix' => 'ANALYTICS_DB',
             ]);
+    });
+
+    it('rejects active app and database callers from registry endpoints', function (): void {
+        $appCaller = createDatabaseApiCallerNode([
+            'name' => 'database-api-app-caller',
+            'host' => '10.9.0.98',
+            'wireguard_address' => '10.9.0.98',
+        ]);
+        assignDatabaseApiRole($appCaller, 'app-development');
+
+        $databaseCaller = createDatabaseApiCallerNode([
+            'name' => 'database-api-database-caller',
+            'host' => '10.9.0.99',
+            'wireguard_address' => '10.9.0.99',
+        ]);
+        assignDatabaseApiRole($databaseCaller, 'database');
+
+        $appResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.98']);
+        $databaseResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.99']);
+
+        $appResponse->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.caller_role', 'app');
+        $databaseResponse->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+    });
+
+    it('rejects active app and database legacy-role callers without active assignments', function (): void {
+        createDatabaseApiCallerNode([
+            'name' => 'database-api-legacy-app-caller',
+            'role' => 'app',
+            'host' => '10.9.0.100',
+            'wireguard_address' => '10.9.0.100',
+        ]);
+        createDatabaseApiCallerNode([
+            'name' => 'database-api-legacy-database-caller',
+            'role' => 'database',
+            'host' => '10.9.0.101',
+            'wireguard_address' => '10.9.0.101',
+        ]);
+
+        $appResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.100']);
+        $databaseResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.101']);
+
+        $appResponse->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.caller_role', 'app');
+        $databaseResponse->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.caller_role', 'database');
+    });
+
+    it('rejects inactive control callers from registry endpoints', function (): void {
+        createDatabaseApiCallerNode(['status' => 'inactive']);
+
+        $response = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.message', 'Peer identity unknown.');
     });
 
     it('lists and shows canonical database entities without passwords', function (): void {

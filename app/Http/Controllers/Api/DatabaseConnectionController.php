@@ -329,12 +329,15 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ], 403);
         }
 
-        if ($caller->status !== 'active') {
+        $callerIsGateway = $this->roles->nodeIsGateway($caller);
+        $callerRole = $this->roles->assignmentRoleLabel($caller);
+
+        if ($caller->status !== 'active' || (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control'))) {
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to manage database connections.',
-                    'meta' => ['caller_role' => $this->roles->assignmentRoleLabel($caller)],
+                    'meta' => ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
                 ],
             ], 403);
         }
