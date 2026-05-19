@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,10 +43,23 @@ function assignDatabaseApiRole(Node $node, string $role, string $status = 'activ
     ]);
 }
 
+/**
+ * @param  list<string>  $permissions
+ */
+function grantDatabaseApiAccess(Node $consumer, Node $serving, array $permissions): void
+{
+    NodeAccess::query()->create([
+        'consumer_node_id' => $consumer->id,
+        'serving_node_id' => $serving->id,
+        'permissions' => $permissions,
+    ]);
+}
+
 describe('database connection api', function (): void {
-    it('allows active control callers without a gateway role to use registry endpoints', function (): void {
-        createDatabaseApiCallerNode();
+    it('allows active non-gateway callers with database permissions to use registry endpoints', function (): void {
+        $caller = createDatabaseApiCallerNode();
         $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        grantDatabaseApiAccess($caller, $node, ['database:read', 'database:attach']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
@@ -66,6 +80,23 @@ describe('database connection api', function (): void {
                 'name' => 'docs',
                 'env_prefix' => 'ANALYTICS_DB',
             ]);
+    });
+
+    it('allows granted app-role callers without treating the role as a blocker', function (): void {
+        $caller = createDatabaseApiCallerNode([
+            'name' => 'database-api-app-caller',
+            'host' => '10.9.0.98',
+            'wireguard_address' => '10.9.0.98',
+        ]);
+        assignDatabaseApiRole($caller, 'app-development');
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        grantDatabaseApiAccess($caller, $node, ['database:read']);
+        DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
+
+        $response = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.98']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.connections.0.slug', 'primary-db');
     });
 
     it('executes database queries through the typed api without leaking sqlite credentials', function (): void {
@@ -151,7 +182,55 @@ describe('database connection api', function (): void {
             ->assertJsonPath('success.meta.connection', 'docs-db');
     });
 
-    it('rejects active app and database callers from registry endpoints', function (): void {
+    it('separates read-only database query permission from write query permission', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        grantDatabaseApiAccess($caller, $node, ['database:query']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs-db',
+            'node_id' => $node->id,
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/docs/database/database.sqlite',
+            'username' => null,
+        ]);
+        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        app()->instance(RemoteShell::class, new DatabaseApiQueryRemoteShell(new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'columns' => ['id'],
+                        'rows' => [['id' => 1]],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        )));
+
+        $readResponse = $this->call('POST', '/api/database-connections/query', [
+            'target' => 'docs',
+            'sql' => 'select id from users',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $writeResponse = $this->call('POST', '/api/database-connections/query', [
+            'target' => 'docs',
+            'sql' => 'delete from users where id = 1',
+            'write' => true,
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $readResponse->assertOk()
+            ->assertJsonPath('success.data.rows.0.id', 1);
+        $writeResponse->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.permission', 'database:query:write');
+    });
+
+    it('rejects active app and database callers from registry endpoints without database grants', function (): void {
         $appCaller = createDatabaseApiCallerNode([
             'name' => 'database-api-app-caller',
             'host' => '10.9.0.98',

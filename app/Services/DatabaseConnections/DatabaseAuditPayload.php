@@ -102,9 +102,7 @@ final readonly class DatabaseAuditPayload
         $targetRow = $connection->targets()
             ->with(['app', 'workspace'])
             ->get()
-            ->first(function ($row) use ($target): bool {
-                return $row->app?->name === $target || $row->workspace?->name === $target;
-            });
+            ->first(fn ($row): bool => $row->app?->name === $target || $row->workspace?->name === $target);
 
         $targetType = null;
         $targetName = null;

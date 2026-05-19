@@ -15,15 +15,15 @@ use Throwable;
 
 final readonly class DatabaseQueryRunner
 {
-    private const DEFAULT_LIMIT = 50;
+    private const int DEFAULT_LIMIT = 50;
 
-    private const MAX_LIMIT = 500;
+    private const int MAX_LIMIT = 500;
 
-    private const MAX_FULL_LIMIT = 10000;
+    private const int MAX_FULL_LIMIT = 10000;
 
-    private const DEFAULT_TIMEOUT_SECONDS = 10;
+    private const int DEFAULT_TIMEOUT_SECONDS = 10;
 
-    private const DEFAULT_MAX_JSON_BYTES = 1048576;
+    private const int DEFAULT_MAX_JSON_BYTES = 1048576;
 
     public function __construct(
         private DatabaseQueryClassifier $classifier,

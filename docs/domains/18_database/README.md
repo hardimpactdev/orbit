@@ -43,6 +43,33 @@ touch.
   family owns connection intent and data-plane operations, not service
   installation.
 
+## Permissions
+
+Database commands are authorized through the node access permission registry
+under the `database:*` namespace.
+
+- `database:read` covers registry and schema metadata reads:
+  `database:list`, `database:show`, `database:tables`, `database:schema`, and
+  `database:describe`.
+- `database:write` covers registry and target mapping mutations:
+  `database:add`, `database:update`, `database:remove`, `database:attach`, and
+  `database:detach`.
+- `database:query` allows read-only SQL execution through
+  `database:query`.
+- `database:query:write` allows write-capable SQL execution when the caller
+  explicitly supplies the command's write opt-in. It implies `database:query`.
+
+`database:read` intentionally does not imply `database:query`: schema metadata
+inspection is not the same authority as reading table rows. `database:write`
+intentionally does not imply `database:query:write`: mutating Orbit's
+connection registry is not the same authority as mutating application data.
+
+For target-scoped commands, the serving node is the app/workspace owner node.
+For direct connection commands, the serving node is the connection's owning
+node when it has one, otherwise the node reached through an attached app or
+workspace target. Connections without an owning node or target are
+gateway-owned and require gateway authority.
+
 ## State Ownership
 
 The database command domain owns the `database_connection` state family.

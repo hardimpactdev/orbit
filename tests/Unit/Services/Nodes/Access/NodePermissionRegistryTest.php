@@ -28,6 +28,8 @@ describe('node permission registry', function (): void {
 
         expect($registry->isKnown('tool:read'))->toBeTrue()
             ->and($registry->isKnown('node:read'))->toBeTrue()
+            ->and($registry->isKnown('database:read'))->toBeTrue()
+            ->and($registry->isKnown('database:query:write'))->toBeTrue()
             ->and($registry->isKnown('doctor:verify'))->toBeTrue()
             ->and($registry->isKnown('firewall_rule:read'))->toBeTrue();
     });
@@ -57,6 +59,18 @@ describe('node permission registry', function (): void {
         expect($implied)->toContain('tool:update:agent-tools');
     });
 
+    it('returns implied permissions for database umbrellas', function (): void {
+        $registry = new NodePermissionRegistry;
+
+        expect($registry->impliedBy('database:read'))->toContain('database:list')
+            ->and($registry->impliedBy('database:read'))->toContain('database:schema')
+            ->and($registry->impliedBy('database:read'))->not->toContain('database:query')
+            ->and($registry->impliedBy('database:write'))->toContain('database:add')
+            ->and($registry->impliedBy('database:write'))->toContain('database:detach')
+            ->and($registry->impliedBy('database:write'))->not->toContain('database:query:write')
+            ->and($registry->impliedBy('database:query:write'))->toContain('database:query');
+    });
+
     it('checks whether permission sets allow a required permission', function (): void {
         $registry = new NodePermissionRegistry;
 
@@ -64,6 +78,10 @@ describe('node permission registry', function (): void {
             ->and($registry->allows(['tool:read'], 'tool:credentials'))->toBeFalse()
             ->and($registry->allows(['tool:update'], 'tool:update:agent-tools'))->toBeTrue()
             ->and($registry->allows(['tool:update:agent-tools'], 'tool:update'))->toBeFalse()
+            ->and($registry->allows(['database:read'], 'database:tables'))->toBeTrue()
+            ->and($registry->allows(['database:read'], 'database:query'))->toBeFalse()
+            ->and($registry->allows(['database:query:write'], 'database:query'))->toBeTrue()
+            ->and($registry->allows(['database:write'], 'database:query:write'))->toBeFalse()
             ->and($registry->allows(['node:*'], 'node:update'))->toBeTrue()
             ->and($registry->allows(['*'], 'firewall_rule:write'))->toBeTrue();
     });
@@ -99,6 +117,8 @@ describe('node permission registry', function (): void {
             ->and($registry->isCoveredBy('tool:show', 'tool:read'))->toBeTrue()
             ->and($registry->isCoveredBy('tool:logs', 'tool:read'))->toBeTrue()
             ->and($registry->isCoveredBy('tool:credentials', 'tool:read'))->toBeFalse()
+            ->and($registry->isCoveredBy('database:show', 'database:read'))->toBeTrue()
+            ->and($registry->isCoveredBy('database:query', 'database:read'))->toBeFalse()
             ->and($registry->isCoveredBy('node:read', '*'))->toBeTrue()
             ->and($registry->isCoveredBy('tool:read', 'node:*'))->toBeFalse()
             ->and($registry->isCoveredBy('node:show', 'node:*'))->toBeTrue();
@@ -110,6 +130,7 @@ describe('node permission registry', function (): void {
         expect($namespaces->toArray())->toContain('node')
             ->and($namespaces->toArray())->toContain('tool')
             ->and($namespaces->toArray())->toContain('app')
+            ->and($namespaces->toArray())->toContain('database')
             ->and($namespaces->toArray())->toContain('doctor')
             ->and($namespaces->toArray())->toContain('firewall_rule');
     });

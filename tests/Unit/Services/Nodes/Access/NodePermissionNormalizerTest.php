@@ -91,6 +91,7 @@ describe('node permission normalizer', function (): void {
     it('does not remove unrelated permissions', function (): void {
         $result = $this->normalizer->normalize([
             'app:read',
+            'database:read',
             'doctor:verify',
             'firewall_rule:read',
             'node:read',
@@ -100,6 +101,7 @@ describe('node permission normalizer', function (): void {
 
         expect($result->permissions)->toBe([
             'app:read',
+            'database:read',
             'doctor:verify',
             'firewall_rule:read',
             'node:read',

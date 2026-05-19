@@ -15,9 +15,9 @@ use InvalidArgumentException;
 
 final class DatabaseConnectionRegistry
 {
-    private const SLUG_PATTERN = '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/';
+    private const string SLUG_PATTERN = '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/';
 
-    private const SLUG_MAX_LENGTH = 40;
+    private const int SLUG_MAX_LENGTH = 40;
 
     /**
      * @return Collection<int, DatabaseConnection>

@@ -225,6 +225,8 @@ describe('NodeAccessAuthorizer', function (): void {
         grantAccess($control, $app, $presets->permissions('operator'));
 
         expect($this->authorizer->allows($control, $app, 'firewall_rule:read'))->toBeTrue()
+            ->and($this->authorizer->allows($control, $app, 'database:list'))->toBeTrue()
+            ->and($this->authorizer->allows($control, $app, 'database:query'))->toBeFalse()
             ->and($this->authorizer->allows($control, $app, 'tool:read'))->toBeTrue()
             ->and($this->authorizer->allows($control, $app, 'node:read'))->toBeTrue()
             ->and($this->authorizer->allows($control, $app, 'firewall_rule:write'))->toBeFalse()

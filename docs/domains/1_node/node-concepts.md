@@ -218,13 +218,17 @@ exists.
   writes, node role writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
 - **Operator preset:** Default cross-node preset for `agent` nodes and the
   general-purpose preset for fleet operators. Reads firewall rules and
-  reports firewall doctor findings but cannot create, update, or remove
-  firewall rules. Excludes `doctor:restore` and `doctor:adopt` by default.
+  database registry or schema metadata, and reports firewall doctor findings,
+  but cannot create, update, or remove firewall rules. Excludes SQL query
+  access, database registry writes, `doctor:restore`, and `doctor:adopt` by
+  default.
 - **Read-only preset:** Preset that grants only read permissions across the
-  product surface.
+  product surface. It includes `database:read` but not `database:query`,
+  because reading table rows is separate from reading registry or schema
+  metadata.
 - **Developer preset:** Preset for developer workflows on `app-development`
-  nodes. Includes app, workspace, process, schedule, proxy, deploy, and tool
-  surfaces required to drive development work.
+  nodes. Includes app, workspace, process, schedule, proxy, deploy, database,
+  and tool surfaces required to drive development work.
 - **Admin preset:** Preset that grants full administrative authority over a
   serving node short of fleet-wide gateway admin.
 - **Gateway-admin preset:** Preset `gateway-admin` expanding to `*`. Only

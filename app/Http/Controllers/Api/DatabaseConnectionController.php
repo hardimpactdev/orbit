@@ -19,6 +19,7 @@ use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
 use App\Services\DatabaseConnections\DatabaseConnectionSelector;
 use App\Services\DatabaseConnections\DatabaseConnectionTargetResolver;
 use App\Services\DatabaseConnections\DatabaseQueryRunnerFailure;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -42,6 +43,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
         private readonly DatabaseConnectionPayloadMapper $payloads,
         private readonly DatabaseConnectionTargetResolver $resolver,
         private readonly NodeRoleAssignments $roles,
+        private readonly NodeAccessAuthorizer $authorizer,
         private readonly DatabaseConnectionSelector $selector,
         private readonly DatabaseConnectionExecutor $executor,
         private readonly DatabaseAuditPayload $audit,
@@ -83,7 +85,21 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->validationFailed('node', "Invalid value for --node: '{$node}'.", ['field' => 'node', 'value' => $node]);
         }
 
-        $connections = $this->registry->list(app: $appModel, workspace: $workspaceModel, node: $nodeModel)
+        $authorization = $this->authorizeListScope($auth, $appModel, $workspaceModel, $nodeModel);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
+        $connections = $this->registry->list(app: $appModel, workspace: $workspaceModel, node: $nodeModel);
+
+        if (! $this->roles->nodeIsGateway($auth) && $appModel === null && $workspaceModel === null && $nodeModel === null) {
+            $connections = $connections
+                ->filter(fn (DatabaseConnection $connection): bool => $this->connectionAllowsAny($auth, $connection, 'database:list'))
+                ->values();
+        }
+
+        $connections = $connections
             ->map(fn (DatabaseConnection $connection): array => $this->payloads->toArray($connection))
             ->all();
 
@@ -120,6 +136,15 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ], 422);
         }
 
+        $servingNode = array_key_exists('node_id', $payload) && $payload['node_id'] !== null
+            ? Node::query()->find($payload['node_id'])
+            : $this->gatewayNode();
+        $authorization = $this->authorizeNodePermission($auth, $servingNode, 'database:add');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $result = $this->registry->create($slug, $payload);
 
         return $this->connectionResponse($result, 200);
@@ -138,6 +163,14 @@ final class DatabaseConnectionController extends Controller implements Loggable
         }
 
         $result = $this->registry->show($connection);
+
+        if ($result instanceof DatabaseConnection) {
+            $authorization = $this->authorizeConnectionPermission($auth, $result, 'database:show');
+
+            if ($authorization instanceof JsonResponse) {
+                return $authorization;
+            }
+        }
 
         return $this->connectionResponse($result, 200);
     }
@@ -166,6 +199,27 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ], 422);
         }
 
+        $existing = $this->registry->show($connection);
+
+        if ($existing instanceof DatabaseConnectionRegistryFailure) {
+            return $this->failureResponse($existing);
+        }
+
+        $authorization = $this->authorizeConnectionPermission($auth, $existing, 'database:update', requireAll: true);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
+        if (array_key_exists('node_id', $payload)) {
+            $newServingNode = $payload['node_id'] !== null ? Node::query()->find($payload['node_id']) : $this->gatewayNode();
+            $authorization = $this->authorizeNodePermission($auth, $newServingNode, 'database:update');
+
+            if ($authorization instanceof JsonResponse) {
+                return $authorization;
+            }
+        }
+
         $result = $this->registry->update($connection, $payload);
 
         return $this->connectionResponse($result, 200);
@@ -188,6 +242,18 @@ final class DatabaseConnectionController extends Controller implements Loggable
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ], 422);
+        }
+
+        $existing = $this->registry->show($connection);
+
+        if ($existing instanceof DatabaseConnectionRegistryFailure) {
+            return $this->failureResponse($existing);
+        }
+
+        $authorization = $this->authorizeConnectionPermission($auth, $existing, 'database:remove', requireAll: true);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         $result = $this->registry->remove($connection, true);
@@ -228,6 +294,18 @@ final class DatabaseConnectionController extends Controller implements Loggable
         }
 
         [$type, $owner] = $scope;
+        $existing = $this->registry->show($connection);
+
+        if ($existing instanceof DatabaseConnectionRegistryFailure) {
+            return $this->failureResponse($existing);
+        }
+
+        $authorization = $this->authorizeNodePermission($auth, $this->ownerNode($owner), 'database:attach');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $this->activityProperties = [
             'slug' => $connection,
             'target_type' => $type,
@@ -267,6 +345,18 @@ final class DatabaseConnectionController extends Controller implements Loggable
         }
 
         [$type, $owner] = $scope;
+        $existing = $this->registry->show($connection);
+
+        if ($existing instanceof DatabaseConnectionRegistryFailure) {
+            return $this->failureResponse($existing);
+        }
+
+        $authorization = $this->authorizeNodePermission($auth, $this->ownerNode($owner), 'database:detach');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $this->activityProperties = [
             'slug' => $connection,
             'target_type' => $type,
@@ -331,6 +421,16 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ]);
 
             return $this->failureResponse($connection);
+        }
+
+        $requiredPermission = $request->boolean('write') ? 'database:query:write' : 'database:query';
+        $targetNode = $this->targetOwnerNode($target);
+        $authorization = $targetNode instanceof Node
+            ? $this->authorizeNodePermission($auth, $targetNode, $requiredPermission)
+            : $this->authorizeConnectionPermission($auth, $connection, $requiredPermission);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         $this->activitySubject = $connection;
@@ -407,7 +507,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (! $caller instanceof Node) {
+        if (! $caller instanceof Node || $caller->status !== 'active') {
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',
@@ -417,20 +517,189 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ], 403);
         }
 
-        $callerIsGateway = $this->roles->nodeIsGateway($caller);
-        $callerRole = $this->roles->assignmentRoleLabel($caller);
+        return $caller;
+    }
 
-        if ($caller->status !== 'active' || (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control'))) {
-            return response()->json([
-                'error' => [
-                    'code' => 'authorization_failed',
-                    'message' => 'This node is not authorized to manage database connections.',
-                    'meta' => ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
-                ],
-            ], 403);
+    private function authorizeListScope(Node $caller, ?App $app, ?Workspace $workspace, ?Node $node): ?JsonResponse
+    {
+        if ($app instanceof App) {
+            return $this->authorizeNodePermission($caller, $this->ownerNode($app), 'database:list');
         }
 
-        return $caller;
+        if ($workspace instanceof Workspace) {
+            return $this->authorizeNodePermission($caller, $this->ownerNode($workspace), 'database:list');
+        }
+
+        if ($node instanceof Node) {
+            return $this->authorizeNodePermission($caller, $node, 'database:list');
+        }
+
+        if ($this->roles->nodeIsGateway($caller)) {
+            return null;
+        }
+
+        foreach (Node::query()->get() as $servingNode) {
+            if ($this->authorizer->allows($caller, $servingNode, 'database:list')) {
+                return null;
+            }
+        }
+
+        return $this->authorizationFailed($caller, 'database:list');
+    }
+
+    private function authorizeNodePermission(Node $caller, ?Node $servingNode, string $permission): ?JsonResponse
+    {
+        if ($this->roles->nodeIsGateway($caller)) {
+            return null;
+        }
+
+        if ($servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, $permission)) {
+            return null;
+        }
+
+        return $this->authorizationFailed($caller, $permission, $servingNode);
+    }
+
+    private function authorizeConnectionPermission(Node $caller, DatabaseConnection $connection, string $permission, bool $requireAll = false): ?JsonResponse
+    {
+        if ($this->roles->nodeIsGateway($caller)) {
+            return null;
+        }
+
+        $nodes = $this->connectionServingNodes($connection);
+
+        if ($nodes === []) {
+            return $this->authorizeNodePermission($caller, $this->gatewayNode(), $permission);
+        }
+
+        if ($requireAll) {
+            foreach ($nodes as $node) {
+                $authorization = $this->authorizeNodePermission($caller, $node, $permission);
+
+                if ($authorization instanceof JsonResponse) {
+                    return $authorization;
+                }
+            }
+
+            return null;
+        }
+
+        foreach ($nodes as $node) {
+            if ($this->authorizer->allows($caller, $node, $permission)) {
+                return null;
+            }
+        }
+
+        return $this->authorizationFailed($caller, $permission, servingNodes: array_map(
+            static fn (Node $node): string => $node->name,
+            $nodes,
+        ));
+    }
+
+    private function connectionAllowsAny(Node $caller, DatabaseConnection $connection, string $permission): bool
+    {
+        if ($this->roles->nodeIsGateway($caller)) {
+            return true;
+        }
+
+        $nodes = $this->connectionServingNodes($connection);
+
+        if ($nodes === []) {
+            $gateway = $this->gatewayNode();
+
+            return $gateway instanceof Node && $this->authorizer->allows($caller, $gateway, $permission);
+        }
+
+        return array_any($nodes, fn ($node) => $this->authorizer->allows($caller, $node, $permission));
+    }
+
+    /**
+     * @return list<Node>
+     */
+    private function connectionServingNodes(DatabaseConnection $connection): array
+    {
+        $connection->loadMissing(['node', 'targets.app.node', 'targets.workspace.app.node']);
+
+        $nodes = [];
+
+        if ($connection->node instanceof Node) {
+            $nodes[$connection->node->id] = $connection->node;
+        }
+
+        foreach ($connection->targets as $target) {
+            if ($target->app?->node instanceof Node) {
+                $nodes[$target->app->node->id] = $target->app->node;
+            }
+
+            if ($target->workspace?->app?->node instanceof Node) {
+                $nodes[$target->workspace->app->node->id] = $target->workspace->app->node;
+            }
+        }
+
+        return array_values($nodes);
+    }
+
+    private function targetOwnerNode(string $target): ?Node
+    {
+        $app = $this->resolver->resolveApp($target);
+
+        if ($app instanceof App) {
+            return $this->ownerNode($app);
+        }
+
+        $workspace = $this->resolver->resolveWorkspace($target);
+
+        if ($workspace instanceof Workspace) {
+            return $this->ownerNode($workspace);
+        }
+
+        return null;
+    }
+
+    private function ownerNode(App|Workspace $owner): ?Node
+    {
+        if ($owner instanceof App) {
+            $owner->loadMissing('node');
+
+            return $owner->node;
+        }
+
+        $owner->loadMissing('app.node');
+
+        return $owner->app?->node;
+    }
+
+    private function gatewayNode(): ?Node
+    {
+        $gateway = $this->roles->activeGatewayNodeQuery()->first();
+
+        return $gateway instanceof Node ? $gateway : null;
+    }
+
+    /**
+     * @param  list<string>  $servingNodes
+     */
+    private function authorizationFailed(Node $caller, string $permission, ?Node $servingNode = null, array $servingNodes = []): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => 'This node is not authorized to manage database connections.',
+                'meta' => array_filter([
+                    'caller_role' => $this->callerRoleForMeta($caller),
+                    'permission' => $permission,
+                    'serving_node' => $servingNode?->name,
+                    'serving_nodes' => $servingNodes === [] ? null : $servingNodes,
+                ], static fn (mixed $value): bool => $value !== null),
+            ],
+        ], 403);
+    }
+
+    private function callerRoleForMeta(Node $caller): string
+    {
+        $assignmentRole = $this->roles->assignmentRoleLabel($caller);
+
+        return $assignmentRole !== 'control' ? $assignmentRole : $caller->role;
     }
 
     /**
@@ -561,6 +830,16 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ];
 
             return $this->failureResponse($connection);
+        }
+
+        $requiredPermission = "database:{$operation}";
+        $targetNode = $this->targetOwnerNode($target);
+        $authorization = $targetNode instanceof Node
+            ? $this->authorizeNodePermission($auth, $targetNode, $requiredPermission)
+            : $this->authorizeConnectionPermission($auth, $connection, $requiredPermission);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         $this->activitySubject = $connection;

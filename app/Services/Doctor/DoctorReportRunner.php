@@ -962,7 +962,7 @@ final readonly class DoctorReportRunner
             $actions,
         ));
         $resolvedDatabaseTargets = array_values(array_filter(array_map(
-            fn (array $action): ?string => $this->databaseConnectionResolutionKey($action),
+            $this->databaseConnectionResolutionKey(...),
             $actions,
         )));
 

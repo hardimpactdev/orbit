@@ -66,6 +66,7 @@ describe('node permission presets', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('operator');
 
             expect($permissions)->toContain('app:read')
+                ->and($permissions)->toContain('database:read')
                 ->and($permissions)->toContain('doctor:verify')
                 ->and($permissions)->toContain('firewall_rule:read')
                 ->and($permissions)->toContain('node:read')
@@ -83,7 +84,10 @@ describe('node permission presets', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('operator');
 
             expect($permissions)->not->toContain('doctor:restore')
-                ->and($permissions)->not->toContain('doctor:adopt');
+                ->and($permissions)->not->toContain('doctor:adopt')
+                ->and($permissions)->not->toContain('database:query')
+                ->and($permissions)->not->toContain('database:query:write')
+                ->and($permissions)->not->toContain('database:write');
         });
     });
 
@@ -109,6 +113,7 @@ describe('node permission presets', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('read-only');
 
             expect($permissions)->toContain('app:read')
+                ->and($permissions)->toContain('database:read')
                 ->and($permissions)->toContain('node:read')
                 ->and($permissions)->toContain('tool:read')
                 ->and($permissions)->toContain('doctor:verify')
@@ -142,6 +147,15 @@ describe('node permission presets', function (): void {
                 ->and($permissions)->toContain('proxy:add')
                 ->and($permissions)->toContain('deploy:read')
                 ->and($permissions)->toContain('deploy:run');
+        });
+
+        it('includes database registry and query surfaces', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('developer');
+
+            expect($permissions)->toContain('database:read')
+                ->and($permissions)->toContain('database:write')
+                ->and($permissions)->toContain('database:query')
+                ->and($permissions)->toContain('database:query:write');
         });
 
         it('includes tool surfaces for development', function (): void {
@@ -180,6 +194,15 @@ describe('node permission presets', function (): void {
             expect($permissions)->toContain('doctor:restore')
                 ->and($permissions)->toContain('doctor:adopt')
                 ->and($permissions)->toContain('doctor:fix');
+        });
+
+        it('includes full database authority short of gateway admin', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('admin');
+
+            expect($permissions)->toContain('database:read')
+                ->and($permissions)->toContain('database:write')
+                ->and($permissions)->toContain('database:query')
+                ->and($permissions)->toContain('database:query:write');
         });
 
         it('excludes gateway-level node permissions', function (): void {

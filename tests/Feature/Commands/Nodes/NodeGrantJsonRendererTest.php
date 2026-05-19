@@ -134,7 +134,7 @@ describe('node:grant JSON renderer contract', function (): void {
                         'serving_node' => 'app-1',
                         'action' => 'granted',
                         'already_granted' => false,
-                        'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+                        'permissions' => ['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
                     ],
                 ],
             ]);
@@ -171,7 +171,7 @@ describe('node:grant JSON renderer contract', function (): void {
                         'serving_node' => 'app-1',
                         'action' => 'granted',
                         'already_granted' => true,
-                        'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+                        'permissions' => ['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
                     ],
                 ],
             ]);
@@ -249,7 +249,7 @@ describe('node:grant JSON renderer contract', function (): void {
                         'serving_node' => 'control-1',
                         'action' => 'granted',
                         'already_granted' => false,
-                        'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+                        'permissions' => ['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
                     ],
                 ],
             ]);

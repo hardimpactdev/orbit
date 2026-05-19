@@ -16,11 +16,11 @@ use Illuminate\Support\Str;
 
 final readonly class DatabaseConnectionAdopter
 {
-    private const SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
+    private const array SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
 
-    private const NETWORK_REQUIRED_SUFFIXES = ['CONNECTION', 'HOST', 'PORT', 'DATABASE', 'USERNAME'];
+    private const array NETWORK_REQUIRED_SUFFIXES = ['CONNECTION', 'HOST', 'PORT', 'DATABASE', 'USERNAME'];
 
-    private const SQLITE_REQUIRED_SUFFIXES = ['CONNECTION', 'DATABASE'];
+    private const array SQLITE_REQUIRED_SUFFIXES = ['CONNECTION', 'DATABASE'];
 
     public function __construct(
         private EnvFileEditor $envFileEditor,

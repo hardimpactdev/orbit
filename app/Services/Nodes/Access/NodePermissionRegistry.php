@@ -57,6 +57,23 @@ final class NodePermissionRegistry
             'deploy:run',
             'deploy:step',
 
+            // Database
+            'database:*',
+            'database:add',
+            'database:attach',
+            'database:describe',
+            'database:detach',
+            'database:list',
+            'database:query',
+            'database:query:write',
+            'database:read',
+            'database:remove',
+            'database:schema',
+            'database:show',
+            'database:tables',
+            'database:update',
+            'database:write',
+
             // DNS
             'dns:*',
             'dns:add',
@@ -181,6 +198,9 @@ final class NodePermissionRegistry
         return [
             'activity:read' => ['activity:list', 'activity:show'],
             'app:read' => ['app:list', 'app:show'],
+            'database:query:write' => ['database:query'],
+            'database:read' => ['database:list', 'database:show', 'database:tables', 'database:schema', 'database:describe'],
+            'database:write' => ['database:add', 'database:update', 'database:remove', 'database:attach', 'database:detach'],
             'deploy:read' => ['deploy:history', 'deploy:log'],
             'node:read' => ['node:list', 'node:show'],
             'php:read' => ['php:list'],

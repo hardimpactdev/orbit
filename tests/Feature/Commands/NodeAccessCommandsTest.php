@@ -116,7 +116,7 @@ describe('node access grant integration', function (): void {
                 'serving_node' => 'app-1',
                 'action' => 'granted',
                 'already_granted' => false,
-                'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+                'permissions' => ['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
             ])
             ->and(DB::table('node_access')
                 ->where('consumer_node_id', $consumerId)
@@ -183,7 +183,7 @@ describe('node access grant integration', function (): void {
                 'serving_node' => 'control-1',
                 'action' => 'granted',
                 'already_granted' => false,
-                'permissions' => ['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
+                'permissions' => ['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart'],
             ])
             ->and(DB::table('node_access')->count())->toBe(1);
     });

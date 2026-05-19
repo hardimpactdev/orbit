@@ -167,7 +167,7 @@ describe('NodePermissionsController', function (): void {
             ->where('serving_node_id', $appId)
             ->first();
 
-        expect($grant->permissions)->toBe(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']);
+        expect($grant->permissions)->toBe(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']);
     });
 
     it('creates grant with preset when missing', function (): void {

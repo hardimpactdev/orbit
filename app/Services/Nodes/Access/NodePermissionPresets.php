@@ -65,6 +65,7 @@ final class NodePermissionPresets
     {
         return [
             'app:read',
+            'database:read',
             'doctor:verify',
             'firewall_rule:read',
             'node:read',
@@ -85,6 +86,7 @@ final class NodePermissionPresets
             'app:read',
             'cf:dns:list',
             'cf:zone:list',
+            'database:read',
             'deploy:read',
             'dns:list',
             'dns:resolve',
@@ -144,6 +146,10 @@ final class NodePermissionPresets
             'deploy:read',
             'deploy:run',
             'deploy:step',
+            'database:read',
+            'database:write',
+            'database:query',
+            'database:query:write',
             'tool:read',
             'tool:restart',
             'tool:update',
@@ -204,6 +210,12 @@ final class NodePermissionPresets
             'deploy:step',
             'deploy:history',
             'deploy:log',
+
+            // Database
+            'database:read',
+            'database:write',
+            'database:query',
+            'database:query:write',
 
             // DNS
             'dns:add',

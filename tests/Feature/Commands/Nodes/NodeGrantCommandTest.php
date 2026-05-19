@@ -204,7 +204,7 @@ describe('node:grant base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['action'])->toBe('granted')
-            ->and($grant->permissions)->toBe(json_encode(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
+            ->and($grant->permissions)->toBe(json_encode(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
     });
 
     it('creates a grant with --permissions', function (): void {
@@ -258,7 +258,7 @@ describe('node:grant base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['already_granted'])->toBeTrue()
-            ->and($grant->permissions)->toBe(json_encode(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
+            ->and($grant->permissions)->toBe(json_encode(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
     });
 
     it('warns about redundant permissions', function (): void {

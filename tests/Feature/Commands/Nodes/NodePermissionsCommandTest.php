@@ -155,7 +155,7 @@ describe('node:permissions base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['action'])->toBe('updated')
-            ->and($grant->permissions)->toBe(json_encode(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
+            ->and($grant->permissions)->toBe(json_encode(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
     });
 
     it('creates grant with --preset when missing', function (): void {
@@ -179,7 +179,7 @@ describe('node:permissions base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['action'])->toBe('created')
-            ->and($grant->permissions)->toBe(json_encode(['app:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
+            ->and($grant->permissions)->toBe(json_encode(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']));
     });
 
     it('sets permissions with --permissions on existing grant', function (): void {

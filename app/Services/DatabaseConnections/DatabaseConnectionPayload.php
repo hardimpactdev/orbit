@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final readonly class DatabaseConnectionPayload
 {
-    private const SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
+    private const array SUPPORTED_DRIVERS = ['mysql', 'pgsql', 'sqlite'];
 
     public function __construct(
         public string $driver,

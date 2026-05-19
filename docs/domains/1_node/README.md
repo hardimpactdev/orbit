@@ -9,8 +9,9 @@ platforms are supported, how the gateway reaches hosted nodes, and which consumi
 operate on which serving nodes.
 
 Node commands are not app runtime commands. They establish where Orbit may run
-work and who may ask for that work. Apps, workspaces, processes, tools, firewall
-rules, proxy routes, schedules, and deployments build on top of the node model.
+work and who may ask for that work. Apps, workspaces, processes, tools,
+database connections, firewall rules, proxy routes, schedules, and deployments
+build on top of the node model.
 
 The stable node-family vocabulary is defined in
 [`node-concepts.md`](node-concepts.md). The node-family drift, restore, and adopt
