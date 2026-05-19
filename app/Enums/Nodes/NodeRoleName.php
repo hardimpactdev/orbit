@@ -10,4 +10,5 @@ enum NodeRoleName: string
     case AppDevelopment = 'app-development';
     case AppProduction = 'app-production';
     case Database = 'database';
+    case Agent = 'agent';
 }

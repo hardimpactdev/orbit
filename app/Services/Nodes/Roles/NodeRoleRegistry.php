@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles;
 
+use App\Data\Nodes\RoleSettings\AgentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppDevelopmentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
@@ -42,7 +43,8 @@ final class NodeRoleRegistry
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
-                assignableByCommand: false,
+                assignableByRoleCommand: false,
+                assignableByNodeNew: true,
             ),
             NodeRoleName::AppDevelopment->value => new NodeRoleDefinition(
                 name: NodeRoleName::AppDevelopment->value,
@@ -69,6 +71,19 @@ final class NodeRoleRegistry
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: DatabaseRoleSettings::class,
+            ),
+            NodeRoleName::Agent->value => new NodeRoleDefinition(
+                name: NodeRoleName::Agent->value,
+                conflictsWith: [
+                    NodeRoleName::Gateway->value,
+                    NodeRoleName::AppDevelopment->value,
+                    NodeRoleName::AppProduction->value,
+                    NodeRoleName::Database->value,
+                ],
+                supportedPlatforms: ['ubuntu'],
+                settingsClass: AgentRoleSettings::class,
+                assignableByRoleCommand: false,
+                assignableByNodeNew: true,
             ),
         ];
     }

@@ -128,6 +128,14 @@ class NodeRoleAddCommand extends Command
             ];
         }
 
+        if ($role === 'agent') {
+            return [
+                'code' => 'validation_failed',
+                'message' => "The agent role cannot be added through node role commands. Use 'node:new --role=agent' instead.",
+                'meta' => ['field' => 'role', 'role' => $role],
+            ];
+        }
+
         return null;
     }
 

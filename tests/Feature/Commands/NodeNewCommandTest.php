@@ -1506,6 +1506,71 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
+    it('forwards agent-node creation with the default agent tld', function (): void {
+        DB::table('local_gateway_settings')->insert([
+            'gateway_url' => 'https://10.6.0.2',
+            'gateway_wg_ip' => '10.6.0.2',
+            'ca_sha256' => 'fake',
+            'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+            'trusted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $mock = fakeNodeCreateGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'agent-1',
+                        'role' => 'agent',
+                        'environment' => null,
+                        'tld' => 'agent',
+                        'platform' => 'ubuntu',
+                        'addresses' => [
+                            'wireguard' => '10.6.0.20',
+                        ],
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.40',
+                        'status' => 'complete',
+                    ],
+                ],
+            ],
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'agent-1',
+            '--role' => 'agent',
+            '--host' => '192.0.2.40',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['name'])->toBe('agent-1')
+            ->and(DB::table('nodes')->where('name', 'agent-1')->exists())->toBeFalse();
+
+        $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
+            && $request->body()->all() === [
+                'name' => 'agent-1',
+                'role' => 'agent',
+                'roles' => ['agent'],
+                'host' => '192.0.2.40',
+                'environment' => null,
+                'tld' => 'agent',
+                'user' => 'root',
+            ]);
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('forwards app-node adoption when gateway add only stored local gateway settings', function (): void {
         DB::table('local_gateway_settings')->insert([
             'gateway_url' => 'https://10.6.0.2',

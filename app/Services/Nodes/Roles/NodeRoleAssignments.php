@@ -70,6 +70,11 @@ class NodeRoleAssignments
         return $this->nodeHasActiveRole($node, NodeRoleName::Gateway->value);
     }
 
+    public function nodeHasActiveAgentRole(Node $node): bool
+    {
+        return $this->nodeHasActiveRole($node, NodeRoleName::Agent->value);
+    }
+
     public function activeGatewayNodeQuery(): Builder
     {
         return Node::query()
@@ -118,6 +123,10 @@ class NodeRoleAssignments
 
         if ($this->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
             return NodeRoleName::Database->value;
+        }
+
+        if ($this->nodeHasActiveAgentRole($node)) {
+            return NodeRoleName::Agent->value;
         }
 
         return 'control';
@@ -174,6 +183,14 @@ class NodeRoleAssignments
     public function activeToolHostNodeIds(): array
     {
         return $this->activeNodeIdsForRoles($this->toolHostRoles());
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeAgentNodeIds(): array
+    {
+        return $this->activeNodeIdsForRole(NodeRoleName::Agent->value);
     }
 
     /**

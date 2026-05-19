@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Nodes\RoleSettings\AgentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppDevelopmentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
@@ -33,17 +34,33 @@ describe('node role registry', function (): void {
         expect($registry->definition('database')->conflictsWith)->toBe([
             'gateway',
         ]);
+
+        expect($registry->definition('agent')->conflictsWith)->toBe([
+            'gateway',
+            'app-development',
+            'app-production',
+            'database',
+        ]);
     });
 
     it('defines supported platforms and assignability for the initial roles', function (): void {
         $registry = new NodeRoleRegistry;
 
         expect($registry->definition('gateway')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('gateway')->assignableByCommand)->toBeFalse()
+            ->and($registry->definition('gateway')->assignableByRoleCommand)->toBeFalse()
+            ->and($registry->definition('gateway')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('app-development')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('app-development')->assignableByCommand)->toBeTrue()
+            ->and($registry->definition('app-development')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('app-development')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('app-production')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('database')->supportedPlatforms)->toBe(['ubuntu']);
+            ->and($registry->definition('app-production')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('app-production')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('database')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('database')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('database')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('agent')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('agent')->assignableByRoleCommand)->toBeFalse()
+            ->and($registry->definition('agent')->assignableByNodeNew)->toBeTrue();
     });
 
     it('hydrates role-specific settings dtos', function (): void {
@@ -55,6 +72,28 @@ describe('node role registry', function (): void {
             ->toBeInstanceOf(AppDevelopmentRoleSettings::class)
             ->and($settings->toArray())
             ->toBe(['tld' => 'test']);
+    });
+
+    it('hydrates agent settings dtos with default tld', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('agent')
+            ->settingsFromArray([]);
+
+        expect($settings)
+            ->toBeInstanceOf(AgentRoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe(['tld' => 'agent']);
+    });
+
+    it('hydrates agent settings dtos with explicit tld', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('agent')
+            ->settingsFromArray(['tld' => 'custom']);
+
+        expect($settings)
+            ->toBeInstanceOf(AgentRoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe(['tld' => 'custom']);
     });
 
     it('hydrates empty settings dtos for roles without settings', function (string $role, string $class): void {
@@ -93,6 +132,27 @@ describe('node role registry', function (): void {
             ->toThrow(InvalidArgumentException::class, 'The app-development role does not accept unknown settings.');
     });
 
+    it('rejects invalid agent settings', function (): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('agent')
+            ->settingsFromArray(['tld' => '']))
+            ->toThrow(InvalidArgumentException::class, 'The agent role requires a valid tld setting.');
+    });
+
+    it('rejects path-like agent tld settings', function (): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('agent')
+            ->settingsFromArray(['tld' => '../../orbit']))
+            ->toThrow(InvalidArgumentException::class, 'The agent role requires a valid tld setting.');
+    });
+
+    it('rejects unknown agent settings', function (): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('agent')
+            ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
+            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept unknown settings.');
+    });
+
     it('rejects settings for roles without settings', function (string $role): void {
         expect(fn () => (new NodeRoleRegistry)
             ->definition($role)
@@ -114,6 +174,7 @@ describe('node role registry', function (): void {
             'app-development',
             'app-production',
             'database',
+            'agent',
         ]);
     });
 

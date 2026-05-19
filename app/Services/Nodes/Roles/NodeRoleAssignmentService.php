@@ -28,9 +28,33 @@ class NodeRoleAssignmentService
     {
         $definition = $this->registry->definition($role);
 
-        if (! $definition->assignableByCommand) {
+        if (! $definition->assignableByRoleCommand) {
             throw new InvalidArgumentException("Role '{$role}' cannot be assigned through this service.");
         }
+
+        return $this->persistAndConverge($node, $role, $settings);
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+    {
+        $definition = $this->registry->definition($role);
+
+        if (! $definition->assignableByNodeNew) {
+            throw new InvalidArgumentException("Role '{$role}' cannot be assigned during node creation.");
+        }
+
+        return $this->persistAndConverge($node, $role, $settings);
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function persistAndConverge(Node $node, string $role, array $settings): NodeRoleAssignment
+    {
+        $definition = $this->registry->definition($role);
 
         if ($this->assignments->find($node, $role) instanceof NodeRoleAssignment) {
             throw new InvalidArgumentException("Role '{$role}' is already assigned to node '{$node->name}'.");
@@ -60,7 +84,7 @@ class NodeRoleAssignmentService
     {
         $definition = $this->registry->definition($role);
 
-        if (! $definition->assignableByCommand) {
+        if (! $definition->assignableByRoleCommand) {
             throw new InvalidArgumentException("Role '{$role}' cannot be updated through this service.");
         }
 
@@ -96,7 +120,7 @@ class NodeRoleAssignmentService
             throw new InvalidArgumentException('The purgeData option requires force.');
         }
 
-        if (! $definition->assignableByCommand) {
+        if (! $definition->assignableByRoleCommand) {
             throw new InvalidArgumentException("Role '{$role}' cannot be removed through this service.");
         }
 
@@ -186,7 +210,7 @@ class NodeRoleAssignmentService
             return;
         }
 
-        if ($assignment->role !== NodeRoleName::AppDevelopment->value) {
+        if (! in_array($assignment->role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
             return;
         }
 
@@ -215,6 +239,7 @@ class NodeRoleAssignmentService
         $appDevelopment = $activeAssignments->firstWhere('role', NodeRoleName::AppDevelopment->value);
         $appProduction = $activeAssignments->firstWhere('role', NodeRoleName::AppProduction->value);
         $database = $activeAssignments->firstWhere('role', NodeRoleName::Database->value);
+        $agent = $activeAssignments->firstWhere('role', NodeRoleName::Agent->value);
 
         if ($gateway instanceof NodeRoleAssignment) {
             $role = NodeRoleName::Gateway->value;
@@ -229,6 +254,11 @@ class NodeRoleAssignmentService
             $environment = 'production';
         } elseif ($database instanceof NodeRoleAssignment) {
             $role = NodeRoleName::Database->value;
+        } elseif ($agent instanceof NodeRoleAssignment) {
+            $role = NodeRoleName::Agent->value;
+
+            $agentTld = $agent->settings['tld'] ?? null;
+            $tld = is_string($agentTld) ? $agentTld : null;
         }
 
         $node->forceFill([
@@ -265,7 +295,7 @@ class NodeRoleAssignmentService
      */
     private function guardUniqueDevelopmentTld(Node $node, string $role, array $settings): void
     {
-        if ($role !== NodeRoleName::AppDevelopment->value) {
+        if (! in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
             return;
         }
 
@@ -282,7 +312,7 @@ class NodeRoleAssignmentService
             ->exists();
 
         $roleCollision = NodeRoleAssignment::query()
-            ->where('role', NodeRoleName::AppDevelopment->value)
+            ->whereIn('role', [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value])
             ->where('status', NodeRoleStatus::Active->value)
             ->where('node_id', '!=', $node->id)
             ->where('settings->tld', $tld)

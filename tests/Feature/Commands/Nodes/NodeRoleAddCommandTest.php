@@ -77,6 +77,27 @@ describe('node role:add', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
+    it('rejects adding agent through the command surface', function (): void {
+        setupNodeRoleGatewayCaller();
+        createHostedNode([
+            'name' => 'client-1',
+            'role' => 'control',
+            'environment' => null,
+        ]);
+
+        $exitCode = Artisan::call('node role:add', [
+            'node' => 'client-1',
+            'role' => 'agent',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('role');
+    });
+
     it('rejects app-development without tld', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([

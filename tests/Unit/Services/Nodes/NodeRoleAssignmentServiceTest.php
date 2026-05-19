@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\App;
 use App\Models\Node;
@@ -11,6 +13,7 @@ use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
+use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
@@ -336,6 +339,7 @@ describe('node role assignment service', function (): void {
                     app(AppDevelopmentRoleBaseline::class),
                     app(AppProductionRoleBaseline::class),
                     app(DatabaseRoleBaseline::class),
+                    app(AgentRoleBaseline::class),
                 );
             }
 
@@ -534,6 +538,39 @@ describe('node role assignment service', function (): void {
 
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'gateway'))
             ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be removed through this service.");
+    });
+
+    it('rejects agent assignment through the normal service', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'agent', []))
+            ->toThrow(InvalidArgumentException::class, "Role 'agent' cannot be assigned through this service.");
+    });
+
+    it('allows agent assignment during node creation', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'wireguard_address' => '10.6.0.50',
+        ]);
+
+        app()->instance(RemoteShell::class, new class implements RemoteShell
+        {
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: '',
+                    stderr: '',
+                    durationMs: 0,
+                );
+            }
+        });
+
+        $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'agent']);
+
+        expect($assignment->role)->toBe('agent')
+            ->and($assignment->status)->toBe(NodeRoleStatus::Active->value);
     });
 
     it('blocks removal when dependents exist and force is false', function (): void {
@@ -792,6 +829,7 @@ describe('node role assignment service', function (): void {
                     app(AppDevelopmentRoleBaseline::class),
                     app(AppProductionRoleBaseline::class),
                     app(DatabaseRoleBaseline::class),
+                    app(AgentRoleBaseline::class),
                 );
             }
 

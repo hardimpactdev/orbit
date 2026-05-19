@@ -47,7 +47,7 @@ use function Laravel\Prompts\text;
 
 #[Signature('node:new
     {name? : Registry name for the node}
-    {--role=* : Initial hosted role. Repeatable: app-development, app-production, database. Gateway bootstrap uses gateway internally.}
+    {--role=* : Initial hosted role. Repeatable: app-development, app-production, database, agent. Gateway bootstrap uses gateway internally.}
     {--host= : SSH/bootstrap endpoint for gateway or app nodes}
         {--control-name= : Initiating operator-node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
@@ -455,6 +455,7 @@ class NodeNewCommand extends Command
         $requiresHostProvisioning = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Agent->value,
         ]) !== [];
 
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
@@ -508,7 +509,7 @@ class NodeNewCommand extends Command
         $failedAssignment = null;
 
         foreach ($roles as $role) {
-            $assignment = $roleAssignmentService->add($node, $role, $this->settingsForRole($role, $inputs['tld']));
+            $assignment = $roleAssignmentService->addDuringCreation($node, $role, $this->settingsForRole($role, $inputs['tld']));
 
             if ($assignment->status === NodeRoleStatus::Error->value) {
                 $failedAssignment = $assignment;
@@ -2288,11 +2289,12 @@ SCRIPT,
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
             NodeRoleName::Database->value,
+            NodeRoleName::Agent->value,
         ];
 
         foreach ($roles as $role) {
             if (! in_array($role, $canonicalRoles, true)) {
-                return $this->validationFailed('role', 'Node role must be one of gateway, operator, control, app-development, app-production, database, or legacy app.');
+                return $this->validationFailed('role', 'Node role must be one of gateway, operator, control, app-development, app-production, database, agent, or legacy app.');
             }
         }
 
@@ -2303,6 +2305,17 @@ SCRIPT,
                 meta: [
                     'field' => 'role',
                     'conflicts' => [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
+                ],
+            );
+        }
+
+        if (in_array(NodeRoleName::Agent->value, $roles, true) && count(array_unique($roles)) > 1) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'The agent role cannot be combined with other hosted roles.',
+                meta: [
+                    'field' => 'role',
+                    'role' => NodeRoleName::Agent->value,
                 ],
             );
         }
@@ -2327,7 +2340,7 @@ SCRIPT,
             return null;
         }
 
-        if (! in_array($role, ['app', 'gateway'], true)) {
+        if (! in_array($role, ['app', 'agent', 'gateway'], true)) {
             return null;
         }
 
@@ -2521,16 +2534,17 @@ SCRIPT,
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Agent->value,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
-            return $this->validationFailed('host', 'Only app-development, app-production, and gateway use host provisioning.');
+            return $this->validationFailed('host', 'Only app-development, app-production, agent, and gateway use host provisioning.');
         }
 
-        $host = $needsHost ? $this->resolveHost('app') : null;
+        $host = $needsHost ? $this->resolveHost($this->containsAppHostingRole($roles) ? 'app' : 'agent') : null;
 
         if ($needsHost && $host === null) {
-            return $this->validationFailed('host', 'Host is required for hosted app roles.');
+            return $this->validationFailed('host', 'Host is required for hosted roles that provision a host.');
         }
 
         if ($host !== null && ! $this->isValidHost($host)) {
@@ -2539,7 +2553,11 @@ SCRIPT,
 
         $tld = $this->stringOption('tld');
 
-        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true)) {
+        if (in_array(NodeRoleName::Agent->value, $roles, true) && $tld === null) {
+            $tld = 'agent';
+        }
+
+        if (array_intersect($roles, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value]) !== []) {
             if ($tld === null) {
                 return $this->validationFailed('tld', 'Development app nodes require a TLD.');
             }
@@ -2548,7 +2566,7 @@ SCRIPT,
                 return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
             }
         } elseif ($tld !== null) {
-            return $this->validationFailed('tld', 'Only app-development uses a development TLD.');
+            return $this->validationFailed('tld', 'Only app-development and agent use a TLD.');
         }
 
         return [
@@ -2599,7 +2617,7 @@ SCRIPT,
      */
     private function settingsForRole(string $role, ?string $tld): array
     {
-        if ($role === NodeRoleName::AppDevelopment->value) {
+        if (in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
             return ['tld' => $tld];
         }
 
@@ -2620,7 +2638,7 @@ SCRIPT,
 
             $assignment = $existingAssignment instanceof NodeRoleAssignment
                 ? $roleAssignmentService->update($node, $role, $this->settingsForRole($role, $tld))
-                : $roleAssignmentService->add($node, $role, $this->settingsForRole($role, $tld));
+                : $roleAssignmentService->addDuringCreation($node, $role, $this->settingsForRole($role, $tld));
 
             if ($assignment->status !== NodeRoleStatus::Error->value) {
                 continue;

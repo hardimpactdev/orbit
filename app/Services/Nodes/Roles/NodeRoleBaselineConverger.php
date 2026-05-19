@@ -7,6 +7,7 @@ namespace App\Services\Nodes\Roles;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
@@ -21,6 +22,7 @@ class NodeRoleBaselineConverger
         private readonly AppDevelopmentRoleBaseline $appDevelopmentRoleBaseline,
         private readonly AppProductionRoleBaseline $appProductionRoleBaseline,
         private readonly DatabaseRoleBaseline $databaseRoleBaseline,
+        private readonly AgentRoleBaseline $agentRoleBaseline,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -40,6 +42,7 @@ class NodeRoleBaselineConverger
             NodeRoleName::AppDevelopment->value => $this->appDevelopmentRoleBaseline,
             NodeRoleName::AppProduction->value => $this->appProductionRoleBaseline,
             NodeRoleName::Database->value => $this->databaseRoleBaseline,
+            NodeRoleName::Agent->value => $this->agentRoleBaseline,
             default => throw new InvalidArgumentException("Unsupported node role baseline [{$role}]."),
         };
     }

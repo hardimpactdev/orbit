@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
@@ -319,6 +320,7 @@ describe('node role:remove', function (): void {
                     app(AppDevelopmentRoleBaseline::class),
                     app(AppProductionRoleBaseline::class),
                     app(DatabaseRoleBaseline::class),
+                    app(AgentRoleBaseline::class),
                 );
             }
 

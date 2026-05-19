@@ -18,7 +18,8 @@ final readonly class NodeRoleDefinition
         public array $conflictsWith,
         public array $supportedPlatforms,
         public string $settingsClass,
-        public bool $assignableByCommand = true,
+        public bool $assignableByRoleCommand = true,
+        public bool $assignableByNodeNew = true,
     ) {}
 
     /**
