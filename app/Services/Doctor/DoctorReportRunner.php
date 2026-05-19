@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -16,6 +17,9 @@ use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppsProbe;
+use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
+use App\Services\DatabaseConnections\DatabaseConnectionProbe;
+use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
@@ -33,19 +37,22 @@ use App\Services\Workspaces\WorkspacesProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
+    private const array SUPPORTED_FAMILIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
     private const array CONTROL_CATEGORIES = ['node'];
 
     private const array GATEWAY_CATEGORIES = ['node'];
 
-    private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
+    private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
     private const array DATABASE_CATEGORIES = ['node', 'tool'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
+        private DatabaseConnectionProbe $databaseConnectionProbe,
+        private DatabaseConnectionRestorer $databaseConnectionRestorer,
+        private DatabaseConnectionAdopter $databaseConnectionAdopter,
         private WorkspacesProbe $workspacesProbe,
         private ProcessesProbe $processesProbe,
         private ProxyRouteProbe $proxyRouteProbe,
@@ -258,6 +265,15 @@ final readonly class DoctorReportRunner
             }
         }
 
+        if (in_array('database_connection', $selectedFamilies, true)) {
+            foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
+                $issues[] = $this->annotateIssue([
+                    ...$issue,
+                    'node' => $node->name,
+                ]);
+            }
+        }
+
         $summary = $this->summary('verify', $issues, []);
 
         return [
@@ -452,6 +468,21 @@ final readonly class DoctorReportRunner
             }
         }
 
+        if (in_array('database_connection', $families, true)) {
+            foreach ($this->databaseConnectionAdopter->adopt($node) as $result) {
+                $actions[] = [
+                    'family' => $result->family,
+                    'node' => $node->name,
+                    'code' => $result->key,
+                    'key' => $result->key,
+                    'mode' => 'adopt',
+                    'status' => $result->action->value,
+                    'summary' => $result->summary,
+                    'details' => $result->detail,
+                ];
+            }
+        }
+
         return $actions;
     }
 
@@ -476,6 +507,7 @@ final readonly class DoctorReportRunner
 
         return match ($family) {
             'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
+            'database_connection' => $this->applyDatabaseConnectionIssue($key, $detail),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($key, $detail),
@@ -483,6 +515,46 @@ final readonly class DoctorReportRunner
             'schedule' => $this->applyScheduleIssue($key, $detail),
             default => null,
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyDatabaseConnectionIssue(string $key, array $detail): ?array
+    {
+        $targetType = is_string($detail['target_type'] ?? null) ? $detail['target_type'] : null;
+        $targetId = is_int($detail['target_id'] ?? null) ? $detail['target_id'] : (is_numeric($detail['target_id'] ?? null) ? (int) $detail['target_id'] : null);
+        $prefix = is_string($detail['env_prefix'] ?? null) ? $detail['env_prefix'] : null;
+
+        if ($targetType === null || $targetId === null || $prefix === null) {
+            return null;
+        }
+
+        $target = DatabaseConnectionTarget::query()
+            ->with(['app.node', 'workspace.app.node'])
+            ->where('env_prefix', $prefix)
+            ->when($targetType === 'app', fn ($query) => $query->where('app_id', $targetId))
+            ->when($targetType === 'workspace', fn ($query) => $query->where('workspace_id', $targetId))
+            ->first();
+
+        if (! $target instanceof DatabaseConnectionTarget) {
+            return null;
+        }
+
+        $this->databaseConnectionRestorer->restore($target);
+        $nodeName = $target->app?->node?->name ?? $target->workspace?->app?->node?->name;
+
+        return [
+            'family' => 'database_connection',
+            'node' => $nodeName,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Fixed {$key}.",
+            'details' => $detail,
+        ];
     }
 
     /**
@@ -749,12 +821,15 @@ final readonly class DoctorReportRunner
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'database_connection.env_missing',
+            'database_connection.env_mismatch',
         ];
 
         return [
             ...$issue,
             'restorable' => in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
-            'adoptable' => ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value,
+            'adoptable' => (($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value)
+                || $family === 'database_connection',
         ];
     }
 

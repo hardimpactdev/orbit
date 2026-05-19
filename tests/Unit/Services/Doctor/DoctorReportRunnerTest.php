@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -295,6 +297,82 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'skipped',
             ]);
+    });
+
+    it('supports the database connection family on app nodes but not database-only nodes', function (): void {
+        $appNode = createDoctorRunnerAppHostNode();
+        $databaseNode = Node::factory()->create(['role' => 'database', 'status' => 'active']);
+
+        $runner = app(DoctorReportRunner::class);
+
+        expect($runner->supportedFamilies())->toContain('database_connection')
+            ->and($runner->categoriesForNode($appNode))->toContain('database_connection')
+            ->and($runner->categoriesForNode($databaseNode))->not->toContain('database_connection');
+    });
+
+    it('restores database connection env drift through family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-restore');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['database_connection']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 2,
+                'skipped' => 0,
+            ])
+            ->and(collect($report['actions'])->pluck('family')->unique()->all())->toBe(['database_connection'])
+            ->and(File::get($path.'/.env'))->toContain('DB_PASSWORD=secret');
+    });
+
+    it('adopts database connection env state for registered apps through family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $path = storage_path('framework/testing/doctor-database-adopt');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'adopt', families: ['database_connection']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'adopted' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'database_connection',
+                'node' => 'app-1',
+                'mode' => 'adopt',
+            ])
+            ->and(DatabaseConnection::query()->where('slug', 'docs')->exists())->toBeTrue();
     });
 });
 
