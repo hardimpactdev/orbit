@@ -152,23 +152,41 @@ it('requires each target row to belong to exactly one app or workspace', functio
         'updated_at' => now(),
     ]);
 
-    expect(fn () => DB::table('database_connection_targets')->insert([
-        'database_connection_id' => $connectionId,
-        'app_id' => null,
-        'workspace_id' => null,
-        'env_prefix' => 'DB',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    $neitherOwner = null;
 
-    expect(fn () => DB::table('database_connection_targets')->insert([
-        'database_connection_id' => $connectionId,
-        'app_id' => $app->id,
-        'workspace_id' => $workspace->id,
-        'env_prefix' => 'ANALYTICS_DB',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    try {
+        DB::table('database_connection_targets')->insert([
+            'database_connection_id' => $connectionId,
+            'app_id' => null,
+            'workspace_id' => null,
+            'env_prefix' => 'DB',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    } catch (QueryException $exception) {
+        $neitherOwner = $exception;
+    }
+
+    expect($neitherOwner)->toBeInstanceOf(QueryException::class)
+        ->and($neitherOwner->getMessage())->toContain('database_connection_targets_owner_check');
+
+    $bothOwners = null;
+
+    try {
+        DB::table('database_connection_targets')->insert([
+            'database_connection_id' => $connectionId,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'env_prefix' => 'ANALYTICS_DB',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    } catch (QueryException $exception) {
+        $bothOwners = $exception;
+    }
+
+    expect($bothOwners)->toBeInstanceOf(QueryException::class)
+        ->and($bothOwners->getMessage())->toContain('database_connection_targets_owner_check');
 });
 
 it('cascades target rows when the database connection is deleted', function (): void {
