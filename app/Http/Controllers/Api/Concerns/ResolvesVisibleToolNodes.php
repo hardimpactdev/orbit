@@ -6,19 +6,21 @@ namespace App\Http\Controllers\Api\Concerns;
 
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 trait ResolvesVisibleToolNodes
 {
     /**
      * @return list<int>
      */
-    private function visibleToolNodeIds(Node $caller, bool $allowAnyActiveNode = false): array
+    private function visibleToolNodeIds(Node $caller, bool $allowAnyActiveNode = false, ?string $requiredPermission = null): array
     {
+        $requiredPermission ??= 'tool:read';
+
         if ($this->nodeRoleAssignments()->nodeIsGateway($caller)) {
             $query = Node::query()
                 ->where('status', 'active');
@@ -30,21 +32,21 @@ trait ResolvesVisibleToolNodes
             return $query->pluck('id')->all();
         }
 
-        $query = DB::table('node_access')
-            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->where('nodes.status', 'active');
+        $authorizer = app(NodeAccessAuthorizer::class);
+
+        $query = Node::query()
+            ->where('status', 'active');
 
         if (! $allowAnyActiveNode) {
-            $query->whereIn('nodes.id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
+            $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
         }
 
-        $visibleNodeIds = $query->pluck('nodes.id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
-            ->all();
+        $visibleNodeIds = [];
 
-        if ($caller->status === 'active' && $this->nodeRoleAssignments()->nodeHasActiveToolHostRole($caller)) {
-            $visibleNodeIds[] = $caller->id;
+        foreach ($query->get() as $node) {
+            if ($authorizer->allows($caller, $node, $requiredPermission)) {
+                $visibleNodeIds[] = $node->id;
+            }
         }
 
         return array_values(array_unique($visibleNodeIds));

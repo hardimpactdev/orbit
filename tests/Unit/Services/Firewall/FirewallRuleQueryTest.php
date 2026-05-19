@@ -14,11 +14,15 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function grantFirewallRuleQueryAccess(Node $caller, Node $servingNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantFirewallRuleQueryAccess(Node $caller, Node $servingNode, array $permissions = ['*']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $servingNode->id,
+        'permissions' => json_encode($permissions),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -96,6 +100,19 @@ describe('FirewallRuleQuery', function (): void {
 
         $query->list(node: 'hidden-node', caller: $caller);
     })->throws(GatewayApiException::class, 'The selected node is not a firewall target.');
+
+    it('allows non-gateway callers that have firewall read permission', function (): void {
+        $caller = Node::factory()->create(['role' => 'app', 'platform' => 'ubuntu']);
+        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'control', 'platform' => 'ubuntu']);
+        assignFirewallRuleQueryAppHostRole($visibleNode);
+        grantFirewallRuleQueryAccess($caller, $visibleNode, ['firewall_rule:read']);
+
+        FirewallRule::factory()->create(['node_id' => $visibleNode->id, 'name' => 'visible']);
+
+        $result = app(FirewallRuleQuery::class)->list(caller: $caller);
+
+        expect(array_column($result['rules'], 'name'))->toBe(['visible']);
+    });
 
     it('omits rules for inactive unsupported or role-incompatible nodes', function (): void {
         $eligibleNode = Node::factory()->create(['name' => 'app-1', 'role' => 'control', 'platform' => 'ubuntu']);

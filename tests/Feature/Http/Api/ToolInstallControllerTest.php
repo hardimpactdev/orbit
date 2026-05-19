@@ -24,11 +24,15 @@ function createToolInstallApiCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function grantToolInstallApiAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantToolInstallApiAccess(Node $caller, Node $appNode, array $permissions = ['*']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -74,13 +78,14 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts)->toHaveCount(1);
     });
 
-    it('allows database callers to install postgres on themselves without a self grant', function (): void {
+    it('allows database callers to install postgres on themselves with an explicit self grant', function (): void {
         $caller = createToolInstallApiCallerNode([
             'name' => 'database-self-install-api-caller',
             'role' => 'database',
             'status' => 'active',
         ]);
         assignToolInstallApiRole($caller, 'database');
+        grantToolInstallApiAccess($caller, $caller);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -94,7 +99,7 @@ describe('ToolInstallController', function (): void {
             ->assertJsonPath('success.data.tool.state', 'installed');
 
         expect(NodeTool::query()->where('node_id', $caller->id)->where('name', 'postgres')->exists())->toBeTrue()
-            ->and(DB::table('node_access')->count())->toBe(0)
+            ->and(DB::table('node_access')->count())->toBe(1)
             ->and($shell->scripts)->toHaveCount(1);
     });
 
@@ -215,6 +220,25 @@ describe('ToolInstallController', function (): void {
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.fields', ['target']);
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('rejects install when the grant only allows reading tools', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-development');
+        grantToolInstallApiAccess($caller, $node, ['tool:read']);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/redis/install', [
+            'node' => 'app-install-api-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
 
         expect(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);

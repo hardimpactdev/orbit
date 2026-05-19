@@ -47,7 +47,7 @@ final class ToolRemoveController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller);
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, false, 'tool:remove');
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');

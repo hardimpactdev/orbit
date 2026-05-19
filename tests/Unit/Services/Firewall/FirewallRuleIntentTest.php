@@ -14,11 +14,15 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function grantFirewallRuleIntentAccess(Node $caller, Node $servingNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantFirewallRuleIntentAccess(Node $caller, Node $servingNode, array $permissions = ['*']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $servingNode->id,
+        'permissions' => json_encode($permissions),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -87,6 +91,14 @@ describe('FirewallRuleIntent', function (): void {
 
         expect(FirewallRule::query()->where('name', 'block-redis')->exists())->toBeTrue();
     });
+
+    it('denies non-gateway callers that only have firewall read permission', function (): void {
+        $caller = Node::factory()->create(['role' => 'app', 'platform' => 'ubuntu']);
+        $node = createFirewallRuleIntentAppHostNode();
+        grantFirewallRuleIntentAccess($caller, $node, ['firewall_rule:read']);
+
+        app(FirewallRuleIntent::class)->store('deny', 'block-redis', 'app-1', 'incoming', 'any', null, '6379', 'tcp', null, $caller);
+    })->throws(GatewayApiException::class, 'This node is not authorized to manage firewall rules for the selected node.');
 
     it('removes intent idempotently and reports deferred cleanup', function (): void {
         $node = createFirewallRuleIntentAppHostNode();

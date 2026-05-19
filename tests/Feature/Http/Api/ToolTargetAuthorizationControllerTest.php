@@ -23,11 +23,15 @@ function createToolTargetAuthCaller(): Node
     ]);
 }
 
-function grantToolTargetAuthAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantToolTargetAuthAccess(Node $caller, Node $appNode, array $permissions = ['*']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -107,13 +111,15 @@ describe('tool API target authorization', function (): void {
             ->assertJsonPath('success.data.credentials.fields.password', 'visible-secret');
     });
 
-    it('allows hosted callers to target their own app tool node without a self grant', function (): void {
+    it('allows hosted callers to target their own app tool node with an explicit self grant', function (): void {
         $caller = createTestAppHostNode([
             'name' => 'caller',
             'role' => 'app',
             'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
             'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
         ]);
+
+        grantToolTargetAuthAccess($caller, $caller);
 
         NodeTool::factory()->create([
             'node_id' => $caller->id,
@@ -133,7 +139,53 @@ describe('tool API target authorization', function (): void {
             ->assertJsonPath('success.data.credentials.node', 'caller')
             ->assertJsonPath('success.data.credentials.fields.password', 'self-secret');
 
-        expect(DB::table('node_access')->count())->toBe(0);
+        expect(DB::table('node_access')->count())->toBe(1);
+    });
+
+    it('rejects credentials when the grant only allows reading tools', function (): void {
+        $caller = createToolTargetAuthCaller();
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        grantToolTargetAuthAccess($caller, $visibleNode, ['tool:read']);
+
+        NodeTool::factory()->create([
+            'node_id' => $visibleNode->id,
+            'name' => 'redis',
+            'credentials' => [
+                'fields' => [
+                    'password' => 'visible-secret',
+                ],
+            ],
+        ]);
+
+        $response = $this->call('GET', '/api/tools/redis/credentials', [
+            'node' => 'visible-node',
+        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
+
+    it('allows logs when the grant allows reading tools', function (): void {
+        $caller = createToolTargetAuthCaller();
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        grantToolTargetAuthAccess($caller, $visibleNode, ['tool:read']);
+
+        NodeTool::factory()->create([
+            'node_id' => $visibleNode->id,
+            'name' => 'redis',
+            'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
+        ]);
+
+        $shell = new ToolTargetAuthorizationRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('GET', '/api/tools/redis/logs', [
+            'node' => 'visible-node',
+        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        expect($shell->scripts)->toHaveCount(1);
     });
 
     it('streams tool mutation progress from the canonical endpoint', function (): void {

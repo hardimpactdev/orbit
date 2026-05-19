@@ -7,9 +7,9 @@ namespace App\Services\Firewall;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 
 class FirewallRuleIntent
 {
@@ -150,12 +150,7 @@ class FirewallRuleIntent
             return;
         }
 
-        $authorized = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
-
-        if ($authorized) {
+        if (app(NodeAccessAuthorizer::class)->allows($caller, $node, 'firewall_rule:write')) {
             return;
         }
 
