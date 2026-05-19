@@ -117,6 +117,10 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/database-connections', [DatabaseConnectionController::class, 'index']);
         Route::post('/database-connections', [DatabaseConnectionController::class, 'store']);
+        Route::post('/database-connections/query', [DatabaseConnectionController::class, 'query']);
+        Route::get('/database-connections/tables', [DatabaseConnectionController::class, 'tables']);
+        Route::get('/database-connections/schema', [DatabaseConnectionController::class, 'schema']);
+        Route::get('/database-connections/describe', [DatabaseConnectionController::class, 'describe']);
         Route::get('/database-connections/{connection}', [DatabaseConnectionController::class, 'show']);
         Route::patch('/database-connections/{connection}', [DatabaseConnectionController::class, 'update']);
         Route::delete('/database-connections/{connection}', [DatabaseConnectionController::class, 'destroy']);

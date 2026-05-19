@@ -9,10 +9,13 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Controller;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
 use App\Services\DatabaseConnections\DatabaseConnectionPayloadMapper;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
+use App\Services\DatabaseConnections\DatabaseConnectionSelector;
 use App\Services\DatabaseConnections\DatabaseConnectionTargetResolver;
+use App\Services\DatabaseConnections\DatabaseQueryRunnerFailure;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +39,8 @@ final class DatabaseConnectionController extends Controller implements Loggable
         private readonly DatabaseConnectionPayloadMapper $payloads,
         private readonly DatabaseConnectionTargetResolver $resolver,
         private readonly NodeRoleAssignments $roles,
+        private readonly DatabaseConnectionSelector $selector,
+        private readonly DatabaseConnectionExecutor $executor,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -289,6 +294,67 @@ final class DatabaseConnectionController extends Controller implements Loggable
         ]);
     }
 
+    public function query(Request $request): JsonResponse
+    {
+        $this->activityType = 'api:POST /database-connections/query';
+        $this->activityEffect = $request->boolean('write') ? ActivityLogType::Write : ActivityLogType::Read;
+
+        $auth = $this->authorizeCaller($request);
+
+        if ($auth instanceof JsonResponse) {
+            return $auth;
+        }
+
+        $target = $this->stringValue($request->input('target'));
+        $sql = $this->stringValue($request->input('sql'));
+
+        if ($target === null) {
+            return $this->validationFailed('target', 'Target is required.', ['field' => 'target'], 422);
+        }
+
+        if ($sql === null) {
+            return $this->validationFailed('sql', 'SQL is required.', ['field' => 'sql'], 422);
+        }
+
+        $connection = $this->selector->resolve($target, $this->stringValue($request->input('connection')));
+
+        if ($connection instanceof DatabaseConnectionRegistryFailure) {
+            return $this->failureResponse($connection);
+        }
+
+        $this->activitySubject = $connection;
+        $this->activityProperties = ['target' => $target, 'connection' => $connection->slug];
+
+        try {
+            $result = $this->executor->query($connection, $sql, [
+                'write' => $request->boolean('write'),
+                'full' => $request->boolean('full'),
+                'limit' => $request->input('limit'),
+                'timeout' => $request->input('timeout'),
+                'max_json_bytes' => $request->input('max_json_bytes'),
+            ]);
+
+            return $this->operationResponse($result['data'], $result['meta'], $connection);
+        } catch (DatabaseQueryRunnerFailure $failure) {
+            return $this->queryFailureResponse($failure);
+        }
+    }
+
+    public function tables(Request $request): JsonResponse
+    {
+        return $this->schemaOperation($request, 'tables');
+    }
+
+    public function schema(Request $request): JsonResponse
+    {
+        return $this->schemaOperation($request, 'schema');
+    }
+
+    public function describe(Request $request): JsonResponse
+    {
+        return $this->schemaOperation($request, 'describe');
+    }
+
     public function effect(): ActivityLogType
     {
         return $this->activityEffect;
@@ -442,6 +508,75 @@ final class DatabaseConnectionController extends Controller implements Loggable
                 'meta' => (object) [],
             ],
         ], $successStatus);
+    }
+
+    private function schemaOperation(Request $request, string $operation): JsonResponse
+    {
+        $this->activityType = "api:GET /database-connections/{$operation}";
+        $this->activityEffect = ActivityLogType::Read;
+
+        $auth = $this->authorizeCaller($request);
+
+        if ($auth instanceof JsonResponse) {
+            return $auth;
+        }
+
+        $target = $this->stringValue($request->query('target'));
+
+        if ($target === null) {
+            return $this->validationFailed('target', 'Target is required.', ['field' => 'target'], 422);
+        }
+
+        $connection = $this->selector->resolve($target, $this->stringValue($request->query('connection')));
+
+        if ($connection instanceof DatabaseConnectionRegistryFailure) {
+            return $this->failureResponse($connection);
+        }
+
+        $this->activitySubject = $connection;
+        $this->activityProperties = ['target' => $target, 'connection' => $connection->slug];
+
+        try {
+            $result = match ($operation) {
+                'tables' => $this->executor->tables($connection),
+                'schema' => $this->executor->schema($connection),
+                'describe' => $this->executor->describe($connection, $this->stringValue($request->query('table')) ?? ''),
+                default => $this->executor->schema($connection),
+            };
+
+            return $this->operationResponse($result['data'], $result['meta'], $connection);
+        } catch (DatabaseQueryRunnerFailure $failure) {
+            return $this->queryFailureResponse($failure);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
+     */
+    private function operationResponse(array $data, array $meta, DatabaseConnection $connection): JsonResponse
+    {
+        return response()->json([
+            'success' => [
+                'data' => $data,
+                'meta' => [
+                    'connection' => $connection->slug,
+                    'driver' => $connection->driver,
+                    ...$meta,
+                ],
+            ],
+        ]);
+    }
+
+    private function queryFailureResponse(DatabaseQueryRunnerFailure $failure): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $failure->errorCode,
+                'message' => $failure->getMessage(),
+                'meta' => $failure->meta === [] ? (object) [] : $failure->meta,
+            ],
+        ], $failure->errorCode === 'database_query.write_not_allowed' ? 422 : 400);
     }
 
     private function failureResponse(DatabaseConnectionRegistryFailure $failure): JsonResponse

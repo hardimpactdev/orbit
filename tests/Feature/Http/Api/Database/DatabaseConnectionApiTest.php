@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -64,6 +66,89 @@ describe('database connection api', function (): void {
                 'name' => 'docs',
                 'env_prefix' => 'ANALYTICS_DB',
             ]);
+    });
+
+    it('executes database queries through the typed api without leaking sqlite credentials', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        assignDatabaseApiGatewayRole($caller);
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs-db',
+            'node_id' => $node->id,
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/docs/database/database.sqlite',
+            'username' => null,
+            'credentials' => ['password' => 'never-print-me'],
+        ]);
+        $shell = new DatabaseApiQueryRemoteShell(new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'columns' => ['id'],
+                        'rows' => [['id' => 1]],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        ));
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/database-connections/query', [
+            'target' => $connection->slug,
+            'sql' => 'select id from users',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.rows.0.id', 1)
+            ->assertJsonPath('success.meta.connection', 'docs-db');
+
+        expect($response->getContent())->not->toContain('never-print-me')
+            ->and($shell->script)->not->toContain('never-print-me')
+            ->and($shell->options)->toHaveKey('input');
+    });
+
+    it('executes schema api requests through the typed api', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        assignDatabaseApiGatewayRole($caller);
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        DatabaseConnection::factory()->create([
+            'slug' => 'docs-db',
+            'node_id' => $node->id,
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/docs/database/database.sqlite',
+            'username' => null,
+        ]);
+        app()->instance(RemoteShell::class, new DatabaseApiQueryRemoteShell(new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'columns' => ['name'],
+                        'rows' => [['name' => 'users']],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        )));
+
+        $response = $this->call('GET', '/api/database-connections/tables', [
+            'target' => 'docs-db',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.rows.0.name', 'users')
+            ->assertJsonPath('success.meta.connection', 'docs-db');
     });
 
     it('rejects active app and database callers from registry endpoints', function (): void {
@@ -342,4 +427,62 @@ describe('database connection api', function (): void {
             ->and(DB::table('database_connection_targets')->count())->toBe(0)
             ->and(file_exists('/srv/apps/docs/.env'))->toBeFalse();
     });
+
+    it('rejects explicit query connections that are not attached to the target', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        assignDatabaseApiGatewayRole($caller);
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $attached = DatabaseConnection::factory()->create(['slug' => 'docs-db', 'node_id' => $node->id]);
+        $other = DatabaseConnection::factory()->create(['slug' => 'other-db', 'node_id' => $node->id]);
+        DatabaseConnectionTarget::factory()->for($attached, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+
+        $response = $this->call('POST', '/api/database-connections/query', [
+            'target' => 'docs',
+            'connection' => $other->slug,
+            'sql' => 'select 1',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $response->assertNotFound()
+            ->assertJsonPath('error.code', 'database_connection.target_not_found')
+            ->assertJsonPath('error.meta.slug', 'other-db');
+    });
+
+    it('returns ambiguity errors for query targets with multiple non-default mappings', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        assignDatabaseApiGatewayRole($caller);
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $primary = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
+        $analytics = DatabaseConnection::factory()->create(['slug' => 'analytics-db', 'node_id' => $node->id]);
+        DatabaseConnectionTarget::factory()->for($primary, 'connection')->forApp($app)->create(['env_prefix' => 'PRIMARY_DB']);
+        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->forApp($app)->create(['env_prefix' => 'ANALYTICS_DB']);
+
+        $response = $this->call('POST', '/api/database-connections/query', [
+            'target' => 'docs',
+            'sql' => 'select 1',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'database_connection.ambiguous_target')
+            ->assertJsonPath('error.meta.connections', ['analytics-db', 'primary-db']);
+    });
 });
+
+final class DatabaseApiQueryRemoteShell implements RemoteShell
+{
+    public string $script = '';
+
+    /** @var array<string, mixed> */
+    public array $options = [];
+
+    public function __construct(private readonly RemoteShellResult $result) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->script = $script;
+        $this->options = $options;
+
+        return $this->result;
+    }
+}

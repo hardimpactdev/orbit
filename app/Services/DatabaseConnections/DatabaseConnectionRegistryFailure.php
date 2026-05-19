@@ -81,6 +81,19 @@ final readonly class DatabaseConnectionRegistryFailure
         );
     }
 
+    public static function targetConnectionNotFound(string $ownerType, int $ownerId, string $slug): self
+    {
+        return new self(
+            code: 'database_connection.target_not_found',
+            message: "Database connection '{$slug}' is not attached to {$ownerType} {$ownerId}.",
+            meta: [
+                'owner_type' => $ownerType,
+                'owner_id' => $ownerId,
+                'slug' => $slug,
+            ],
+        );
+    }
+
     public static function hasTargets(string $slug, int $targetCount): self
     {
         return new self(
@@ -89,6 +102,23 @@ final readonly class DatabaseConnectionRegistryFailure
             meta: [
                 'slug' => $slug,
                 'target_count' => $targetCount,
+            ],
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $connections
+     */
+    public static function ambiguousTarget(string $target, array $connections): self
+    {
+        sort($connections);
+
+        return new self(
+            code: 'database_connection.ambiguous_target',
+            message: "Target '{$target}' has multiple database connections. Use --connection=<slug>.",
+            meta: [
+                'target' => $target,
+                'connections' => $connections,
             ],
         );
     }

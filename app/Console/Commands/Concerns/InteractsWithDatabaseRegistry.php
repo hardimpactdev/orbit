@@ -192,6 +192,7 @@ trait InteractsWithDatabaseRegistry
         return match (true) {
             property_exists($dto, 'connections') => ['connections' => $dto->connections, 'count' => $dto->count],
             property_exists($dto, 'connection') => ['connection' => $dto->connection],
+            property_exists($dto, 'data') && property_exists($dto, 'meta') => ['result' => ['data' => $dto->data, 'meta' => $dto->meta]],
             property_exists($dto, 'result') => ['result' => $dto->result],
             default => [],
         };
