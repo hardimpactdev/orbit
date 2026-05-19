@@ -52,6 +52,13 @@ final class ToolStopController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'stop');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
         $operation = fn (): array|ToolRegistryFailure => $lifecycle->stop($tool, node: $node, app: $app);
 
         if ($this->wantsEventStream($request)) {

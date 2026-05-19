@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Tools\AgentToolAuthorizer;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -52,6 +53,29 @@ final class ToolStartController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'start');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
+        $meta = (object) [];
+
+        if ($node !== null) {
+            $targetNode = Node::query()->where('name', $node)->where('status', 'active')->first();
+
+            if ($targetNode instanceof Node) {
+                $warning = app(AgentToolAuthorizer::class)->multipleAgentToolsWarning($targetNode, $tool);
+
+                if ($warning !== null) {
+                    $meta = [
+                        'warnings' => [$warning],
+                    ];
+                }
+            }
+        }
+
         $operation = fn (): array|ToolRegistryFailure => $lifecycle->start($tool, node: $node, app: $app);
 
         if ($this->wantsEventStream($request)) {
@@ -82,7 +106,7 @@ final class ToolStartController implements Loggable
                 'data' => [
                     'tool' => $result,
                 ],
-                'meta' => (object) [],
+                'meta' => $meta,
             ],
         ]);
     }

@@ -26,6 +26,7 @@ use Throwable;
 #[Description('Read managed tool credentials')]
 class ToolCredentialsCommand extends Command
 {
+    use Concerns\AuthorizesAgentToolSelf;
     use HandlesPromptCancellation;
 
     public function handle(ToolCredentialsReader $reader, ToolCatalog $catalog): int
@@ -56,6 +57,16 @@ class ToolCredentialsCommand extends Command
                     meta: [],
                 );
             }
+        }
+
+        $agentSelfAuth = $this->authorizeAgentToolSelfAction($node, $tool, 'credentials');
+
+        if ($agentSelfAuth instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $agentSelfAuth->code,
+                message: $agentSelfAuth->message,
+                meta: $agentSelfAuth->meta,
+            );
         }
 
         $result = $this->isGatewayCaller()

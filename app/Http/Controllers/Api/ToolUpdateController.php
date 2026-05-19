@@ -9,6 +9,8 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Tools\AgentToolAuthorizer;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolUpdater;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -39,19 +41,88 @@ final class ToolUpdateController implements Loggable
 
         $visibleNodeIds = $this->visibleToolNodeIds($caller, false, 'tool:update');
 
-        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
+        $isAgentSelfWithPermission = $this->isAgentSelfWithUpdatePermission($caller);
+
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === [] && ! $isAgentSelfWithPermission) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
         $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
 
         if ($target instanceof JsonResponse) {
+            $agentSelfBypass = $this->agentSelfUpdateBypass($request, $caller, $tool);
+
+            if ($agentSelfBypass !== null) {
+                return $agentSelfBypass;
+            }
+
             return $target;
         }
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'update');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
         $version = $this->requestString($request, 'version');
+
+        return $this->executeUpdate($request, $tool, $updater, $streams, $caller, $node, $app, $version);
+    }
+
+    private function isAgentSelfWithUpdatePermission(Node $caller): bool
+    {
+        $authorizer = app(AgentToolAuthorizer::class);
+
+        if (! $authorizer->isAgentSelf($caller, $caller->name)) {
+            return false;
+        }
+
+        return app(NodeAccessAuthorizer::class)->allows($caller, $caller, 'tool:update:agent-tools');
+    }
+
+    private function agentSelfUpdateBypass(Request $request, Node $caller, string $tool): ?JsonResponse
+    {
+        if (! $this->isAgentSelfWithUpdatePermission($caller)) {
+            return null;
+        }
+
+        $requestedNode = $this->toolTargetString($request, 'node');
+        $requestedApp = $this->toolTargetString($request, 'app');
+
+        if ($requestedApp !== null) {
+            return null;
+        }
+
+        if ($requestedNode !== null && $requestedNode !== $caller->name) {
+            return null;
+        }
+
+        $authorizer = app(AgentToolAuthorizer::class);
+        $result = $authorizer->authorizeAgentSelfAction($caller, $tool, 'update');
+
+        if (! $result['authorized']) {
+            return $this->toolTargetAuthorizationFailed($result['reason'] ?? 'Agent self is not authorized to perform this action.');
+        }
+
+        $version = $this->requestString($request, 'version');
+
+        return $this->executeUpdate($request, $tool, app(ToolUpdater::class), app(ProgressEventStreamResponseFactory::class), $caller, $caller->name, null, $version);
+    }
+
+    private function executeUpdate(
+        Request $request,
+        string $tool,
+        ToolUpdater $updater,
+        ProgressEventStreamResponseFactory $streams,
+        Node $caller,
+        ?string $node,
+        ?string $app,
+        ?string $version,
+    ): JsonResponse|StreamedResponse {
 
         $operation = fn (): array|ToolRegistryFailure => $updater->update(
             tool: $tool,

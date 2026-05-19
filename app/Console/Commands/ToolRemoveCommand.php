@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Console\Commands\Concerns\AuthorizesAgentToolSelf;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -34,6 +35,7 @@ use Throwable;
 #[Description('Remove a managed tool')]
 class ToolRemoveCommand extends Command
 {
+    use AuthorizesAgentToolSelf;
     use HandlesPromptCancellation;
     use RunsToolActionProgress;
 
@@ -84,6 +86,16 @@ class ToolRemoveCommand extends Command
         }
 
         [$node, $app] = $target;
+
+        $agentSelfAuth = $this->authorizeAgentToolSelfAction($node, $tool, 'remove');
+
+        if ($agentSelfAuth instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $agentSelfAuth->code,
+                message: $agentSelfAuth->message,
+                meta: $agentSelfAuth->meta,
+            );
+        }
 
         $targetName = $node ?? (string) $app;
 

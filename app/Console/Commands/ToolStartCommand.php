@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Console\Commands\Concerns\AuthorizesAgentToolSelf;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -17,6 +18,7 @@ use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Tools\AgentToolAuthorizer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
@@ -35,6 +37,7 @@ use Throwable;
 #[Description('Start a managed tool')]
 class ToolStartCommand extends Command
 {
+    use AuthorizesAgentToolSelf;
     use HandlesPromptCancellation;
     use RunsToolActionProgress;
 
@@ -104,6 +107,30 @@ class ToolStartCommand extends Command
 
         [$node, $app] = $target;
 
+        $agentSelfAuth = $this->authorizeAgentToolSelfAction($node, $tool, 'start');
+
+        if ($agentSelfAuth instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $agentSelfAuth->code,
+                message: $agentSelfAuth->message,
+                meta: $agentSelfAuth->meta,
+            );
+        }
+
+        $warning = $this->checkMultipleAgentToolsWarning($node, $tool);
+
+        if ($warning !== null && ! $this->wantsJson() && $this->input->isInteractive()) {
+            $confirmed = $this->confirm($warning['message'], default: false);
+
+            if (! $confirmed) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+        }
+
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()
                 ? $this->runStartLocalToolActionProgress(
@@ -160,7 +187,13 @@ class ToolStartCommand extends Command
             );
         }
 
-        return $this->jsonSuccess(['tool' => $result]);
+        $meta = [];
+
+        if ($warning !== null) {
+            $meta['warnings'] = [$warning['data']];
+        }
+
+        return $this->jsonSuccess(['tool' => $result], $meta);
     }
 
     /**
@@ -449,17 +482,48 @@ class ToolStartCommand extends Command
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
      */
-    private function jsonSuccess(array $data): int
+    private function jsonSuccess(array $data, array $meta = []): int
     {
         $this->line(json_encode([
             'success' => [
                 'data' => $data,
-                'meta' => (object) [],
+                'meta' => $meta === [] ? (object) [] : $meta,
             ],
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{message: string, data: array{code: string, tools: list<string>}}|null
+     */
+    private function checkMultipleAgentToolsWarning(?string $nodeName, string $tool): ?array
+    {
+        if ($nodeName === null) {
+            return null;
+        }
+
+        $targetNode = Node::query()
+            ->where('name', $nodeName)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $targetNode instanceof Node) {
+            return null;
+        }
+
+        $warning = app(AgentToolAuthorizer::class)->multipleAgentToolsWarning($targetNode, $tool);
+
+        if ($warning === null) {
+            return null;
+        }
+
+        return [
+            'message' => 'Orbit discourages running multiple agent tools on one agent node because activity is attributed at node level. Continue?',
+            'data' => $warning,
+        ];
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Console\Commands\Concerns\AuthorizesAgentToolSelf;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -37,6 +38,7 @@ use Throwable;
 #[Description('Restart a managed tool')]
 class ToolRestartCommand extends Command
 {
+    use AuthorizesAgentToolSelf;
     use HandlesPromptCancellation;
     use RunsToolActionProgress;
 
@@ -106,6 +108,16 @@ class ToolRestartCommand extends Command
         }
 
         [$node, $app] = $target;
+
+        $agentSelfAuth = $this->authorizeAgentToolSelfAction($node, $tool, 'restart');
+
+        if ($agentSelfAuth instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $agentSelfAuth->code,
+                message: $agentSelfAuth->message,
+                meta: $agentSelfAuth->meta,
+            );
+        }
 
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()

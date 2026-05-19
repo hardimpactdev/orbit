@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\AuthorizesAgentToolSelf;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -29,6 +30,7 @@ use Throwable;
 #[Description('Update a managed tool')]
 class ToolUpdateCommand extends Command
 {
+    use AuthorizesAgentToolSelf;
     use RunsToolActionProgress;
 
     public function handle(
@@ -57,6 +59,16 @@ class ToolUpdateCommand extends Command
         ?string $app,
         ?string $version,
     ): int {
+        $agentSelfAuth = $this->authorizeAgentToolSelfAction($node, $tool, 'update');
+
+        if ($agentSelfAuth instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $agentSelfAuth->code,
+                message: $agentSelfAuth->message,
+                meta: $agentSelfAuth->meta,
+            );
+        }
+
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()
                 ? $this->runLocalToolActionProgress(

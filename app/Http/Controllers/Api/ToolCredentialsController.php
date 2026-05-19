@@ -43,6 +43,13 @@ final class ToolCredentialsController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'credentials');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
         $result = $reader->read($tool, node: $node, app: $app);
 
         if ($result instanceof ToolRegistryFailure) {

@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Tools\AgentToolAuthorizer;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -40,18 +42,88 @@ final class ToolRestartController implements Loggable
 
         $visibleNodeIds = $this->visibleToolNodeIds($caller, false, 'tool:restart');
 
-        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
+        $isAgentSelfWithPermission = $this->isAgentSelfWithRestartPermission($caller);
+
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === [] && ! $isAgentSelfWithPermission) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
         $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
 
         if ($target instanceof JsonResponse) {
+            $agentSelfBypass = $this->agentSelfRestartBypass($request, $caller, $tool, $lifecycle, $streams);
+
+            if ($agentSelfBypass !== null) {
+                return $agentSelfBypass;
+            }
+
             return $target;
         }
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'restart');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
+        return $this->executeRestart($request, $tool, $lifecycle, $streams, $caller, $node, $app);
+    }
+
+    private function isAgentSelfWithRestartPermission(Node $caller): bool
+    {
+        $authorizer = app(AgentToolAuthorizer::class);
+
+        if (! $authorizer->isAgentSelf($caller, $caller->name)) {
+            return false;
+        }
+
+        return app(NodeAccessAuthorizer::class)->allows($caller, $caller, 'tool:restart');
+    }
+
+    private function agentSelfRestartBypass(
+        Request $request,
+        Node $caller,
+        string $tool,
+        ToolLifecycleManager $lifecycle,
+        ProgressEventStreamResponseFactory $streams,
+    ): ?JsonResponse {
+        if (! $this->isAgentSelfWithRestartPermission($caller)) {
+            return null;
+        }
+
+        $requestedNode = $this->toolTargetString($request, 'node');
+        $requestedApp = $this->toolTargetString($request, 'app');
+
+        if ($requestedApp !== null) {
+            return null;
+        }
+
+        if ($requestedNode !== null && $requestedNode !== $caller->name) {
+            return null;
+        }
+
+        $authorizer = app(AgentToolAuthorizer::class);
+        $result = $authorizer->authorizeAgentSelfAction($caller, $tool, 'restart');
+
+        if (! $result['authorized']) {
+            return $this->toolTargetAuthorizationFailed($result['reason'] ?? 'Agent self is not authorized to perform this action.');
+        }
+
+        return $this->executeRestart($request, $tool, $lifecycle, $streams, $caller, $caller->name, null);
+    }
+
+    private function executeRestart(
+        Request $request,
+        string $tool,
+        ToolLifecycleManager $lifecycle,
+        ProgressEventStreamResponseFactory $streams,
+        Node $caller,
+        ?string $node,
+        ?string $app,
+    ): JsonResponse|StreamedResponse {
         $operation = fn (): array|ToolRegistryFailure => $lifecycle->restart($tool, node: $node, app: $app);
 
         if ($this->wantsEventStream($request)) {

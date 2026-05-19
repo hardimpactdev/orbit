@@ -51,6 +51,13 @@ final class ToolReconfigureController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'reconfigure');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
         $password = $this->requestString($request, 'password');
         $config = $request->input('config', []);
 

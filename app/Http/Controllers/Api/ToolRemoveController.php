@@ -81,6 +81,13 @@ final class ToolRemoveController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'remove');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
         $this->activityNode = $node;
         $this->activityApp = $app;
         $operation = fn (): array|ToolRegistryFailure => $remover->remove($tool, node: $node, app: $app);

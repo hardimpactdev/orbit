@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
+use App\Services\Tools\AgentToolAuthorizer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
@@ -65,6 +66,13 @@ final class ToolInstallController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+
+        $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'install');
+
+        if ($agentSelfAuth instanceof JsonResponse) {
+            return $agentSelfAuth;
+        }
+
         $status = (string) $request->input('status', 'installed');
         $toolConfig = $request->input('config', []);
 
@@ -79,6 +87,22 @@ final class ToolInstallController implements Loggable
             expectedState: $status,
             config: $toolConfig,
         );
+
+        $meta = (object) [];
+
+        if ($status === 'running' && $node !== null) {
+            $targetNode = Node::query()->where('name', $node)->where('status', 'active')->first();
+
+            if ($targetNode instanceof Node) {
+                $warning = app(AgentToolAuthorizer::class)->multipleAgentToolsWarning($targetNode, $tool);
+
+                if ($warning !== null) {
+                    $meta = [
+                        'warnings' => [$warning],
+                    ];
+                }
+            }
+        }
 
         if ($this->wantsEventStream($request)) {
             return $this->streamToolAction(
@@ -105,7 +129,7 @@ final class ToolInstallController implements Loggable
                 'data' => [
                     'tool' => $result,
                 ],
-                'meta' => (object) [],
+                'meta' => $meta,
             ],
         ]);
     }

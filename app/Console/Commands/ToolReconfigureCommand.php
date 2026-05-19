@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Console\Commands\Concerns\AuthorizesAgentToolSelf;
 use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -30,6 +31,7 @@ use Throwable;
 #[Description('Reconfigure a managed tool')]
 class ToolReconfigureCommand extends Command
 {
+    use AuthorizesAgentToolSelf;
     use HandlesPromptCancellation;
     use RunsToolActionProgress;
 
@@ -67,6 +69,16 @@ class ToolReconfigureCommand extends Command
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
         $password = $this->stringOption('password');
+
+        $agentSelfAuth = $this->authorizeAgentToolSelfAction($node, $tool, 'reconfigure');
+
+        if ($agentSelfAuth instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $agentSelfAuth->code,
+                message: $agentSelfAuth->message,
+                meta: $agentSelfAuth->meta,
+            );
+        }
 
         if (! $this->wantsJson()) {
             $progressResult = $this->isGatewayCaller()

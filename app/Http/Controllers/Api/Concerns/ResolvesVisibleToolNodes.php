@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Tools\AgentToolAuthorizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -257,6 +258,39 @@ trait ResolvesVisibleToolNodes
     private function nodeRoleAssignments(): NodeRoleAssignments
     {
         return app(NodeRoleAssignments::class);
+    }
+
+    private function isAgentSelf(Node $caller, ?string $targetNodeName): bool
+    {
+        if ($targetNodeName === null) {
+            return false;
+        }
+
+        if (! $this->nodeRoleAssignments()->nodeHasActiveAgentRole($caller)) {
+            return false;
+        }
+
+        return $caller->name === $targetNodeName;
+    }
+
+    /**
+     * Check agent self authorization for tool actions.
+     */
+    private function authorizeAgentToolAction(Node $caller, ?string $targetNodeName, string $tool, string $action): ?JsonResponse
+    {
+        $authorizer = app(AgentToolAuthorizer::class);
+
+        if (! $authorizer->isAgentSelf($caller, $targetNodeName)) {
+            return null;
+        }
+
+        $result = $authorizer->authorizeAgentSelfAction($caller, $tool, $action);
+
+        if (! $result['authorized']) {
+            return $this->toolTargetAuthorizationFailed($result['reason'] ?? 'Agent self is not authorized to perform this action.');
+        }
+
+        return null;
     }
 
     /**
