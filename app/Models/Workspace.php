@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -70,6 +71,27 @@ class Workspace extends Model
     public function proxyRoutes(): HasMany
     {
         return $this->hasMany(ProxyRoute::class);
+    }
+
+    /**
+     * @return HasMany<DatabaseConnectionTarget, $this>
+     */
+    public function databaseConnectionTargets(): HasMany
+    {
+        return $this->hasMany(DatabaseConnectionTarget::class);
+    }
+
+    /**
+     * @return BelongsToMany<DatabaseConnection, $this>
+     */
+    public function databaseConnections(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            related: DatabaseConnection::class,
+            table: 'database_connection_targets',
+            foreignPivotKey: 'workspace_id',
+            relatedPivotKey: 'database_connection_id',
+        )->withPivot('env_prefix')->withTimestamps();
     }
 
     public function effectivePhpVersion(): ?string

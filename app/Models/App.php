@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
@@ -105,6 +106,27 @@ class App extends Model
     public function deploymentRuns(): HasMany
     {
         return $this->hasMany(DeploymentRun::class)->orderByDesc('started_at');
+    }
+
+    /**
+     * @return HasMany<DatabaseConnectionTarget, $this>
+     */
+    public function databaseConnectionTargets(): HasMany
+    {
+        return $this->hasMany(DatabaseConnectionTarget::class);
+    }
+
+    /**
+     * @return BelongsToMany<DatabaseConnection, $this>
+     */
+    public function databaseConnections(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            related: DatabaseConnection::class,
+            table: 'database_connection_targets',
+            foreignPivotKey: 'app_id',
+            relatedPivotKey: 'database_connection_id',
+        )->withPivot('env_prefix')->withTimestamps();
     }
 
     public function url(): string
