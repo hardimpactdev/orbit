@@ -42,17 +42,6 @@ final class DatabaseConnectionRegistry
             )
             ->when(
                 $node instanceof Node,
-                fn (Builder $query): Builder => $query
-                    ->where(function (Builder $nested): void {
-                        $nested->whereNotNull('node_id');
-                    })
-                    ->orWhere(function (Builder $nested) use ($node): void {
-                        $nested->whereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id))
-                            ->orWhereHas('targets.workspace.app', fn (Builder $workspaceQuery): Builder => $workspaceQuery->where('node_id', $node->id));
-                    }),
-            )
-            ->when(
-                $node instanceof Node,
                 fn (Builder $query): Builder => $query->where(function (Builder $nested) use ($node): void {
                     $nested->where('node_id', $node->id)
                         ->orWhereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id))

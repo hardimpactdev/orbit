@@ -34,6 +34,18 @@ final class DatabaseAddCommand extends Command
     public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseConnectionTargetResolver $resolver): int
     {
         $slug = (string) $this->argument('slug');
+        $nodeSelector = $this->stringOption('node');
+        $node = $this->isGatewayCaller() && $nodeSelector !== null
+            ? $resolver->resolveNode($nodeSelector)
+            : null;
+
+        if ($this->isGatewayCaller() && $nodeSelector !== null && $node === null) {
+            return $this->respondFailure('validation_failed', "Invalid value for --node: '{$nodeSelector}'.", [
+                'field' => 'node',
+                'value' => $nodeSelector,
+            ]);
+        }
+
         $payload = [
             'driver' => $this->stringOption('driver'),
             'host' => $this->stringOption('host'),
@@ -42,7 +54,7 @@ final class DatabaseAddCommand extends Command
             'path' => $this->stringOption('path'),
             'username' => $this->stringOption('username'),
             'password' => $this->stringOption('password'),
-            'node_id' => $resolver->resolveNode($this->stringOption('node'))?->id,
+            'node_id' => $node?->id,
         ];
 
         if ($this->isGatewayCaller()) {

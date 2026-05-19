@@ -36,6 +36,18 @@ final class DatabaseUpdateCommand extends Command
     public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseConnectionTargetResolver $resolver): int
     {
         $slug = (string) $this->argument('connection');
+        $nodeSelector = $this->stringOption('node');
+        $node = $this->isGatewayCaller() && $nodeSelector !== null
+            ? $resolver->resolveNode($nodeSelector)
+            : null;
+
+        if ($this->isGatewayCaller() && $nodeSelector !== null && $node === null) {
+            return $this->respondFailure('validation_failed', "Invalid value for --node: '{$nodeSelector}'.", [
+                'field' => 'node',
+                'value' => $nodeSelector,
+            ]);
+        }
+
         $payload = array_filter([
             'slug' => $this->stringOption('slug'),
             'driver' => $this->stringOption('driver'),
@@ -45,7 +57,7 @@ final class DatabaseUpdateCommand extends Command
             'path' => $this->stringOption('path'),
             'username' => $this->stringOption('username'),
             'password' => $this->stringOption('password'),
-            'node_id' => $this->option('node') !== null ? $resolver->resolveNode($this->stringOption('node'))?->id : null,
+            'node_id' => $this->option('node') !== null ? $node?->id : null,
             'clear_password' => $this->option('clear-password') ? true : null,
         ], static fn (mixed $value): bool => $value !== null);
 

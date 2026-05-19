@@ -28,15 +28,16 @@ final class DatabaseAttachCommand extends Command
     public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads): int
     {
         $slug = (string) $this->argument('connection');
-        $scope = $this->resolveTargetScope();
+        $scope = $this->isGatewayCaller()
+            ? $this->resolveTargetScope()
+            : $this->resolveTargetScopeForForwarding();
 
         if ($scope instanceof DatabaseConnectionRegistryFailure) {
             return $this->respondFailure($scope->code, $scope->message, $scope->meta);
         }
 
-        [$type, $owner, $envPrefix] = $scope;
-
         if ($this->isGatewayCaller()) {
+            [$type, $owner, $envPrefix] = $scope;
             $result = $type === 'app'
                 ? $registry->attachToApp($slug, $owner, $envPrefix)
                 : $registry->attachToWorkspace($slug, $owner, $envPrefix);
@@ -47,9 +48,10 @@ final class DatabaseAttachCommand extends Command
 
             $connection = $payloads->toArray($registry->show($slug));
         } else {
+            [$type, $target, $envPrefix] = $scope;
             $result = $this->sendGatewayRequest(new AttachDatabaseConnectionTargetRequest($slug, array_filter([
-                'app' => $type === 'app' ? $owner->name : null,
-                'workspace' => $type === 'workspace' ? $owner->name : null,
+                'app' => $type === 'app' ? $target : null,
+                'workspace' => $type === 'workspace' ? $target : null,
                 'env_prefix' => $envPrefix,
             ], static fn (mixed $value): bool => $value !== null)));
 
@@ -64,7 +66,8 @@ final class DatabaseAttachCommand extends Command
             return $this->respondSuccess(['connection' => $connection]);
         }
 
-        $this->line("Attached database connection '{$slug}' to {$type} '{$owner->name}' with prefix '{$envPrefix}'.");
+        $targetLabel = $this->isGatewayCaller() ? $owner->name : $target;
+        $this->line("Attached database connection '{$slug}' to {$type} '{$targetLabel}' with prefix '{$envPrefix}'.");
 
         return self::SUCCESS;
     }

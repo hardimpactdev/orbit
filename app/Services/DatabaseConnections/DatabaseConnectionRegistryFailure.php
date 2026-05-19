@@ -25,7 +25,7 @@ final readonly class DatabaseConnectionRegistryFailure
             message: $message,
             meta: [
                 'field' => $field,
-                'value' => $value,
+                'value' => self::sanitizeValue($value),
                 ...$meta,
             ],
         );
@@ -91,5 +91,26 @@ final readonly class DatabaseConnectionRegistryFailure
                 'target_count' => $targetCount,
             ],
         );
+    }
+
+    private static function sanitizeValue(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        $sanitized = [];
+
+        foreach ($value as $key => $item) {
+            if (in_array((string) $key, ['password', 'credentials'], true)) {
+                $sanitized[$key] = '[REDACTED]';
+
+                continue;
+            }
+
+            $sanitized[$key] = self::sanitizeValue($item);
+        }
+
+        return $sanitized;
     }
 }

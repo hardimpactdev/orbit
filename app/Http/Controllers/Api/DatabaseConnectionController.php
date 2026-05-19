@@ -104,6 +104,13 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->validationFailed('slug', 'Database connection slug is required.', ['field' => 'slug']);
         }
 
+        if (isset($payload['__invalid_node'])) {
+            return $this->validationFailed('node', "Invalid value for --node: '{$payload['__invalid_node']}'.", [
+                'field' => 'node',
+                'value' => $payload['__invalid_node'],
+            ], 422);
+        }
+
         $result = $this->registry->create($slug, $payload);
 
         return $this->connectionResponse($result, 200);
@@ -141,6 +148,13 @@ final class DatabaseConnectionController extends Controller implements Loggable
 
         if ($payload === []) {
             return $this->validationFailed('payload', 'At least one mutable field is required.', ['field' => 'payload']);
+        }
+
+        if (isset($payload['__invalid_node'])) {
+            return $this->validationFailed('node', "Invalid value for --node: '{$payload['__invalid_node']}'.", [
+                'field' => 'node',
+                'value' => $payload['__invalid_node'],
+            ], 422);
         }
 
         $result = $this->registry->update($connection, $payload);
@@ -315,7 +329,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
             ], 403);
         }
 
-        if (! $this->roles->nodeIsGateway($caller)) {
+        if ($caller->status !== 'active') {
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',
@@ -334,6 +348,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
     private function connectionPayload(Request $request, bool $allowPartial = false): array
     {
         $payload = [];
+        $nodeSelector = $this->stringValue($request->input('node'));
 
         foreach (['slug', 'driver', 'host', 'database', 'path', 'username', 'password'] as $field) {
             $value = $this->stringValue($request->input($field));
@@ -352,8 +367,13 @@ final class DatabaseConnectionController extends Controller implements Loggable
         }
 
         if ($request->has('node')) {
-            $node = $this->resolver->resolveNode($this->stringValue($request->input('node')));
-            $payload['node_id'] = $node?->id;
+            $node = $this->resolver->resolveNode($nodeSelector);
+
+            if ($nodeSelector !== null && $node === null) {
+                $payload['__invalid_node'] = $nodeSelector;
+            } else {
+                $payload['node_id'] = $node?->id;
+            }
         }
 
         $this->activityProperties = array_filter([

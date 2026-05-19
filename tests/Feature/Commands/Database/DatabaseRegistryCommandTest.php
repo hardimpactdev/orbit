@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Database\AddDatabaseConnectionRequest;
+use App\Http\Gateway\Requests\Database\AttachDatabaseConnectionTargetRequest;
+use App\Http\Gateway\Requests\Database\DetachDatabaseConnectionTargetRequest;
 use App\Http\Gateway\Requests\Database\ListDatabaseConnectionsRequest;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -285,5 +287,147 @@ describe('database registry commands', function (): void {
 
         expect($addExitCode)->toBe(0)
             ->and($addPayload['success']['data']['connection']['slug'])->toBe('remote-db');
+    });
+
+    it('forwards non-gateway attach and detach selectors without requiring local app rows', function (): void {
+        configureDatabaseRegistryControlCaller();
+
+        MockClient::global([
+            AttachDatabaseConnectionTargetRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'connection' => [
+                            'slug' => 'remote-db',
+                            'driver' => 'pgsql',
+                            'host' => 'postgres.internal',
+                            'port' => 5432,
+                            'database' => 'orbit',
+                            'path' => null,
+                            'username' => 'orbit',
+                            'node' => 'db-node',
+                            'targets' => [
+                                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB'],
+                            ],
+                        ],
+                    ],
+                    'meta' => [],
+                ],
+            ], 200),
+            DetachDatabaseConnectionTargetRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'result' => [
+                            'action' => 'detached',
+                            'connection' => 'remote-db',
+                            'target_type' => 'workspace',
+                            'target' => 'feature-docs',
+                            'env_prefix' => 'ANALYTICS_DB',
+                        ],
+                    ],
+                    'meta' => [],
+                ],
+            ], 200),
+        ]);
+
+        $attachExitCode = Artisan::call('database:attach', [
+            'connection' => 'remote-db',
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+        $attachPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        $detachExitCode = Artisan::call('database:detach', [
+            'connection' => 'remote-db',
+            '--workspace' => 'feature-docs',
+            '--env-prefix' => 'ANALYTICS_DB',
+            '--json' => true,
+        ]);
+        $detachPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($attachExitCode)->toBe(0)
+            ->and($attachPayload['success']['data']['connection']['targets'][0])->toBe([
+                'type' => 'app',
+                'name' => 'docs',
+                'env_prefix' => 'DB',
+            ])
+            ->and($detachExitCode)->toBe(0)
+            ->and($detachPayload['success']['data']['result'])->toBe([
+                'action' => 'detached',
+                'connection' => 'remote-db',
+                'target_type' => 'workspace',
+                'target' => 'feature-docs',
+                'env_prefix' => 'ANALYTICS_DB',
+            ]);
+    });
+
+    it('does not leak passwords in command validation errors', function (): void {
+        configureDatabaseRegistryGatewayCaller();
+
+        $exitCode = Artisan::call('database:add', [
+            'slug' => 'broken-db',
+            '--driver' => 'pgsql',
+            '--host' => 'postgres.internal',
+            '--password' => 'super-secret',
+            '--json' => true,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->not->toContain('super-secret');
+    });
+
+    it('applies app and node filters together without leaking other node-owned matches', function (): void {
+        configureDatabaseRegistryGatewayCaller();
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $otherNode = createTestAppHostNode(['name' => 'other-node', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $otherAppOnNode = App::factory()->create(['name' => 'blog', 'node_id' => $node->id]);
+
+        $attachedToDocs = DatabaseConnection::factory()->create(['slug' => 'docs-db']);
+        DatabaseConnectionTarget::factory()->for($attachedToDocs, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+
+        $attachedToOtherAppOnSameNode = DatabaseConnection::factory()->create(['slug' => 'blog-db']);
+        DatabaseConnectionTarget::factory()->for($attachedToOtherAppOnSameNode, 'connection')->forApp($otherAppOnNode)->create(['env_prefix' => 'DB']);
+
+        DatabaseConnection::factory()->create(['slug' => 'node-owned-db', 'node_id' => $node->id]);
+        DatabaseConnection::factory()->create(['slug' => 'other-node-db', 'node_id' => $otherNode->id]);
+
+        $exitCode = Artisan::call('database:list', [
+            '--app' => 'docs',
+            '--node' => 'db-node',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(array_column($payload['success']['data']['connections'], 'slug'))->toBe(['docs-db']);
+    });
+
+    it('fails add and update when node selectors are invalid', function (): void {
+        configureDatabaseRegistryGatewayCaller();
+        DatabaseConnection::factory()->create(['slug' => 'primary-db']);
+
+        $addExitCode = Artisan::call('database:add', [
+            'slug' => 'broken-db',
+            '--driver' => 'sqlite',
+            '--node' => 'missing-node',
+            '--path' => '/srv/orbit/database.sqlite',
+            '--json' => true,
+        ]);
+        $addPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        $updateExitCode = Artisan::call('database:update', [
+            'connection' => 'primary-db',
+            '--node' => 'missing-node',
+            '--json' => true,
+        ]);
+        $updatePayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($addExitCode)->toBe(1)
+            ->and($addPayload['error']['code'])->toBe('validation_failed')
+            ->and($addPayload['error']['meta']['field'])->toBe('node')
+            ->and($updateExitCode)->toBe(1)
+            ->and($updatePayload['error']['code'])->toBe('validation_failed')
+            ->and($updatePayload['error']['meta']['field'])->toBe('node');
     });
 });

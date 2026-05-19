@@ -36,6 +36,31 @@ function assignDatabaseApiGatewayRole(Node $node): void
 }
 
 describe('database connection api', function (): void {
+    it('allows active control callers without a gateway role to use registry endpoints', function (): void {
+        createDatabaseApiCallerNode();
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
+        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+
+        $listResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $attachResponse = $this->call('POST', '/api/database-connections/primary-db/targets', [
+            'app' => 'docs',
+            'env_prefix' => 'ANALYTICS_DB',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $listResponse->assertOk()
+            ->assertJsonPath('success.data.connections.0.slug', 'primary-db');
+        $attachResponse->assertOk();
+
+        expect($attachResponse->json('success.data.connection.targets'))
+            ->toContain([
+                'type' => 'app',
+                'name' => 'docs',
+                'env_prefix' => 'ANALYTICS_DB',
+            ]);
+    });
+
     it('lists and shows canonical database entities without passwords', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
@@ -177,6 +202,47 @@ describe('database connection api', function (): void {
             ->assertJsonPath('error.code', 'database_connection.not_found');
         $invalidAttach->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed');
+    });
+
+    it('does not leak passwords in api validation errors', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        assignDatabaseApiGatewayRole($caller);
+
+        $response = $this->call('POST', '/api/database-connections', [
+            'slug' => 'broken-db',
+            'driver' => 'pgsql',
+            'host' => 'postgres.internal',
+            'password' => 'super-secret',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed');
+
+        expect($response->getContent())->not->toContain('super-secret');
+    });
+
+    it('fails create and update when api node selectors are invalid', function (): void {
+        $caller = createDatabaseApiCallerNode();
+        assignDatabaseApiGatewayRole($caller);
+        DatabaseConnection::factory()->create(['slug' => 'primary-db']);
+
+        $createResponse = $this->call('POST', '/api/database-connections', [
+            'slug' => 'broken-db',
+            'driver' => 'sqlite',
+            'node' => 'missing-node',
+            'path' => '/srv/orbit/database.sqlite',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $updateResponse = $this->call('PATCH', '/api/database-connections/primary-db', [
+            'node' => 'missing-node',
+        ], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+
+        $createResponse->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'node');
+        $updateResponse->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'node');
     });
 
     it('does not rewrite env files during attach and detach', function (): void {

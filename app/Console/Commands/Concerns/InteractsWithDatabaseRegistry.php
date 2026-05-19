@@ -150,6 +150,29 @@ trait InteractsWithDatabaseRegistry
     }
 
     /**
+     * @return array{0: string, 1: string, 2: string}|DatabaseConnectionRegistryFailure
+     */
+    private function resolveTargetScopeForForwarding(): array|DatabaseConnectionRegistryFailure
+    {
+        $app = $this->stringOption('app');
+        $workspace = $this->stringOption('workspace');
+        $envPrefix = $this->stringOption('env-prefix') ?? 'DB';
+        $resolver = app(DatabaseConnectionTargetResolver::class);
+
+        if (($app === null && $workspace === null) || ($app !== null && $workspace !== null)) {
+            return DatabaseConnectionRegistryFailure::validation('scope', null, 'Exactly one of --app or --workspace is required.');
+        }
+
+        if (! $resolver->validEnvPrefix($envPrefix)) {
+            return DatabaseConnectionRegistryFailure::validation('env_prefix', $envPrefix, 'Environment prefix must start with a letter and use only uppercase letters, digits, or underscores.');
+        }
+
+        return $app !== null
+            ? ['app', $app, $envPrefix]
+            : ['workspace', (string) $workspace, $envPrefix];
+    }
+
+    /**
      * @return array<string, mixed>|GatewayApiException
      */
     private function sendGatewayRequest(object $request): array|GatewayApiException
