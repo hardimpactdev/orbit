@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $username
  * @property array<string, mixed>|null $credentials
  * @property-read Node|null $node
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, DatabaseConnectionTarget> $targets
  */
 class DatabaseConnection extends Model
 {

@@ -25,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read App|null $app
+ * @property-read Collection<int, DatabaseConnection> $databaseConnections
+ * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, WorkspaceRun> $runs
  */
 class Workspace extends Model

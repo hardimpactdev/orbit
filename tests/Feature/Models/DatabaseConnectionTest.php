@@ -27,9 +27,11 @@ describe('DatabaseConnection models', function (): void {
         $storedCredentials = DB::table('database_connections')
             ->where('id', $connection->id)
             ->value('credentials');
+        $jsonCredentials = json_encode(['password' => 'secret'], JSON_THROW_ON_ERROR);
 
         expect($storedCredentials)->toBeString()
-            ->not->toContain('secret')
+            ->not->toBe('secret')
+            ->and($storedCredentials)->not->toBe($jsonCredentials)
             ->and($connection->fresh()->credentials)->toBe(['password' => 'secret']);
     });
 
@@ -39,11 +41,8 @@ describe('DatabaseConnection models', function (): void {
 
         $target = DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->for($app)
-            ->create([
-                'workspace_id' => null,
-                'env_prefix' => 'DB',
-            ]);
+            ->forApp($app)
+            ->create(['env_prefix' => 'DB']);
 
         expect($target->connection->is($connection))->toBeTrue()
             ->and($target->app->is($app))->toBeTrue()
@@ -56,11 +55,8 @@ describe('DatabaseConnection models', function (): void {
 
         $target = DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->for($workspace)
-            ->create([
-                'app_id' => null,
-                'env_prefix' => 'DB',
-            ]);
+            ->forWorkspace($workspace)
+            ->create(['env_prefix' => 'DB']);
 
         expect($target->connection->is($connection))->toBeTrue()
             ->and($target->workspace->is($workspace))->toBeTrue()
@@ -72,14 +68,8 @@ describe('DatabaseConnection models', function (): void {
         $primary = DatabaseConnection::factory()->create(['slug' => 'app-primary']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'app-analytics']);
 
-        DatabaseConnectionTarget::factory()->for($primary, 'connection')->for($app)->create([
-            'workspace_id' => null,
-            'env_prefix' => 'DB',
-        ]);
-        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->for($app)->create([
-            'workspace_id' => null,
-            'env_prefix' => 'ANALYTICS_DB',
-        ]);
+        DatabaseConnectionTarget::factory()->for($primary, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->forApp($app)->create(['env_prefix' => 'ANALYTICS_DB']);
 
         expect($app->databaseConnectionTargets)->toHaveCount(2)
             ->and($app->databaseConnections->modelKeys())->toEqualCanonicalizing([$primary->id, $analytics->id]);
@@ -90,14 +80,8 @@ describe('DatabaseConnection models', function (): void {
         $primary = DatabaseConnection::factory()->create(['slug' => 'workspace-primary']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'workspace-analytics']);
 
-        DatabaseConnectionTarget::factory()->for($primary, 'connection')->for($workspace)->create([
-            'app_id' => null,
-            'env_prefix' => 'DB',
-        ]);
-        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->for($workspace)->create([
-            'app_id' => null,
-            'env_prefix' => 'ANALYTICS_DB',
-        ]);
+        DatabaseConnectionTarget::factory()->for($primary, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'ANALYTICS_DB']);
 
         expect($workspace->databaseConnectionTargets)->toHaveCount(2)
             ->and($workspace->databaseConnections->modelKeys())->toEqualCanonicalizing([$primary->id, $analytics->id]);

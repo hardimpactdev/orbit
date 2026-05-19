@@ -28,6 +28,8 @@ use Illuminate\Support\Str;
  * @property-read Node|null $node
  * @property-read Collection<int, DeployStep> $deploySteps
  * @property-read Collection<int, DeploymentRun> $deploymentRuns
+ * @property-read Collection<int, DatabaseConnection> $databaseConnections
+ * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, Workspace> $workspaces
