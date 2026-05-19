@@ -108,7 +108,7 @@ Adoption rules:
 
 ## Test Mapping
 
-Required test files:
+Required implementation test coverage:
 
 | Path | Coverage |
 | --- | --- |

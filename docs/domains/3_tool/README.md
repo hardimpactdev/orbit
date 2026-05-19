@@ -50,8 +50,9 @@ These rules govern what the tool command family owns and what it may not touch.
   admitted only when the workflow is clearer as its own Orbit product surface.
   PHP runtime selection is admitted as `php:*`. Redis-native data-plane
   operations may use `redis:*`. Database connection inventory, env convergence,
-  schema inspection, and audited SQL execution belong to the `database:*`
-  family, not per-database command families.
+  schema inspection, audited SQL execution, and backup/restore where
+  applicable belong to the `database:*` family, not per-database command
+  families.
 
 ## Supported Tool Catalog
 
