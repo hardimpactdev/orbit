@@ -15,7 +15,7 @@ use App\Models\Workspace;
 
 final readonly class DatabaseConnectionAdopter
 {
-    private const SUPPORTED_PREFIXES = ['DB'];
+    private const SUPPORTED_PREFIXES = ['DB', 'ANALYTICS_DB'];
 
     public function __construct(
         private EnvFileEditor $envFileEditor,
@@ -30,84 +30,104 @@ final readonly class DatabaseConnectionAdopter
         $results = [];
 
         foreach ($this->workspacesForNode($node) as $workspace) {
-            $payload = $this->payloadFromEnvPath($node, rtrim($workspace->path, '/').'/.env', 'DB');
+            foreach ($this->payloadsFromEnvPath($node, rtrim($workspace->path, '/').'/.env') as $prefix => $payload) {
+                $target = DatabaseConnectionTarget::query()
+                    ->with('connection')
+                    ->where('workspace_id', $workspace->id)
+                    ->where('env_prefix', $prefix)
+                    ->first();
+                $baseSlug = sprintf(
+                    '%s-%s%s',
+                    $workspace->name,
+                    $workspace->app->name,
+                    $prefix === 'DB' ? '' : '-'.str($prefix)->lower()->replace('_', '-')
+                );
 
-            if ($payload === null) {
-                continue;
+                [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload);
+
+                DatabaseConnectionTarget::query()->updateOrCreate(
+                    ['workspace_id' => $workspace->id, 'env_prefix' => $prefix],
+                    ['database_connection_id' => $connection->id, 'app_id' => null],
+                );
+
+                $results[] = new AdoptResult(
+                    family: 'database_connection',
+                    key: $key,
+                    action: $action,
+                    summary: "Adopted database connection for workspace '{$workspace->name}'.",
+                    detail: ['target_type' => 'workspace', 'target_id' => $workspace->id, 'workspace' => $workspace->name, 'app' => $workspace->app->name, 'env_prefix' => $prefix],
+                );
             }
-
-            $connection = $this->upsertConnection(
-                slug: $this->uniqueSlug(sprintf('%s-%s', $workspace->name, $workspace->app->name)),
-                payload: $payload,
-            );
-            DatabaseConnectionTarget::query()->updateOrCreate(
-                ['workspace_id' => $workspace->id, 'env_prefix' => 'DB'],
-                ['database_connection_id' => $connection->id, 'app_id' => null],
-            );
-
-            $results[] = new AdoptResult(
-                family: 'database_connection',
-                key: 'database_connection.target_extra',
-                action: AdoptAction::Created,
-                summary: "Adopted database connection for workspace '{$workspace->name}'.",
-                detail: ['workspace' => $workspace->name, 'app' => $workspace->app->name, 'env_prefix' => 'DB'],
-            );
         }
 
         foreach ($this->appsForNode($node) as $app) {
-            $payload = $this->payloadFromEnvPath($node, rtrim($app->path, '/').'/.env', 'DB');
+            foreach ($this->payloadsFromEnvPath($node, rtrim($app->path, '/').'/.env') as $prefix => $payload) {
+                $target = DatabaseConnectionTarget::query()
+                    ->with('connection')
+                    ->where('app_id', $app->id)
+                    ->where('env_prefix', $prefix)
+                    ->first();
+                $baseSlug = sprintf(
+                    '%s%s',
+                    $app->name,
+                    $prefix === 'DB' ? '' : '-'.str($prefix)->lower()->replace('_', '-')
+                );
 
-            if ($payload === null) {
-                continue;
+                [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload);
+
+                DatabaseConnectionTarget::query()->updateOrCreate(
+                    ['app_id' => $app->id, 'env_prefix' => $prefix],
+                    ['database_connection_id' => $connection->id, 'workspace_id' => null],
+                );
+
+                $results[] = new AdoptResult(
+                    family: 'database_connection',
+                    key: $key,
+                    action: $action,
+                    summary: "Adopted database connection for app '{$app->name}'.",
+                    detail: ['target_type' => 'app', 'target_id' => $app->id, 'app' => $app->name, 'env_prefix' => $prefix],
+                );
             }
-
-            $connection = $this->upsertConnection(
-                slug: $this->uniqueSlug($app->name),
-                payload: $payload,
-            );
-            DatabaseConnectionTarget::query()->updateOrCreate(
-                ['app_id' => $app->id, 'env_prefix' => 'DB'],
-                ['database_connection_id' => $connection->id, 'workspace_id' => null],
-            );
-
-            $results[] = new AdoptResult(
-                family: 'database_connection',
-                key: 'database_connection.target_extra',
-                action: AdoptAction::Created,
-                summary: "Adopted database connection for app '{$app->name}'.",
-                detail: ['app' => $app->name, 'env_prefix' => 'DB'],
-            );
         }
 
         return $results;
     }
 
-    private function payloadFromEnvPath(Node $node, string $path, string $prefix): ?DatabaseConnectionPayload
+    /**
+     * @return array<string, DatabaseConnectionPayload>
+     */
+    private function payloadsFromEnvPath(Node $node, string $path): array
     {
-        $contents = is_file($path)
+        $contents = $this->shouldUseLocalFilesystem($node) && is_file($path)
             ? file_get_contents($path)
             : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), ['throw' => false])->stdout;
 
         if (! is_string($contents) || $contents === '') {
-            return null;
+            return [];
         }
 
         $values = $this->envFileEditor->parse($contents);
-        $driver = $values["{$prefix}_CONNECTION"] ?? null;
+        $payloads = [];
 
-        if (! is_string($driver) || $driver === '') {
-            return null;
+        foreach (self::SUPPORTED_PREFIXES as $prefix) {
+            $driver = $values["{$prefix}_CONNECTION"] ?? null;
+
+            if (! is_string($driver) || $driver === '') {
+                continue;
+            }
+
+            $payloads[$prefix] = DatabaseConnectionPayload::fromArray([
+                'driver' => $driver,
+                'host' => $values["{$prefix}_HOST"] ?? null,
+                'port' => $values["{$prefix}_PORT"] ?? null,
+                'database' => $values["{$prefix}_DATABASE"] ?? null,
+                'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
+                'username' => $values["{$prefix}_USERNAME"] ?? null,
+                'password' => $values["{$prefix}_PASSWORD"] ?? null,
+            ]);
         }
 
-        return DatabaseConnectionPayload::fromArray([
-            'driver' => $driver,
-            'host' => $values["{$prefix}_HOST"] ?? null,
-            'port' => $values["{$prefix}_PORT"] ?? null,
-            'database' => $values["{$prefix}_DATABASE"] ?? null,
-            'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
-            'username' => $values["{$prefix}_USERNAME"] ?? null,
-            'password' => $values["{$prefix}_PASSWORD"] ?? null,
-        ]);
+        return $payloads;
     }
 
     private function upsertConnection(string $slug, DatabaseConnectionPayload $payload): DatabaseConnection
@@ -140,6 +160,33 @@ final readonly class DatabaseConnectionAdopter
     }
 
     /**
+     * @return array{0: DatabaseConnection, 1: AdoptAction, 2: string}
+     */
+    private function persistObservedConnection(?DatabaseConnectionTarget $target, string $baseSlug, DatabaseConnectionPayload $payload): array
+    {
+        if ($target?->connection instanceof DatabaseConnection) {
+            $target->connection->fill([
+                'driver' => $payload->driver,
+                'host' => $payload->host,
+                'port' => $payload->port,
+                'database' => $payload->database,
+                'path' => $payload->path,
+                'username' => $payload->username,
+                'credentials' => $payload->credentials(),
+            ])->save();
+
+            return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
+        }
+
+        $connection = $this->upsertConnection(
+            slug: $this->uniqueSlug($baseSlug),
+            payload: $payload,
+        );
+
+        return [$connection, AdoptAction::Created, 'database_connection.target_extra'];
+    }
+
+    /**
      * @return list<App>
      */
     private function appsForNode(Node $node): array
@@ -153,5 +200,10 @@ final readonly class DatabaseConnectionAdopter
     private function workspacesForNode(Node $node): array
     {
         return Workspace::query()->with('app')->whereHas('app', fn ($query) => $query->where('node_id', $node->id))->get()->all();
+    }
+
+    private function shouldUseLocalFilesystem(Node $node): bool
+    {
+        return $node->role === 'gateway';
     }
 }

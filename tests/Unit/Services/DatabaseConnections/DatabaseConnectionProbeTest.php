@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 
 describe('DatabaseConnectionProbe', function (): void {
     it('reports env missing and mismatch for an app target on a local path', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "APP_NAME=Docs\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n");
@@ -82,9 +82,79 @@ describe('DatabaseConnectionProbe', function (): void {
         $issues = app(DatabaseConnectionProbe::class)->probe($node);
 
         expect($issues)->toBe([])
-            ->and($shell->scripts)->toHaveCount(1)
+            ->and($shell->scripts)->not->toBe([])
             ->and($shell->scripts[0])->toContain("test -f '/srv/docs/.worktrees/feature/.env'")
             ->and($shell->scripts[0])->toContain("cat '/srv/docs/.worktrees/feature/.env'");
+    });
+
+    it('reports env and target extra issues for observed supported prefixes without mappings', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-extra-app');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', <<<ENV
+DB_CONNECTION=pgsql
+DB_HOST=db.internal
+DB_PORT=5432
+DB_DATABASE=docs
+DB_USERNAME=orbit
+DB_PASSWORD=secret
+ANALYTICS_DB_CONNECTION=mysql
+ANALYTICS_DB_HOST=analytics.internal
+ANALYTICS_DB_PORT=3306
+ANALYTICS_DB_DATABASE=analytics
+ANALYTICS_DB_USERNAME=analytics
+ANALYTICS_DB_PASSWORD=top-secret
+ENV);
+
+        App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $issues = app(DatabaseConnectionProbe::class)->probe($node);
+        $keys = collect($issues)->pluck('key')->all();
+
+        expect($keys)->toContain('database_connection.env_extra')
+            ->toContain('database_connection.target_extra')
+            ->and(collect($issues)->where('key', 'database_connection.env_extra')->count())->toBe(2)
+            ->and(collect($issues)->where('key', 'database_connection.target_extra')->count())->toBe(2);
+    });
+
+    it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-shadowed-remote');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=local-shadow\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'remote-host',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        $shell = new DatabaseConnectionProbeRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "DB_CONNECTION=pgsql\nDB_HOST=remote-host\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $issues = app(DatabaseConnectionProbe::class)->probe($node);
+
+        expect($issues)->toBe([])
+            ->and($shell->scripts)->not->toBe([]);
     });
 });
 

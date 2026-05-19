@@ -875,11 +875,54 @@ final readonly class DoctorReportRunner
                 : null,
             $actions,
         ));
+        $resolvedDatabaseTargets = array_values(array_filter(array_map(
+            fn (array $action): ?string => $this->databaseConnectionResolutionKey($action),
+            $actions,
+        )));
 
         return array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ! in_array($issue['key'] ?? null, $resolvedKeys, true),
+            fn (array $issue): bool => ! in_array($issue['key'] ?? null, $resolvedKeys, true)
+                && ! $this->databaseConnectionIssueResolved($issue, $resolvedDatabaseTargets),
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @param  list<string>  $resolvedTargets
+     */
+    private function databaseConnectionIssueResolved(array $issue, array $resolvedTargets): bool
+    {
+        if (($issue['family'] ?? null) !== 'database_connection') {
+            return false;
+        }
+
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $key = implode(':', [
+            (string) ($detail['target_type'] ?? ''),
+            (string) ($detail['target_id'] ?? ''),
+            (string) ($detail['env_prefix'] ?? ''),
+        ]);
+
+        return in_array($key, $resolvedTargets, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     */
+    private function databaseConnectionResolutionKey(array $action): ?string
+    {
+        if (($action['family'] ?? null) !== 'database_connection' || ! in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true)) {
+            return null;
+        }
+
+        $detail = is_array($action['details'] ?? null) ? $action['details'] : [];
+
+        return implode(':', [
+            (string) ($detail['target_type'] ?? ''),
+            (string) ($detail['target_id'] ?? ''),
+            (string) ($detail['env_prefix'] ?? ''),
+        ]);
     }
 
     /**

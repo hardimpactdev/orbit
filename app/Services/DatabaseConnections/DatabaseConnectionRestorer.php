@@ -29,17 +29,17 @@ final readonly class DatabaseConnectionRestorer
         $contents = $this->readContents($target, $path);
         $updated = $this->envFileEditor->update($contents, $this->expectedEnvValues($target));
 
-        if (is_file($path)) {
+        if ($this->shouldUseLocalFilesystem($target) && is_file($path)) {
             file_put_contents($path, $updated);
 
             return;
         }
 
         $script = sprintf(
-            "mkdir -p %s && cat > %s <<'ORBIT_ENV'\n%s\nORBIT_ENV",
+            'mkdir -p %s && printf %%s %s | base64 -d > %s',
             escapeshellarg(dirname($path)),
+            escapeshellarg(base64_encode($updated)),
             escapeshellarg($path),
-            $updated,
         );
         $result = $this->remoteShell->run($target->app?->node ?? $target->workspace?->app?->node, $script, ['throw' => false]);
 
@@ -71,7 +71,7 @@ final readonly class DatabaseConnectionRestorer
 
     private function readContents(DatabaseConnectionTarget $target, string $path): string
     {
-        if (is_file($path)) {
+        if ($this->shouldUseLocalFilesystem($target) && is_file($path)) {
             return (string) file_get_contents($path);
         }
 
@@ -92,5 +92,12 @@ final readonly class DatabaseConnectionRestorer
         }
 
         return null;
+    }
+
+    private function shouldUseLocalFilesystem(DatabaseConnectionTarget $target): bool
+    {
+        $node = $target->app?->node ?? $target->workspace?->app?->node;
+
+        return $node?->role === 'gateway';
     }
 }
