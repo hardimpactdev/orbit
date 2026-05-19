@@ -98,6 +98,31 @@ describe('database registry commands', function (): void {
             ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('secret');
     });
 
+    it('renders local database connections with the prompts table primitive', function (): void {
+        configureDatabaseRegistryGatewayCaller();
+        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => null,
+            'slug' => 'primary-db',
+            'driver' => 'pgsql',
+        ]);
+        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+
+        $exitCode = Artisan::call('database:list');
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Showing 1 database connection(s).')
+            ->and($output)->toContain('SLUG')
+            ->and($output)->toContain('DRIVER')
+            ->and($output)->toContain('NODE')
+            ->and($output)->toContain('TARGETS')
+            ->and($output)->toContain('primary-db')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('+---');
+    });
+
     it('shows one local database connection without exposing passwords', function (): void {
         configureDatabaseRegistryGatewayCaller();
         $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
@@ -118,6 +143,27 @@ describe('database registry commands', function (): void {
                 ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB'],
             ])
             ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('secret');
+    });
+
+    it('shows one local database connection as key-value lines in human mode', function (): void {
+        configureDatabaseRegistryGatewayCaller();
+        DatabaseConnection::factory()->create([
+            'node_id' => null,
+            'slug' => 'primary-db',
+            'driver' => 'sqlite',
+            'path' => '/srv/docs/database/database.sqlite',
+        ]);
+
+        $exitCode = Artisan::call('database:show', ['connection' => 'primary-db']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Showing database connection 'primary-db'.")
+            ->and($output)->toContain('Slug: primary-db')
+            ->and($output)->toContain('Driver: sqlite')
+            ->and($output)->toContain('Path: /srv/docs/database/database.sqlite')
+            ->and($output)->toContain('Node: —')
+            ->and($output)->not->toContain('+---');
     });
 
     it('creates, updates, attaches, detaches, and removes a connection locally', function (): void {

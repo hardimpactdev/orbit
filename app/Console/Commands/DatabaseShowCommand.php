@@ -64,17 +64,24 @@ final class DatabaseShowCommand extends Command implements Loggable
         }
 
         $this->line("Showing database connection '{$slug}'.");
-        $this->table(['field', 'value'], [
-            ['slug', $connection['slug']],
-            ['driver', $connection['driver']],
-            ['host', $connection['host'] ?? '-'],
-            ['port', $connection['port'] ?? '-'],
-            ['database', $connection['database'] ?? '-'],
-            ['path', $connection['path'] ?? '-'],
-            ['username', $connection['username'] ?? '-'],
-            ['node', $connection['node'] ?? '-'],
-        ]);
+        $this->line("Slug: {$connection['slug']}");
+        $this->line("Driver: {$connection['driver']}");
+        $this->line('Host: '.$this->humanValue($connection['host'] ?? null));
+        $this->line('Port: '.$this->humanValue($connection['port'] ?? null));
+        $this->line('Database: '.$this->humanValue($connection['database'] ?? null));
+        $this->line('Path: '.$this->humanValue($connection['path'] ?? null));
+        $this->line('Username: '.$this->humanValue($connection['username'] ?? null));
+        $this->line('Node: '.$this->humanValue($connection['node'] ?? null));
 
         return self::SUCCESS;
+    }
+
+    private function humanValue(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        return (string) $value;
     }
 }

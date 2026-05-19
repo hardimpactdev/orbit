@@ -18,6 +18,8 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
+use function Laravel\Prompts\table;
+
 #[Signature('database:list
     {--app= : Filter by app selector}
     {--workspace= : Filter by workspace selector}
@@ -95,11 +97,11 @@ final class DatabaseListCommand extends Command implements Loggable
         }
 
         $this->line(sprintf('Showing %d database connection(s).', count($connections)));
-        $this->table(['slug', 'driver', 'node', 'targets'], array_map(
+        table(['SLUG', 'DRIVER', 'NODE', 'TARGETS'], array_map(
             fn (array $connection): array => [
                 $connection['slug'],
                 $connection['driver'],
-                $connection['node'] ?? '-',
+                $connection['node'] ?? '—',
                 (string) count($connection['targets'] ?? []),
             ],
             $connections,

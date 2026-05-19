@@ -11,6 +11,8 @@ use App\Services\DatabaseConnections\DatabaseConnectionSelector;
 use App\Services\DatabaseConnections\DatabaseQueryRunnerFailure;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 trait RunsDatabaseConnectionCommands
 {
     use InteractsWithDatabaseRegistry;
@@ -70,7 +72,7 @@ trait RunsDatabaseConnectionCommands
             return self::SUCCESS;
         }
 
-        $this->table($columns, array_map(
+        table($columns, array_map(
             fn (array $row): array => array_map(fn (string $column): mixed => $row[$column] ?? null, $columns),
             $rows,
         ));
