@@ -158,11 +158,11 @@ it('creates an agent node with default self-grant', function (): void {
         ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'agent'])
         ->and($selfGrant)->not->toBeNull()
         ->and($selfGrant->permissions)->toBe([
+            'doctor:verify',
             'node:read',
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-            'doctor:verify',
         ]);
 });
 
@@ -185,11 +185,11 @@ it('creates an agent node with default self-grant when omitted', function (): vo
         ->and($node)->not->toBeNull()
         ->and($selfGrant)->not->toBeNull()
         ->and($selfGrant->permissions)->toBe([
+            'doctor:verify',
             'node:read',
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-            'doctor:verify',
         ]);
 });
 
@@ -479,11 +479,11 @@ it('does not create accidental self-grant via grant-to=all', function (): void {
     expect($exitCode)->toBe(0)
         ->and($selfGrants)->toHaveCount(1)
         ->and($selfGrants->first()->permissions)->toBe([
+            'doctor:verify',
             'node:read',
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-            'doctor:verify',
         ]);
 });
 
@@ -515,11 +515,11 @@ it('does not create accidental self-grant via grant-from=all', function (): void
     expect($exitCode)->toBe(0)
         ->and($selfGrants)->toHaveCount(1)
         ->and($selfGrants->first()->permissions)->toBe([
+            'doctor:verify',
             'node:read',
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-            'doctor:verify',
         ]);
 });
 

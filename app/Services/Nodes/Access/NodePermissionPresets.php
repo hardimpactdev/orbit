@@ -47,11 +47,11 @@ final class NodePermissionPresets
     private function agentSelf(): array
     {
         return [
+            'doctor:verify',
             'node:read',
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-            'doctor:verify',
         ];
     }
 

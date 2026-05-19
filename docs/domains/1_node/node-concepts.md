@@ -212,8 +212,8 @@ exists.
   `--preset`. Presets do not embed wildcard permissions except the
   `gateway-admin` preset.
 - **Agent self preset:** Preset used by `agent` self grants. Contains
-  `node:read`, `tool:read`, `tool:restart`, `tool:update:agent-tools`, and
-  `doctor:verify`. Excludes `node:update`, `tool:credentials`, `tool:install`,
+  `doctor:verify`, `node:read`, `tool:read`, `tool:restart`, and
+  `tool:update:agent-tools`. Excludes `node:update`, `tool:credentials`, `tool:install`,
   `tool:remove`, `tool:stop`, `tool:reconfigure`, firewall writes, grant
   writes, node role writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
 - **Operator preset:** Default cross-node preset for `agent` nodes and the

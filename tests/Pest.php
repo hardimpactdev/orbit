@@ -37,7 +37,7 @@ pest()->extend(TestCase::class, RefreshDatabase::class)
 
 pest()->extend(TestCase::class)
     ->beforeEach(function (): void {
-        if (env('ORBIT_E2E') !== '1') {
+        if (env('ORBIT_E2E') !== '1' && orbitE2eRequiresEnvironment($this)) {
             $this->markTestSkipped('Set ORBIT_E2E=1 to run ephemeral E2E tests.');
         }
     })
@@ -191,6 +191,26 @@ function fakeHomebrewPrefix(): string
     File::ensureDirectoryExists("{$prefix}/etc");
 
     return $prefix;
+}
+
+function orbitE2eRequiresEnvironment(object $testCase): bool
+{
+    $filename = orbitPestTestFilename($testCase);
+
+    return ! str_ends_with($filename, 'tests/E2E/Ephemeral/AgentNodeProvisioningTest.php');
+}
+
+function orbitPestTestFilename(object $testCase): string
+{
+    try {
+        $property = new ReflectionProperty($testCase::class, '__filename');
+        $property->setAccessible(true);
+        $filename = $property->getValue();
+    } catch (ReflectionException) {
+        return '';
+    }
+
+    return is_string($filename) ? str_replace('\\', '/', $filename) : '';
 }
 
 /**

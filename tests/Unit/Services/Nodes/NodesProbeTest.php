@@ -1999,6 +1999,40 @@ describe('access permission validity', function (): void {
         expect($permission)->toHaveCount(0);
     });
 
+    it('passes normalized permissions on grants', function (): void {
+        $consumer = Node::create([
+            'name' => 'consumer',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        $serving = Node::create([
+            'name' => 'serving',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        NodeAccess::create([
+            'consumer_node_id' => $consumer->id,
+            'serving_node_id' => $serving->id,
+            'permissions' => ['doctor:verify', 'node:read', 'tool:read', 'tool:restart', 'tool:update:agent-tools'],
+        ]);
+
+        $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
+        $permission = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid');
+
+        expect($permission)->toHaveCount(0);
+    });
+
     it('detects unknown permissions on grants', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',

@@ -159,6 +159,7 @@ class NodeNewCommand extends Command
                 installer: $installer,
                 registryWriter: $registryWriter,
                 roleAssignmentService: $nodeRoleAssignmentService,
+                wireGuardKeyGenerator: $wireGuardKeyGenerator,
                 name: $name,
                 roles: $requestedRoles['hosted'],
                 inputs: $inputs,
@@ -461,6 +462,7 @@ class NodeNewCommand extends Command
         OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $roleAssignmentService,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
         string $name,
         array $roles,
         array $inputs,
@@ -544,6 +546,12 @@ class NodeNewCommand extends Command
             user: $user,
             orbitPath: $orbitPath,
         );
+
+        $wireGuardPeerFailure = $this->ensureAgentWireGuardPeer($node, $roles, $wireGuardKeyGenerator);
+
+        if (is_int($wireGuardPeerFailure)) {
+            return $wireGuardPeerFailure;
+        }
 
         $failedAssignment = null;
 
@@ -645,6 +653,57 @@ class NodeNewCommand extends Command
         $this->info("Created node {$name}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function ensureAgentWireGuardPeer(Node $node, array $roles, WireGuardKeyGenerator $wireGuardKeyGenerator): ?int
+    {
+        if (! in_array(NodeRoleName::Agent->value, $roles, true)) {
+            return null;
+        }
+
+        if (WireGuardPeer::query()->where('node_id', $node->id)->exists()) {
+            return null;
+        }
+
+        $wireGuardAddress = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
+
+        if ($wireGuardAddress === '') {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Node '{$node->name}' created but agent WireGuard identity could not be stored.",
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'wireguard_identity',
+                    'error' => 'Node WireGuard address is missing.',
+                ],
+            );
+        }
+
+        try {
+            $keys = $wireGuardKeyGenerator->generateKeyPair();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to generate WireGuard identity material.',
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'wireguard_identity',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        WireGuardPeer::query()->create([
+            'node_id' => $node->id,
+            'public_key' => $keys['public_key'],
+            'private_key' => $keys['private_key'],
+            'allowed_ips' => "{$wireGuardAddress}/32",
+        ]);
+
+        return null;
     }
 
     /**

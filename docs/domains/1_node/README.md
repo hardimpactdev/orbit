@@ -330,7 +330,7 @@ grant edge already permits the call. Presets such as `agent-self`, `operator`,
 sets; custom permissions can be supplied as a comma-separated list. Examples:
 
 ```json
-["node:read", "tool:read", "tool:restart", "tool:update:agent-tools", "doctor:verify"]
+["doctor:verify", "node:read", "tool:read", "tool:restart", "tool:update:agent-tools"]
 ```
 
 ```json

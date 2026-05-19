@@ -670,7 +670,7 @@ final readonly class NodesProbe
             try {
                 $normalized = $normalizer->normalize($permissions);
 
-                if ($normalized !== $permissions) {
+                if ($normalized->permissions !== $permissions) {
                     $drift[] = new DriftEntry(
                         family: $this->key(),
                         key: 'node.access_permission_invalid',
@@ -680,7 +680,8 @@ final readonly class NodesProbe
                             'consumer_node_id' => $grant->consumer_node_id,
                             'serving_node_id' => $grant->serving_node_id,
                             'stored_permissions' => $permissions,
-                            'normalized_permissions' => $normalized,
+                            'normalized_permissions' => $normalized->permissions,
+                            'removed_permissions' => $normalized->removed,
                         ],
                     );
                 }
