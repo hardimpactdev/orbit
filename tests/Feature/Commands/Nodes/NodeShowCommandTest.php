@@ -80,12 +80,18 @@ describe('node:show command contract', function (): void {
         setupNodeShowCommandGatewayCaller();
     });
 
-    it('looks up a node by name and returns successfully', function (): void {
+    it('renders a node show detail tree by name', function (): void {
         DB::table('nodes')->insert(nodeShowCommandRow());
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
+        $output = Artisan::output();
 
-        expect($exitCode)->toBe(0);
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Node: app-1')
+            ->and($output)->toContain('├  Role')
+            ->and($output)->toContain('├  Platform')
+            ->and($output)->toContain('└  Serving')
+            ->and($output)->not->toContain('+---');
     });
 
     it('defaults to the local node when no name is supplied', function (): void {

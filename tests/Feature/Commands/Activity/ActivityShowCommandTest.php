@@ -82,14 +82,18 @@ describe('activity:show command', function (): void {
         $caller = createActivityShowLocalNode('gateway');
         $selected = createCommandShowActivityEntry('activity.shown', 'read', $caller);
 
-        $this->artisan("activity:show {$selected->id}")
-            ->expectsOutputToContain("Activity {$selected->id}")
-            ->expectsOutputToContain('Type: activity.shown')
-            ->expectsOutputToContain('Effect: read')
-            ->expectsOutputToContain('Related: none')
-            ->doesntExpectOutputToContain('"success"')
-            ->doesntExpectOutputToContain('┌')
-            ->assertSuccessful();
+        $exitCode = Artisan::call('activity:show', ['id' => (string) $selected->id]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("┌  Activity: {$selected->id}")
+            ->and($output)->toContain('├  Type')
+            ->and($output)->toContain('activity.shown')
+            ->and($output)->toContain('├  Effect')
+            ->and($output)->toContain('read')
+            ->and($output)->toContain('└  Related')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('"success"');
     });
 
     it('validates required positive integer ids before gateway reads', function (array $arguments, string $reason, string $message): void {

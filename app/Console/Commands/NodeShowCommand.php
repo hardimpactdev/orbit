@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\PromptsForRegistryEntities;
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -29,6 +30,7 @@ use Throwable;
 class NodeShowCommand extends Command
 {
     use PromptsForRegistryEntities;
+    use RendersShowDetails;
 
     public function handle(): int
     {
@@ -232,30 +234,28 @@ class NodeShowCommand extends Command
      */
     private function renderHuman(array $node): void
     {
-        $this->line("Node: {$node['name']}");
-        $this->line("Role: {$node['role']}");
-
         $rolesLabel = $this->humanRolesLabel($node['roles']);
-
-        if ($rolesLabel !== null) {
-            $this->line("Roles: {$rolesLabel}");
-        }
-
-        if ($node['environment'] !== null) {
-            $this->line("Environment: {$node['environment']}");
-        }
-
-        $this->line("Platform: {$node['platform']}");
-        $this->line("WireGuard: {$node['addresses']['wireguard']}");
-
         $consuming = $node['grants']['consuming_nodes'];
         $serving = $node['grants']['serving_nodes'];
 
-        $this->line('Grants:');
-        $consumingStr = $consuming !== [] ? implode(', ', $consuming) : '(none)';
-        $servingStr = $serving !== [] ? implode(', ', $serving) : '(none)';
-        $this->line("  Consuming: {$consumingStr}");
-        $this->line("  Serving: {$servingStr}");
+        $properties = [
+            'Role' => $node['role'],
+            'Environment' => $node['environment'],
+            'Platform' => $node['platform'],
+            'WireGuard' => $node['addresses']['wireguard'],
+            'Consuming' => $consuming,
+            'Serving' => $serving,
+        ];
+
+        if ($rolesLabel !== null) {
+            $properties = [
+                'Role' => $node['role'],
+                'Roles' => $rolesLabel,
+                ...array_slice($properties, 1, preserve_keys: true),
+            ];
+        }
+
+        $this->renderShowDetails("Node: {$node['name']}", $properties);
     }
 
     /**

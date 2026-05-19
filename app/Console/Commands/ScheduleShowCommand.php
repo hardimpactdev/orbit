@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\PromptsForRegistryEntities;
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -26,6 +27,7 @@ use Throwable;
 class ScheduleShowCommand extends Command
 {
     use PromptsForRegistryEntities;
+    use RendersShowDetails;
 
     private ?string $resolvedScheduleApp = null;
 
@@ -125,17 +127,17 @@ class ScheduleShowCommand extends Command
      */
     private function renderHuman(array $schedule): void
     {
-        $this->line((string) ($schedule['name'] ?? ''));
-        $this->newLine();
-        $this->line('Scope: '.$this->value($schedule['scope'] ?? null));
-        $this->line('Target: '.$this->targetName($schedule));
-        $this->line('Node: '.$this->targetNode($schedule));
-        $this->line('Interval: '.$this->value($schedule['interval'] ?? null));
-        $this->line('Timezone: '.$this->value($schedule['timezone'] ?? null));
-        $this->line('Execution: '.$this->executionLabel($schedule));
-        $this->line('Enabled: '.(($schedule['enabled'] ?? false) === true ? 'yes' : 'no'));
-        $this->line('Status: '.$this->value($schedule['status'] ?? null));
-        $this->line('Last Run: '.$this->lastRunLabel($schedule['last_run'] ?? null));
+        $this->renderShowDetails('Schedule: '.(string) ($schedule['name'] ?? ''), [
+            'Scope' => $schedule['scope'] ?? null,
+            'Target' => $this->targetName($schedule),
+            'Node' => $this->targetNode($schedule),
+            'Interval' => $schedule['interval'] ?? null,
+            'Timezone' => $schedule['timezone'] ?? null,
+            'Execution' => $this->executionLabel($schedule),
+            'Enabled' => ($schedule['enabled'] ?? false) === true,
+            'Status' => $schedule['status'] ?? null,
+            'Last run' => $this->lastRunLabel($schedule['last_run'] ?? null),
+        ]);
     }
 
     /**

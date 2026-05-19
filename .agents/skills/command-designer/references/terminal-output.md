@@ -8,6 +8,7 @@ product-authority and lives in
 
 For the visible behavior of:
 
+- single-entity detail output → see [`docs/ux/commands/details/show-detail.md`](../../../../docs/ux/commands/details/show-detail.md);
 - read-only list output → see [`docs/ux/commands/lists/table.md`](../../../../docs/ux/commands/lists/table.md);
 - interactive row selection → see [`docs/ux/commands/lists/data-table-prompt.md`](../../../../docs/ux/commands/lists/data-table-prompt.md);
 - prompts (text, confirm, select, etc.) → see [`docs/ux/commands/inputs/`](../../../../docs/ux/commands/inputs/README.md);
@@ -158,7 +159,7 @@ Remote human progress uses Server-Sent Events:
 
 Prompting remains a caller-side input-mode concern.
 
-## Info And List Commands
+## Detail And List Commands
 
 Info/detail commands and list commands do not use progress trees unless they
 do slow external work. Primitive selection lives in
@@ -167,8 +168,9 @@ read-only list output uses
 [`Laravel\Prompts\table`](../../../../docs/ux/commands/lists/table.md) and
 interactive row selection uses
 [`Laravel\Prompts\datatable`](../../../../docs/ux/commands/lists/data-table-prompt.md).
-Info/detail commands continue to use a key-value tree via
-`WithHumanOutput::renderForHumans()`.
+Show/detail commands use the shared
+[`show-detail`](../../../../docs/ux/commands/details/show-detail.md) primitive
+implemented by `RendersShowDetails`.
 
 ### Display Conventions
 
@@ -176,8 +178,9 @@ Info/detail commands continue to use a key-value tree via
 - Combine `user` and `host` into `user@host` for display, but keep separate
   fields in JSON.
 - Prefix TLDs with `.` in display.
-- Use `-` for null or empty values.
-- Use the entity name as the tree title: `app-1`, not `Node: app-1`.
+- Use `—` for null or empty values.
+- Use `<family nice label singular>: <slug-target>` as the detail title, such
+  as `App: docs` or `Database connection: ditis-hr`.
 
 ### Documentation Fixtures
 
@@ -193,17 +196,16 @@ Use this canonical fixture set unless the command needs a different case:
 Use raw public IPs only when the example demonstrates SSH/bootstrap endpoints,
 gateway endpoint initialization, or explicit public metadata.
 
-### Info Command Example
+### Show Command Example
 
 ```php
-$displayData = [
-    'address' => "{$data['user']}@{$data['host']}",
-    'tld' => $data['tld'] ? ".{$data['tld']}" : '-',
-    'environment' => $data['environment'],
-    'status' => $data['status'],
-];
+use App\Console\Commands\Concerns\RendersShowDetails;
 
-$this->renderForHumans($displayData, $data['name'], treeRowSeparatorLines: 1);
+$this->renderShowDetails("App: {$app['name']}", [
+    'Domain' => $app['domain'],
+    'Environment' => $app['environment'],
+    'Node' => $app['node'],
+]);
 ```
 
 ### List Command Example
@@ -289,7 +291,7 @@ rendering:
 | `WithStepTree` | Step tree rendering, cursor updates, result formatting. | Any command with tree-style output. |
 | `WithSpinner` | Spinner frames and spinner runners. | Any command with async progress. |
 | `WithJsonOutput` | JSON helpers and `respondWithSuccess()`. | Every command with structured output. |
-| `WithHumanOutput` | Key-value tree blocks. | Info/detail commands. |
+| `RendersShowDetails` | Tree-shaped single-entity detail output. | Show/detail commands. |
 | `ResolvesApp` | `--app` and `--node` resolution. | Commands accepting app and node options. |
 
 ## Reference Implementations
@@ -301,6 +303,7 @@ rendering:
 | `GatewayConnectCommand` | Simple sequential `runStepTree`. |
 | `DeployCommand` | Low-level `WithStepTree` with custom rendering. |
 | `NodeUpdateCommand` | Low-level `WithStepTree`. |
+| `DatabaseShowCommand` | `show-detail` rendering through `RendersShowDetails`. |
 | `DoctorCommand` | Parallel checks. |
 | `RestartCommand`, `StartCommand`, `StopCommand` | Async process polling. |
 | `LinkCommand` | Sequential spinner runner. |

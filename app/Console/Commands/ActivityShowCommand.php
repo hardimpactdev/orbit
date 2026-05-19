@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Activity\ShowActivityRequest;
@@ -21,6 +22,8 @@ use Throwable;
 #[Description('Show one gateway activity history entry')]
 class ActivityShowCommand extends Command
 {
+    use RendersShowDetails;
+
     public function handle(ActivityHistory $history): int
     {
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
@@ -132,47 +135,18 @@ class ActivityShowCommand extends Command
      */
     private function renderHuman(array $activity, array $related): void
     {
-        $this->line("Activity {$activity['id']}");
-        $this->line('Time: '.$this->humanTime($activity['occurred_at'] ?? null));
-        $this->line('Type: '.($activity['type'] ?? ''));
-        $this->line('Effect: '.($activity['effect'] ?? ''));
-        $this->line('Subject: '.$this->humanSubject($activity['subject'] ?? null));
-        $this->line('Actor: '.$this->humanActor($activity['actor'] ?? null));
-        $this->line('Command: '.($activity['command'] ?? ''));
-        $this->line('Correlation: '.($activity['correlation_id'] ?? ''));
-        $this->line('Summary: '.($activity['summary'] ?? ''));
-        $this->line('');
-        $this->line('Details:');
-
-        $details = $activity['details'] ?? [];
-
-        if (is_array($details) && $details !== []) {
-            foreach ($details as $key => $value) {
-                $this->line("  {$key}: ".$this->stringValue($value));
-            }
-        } else {
-            $this->line('  none');
-        }
-
-        $this->line('');
-
-        if ($related === []) {
-            $this->line('Related: none');
-
-            return;
-        }
-
-        $this->line('Related:');
-
-        foreach ($related as $entry) {
-            $this->line(sprintf(
-                '  %s  %s  %s  %s',
-                $this->stringValue($entry['id'] ?? ''),
-                $this->humanTime($entry['occurred_at'] ?? null),
-                $this->stringValue($entry['type'] ?? ''),
-                $this->stringValue($entry['effect'] ?? ''),
-            ));
-        }
+        $this->renderShowDetails('Activity: '.(string) ($activity['id'] ?? ''), [
+            'Time' => $this->humanTime($activity['occurred_at'] ?? null),
+            'Type' => $activity['type'] ?? null,
+            'Effect' => $activity['effect'] ?? null,
+            'Subject' => $this->humanSubject($activity['subject'] ?? null),
+            'Actor' => $this->humanActor($activity['actor'] ?? null),
+            'Command' => $activity['command'] ?? null,
+            'Correlation' => $activity['correlation_id'] ?? null,
+            'Summary' => $activity['summary'] ?? null,
+            'Details' => $this->detailsLabel($activity['details'] ?? []),
+            'Related' => $this->relatedLabel($related),
+        ]);
     }
 
     private function humanTime(mixed $value): string
@@ -220,6 +194,42 @@ class ActivityShowCommand extends Command
         }
 
         return json_encode($value, JSON_THROW_ON_ERROR);
+    }
+
+    private function detailsLabel(mixed $details): string
+    {
+        if (! is_array($details) || $details === []) {
+            return '—';
+        }
+
+        $labels = [];
+
+        foreach ($details as $key => $value) {
+            $labels[] = "{$key}: ".$this->stringValue($value);
+        }
+
+        return implode(', ', $labels);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $related
+     */
+    private function relatedLabel(array $related): string
+    {
+        if ($related === []) {
+            return '—';
+        }
+
+        return implode(', ', array_map(
+            fn (array $entry): string => sprintf(
+                '%s %s %s %s',
+                $this->stringValue($entry['id'] ?? ''),
+                $this->humanTime($entry['occurred_at'] ?? null),
+                $this->stringValue($entry['type'] ?? ''),
+                $this->stringValue($entry['effect'] ?? ''),
+            ),
+            $related,
+        ));
     }
 
     /**

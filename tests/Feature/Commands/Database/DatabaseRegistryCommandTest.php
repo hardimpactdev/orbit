@@ -145,24 +145,29 @@ describe('database registry commands', function (): void {
             ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('secret');
     });
 
-    it('shows one local database connection as key-value lines in human mode', function (): void {
+    it('shows one local database connection as a show detail tree in human mode', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        DatabaseConnection::factory()->create([
-            'node_id' => null,
+        $node = createTestAppHostNode(['name' => 'beast', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
             'slug' => 'primary-db',
             'driver' => 'sqlite',
             'path' => '/srv/docs/database/database.sqlite',
         ]);
+        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'ANALYTICS_DB']);
 
         $exitCode = Artisan::call('database:show', ['connection' => 'primary-db']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Showing database connection 'primary-db'.")
-            ->and($output)->toContain('Slug: primary-db')
-            ->and($output)->toContain('Driver: sqlite')
-            ->and($output)->toContain('Path: /srv/docs/database/database.sqlite')
-            ->and($output)->toContain('Node: —')
+            ->and($output)->toContain('┌  Database connection: primary-db')
+            ->and($output)->toContain('├  Driver   sqlite')
+            ->and($output)->toContain('├  Path     /srv/docs/database/database.sqlite')
+            ->and($output)->toContain('├  Apps     docs, feature-docs')
+            ->and($output)->toContain('└  Node     beast')
             ->and($output)->not->toContain('+---');
     });
 

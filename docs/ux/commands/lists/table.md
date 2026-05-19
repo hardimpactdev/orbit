@@ -17,8 +17,8 @@ Choose a different primitive in the following situations.
 
 - The user must pick a row to act on. Use
   [`data-table-prompt`](data-table-prompt.md).
-- A single entity is being shown. Use a key-value tree via
-  `WithHumanOutput::renderForHumans()` instead.
+- A single entity is being shown. Use
+  [`show-detail`](../details/show-detail.md) instead.
 - Rendering progress for a long-running command. Use the
   [progress tree](../progress/progress-tree.md).
 

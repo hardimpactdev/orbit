@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -32,6 +33,7 @@ use Throwable;
 class ToolShowCommand extends Command
 {
     use HandlesPromptCancellation;
+    use RendersShowDetails;
 
     public function handle(ToolCatalog $catalog, ToolRegistry $registry, ToolPayloadMapper $payloads, ToolShowLiveInspector $liveInspector): int
     {
@@ -235,39 +237,50 @@ class ToolShowCommand extends Command
      */
     private function renderHuman(array $tool): void
     {
-        $this->line("Tool: {$tool['name']}");
-        $this->line("Node: {$tool['node']}");
-        $this->line("Expected: {$tool['expected_state']}");
+        $properties = [
+            'Node' => $tool['node'] ?? null,
+            'Expected' => $tool['expected_state'] ?? null,
+        ];
+
         if (($tool['observed_state'] ?? null) !== null) {
-            $this->line("Observed: {$tool['observed_state']}");
+            $properties['Observed'] = $tool['observed_state'];
         }
+
+        $properties['Version'] = $tool['version'] ?? null;
+
         if (($tool['observed_version'] ?? null) !== null) {
-            $this->line("Observed version: {$tool['observed_version']}");
+            $properties['Observed version'] = $tool['observed_version'];
         }
-        $this->line('Version: '.($tool['version'] ?? '(unknown)'));
-        $this->line('Managed: '.(($tool['managed'] ?? false) ? 'yes' : 'no'));
 
-        $this->line('');
-        $this->line('Endpoints:');
+        $this->renderShowDetails("Tool: {$tool['name']}", [
+            ...$properties,
+            'Managed' => ($tool['managed'] ?? false) === true,
+            'Endpoints' => $this->endpointLabels($tool['endpoints'] ?? []),
+        ]);
+    }
 
-        $endpoints = $tool['endpoints'] ?? [];
-
+    private function endpointLabels(mixed $endpoints): string
+    {
         if (! is_array($endpoints) || $endpoints === []) {
-            $this->line('  (none)');
-
-            return;
+            return '—';
         }
+
+        $labels = [];
 
         foreach ($endpoints as $endpoint) {
             if (! is_array($endpoint)) {
                 continue;
             }
 
-            $label = $endpoint['name'] ?? $endpoint['kind'] ?? 'endpoint';
-            $host = $endpoint['host'] ?? null;
-            $port = $endpoint['port'] ?? null;
-            $this->line('  - '.$label.($host ? " {$host}" : '').($port ? ":{$port}" : ''));
+            $label = is_string($endpoint['name'] ?? null)
+                ? $endpoint['name']
+                : (is_string($endpoint['kind'] ?? null) ? $endpoint['kind'] : 'endpoint');
+            $host = is_string($endpoint['host'] ?? null) ? $endpoint['host'] : null;
+            $port = is_scalar($endpoint['port'] ?? null) ? (string) $endpoint['port'] : null;
+            $labels[] = $label.($host ? " {$host}" : '').($port ? ":{$port}" : '');
         }
+
+        return $labels === [] ? '—' : implode(', ', $labels);
     }
 
     /**

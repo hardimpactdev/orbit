@@ -106,10 +106,13 @@ it('renders human schedule list and show output', function (): void {
         ->expectsOutputToContain('laravel-scheduler')
         ->assertSuccessful();
 
-    $this->artisan('schedule:show', ['name' => 'laravel-scheduler', '--app' => 'docs'])
-        ->expectsOutputToContain('laravel-scheduler')
-        ->expectsOutputToContain('Execution: command: php artisan schedule:run')
-        ->assertSuccessful();
+    $showExitCode = Artisan::call('schedule:show', ['name' => 'laravel-scheduler', '--app' => 'docs']);
+    $showOutput = Artisan::output();
+
+    expect($showExitCode)->toBe(0)
+        ->and($showOutput)->toContain('┌  Schedule: laravel-scheduler')
+        ->and($showOutput)->toContain('├  Execution')
+        ->and($showOutput)->toContain('php artisan schedule:run');
 });
 
 it('renders an empty state for schedule filters', function (): void {

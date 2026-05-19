@@ -216,4 +216,26 @@ describe('tool:show command contract', function (): void {
             ->and(DB::table('nodes')->count())->toBe($nodeCount);
         Process::assertNothingRan();
     });
+
+    it('renders a tool show detail tree in human mode', function (): void {
+        createToolShowLocalNode('gateway');
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+
+        NodeTool::factory()->create([
+            'name' => 'redis',
+            'node_id' => $node->id,
+            'expected_state' => 'running',
+            'expected_version' => '7.2',
+        ]);
+
+        $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Tool: redis')
+            ->and($output)->toContain('├  Node')
+            ->and($output)->toContain('├  Expected')
+            ->and($output)->toContain('└  Endpoints')
+            ->and($output)->not->toContain('+---');
+    });
 });

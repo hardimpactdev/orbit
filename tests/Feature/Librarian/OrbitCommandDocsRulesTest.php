@@ -806,8 +806,26 @@ it('reports renderer files without primitive references', function (): void {
             'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
             'severity' => 'error',
             'rule' => 'command_docs.renderer_primitive_reference',
-            'message' => 'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/ux/commands/lists/ or docs/ux/commands/progress/) or explicitly declares "None." with a reason.',
+            'message' => 'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/ux/commands/details/, docs/ux/commands/lists/, or docs/ux/commands/progress/) or explicitly declares "None." with a reason.',
         ]);
+});
+
+it('accepts the show detail renderer primitive reference', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\n- Detail: [Show detail](../../../../ux/commands/details/show-detail.md)\n\n## Progress Tree\n\nNo progress tree. The command is a registry read expected to complete below one second.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers show-detail primitive references. |\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $matchingFindings = findingsForRule($payload, 'command_docs.renderer_primitive_reference');
+
+    expect($exitCode)->toBe(0)
+        ->and($matchingFindings)->toBe([]);
 });
 
 it('reports canonical technical contracts without activity logging declarations', function (): void {

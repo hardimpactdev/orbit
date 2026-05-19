@@ -25,6 +25,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
         'suggest' => 'inputs/suggest-prompt.md',
         'datatable' => 'lists/data-table-prompt.md',
         'table' => 'lists/table.md',
+        'show-detail' => 'details/show-detail.md',
         'progress-tree' => 'progress/progress-tree.md',
         'spinner' => 'progress/spinner.md',
     ];
@@ -86,7 +87,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
         if ($section === null) {
             $findings[] = $this->finding(
                 $file,
-                'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/ux/commands/lists/ or docs/ux/commands/progress/) or explicitly declares "None." with a reason.',
+                'Renderer files must include a "## Primitive" section that names the primitive (linking to docs/ux/commands/details/, docs/ux/commands/lists/, or docs/ux/commands/progress/) or explicitly declares "None." with a reason.',
             );
 
             return $findings;
@@ -101,7 +102,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
         if (! $this->containsRendererPrimitiveLink($body)) {
             $findings[] = $this->finding(
                 $file,
-                'The "## Primitive" section must link to a primitive page under docs/ux/commands/lists/ or docs/ux/commands/progress/, or declare "None." with a one-line reason.',
+                'The "## Primitive" section must link to a primitive page under docs/ux/commands/details/, docs/ux/commands/lists/, or docs/ux/commands/progress/, or declare "None." with a one-line reason.',
                 $section['line'],
             );
         }
@@ -180,7 +181,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
     private function containsRendererPrimitiveLink(string $body): bool
     {
-        return preg_match('#ux/commands/(lists|progress)/[a-z][a-z0-9-]*\.md#', $body) === 1;
+        return preg_match('#ux/commands/(details|lists|progress)/[a-z][a-z0-9-]*\.md#', $body) === 1;
     }
 
     /**

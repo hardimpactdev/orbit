@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\PromptsForRegistryEntities;
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -24,6 +25,7 @@ use Throwable;
 class AppShowCommand extends Command
 {
     use PromptsForRegistryEntities;
+    use RendersShowDetails;
 
     public function handle(): int
     {
@@ -276,47 +278,58 @@ class AppShowCommand extends Command
     {
         $app = $payload['app'];
         $details = $payload['details'];
-
-        $this->line("App: {$app['name']}");
-        $this->line('Domain: '.($details['domain'] ?? ''));
-        $this->line("Environment: {$app['environment']}");
-
         $node = is_array($details['node'] ?? null) ? $details['node'] : [];
-        $nodeName = $node['name'] ?? $app['node'];
-        $nodeHost = $node['host'] ?? null;
-        $this->line('Node: '.$nodeName.($nodeHost ? " ({$nodeHost})" : ''));
 
-        $this->line('');
-        $this->line('Registry:');
-        $this->line('  Repository:    '.($app['repository'] ?? '(none)'));
-        $this->line("  PHP Version:   {$app['php_version']}");
-        $this->line("  App Path:      {$app['path']}");
-        $this->line('  Document Root: '.$details['document_root']);
-
-        $this->renderListSection('Workspaces', $details['workspaces'] ?? []);
-        $this->renderListSection('Processes', $details['processes'] ?? []);
-        $this->renderListSection('Routes', $details['routes'] ?? []);
+        $this->renderShowDetails("App: {$app['name']}", [
+            'Domain' => $details['domain'] ?? null,
+            'Environment' => $app['environment'] ?? null,
+            'Node' => $this->nodeLabel($node, $app['node'] ?? null),
+            'Repository' => $app['repository'] ?? null,
+            'PHP' => $app['php_version'] ?? null,
+            'Path' => $app['path'] ?? null,
+            'Root' => $details['document_root'] ?? null,
+            'Workspaces' => $this->itemLabels($details['workspaces'] ?? []),
+            'Processes' => $this->itemLabels($details['processes'] ?? []),
+            'Routes' => $this->itemLabels($details['routes'] ?? []),
+        ]);
     }
 
-    private function renderListSection(string $title, mixed $items): void
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeLabel(array $node, mixed $fallback): string
     {
-        $this->line('');
-        $this->line("{$title}:");
+        $name = is_string($node['name'] ?? null) ? $node['name'] : $fallback;
+        $host = is_string($node['host'] ?? null) ? $node['host'] : null;
 
-        if (! is_array($items) || $items === []) {
-            $this->line('  (none)');
-
-            return;
+        if (! is_string($name) || $name === '') {
+            return '—';
         }
+
+        return $host === null || $host === '' ? $name : "{$name} ({$host})";
+    }
+
+    private function itemLabels(mixed $items): string
+    {
+        if (! is_array($items) || $items === []) {
+            return '—';
+        }
+
+        $labels = [];
 
         foreach ($items as $item) {
             if (! is_array($item)) {
                 continue;
             }
 
-            $label = $item['name'] ?? $item['host'] ?? 'unknown';
-            $this->line("  - {$label}");
+            $label = $item['name'] ?? $item['host'] ?? null;
+
+            if (is_string($label) && $label !== '') {
+                $labels[] = $label;
+            }
         }
+
+        return $labels === [] ? '—' : implode(', ', $labels);
     }
 
     /**

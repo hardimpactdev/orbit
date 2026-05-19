@@ -173,4 +173,20 @@ describe('app:show command contract', function (): void {
             ->and(DB::table('nodes')->count())->toBe($nodeCount);
         Process::assertNothingRan();
     });
+
+    it('renders an app show detail tree in human mode', function (): void {
+        createAppShowLocalNode('gateway');
+        createShowApp();
+
+        $exitCode = Artisan::call('app:show', ['app' => 'docs']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  App: docs')
+            ->and($output)->toContain('├  Domain')
+            ->and($output)->toContain('├  Environment')
+            ->and($output)->toContain('├  Node')
+            ->and($output)->toContain('└  Routes')
+            ->and($output)->not->toContain('+---');
+    });
 });

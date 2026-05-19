@@ -81,7 +81,7 @@ describe('workspace:show base contract', function (): void {
         DataTablePrompt::fake([Key::DOWN, Key::ENTER]);
 
         $this->artisan('workspace:show')
-            ->expectsOutputToContain('Workspace: feature-docs')
+            ->expectsOutputToContain('┌  Workspace: feature-docs')
             ->assertSuccessful();
     });
 
@@ -110,7 +110,7 @@ describe('workspace:show base contract', function (): void {
         DataTablePrompt::fake([Key::ENTER]);
 
         $this->artisan('workspace:show feature-docs')
-            ->expectsOutputToContain('App:       docs')
+            ->expectsOutputToContain('├  App')
             ->assertSuccessful();
     });
 
@@ -218,5 +218,25 @@ describe('workspace:show base contract', function (): void {
         expect(DB::table('workspaces')->count())->toBe($workspaceCount)
             ->and(DB::table('workspace_runs')->count())->toBe($runCount);
         Process::assertNothingRan();
+    });
+
+    it('renders a workspace show detail tree in human mode', function (): void {
+        createWorkspaceShowLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7', 'tld' => 'test']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+
+        $exitCode = Artisan::call('workspace:show', [
+            'name' => 'feature-docs',
+            '--app' => 'docs',
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Workspace: feature-docs')
+            ->and($output)->toContain('├  App')
+            ->and($output)->toContain('├  URL')
+            ->and($output)->toContain('└  Latest setup')
+            ->and($output)->not->toContain('+---');
     });
 });

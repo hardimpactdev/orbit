@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\PromptsForRegistryEntities;
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -27,6 +28,7 @@ use Throwable;
 class WorkspaceShowCommand extends Command
 {
     use PromptsForRegistryEntities;
+    use RendersShowDetails;
 
     public function handle(WorkspaceShowPayload $payload): int
     {
@@ -273,52 +275,86 @@ class WorkspaceShowCommand extends Command
         $route = $workspace['route'];
         $latestSetupRun = $workspace['latest_setup_run'];
 
-        $this->line("Workspace: {$workspace['name']}");
-        $this->line("App:       {$workspace['app']}");
-        $this->line('Branch:    '.($workspace['branch'] ?? '(none)'));
-        $this->line("Node:      {$node['name']} ({$node['host']})");
-        $this->line("URL:       {$workspace['url']}");
-        $this->line("Path:      {$workspace['path']}");
-        $this->newLine();
-        $this->line('Agent IDE:');
-        $this->line('  Adapter:   '.($agentIde['adapter'] ?? '(none)'));
-        $this->line("  Source:    {$agentIde['inherited_from']}");
-        $this->line('  Discovery: '.($agentIde['workspace_discovery'] ?? '(none)'));
-        $this->newLine();
-        $this->line('Runtime Expectations:');
-        $this->line("  PHP Version: {$runtime['php_version']} (inherited from {$runtime['php_version_inherited_from']})");
-        $this->line("  FPM Pool:    {$runtime['fpm_pool']}");
-        $this->line("  Hostname:    {$runtime['hostname']}");
-        $this->newLine();
-        $this->line('Inherited Processes:');
+        $this->renderShowDetails("Workspace: {$workspace['name']}", [
+            'App' => $workspace['app'] ?? null,
+            'Branch' => $workspace['branch'] ?? null,
+            'Node' => $this->nodeLabel($node),
+            'URL' => $workspace['url'] ?? null,
+            'Path' => $workspace['path'] ?? null,
+            'Agent IDE' => $agentIde['adapter'] ?? null,
+            'PHP' => sprintf(
+                '%s (inherited from %s)',
+                (string) ($runtime['php_version'] ?? '—'),
+                (string) ($runtime['php_version_inherited_from'] ?? '—'),
+            ),
+            'FPM pool' => $runtime['fpm_pool'] ?? null,
+            'Hostname' => $runtime['hostname'] ?? null,
+            'Processes' => $this->processLabels($processes),
+            'Route' => $this->routeLabel($route),
+            'Latest setup' => $this->latestSetupLabel($latestSetupRun),
+        ]);
+    }
 
-        if ($processes === []) {
-            $this->line('  (none)');
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeLabel(array $node): string
+    {
+        $name = is_string($node['name'] ?? null) ? $node['name'] : null;
+        $host = is_string($node['host'] ?? null) ? $node['host'] : null;
+
+        if ($name === null || $name === '') {
+            return '—';
         }
+
+        return $host === null || $host === '' ? $name : "{$name} ({$host})";
+    }
+
+    private function processLabels(mixed $processes): string
+    {
+        if (! is_array($processes) || $processes === []) {
+            return '—';
+        }
+
+        $labels = [];
 
         foreach ($processes as $process) {
-            $this->line("  - {$process['name']}");
+            if (is_array($process) && is_string($process['name'] ?? null) && $process['name'] !== '') {
+                $labels[] = $process['name'];
+            }
         }
 
-        if (is_array($route)) {
-            $this->newLine();
-            $this->line('Route:');
-            $this->line("  - {$route['host']} (kind: {$route['kind']}, owner: {$route['owner']})");
+        return $labels === [] ? '—' : implode(', ', $labels);
+    }
+
+    private function routeLabel(mixed $route): string
+    {
+        if (! is_array($route) || ! is_string($route['host'] ?? null) || $route['host'] === '') {
+            return '—';
         }
 
-        $this->newLine();
-        $this->line('Latest Setup Run:');
+        $kind = is_string($route['kind'] ?? null) ? $route['kind'] : 'unknown';
+        $owner = is_string($route['owner'] ?? null) ? $route['owner'] : 'unknown';
 
+        return "{$route['host']} (kind: {$kind}, owner: {$owner})";
+    }
+
+    private function latestSetupLabel(mixed $latestSetupRun): string
+    {
         if (! is_array($latestSetupRun)) {
-            $this->line('  (never run)');
-        } else {
-            $this->line("  Run ID:    {$latestSetupRun['run_id']}");
-            $this->line("  Status:    {$latestSetupRun['status']}");
-            $this->line('  Finished:  '.($latestSetupRun['completed_at'] ?? '(not completed)'));
+            return '—';
         }
 
-        $this->newLine();
-        $this->line("Note: This view reflects registry intent. Run 'doctor --family=workspace' to verify live reality.");
+        $id = $latestSetupRun['run_id'] ?? null;
+        $status = $latestSetupRun['status'] ?? null;
+        $completed = $latestSetupRun['completed_at'] ?? null;
+
+        return sprintf(
+            '%s, %s, finished %s',
+            is_scalar($id) ? (string) $id : 'unknown run',
+            is_scalar($status) ? (string) $status : 'unknown status',
+            is_scalar($completed) && $completed !== '' ? (string) $completed : 'not completed',
+        );
     }
 
     /**

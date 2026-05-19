@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\InteractsWithDatabaseRegistry;
+use App\Console\Commands\Concerns\RendersShowDetails;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
@@ -24,6 +25,7 @@ use Illuminate\Console\Command;
 final class DatabaseShowCommand extends Command implements Loggable
 {
     use InteractsWithDatabaseRegistry;
+    use RendersShowDetails;
 
     public function handle(DatabaseConnectionRegistry $registry, DatabaseConnectionPayloadMapper $payloads, DatabaseAuditPayload $audit): int
     {
@@ -63,25 +65,45 @@ final class DatabaseShowCommand extends Command implements Loggable
             return $this->respondSuccess(['connection' => $connection]);
         }
 
-        $this->line("Showing database connection '{$slug}'.");
-        $this->line("Slug: {$connection['slug']}");
-        $this->line("Driver: {$connection['driver']}");
-        $this->line('Host: '.$this->humanValue($connection['host'] ?? null));
-        $this->line('Port: '.$this->humanValue($connection['port'] ?? null));
-        $this->line('Database: '.$this->humanValue($connection['database'] ?? null));
-        $this->line('Path: '.$this->humanValue($connection['path'] ?? null));
-        $this->line('Username: '.$this->humanValue($connection['username'] ?? null));
-        $this->line('Node: '.$this->humanValue($connection['node'] ?? null));
+        $properties = [
+            'Driver' => $connection['driver'] ?? null,
+            'Host' => $connection['host'] ?? null,
+            'Port' => $connection['port'] ?? null,
+            'Name' => $connection['database'] ?? null,
+        ];
+
+        if (($connection['path'] ?? null) !== null && $connection['path'] !== '') {
+            $properties['Path'] = $connection['path'];
+        }
+
+        $this->renderShowDetails("Database connection: {$connection['slug']}", [
+            ...$properties,
+            'User' => $connection['username'] ?? null,
+            'Apps' => $this->targetLabels($connection['targets'] ?? []),
+            'Node' => $connection['node'] ?? null,
+        ]);
 
         return self::SUCCESS;
     }
 
-    private function humanValue(mixed $value): string
+    private function targetLabels(mixed $targets): string
     {
-        if ($value === null || $value === '') {
+        if (! is_array($targets)) {
             return '—';
         }
 
-        return (string) $value;
+        $labels = [];
+
+        foreach ($targets as $target) {
+            if (! is_array($target) || ! is_string($target['name'] ?? null) || $target['name'] === '') {
+                continue;
+            }
+
+            $labels[] = $target['name'];
+        }
+
+        $labels = array_values(array_unique($labels));
+
+        return $labels === [] ? '—' : implode(', ', $labels);
     }
 }

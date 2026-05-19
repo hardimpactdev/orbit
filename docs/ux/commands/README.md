@@ -18,6 +18,8 @@ These rules apply to all renderer and input-mode docs in this tree.
   [`datatable`](lists/data-table-prompt.md) whenever the operator must choose an
   existing Orbit entity from finite registry state before a command action, such
   as an app, node, workspace, process, schedule, or tool target.
+- Show commands use [`show-detail`](details/show-detail.md): a single
+  tree-shaped detail view with a title and aligned property rows.
 - Open `text` and `number` prompts are only for values that are not knowable as
   a finite option set at prompt time, such as new names, paths, hosts, domains,
   commands, or counts.
@@ -38,6 +40,7 @@ Each family links to a selection guide and individual primitive pages.
 
 | Family | Pages |
 | --- | --- |
+| [Details](details/show-detail.md) | `show-detail` |
 | [Lists](lists/README.md) | `table`, `data-table-prompt` |
 | [Inputs](inputs/README.md) | `text`, `password`, `confirm`, `select`, `multi-select`, `search`, `multi-search`, `suggest` |
 | [Progress](progress/README.md) | `progress-tree`, `spinner` |
