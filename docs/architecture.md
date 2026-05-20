@@ -76,6 +76,8 @@ combine with `database` on the same node, so a single node can serve apps and
 host their database tools together. The `agent` role remains exclusive. The
 full compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
+Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
+
 Nodes other than the gateway do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on any node, but only as a client that calls the gateway like any other caller.
 
 ### VPN
@@ -90,6 +92,19 @@ Nodes with only `app-development` or `database` roles do not need a public
 face. Nodes with the `app-production` role expose only ports 80 and 443 to the
 open internet; SSH and the Orbit API stay reachable only over the VPN. The
 current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
+
+### DNS responsibilities
+
+Orbit splits DNS responsibility across four concerns and three families. These do not overlap.
+
+| Concern | Owner | Verified by |
+|---|---|---|
+| Gateway-owned development/agent DNS mappings (which TLD points at which WireGuard IP) | node family | `doctor --family=node` |
+| VPN-facing DNS runtime (the dnsmasq + wg-easy substrate that serves those mappings) | `vpn` role baseline | `doctor --family=tool` for the `dns` tool row; `doctor --family=node --restore` re-applies the baseline wholesale |
+| Caller-local resolver overrides on an operator's own machine | `dns:*` command family | — |
+| Public DNS / CDN for production domains | Cloudflare integration | `cf-*` command family |
+
+The `dns:*` command family does not edit gateway DNS; the tool family does not own DNS records.
 
 ### CLI
 
@@ -135,6 +150,20 @@ This grant model lets you scope access naturally:
 - A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:restart` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
 
 Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no node-side config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
+
+#### Self-grants and self-serving
+
+A self-grant is a grant where the consuming node and the serving node are the same node. It is the only way a node has any access to itself; access is never implicit. Self-grants are created during `node:new` — each role's baseline self-grant is materialized from the role's self preset.
+
+Self-targeting commands flow through the gateway like any other command. When a CLI on node `N` calls a command targeting `N`, the path is:
+
+`N → gateway (HTTPS over WireGuard) → gateway authorizes the self-grant → gateway SSHs back to N via RemoteShell and applies`
+
+Node-side state is never written by the local CLI. The gateway is the only writer.
+
+This is why commands like `workspace:setup` work when run from inside a workspace path on an `app-development` or `app-production` node: the node's self-grant includes the necessary workspace permissions. It is not an exception — it is the self-grant model.
+
+The one shape that cannot self-serve is a bare client (no role assignments). The gateway authorizes the call but has nowhere to dispatch node-side work, because the gateway does not open SSH connections to client-only machines.
 
 ### Command and API model
 
@@ -189,13 +218,16 @@ Reality drifts. The gateway tracks configuration; a node is meant to match it; o
 
 `orbit doctor` is how you catch and resolve all of those. It runs across a single family, a single node, or the whole fleet, and reports everything that isn't in the expected state.
 
-Without any flag, doctor only reports. To act on what it finds, pass one of three mutually-exclusive flags:
+Doctor has four modes. Without any flag it only reports. The other three modes are selected by mutually-exclusive flags:
 
 | Mode | Flag | Meaning |
 |---|---|---|
-| Fix | `--fix` | Interactive resolution. For each drifted item, doctor asks you to restore or adopt. |
+| Verify | *(none)* | Default. Compare gateway configuration and node reality; report only. |
+| Interactive | `--fix` | Prompt per drifted item: restore, adopt, skip, or view details. |
 | Restore | `--restore` | Force-restore non-interactively. The gateway is right; re-apply gateway configuration on every drifted item. |
 | Adopt | `--adopt` | Force-adopt non-interactively. The node is right; record observed node reality into gateway configuration for every drifted item. |
+
+The mode names are also used by the doctor permission registry: `doctor:verify`, `doctor:restore`, and `doctor:adopt` are the permission strings that gate access to each mode.
 
 Restore is the common case: you fix a node by pushing the gateway's version of the world back onto it. Adopt is the recovery case — a manual host setup, a migration, a disaster recovery — where the node holds the right answer and the gateway needs to learn it.
 

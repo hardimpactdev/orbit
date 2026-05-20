@@ -79,11 +79,7 @@ items.
   },
   "enabled": true,
   "status": "expected",
-  "scheduler": {
-    "node": "app-1",
-    "heartbeat_at": "2026-05-02T08:00:01Z",
-    "registry_synced_at": "2026-05-02T07:59:50Z"
-  },
+  "scheduler_heartbeat_at": "2026-05-02T08:00:01Z",
   "last_run": {
     "id": 12,
     "status": "completed",
@@ -100,16 +96,14 @@ items.
 | `scope` | `app`, `node`, or `orbit` | Scope that owns the schedule. |
 | `target.type` | string | Target kind. |
 | `target.name` | string | App, node, or Orbit maintenance target. |
-| `target.node` | string | Node where recurring artifacts are expected. |
+| `target.node` | string | Node the dispatched command executes on. The gateway scheduler dispatches over `RemoteShell` when the target is not the gateway. |
 | `interval` | string | Portable Orbit interval expression. |
 | `timezone` | string | Timezone used to interpret the interval. |
 | `execution.type` | `command` or `script` | Execution source kind. |
 | `execution.value` | string | Inline command or managed script path. |
 | `enabled` | boolean | Whether the recurring schedule should run. |
 | `status` | string | Gateway-configuration status, not live scheduler verification. |
-| `scheduler.node` | string | Node where the Orbit Scheduler responsible for this schedule runs. |
-| `scheduler.heartbeat_at` | string \| null | ISO-8601 of the most recent scheduler heartbeat reported to the gateway. `null` until the first heartbeat is recorded. |
-| `scheduler.registry_synced_at` | string \| null | ISO-8601 of the most recent schedule-configuration sync the scheduler completed. `null` until the first sync is recorded. |
+| `scheduler_heartbeat_at` | string \| null | ISO-8601 of the most recent gateway-scheduler heartbeat. `null` until the first heartbeat is recorded. The Orbit Scheduler is gateway-only; there is no per-target scheduler. |
 | `last_run` | object \| null | Latest durable run history when available. |
 
 ## Commands

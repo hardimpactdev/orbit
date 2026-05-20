@@ -91,22 +91,34 @@ output, but first gateway bootstrap assigns them together and normal
 
 ## Role Settings
 
-Role-local desired configuration lives on the role assignment, not on the
-generic node record. Each role assignment has typed settings:
+Role-local desired configuration lives on the role assignment when the setting
+is specific to that role. Some settings are shared dependencies of multiple
+roles and live as node-level fields that any qualifying role assignment can
+require, read, and write.
 
-| Role | Settings |
-| --- | --- |
-| `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` |
-| `app-development` | `tld` |
-| `app-production` | none in v1 |
-| `database` | none in v1 |
-| `gateway` | none in v1 |
-| `agent` | `tld` with default `agent` during interactive `node:new` setup |
+| Role | Role-assignment settings | Node-level settings the role requires |
+| --- | --- | --- |
+| `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` | — |
+| `app-development` | — | `tld` |
+| `app-production` | — | — |
+| `database` | — | — |
+| `gateway` | — | — |
+| `agent` | — | `tld` (default `agent` during interactive `node:new` setup) |
 
-Changing role settings is a desired-state change and triggers the same baseline
-convergence path as adding the role. The `agent` role's `tld` follows the same
-single-lowercase-DNS-label rule as `app-development` and must be unique among
-active TLD-backed role assignments in the fleet.
+A node can hold at most one `tld` value at a time. Roles that depend on `tld`
+read and write the same node-level field. This shared field keeps the data
+model coherent if a future version allows `app-development` and `agent` to
+coexist on one node (the v1 compatibility matrix forbids that today).
+Changing the node-level `tld` is a desired-state change and triggers
+baseline convergence
+for every active role assignment that depends on it.
+
+The `tld` value follows the single-lowercase-DNS-label rule and must be unique
+across the active fleet.
+
+Changing role-assignment settings (the per-role columns above) is also a
+desired-state change and triggers the same baseline convergence path as
+adding the role.
 
 `public_endpoint` is the host or IP WireGuard peers use to reach the VPN.
 `wireguard_cidr` defaults to `10.6.0.0/24`.
@@ -121,15 +133,16 @@ Role baselines are code-defined desired state, not editable package lists.
 | Role | Baseline intent |
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
-| `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
-| `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
+| `app-development` | Development DNS mapping |
+| `app-production` | `caddy`, `php`, and `supervisor` running |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 
-Database clients belong to the service tool that needs them. The `postgres`
-tool installs `postgresql-client`, and the `mysql` tool installs
-`default-mysql-client`; the `database` role baseline does not install them
-preemptively.
+Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
+any role or tool baseline. Orbit interacts with databases through the
+`database_connection` state family and `database:*` commands, which run
+queries via PHP drivers from the gateway or owning node — no client binary on
+the node is required.
 
 ## Role Assignment Lifecycle
 

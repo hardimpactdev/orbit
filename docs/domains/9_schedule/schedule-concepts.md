@@ -60,3 +60,5 @@ These terms define what the schedule family owns and what belongs elsewhere.
 - **Schedule-family boundaries:** Schedule commands own schedule definitions, scopes, intervals, execution sources, enabled state, the Orbit Scheduler daemon shape, and run history.
   - They do not own app or node identity or process configuration.
   - Live scheduler reality belongs to `doctor --family=schedule`.
+- **Gateway-only scheduler invariant:** All schedule evaluation, dispatch, locking, and history live on the gateway.
+- **No node-side scheduler:** Targets receive dispatched commands via `RemoteShell` at execution time and hold no local mirror.

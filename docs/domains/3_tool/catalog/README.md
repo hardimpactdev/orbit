@@ -65,7 +65,6 @@ create them from scratch unless the tool file says otherwise.
 | [`gh`](gh.md) | GitHub CLI utility |
 | [`composer`](composer.md) | PHP dependency manager |
 | [`dns`](dns.md) | Gateway DNS infrastructure |
-| [`sqlite3`](sqlite3.md) | Local SQLite CLI utility |
 
 ## Installable Tools
 

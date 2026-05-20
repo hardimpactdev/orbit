@@ -39,8 +39,8 @@ These rules govern all app family commands.
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
 belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
-gateway-to-app-role application and process managers live in
-[tech-stack.md#gateway-to-app-role](../../tech-stack.md#gateway-to-app-role) and
+gateway-to-node application and process managers live in
+[tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node) and
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager).
 
 ## App Identity Arguments
@@ -98,18 +98,18 @@ In the current converted app command surface, `app:new` is the only command that
 records repository metadata. `app:register` preserves an existing app's stored
 repository value and stores `repository=null` when adopting an unmanaged path.
 
-## Caller Role Rule
+## Authorization
 
-App commands use gateway-owned access policy for visibility and authorization.
-App-role callers may run app read commands when authorized for the resolved app.
-Hosted-role callers that are not the gateway, including nodes and
-database-only nodes, may not initiate app-level writes, cross-node app creation,
-registration/adoption, destructive cleanup, source-of-truth pruning, or
-preference changes unless a command explicitly documents a narrow exception.
-The current local workflow exception is
-[`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [architecture.md#app-role](../../architecture.md#app-role) and owned by the
-workspace command contract.
+App commands use gateway-owned access policy. The gateway authenticates the
+caller's WireGuard peer and applies the scoped permission set on the grant
+linking the caller to the app's owning node. The CLI never branches on
+caller role. Self-targeting commands are authorized by the node's
+self-grant — see [Architecture: Self-grants and
+self-serving](../../architecture.md#self-grants-and-self-serving).
+[`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
+the most visible self-serving command in this family today; it works because
+the `app-development` and `app-production` self-grant baselines include the
+workspace permissions it needs.
 
 ## Commands
 

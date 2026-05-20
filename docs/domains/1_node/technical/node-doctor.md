@@ -16,8 +16,8 @@ methods:
 
 | Method | Return | Purpose |
 | --- | --- | --- |
-| `key()` | `string` | Machine-readable family key: `'nodes'`. |
-| `label()` | `string` | Human-readable label: `'Nodes'`. |
+| `key()` | `string` | Machine-readable family key: `'node'`. Singular per [Architecture: State families](../../../architecture.md#state-families). |
+| `label()` | `string` | Human-readable label: `'Node'`. |
 | `introspect(Node $node)` | `ProbeSnapshot` | Read physical node state. Current implementation returns an empty snapshot (stub for future probe layers). |
 | `diff(Node $node, ProbeSnapshot $snapshot)` | `list<DriftEntry>` | Compare node record against probe snapshot and return drift entries. |
 | `canReconcile()` | `bool` | Whether this family supports `doctor --family=node --restore`. Returns `true`. |

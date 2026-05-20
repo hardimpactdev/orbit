@@ -32,21 +32,20 @@ orbit schedule:remove backups --node=app-1 --force
 
 ## What Happens
 
-Run `schedule:remove` when a recurring task no longer needs to be managed by Orbit. `schedule:remove` resolves the schedule, records removal on the gateway, and confirms the target node's Orbit Scheduler is reachable so the removal is picked up promptly.
+Run `schedule:remove` when a recurring task no longer needs to be managed by Orbit. `schedule:remove` resolves the schedule and removes the gateway schedule row. Subsequent gateway-scheduler ticks no longer dispatch it.
 
 It does not remove app code, app process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
 
 ## Output
 
-Run without `--json` to see progress while the command confirms removal, writes gateway configuration, and notifies the target node's Orbit Scheduler.
+Run without `--json` to see progress while the command confirms removal and writes gateway configuration.
 
-JSON output returns the removed schedule entity and scheduler-pickup result.
+JSON output returns the removed schedule entity.
 
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the gateway.
 - The caller is authorized to manage the selected schedule scope.
-- The target node's Orbit Scheduler is registered and the process manager (Supervisor) is reachable.
 - Destructive consent is required: confirmation in interactive mode or `--force` in non-interactive mode.
 
 ## Related

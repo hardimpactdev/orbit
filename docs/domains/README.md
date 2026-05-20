@@ -192,31 +192,35 @@ When converting a command, state both the documentation domain that owns the use
 
 ### Authorization
 
-Authorization is gateway-owned and applies generically to every API call. The
-gateway authenticates the caller's WireGuard peer identity, resolves the
-caller's effective node identity for compatibility (`control`, `gateway`,
-`app`, or `unknown` in current transition-era payloads), and applies
-gateway-owned access policy. The CLI does not detect or branch on the caller's
-role.
+Authorization is gateway-owned. The gateway authenticates the caller's
+WireGuard peer identity and applies the scoped permission set stored on the
+grant that connects the caller to the command's resource. The CLI does not
+detect or branch on a caller role; there is no built-in role projection.
+See [Architecture: Authentication and
+authorization](../architecture.md#authentication-and-authorization).
 
 Technical contracts do not carry a dedicated Authorization section. When a
-command rejects or scopes specific roles, state that rejection in the
-command's Prerequisites bullets and in Failure Semantics (typically
-`error.code=caller_role_not_allowed`). Family READMEs may document
-family-wide role rules where they apply to multiple commands. Role-specific
-behavior beyond a rejection lives in the role companion contracts described
-below.
+command requires specific permissions, state those permissions in
+Prerequisites and surface authorization failures as
+`error.code=authorization_failed` with `error.meta` describing the missing
+permission. Family READMEs may document family-wide permission rules.
 
 ### Technical Slot Map
 
-When a command uses a `technical/` directory, reserve these slots:
+When a command uses a `technical/` directory, reserve these slots. The
+`*_on-client.md`, `*_on-gateway-node.md`, and `*_on-app-role.md` slots are
+deployment-context companion contracts: they describe distinct command
+behavior or rendering depending on where the CLI is running locally
+(client vs. gateway-local vs. node carrying an app role). They are not
+authorization gates — authorization is grants-only — but they capture real
+context-specific behavior that varies with deployment context.
 
 | Slot | Meaning |
 | --- | --- |
 | `1_command-name.md` | Canonical technical contract. |
-| `2_command-name_on-client.md` | Gateway authorization for client callers. |
-| `3_command-name_on-gateway-node.md` | Gateway authorization for `gateway` callers, when caller role changes command semantics. |
-| `4_command-name_on-app-role.md` | Gateway authorization for callers on nodes carrying an app role, when caller role changes command semantics. |
+| `2_command-name_on-client.md` | Behavior or rendering specific to a CLI running on a client. |
+| `3_command-name_on-gateway-node.md` | Behavior or rendering specific to a CLI running on the gateway host. |
+| `4_command-name_on-app-role.md` | Behavior or rendering specific to a CLI running on a node carrying an app role. |
 | `5.1_command-name_input-mode_interactive.md` | Interactive input-mode contract. |
 | `5.2_command-name_input-mode_non-interactive.md` | Non-interactive input-mode contract. |
 | `6.1_command-name_output-render_human.md` | Human output renderer contract. |
@@ -364,13 +368,12 @@ Use shared failure vocabulary unless a domain-specific code is needed:
 | Code | Use for |
 | --- | --- |
 | `validation_failed` | Missing required input, malformed input, unsupported scalar values, and static validation failures. Use `error.meta.field` when one field caused the failure. |
-| `caller_role_not_allowed` | The gateway rejected the authenticated caller's role for this command path. Use `error.meta.caller_role`. |
-| `authorization_failed` | The gateway accepted the caller's role for this command, but the authenticated identity is not authorized for the resolved target. |
+| `authorization_failed` | The authenticated peer's grant does not include the permission(s) required for the command's resource. Use `error.meta.missing_permission` or `error.meta.reason` to identify the missing authority. |
 | `gateway_unavailable` | The CLI cannot reach the gateway API required for the command. |
 
 Do not introduce new synonyms such as `missing_input`, `missing_argument`,
-`validation.missing_input`, `unauthorized`, or `auth.unauthorized_role` in new or
-touched contracts.
+`validation.missing_input`, `unauthorized`, `auth.unauthorized_role`, or
+`caller_role_not_allowed` in new or touched contracts.
 
 Fields that are structural members of an entity object are serialized as `null`
 when they are inapplicable for the returned entity. Purely optional metadata
@@ -424,8 +427,7 @@ command-specific failures.
 | --- | --- | --- |
 | Validation failed | A required input is missing, invalid, or forbidden alongside another option. | `error.code=validation_failed` |
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The authenticated peer is not authorized for the command's resource. | `error.code=authorization_failed` |
-| Caller role not allowed | The authenticated peer's gateway-known role is not allowed to invoke the command (typically `app` or `unknown`). | `error.code=caller_role_not_allowed` |
+| Authorization failed | The authenticated peer's grant does not include the permission(s) required for the command's resource. | `error.code=authorization_failed` with `error.meta.reason` and (when applicable) `error.meta.missing_permission`. |
 
 Per-family failure codes (`cloudflare_unavailable`, `vpn_backend_unavailable`,
 `gateway_ssh_unavailable`, and similar) live in the family READMEs or in the

@@ -83,14 +83,23 @@ Create commands use positional arguments for required fields. Edit commands use 
 
 Implementation-shape details for Supervisor and the Orbit Scheduler live in [tech-stack.md#process-manager](../../tech-stack.md#process-manager) and [tech-stack.md#scheduler](../../tech-stack.md#scheduler).
 
-## Caller Role Rule
+## Authorization
 
-Process commands describe gateway-side authorization, not local CLI behavior. The gateway identifies the caller from the authenticated WireGuard peer and applies the rules below; the CLI does not detect or branch on the caller's role.
+Process commands are authorized by the gateway against the authenticated
+WireGuard peer and the scoped permission set stored on the grant that
+connects the caller to the app's owning node. The CLI
+does not detect or branch on caller role locally.
 
-- `control` and `gateway` callers may run process read, runtime-lifecycle, and configuration-mutation commands when authorized.
-- `app` callers may run `process:list`, `process:logs`, `process:start`, `process:stop`, and `process:restart` when authorized for the resolved app or workspace context.
-- `app` callers may not run app-owned process configuration mutation commands: `process:add`, `process:edit`, or `process:remove`.
-- `unknown` callers are denied for every process command.
+- Read commands (`process:list`, `process:logs`) require `process:read` on a
+  grant to the resolved app's owning node.
+- Runtime-lifecycle commands (`process:start`, `process:stop`,
+  `process:restart`) require `process:restart` on a grant to that node.
+  Self-targeting calls from the owning app-role node are authorized by its
+  self-grant — see [Architecture: Self-grants and
+  self-serving](../../architecture.md#self-grants-and-self-serving).
+- Configuration mutation commands (`process:add`, `process:edit`,
+  `process:remove`) require `process:write` and are typically reserved for
+  admin-class presets.
 
 Every process command is a request to the gateway typed API. The CLI never writes process configuration, reads Supervisor logs directly, or operates the process manager directly.
 

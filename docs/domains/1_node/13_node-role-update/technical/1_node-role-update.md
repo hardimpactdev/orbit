@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
 | `role` | `[role]` | Always. | Never. | None. | `gateway` and `vpn` are rejected. |
-| `tld` | `--tld` | Required for `app-development`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
+| `tld` | `--tld` | Required for `app-development` and `agent`. | Forbidden for roles that do not support it (`gateway`, `vpn`, `app-production`, `database`). | None. | Must be a single lowercase DNS label without a leading dot. Writes to the node-level `tld` setting shared by `app-development` and `agent`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
 ## Behavior Contract
@@ -37,6 +37,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   failure message explains that `vpn` is a gateway-coupled infrastructure role
   in v1 and cannot be updated independently through `node role:update`.
 - `app-development` requires `--tld`.
+- `agent` requires `--tld`. The agent default is `agent` during interactive `node:new`; explicit updates use the same node-level field.
 - Unsupported role-local options are rejected.
 
 ### Update Rules

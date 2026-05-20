@@ -4,6 +4,20 @@ This document defines agent-IDE-domain vocabulary and invariants. It supports
 the agent IDE command contracts and related node/app Agent IDE commands; it does
 not override the [Architecture](../../architecture.md).
 
+## Naming convention
+
+Each agent IDE product is referenced by three related identifiers:
+
+| Form | Where it appears | Example |
+|---|---|---|
+| Marketing name | Prose and product docs | PolyScope, OpenCode |
+| Adapter id | Command input (`node:agent-ide`, `app:agent-ide`), JSON output `agent_ide.adapter` | `polyscope`, `opencode` |
+| Server tool slug | Tool catalog entries (`tool:install <slug>`) | `polyscope-server`, `opencode-server` |
+
+The adapter id is the stable string the gateway uses to identify the integration. The server tool slug names the long-running server process that hosts the adapter on a node; not every adapter requires a separate server tool (some adapters run entirely client-side).
+
+Autonomous agent tools (`openclaw`, `hermes`) follow a simpler convention: a single tool slug names the runtime, and they have no separate adapter id because they are not interactive IDE adapters — they are Orbit clients running on the `agent` role.
+
 ## Adapter Model
 
 These terms define the adapter model that Agent IDE commands use to reach an active session.

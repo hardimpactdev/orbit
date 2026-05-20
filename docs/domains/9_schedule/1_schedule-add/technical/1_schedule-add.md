@@ -58,10 +58,10 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 
 ### Pickup Rules
 
-- Writes gateway configuration before notifying the target node.
-- Confirms the target node's Orbit Scheduler is registered and the process manager (Supervisor) is reachable.
-- Reports `schedule.scheduler_unreachable` when gateway configuration was written but the scheduler is not currently reachable.
-- The schedule remains valid configuration and runs on the next successful scheduler tick that reaches the gateway.
+- Writes gateway configuration. The gateway-only Orbit Scheduler reads the gateway database every tick; there is no node-side scheduler to notify.
+- Target node SSH reachability is verified at dispatch time, not at `schedule:add` time.
+- A schedule remains valid configuration even when its target is temporarily unreachable.
+- Dispatch failures are recorded in `schedule_runs` as failed runs.
 
 ### Scope Boundaries
 
@@ -80,7 +80,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Name collision | A schedule with the same name already exists in the selected scope. | `error.code=schedule.name_collision` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |
-| Scheduler unreachable | Gateway configuration was written, but the target node's Orbit Scheduler is not currently reachable for confirmation. | `error.code=schedule.scheduler_unreachable` |
 
 ## Doctor Relationship
 

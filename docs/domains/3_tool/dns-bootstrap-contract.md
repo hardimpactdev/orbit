@@ -89,8 +89,10 @@ The initial `dnsmasq.conf` is rendered from fleet state before
 Rendered by `DnsmasqConfigBuilder::build(Collection $nodes): string`. The
 output is deterministic and contains:
 
-- One `address=/{tld}/{wireguard_address}` line per node with both
-  `tld` and `wireguard_address` set. Nodes missing either field are skipped.
+- One `address=/{tld}/{wireguard_address}` line per node that carries an
+  active `app-development` or `agent` role assignment and has both `tld` and
+  `wireguard_address` set. Nodes missing either field, or carrying no
+  TLD-supporting active role, are skipped.
 - Optional `local=/{tld}/` companions per TLD.
 - `no-resolv` + upstream resolvers (`server=1.1.1.1`, `server=8.8.8.8`).
 - `conf-dir=/etc/dnsmasq.d/,*.conf` (preserves operator drop-ins, if any).
@@ -103,7 +105,7 @@ on the same inputs produce byte-identical output.
 
 `DnsmasqReconciler::reconcile()`:
 
-1. Reads current `Node` rows.
+1. Reads current `Node` rows and active role assignments.
 2. Builds a candidate `dnsmasq.conf` via `DnsmasqConfigBuilder`.
 3. If different from the on-disk file, writes the new content.
 4. Restarts dnsmasq with `docker restart orbit-dns`. dnsmasq reloads hosts on
@@ -112,9 +114,12 @@ on the same inputs produce byte-identical output.
 
 Triggers (only on a gateway — `config('orbit.is_gateway')` must be true):
 
-- `node:new` for any role where `tld` and `wireguard_address` are set.
+- `node:new` for any node that carries a TLD-supporting role and has `tld` and `wireguard_address` set.
 - `node:update` when `tld` or `wireguard_address` change.
 - `node:remove` for any node.
+- `node role:add` when the added role depends on `tld` (`app-development` or `agent`).
+- `node role:update` when the role-assignment change activates or deactivates a TLD-supporting baseline.
+- `node role:remove` when removing the last TLD-supporting role from a node.
 
 The reconciler is idempotent: running it twice in a row is a no-op for the
 second call.

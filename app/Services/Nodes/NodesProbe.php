@@ -48,12 +48,12 @@ final readonly class NodesProbe
 
     public function key(): string
     {
-        return 'nodes';
+        return 'node';
     }
 
     public function label(): string
     {
-        return 'Nodes';
+        return 'Node';
     }
 
     public function introspect(Node $node): ProbeSnapshot

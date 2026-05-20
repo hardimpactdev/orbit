@@ -25,7 +25,8 @@ Each firewall rule is defined by the following fields.
 
 This term defines which nodes firewall commands may target.
 
-- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway`, `app-development`, `app-production`, or `agent`. Clients, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
+- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway`, `app-development`, `app-production`, `database`, or `agent`. Clients, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
+- **Database-only ingress:** A node carrying only `database` has an empty public ingress baseline. Operator-managed firewall rules may still be configured on it, e.g. to allow inbound TCP from specific app-role nodes.
 
 ## Policy Boundaries
 

@@ -66,8 +66,8 @@ function assignNodesProbeGatewayRole(Node $node): void
 
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
-        expect($this->probe->key())->toBe('nodes');
-        expect($this->probe->label())->toBe('Nodes');
+        expect($this->probe->key())->toBe('node');
+        expect($this->probe->label())->toBe('Node');
     });
 
     it('returns empty snapshot from introspect', function (): void {

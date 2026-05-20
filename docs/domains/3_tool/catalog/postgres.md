@@ -60,14 +60,15 @@ configuration owned by the tool definition, not an HTTP proxy route.
 PostgreSQL is a managed database capability. App database selection and
 application migrations remain app or deployment concerns.
 
-Installing `postgres` also installs the `postgresql-client` package on the same
-node so operators and local automation have the matching `psql` CLI available
-only where the managed PostgreSQL service is installed.
-
 `tool:install postgres` requires the target node to have an active
 `database` role assignment. Orbit does not select an app database host here.
 Installing PostgreSQL on a node with an app role is allowed only when that same node also
 has an active `database` role.
+
+Orbit interacts with managed databases through the `database_connection`
+state family and `database:*` commands. The `postgres` tool no longer
+installs the `psql` client binary; queries run via PHP driver from the
+gateway or owning node.
 
 ## Doctor Relationship
 

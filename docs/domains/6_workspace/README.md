@@ -80,10 +80,10 @@ Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
 Implementation-shape details for the process manager, Supervisor programs, and
-gateway-to-app-role application live in
+gateway-to-node application live in
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager),
 [tech-stack.md#scheduler](../../tech-stack.md#scheduler), and
-[tech-stack.md#gateway-to-app-role](../../tech-stack.md#gateway-to-app-role).
+[tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node).
 
 Workspace registry-only reads — `workspace:show`, `workspace:history`,
 `workspace:list`, and `workspace:log` for stored history — do not require a
@@ -145,27 +145,22 @@ The terms below define the key vocabulary used across workspace command contract
 - **`phase=setup_steps`:** JSON enum value used when a setup step execution
   fails during the setup steps phase.
 
-## Caller Role Rule
+## Authorization
 
-The CLI is a thin gateway client that gathers input and forwards to the
-gateway. Authorization is enforced by the gateway, which authenticates the
-caller's WireGuard peer identity and applies gateway-owned access policy.
+The CLI is a thin gateway client. The gateway authenticates the caller's
+WireGuard peer and applies the scoped permission set stored on the grant that
+connects the caller to the workspace's owning app-role node. The CLI does not check or branch on caller role locally.
 
-- Callers from control or gateway peers may run workspace read and write
-  commands when authorized by gateway-owned access policy.
-- Callers from app-role peers may run workspace read commands when authorized.
-- `workspace:setup` is the only workspace write command the gateway currently
-  authorizes from an app-role peer; it is a local workflow exception for
-  preparing the workspace the caller is already working inside. When invoked
-  from a node with an app role, the gateway still applies setup steps by opening an SSH
-  connection back to that same node through RemoteShell — the CLI never
-  applies artifacts locally.
-- The gateway denies app-role peers running `workspace:new`,
-  `workspace:remove`, setup-step mutation, teardown-step mutation, or other
-  mutations to workspace policy that the gateway owns, unless a command explicitly
-  documents a future exception.
-- Local context on the caller filesystem may resolve defaults (parent app,
-  workspace identity), but it is never used as authorization.
+Self-targeting workspace commands — `workspace:setup` from inside a workspace
+path on the owning app-role node — flow through the gateway like any other
+command and are authorized by the node's self-grant. See [Architecture:
+Self-grants and
+self-serving](../../architecture.md#self-grants-and-self-serving). The
+gateway dispatches setup steps back to the same node through `RemoteShell`;
+the CLI never applies artifacts locally.
+
+Local context on the caller filesystem may resolve defaults (parent app,
+workspace identity), but it is never used as authorization.
 
 ## Lifecycle Step Environment
 

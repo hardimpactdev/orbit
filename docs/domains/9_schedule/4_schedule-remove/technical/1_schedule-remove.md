@@ -39,8 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the schedule by name and optional app or node disambiguation from gateway schedule configuration.
 - Fails before side effects when no visible schedule matches.
-- Records removal on the gateway.
-- Confirms the target node's Orbit Scheduler is reachable so the removal is picked up on the next scheduler tick.
+- Records removal on the gateway. The gateway-only Orbit Scheduler reads the gateway database every tick; subsequent ticks no longer dispatch the removed schedule.
 - Finalizes the schedule as removed once the gateway configuration has been written.
 - Retains durable run history unless a future retention command explicitly prunes it.
 
@@ -66,7 +65,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
-| Scheduler unreachable | Gateway removal was recorded, but the target node's Orbit Scheduler could not be confirmed reachable for prompt pickup. | `error.code=schedule.scheduler_unreachable` |
 
 ## Doctor Relationship
 

@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-`schedule:run` performs one Orbit Scheduler tick on the resolved target node: fetch the node's schedule list from the gateway, evaluate which schedules are due in the current minute, and fire them. The same logic runs inside the resident `orbit-scheduler` daemon at least once per minute. Operators use `schedule:run` to fire a tick on demand for testing, troubleshooting, or recovery; the daemon's loop is the steady-state path.
+`schedule:run` triggers one Orbit Scheduler tick on the gateway: query the gateway database for enabled schedules, evaluate which are due in the current minute, and dispatch them. Dispatch runs locally on the gateway when the target resolves to the gateway, and through `RemoteShell` when the target is any other node. The same logic runs inside the resident `orbit-scheduler` daemon at least once per minute. Operators use `schedule:run` to fire a tick on demand for testing, troubleshooting, or recovery; the daemon's loop is the steady-state path.
 
 When called with a schedule name, `schedule:run [name]` force-runs that one schedule regardless of its interval and records the resulting run.
 

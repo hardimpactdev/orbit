@@ -29,13 +29,18 @@ They are reachable only through the gateway bootstrap path described in
 
 ## Orbit Notes
 
-The `dns` tool is the runtime capability behind Orbit-managed DNS
-infrastructure. DNS records, zones, provider configuration, and DNS command
-behavior remain owned by the DNS command family.
+The `dns` tool is the runtime capability behind the gateway's VPN-facing DNS
+substrate (dnsmasq inside wg-easy's network namespace). The substrate as a
+whole is part of the `vpn` role baseline. This tool row tracks the substrate's
+container, port, and config so `doctor --family=tool` can verify drift in
+those specifically. DNS mapping records — which TLD points at which WireGuard
+IP — are owned by the node family. The `dns:*` command family owns only
+caller-local resolver overrides on operator machines. See
+[Architecture: DNS responsibilities](../../../architecture.md#dns-responsibilities)
+for the full split.
 
-In the current topology, the DNS runtime tool is gateway infrastructure. App and
-clients do not own DNS runtime rows unless a future DNS contract expands
-node-local DNS support.
+In the current topology, the DNS runtime tool is gateway infrastructure. App
+nodes and clients do not own DNS runtime rows.
 
 The runtime layout — `wg-easy` plus `orbit-dns` sharing wg-easy's network
 namespace so dnsmasq binds the wg-easy WG IP — is specified in
@@ -43,7 +48,11 @@ namespace so dnsmasq binds the wg-easy WG IP — is specified in
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the DNS runtime tool. DNS record drift belongs
-to the DNS family. The three runtime drift kinds (`tool.dns_container_missing`,
-`tool.dns_port_not_listening`, `tool.dns_config_drift`) are specified in
+`doctor --family=tool` verifies the DNS runtime tool's container, port, and
+config-content drift. Drift in *which DNS mappings should exist* — a new
+`app-development` or `agent` role appeared without a matching mapping line —
+is node-family drift, not tool drift, and is verified by
+`doctor --family=node`. The three drift kinds covered by `doctor --family=tool`
+(`tool.dns_container_missing`, `tool.dns_port_not_listening`,
+`tool.dns_config_drift`) are specified in
 [the DNS bootstrap contract](../dns-bootstrap-contract.md).

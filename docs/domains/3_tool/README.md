@@ -87,9 +87,13 @@ a future tool definition explicitly changes their support model. Installable
 tools are provisioned by `tool:install`, removed by `tool:remove`, and verified
 by `doctor --family=tool`.
 
-The `dns` tool is the runtime capability behind Orbit-managed DNS
-infrastructure. DNS records, zones, and DNS command behavior remain owned by
-the DNS command family.
+The `dns` tool is the runtime capability behind the gateway's VPN-facing DNS
+substrate; its container, port, and config lifecycle are verified by
+`doctor --family=tool`. DNS mapping records — which TLD points at which
+WireGuard IP — are owned by the node family. The `dns:*` command family owns
+only caller-local resolver overrides on operator machines. See
+[Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)
+for the full split.
 
 ## Tool JSON Entity
 

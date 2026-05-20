@@ -74,7 +74,7 @@ The node probe reads gateway node records and checks these layers:
    their role requires, current assignment convergence state, and no baseline
    drift.
 
-   For `app-development`, assignments have a `tld` value, the hosted node's
+   For `app-development`, assignments have a `tld` value, the node's
    local TLD default matches the active assignment, and the gateway maps
    `*.{tld}` to the node's WireGuard address. The development DNS resolver that
    the gateway maintains must be WireGuard-reachable and must not expose a
@@ -212,7 +212,7 @@ doctor must not silently clear or replace those preferences under
 `doctor --family=node --restore`.
 
 Node doctor never creates fleet membership, grants access, adds the `gateway`
-role through hosted-role mutation, or edits public IPv4/IPv6 metadata. Those
+role through role mutation, or edits public IPv4/IPv6 metadata. Those
 changes remain explicit node commands such as `node:new`, `node:update`,
 `node:grant`, `node:revoke`, and `node:remove`.
 

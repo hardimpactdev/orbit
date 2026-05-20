@@ -185,11 +185,11 @@ describe('node role assignment service', function (): void {
             ->and($tool->expected_state)->toBe('running')
             ->and(NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['mysql', 'postgres', 'sqlite3'])
+                ->whereIn('name', ['mysql', 'postgres'])
                 ->exists())->toBeFalse();
     });
 
-    it('materializes sqlite3 as a desired tool for development app roles', function (): void {
+    it('does not materialize sqlite3 as a desired tool for development app roles', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'role' => 'control',
@@ -203,8 +203,7 @@ describe('node role assignment service', function (): void {
             ->where('name', 'sqlite3')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed');
+        expect($tool)->toBeNull();
     });
 
     it('materializes the production app runtime baseline as desired tools', function (): void {
@@ -218,17 +217,16 @@ describe('node role assignment service', function (): void {
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'php', 'sqlite3', 'supervisor'])
+            ->whereIn('name', ['caddy', 'php', 'supervisor'])
             ->orderBy('name')
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'php', 'sqlite3', 'supervisor'])
+            ->toBe(['caddy', 'php', 'supervisor'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'running',
                 'php' => 'running',
-                'sqlite3' => 'installed',
                 'supervisor' => 'running',
             ]);
     });

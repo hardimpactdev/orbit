@@ -1105,7 +1105,7 @@ describe('node:new', function (): void {
             ->and($payload['error']['code'])->toBe('node.provisioning_incomplete')
             ->and($payload['error']['meta']['step'])->toBe('node_adoption')
             ->and($peerExtraResult)->toMatchArray([
-                'family' => 'nodes',
+                'family' => 'node',
                 'key' => 'node.wireguard_peer_extra',
                 'action' => 'skipped',
             ])

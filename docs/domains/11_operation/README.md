@@ -2,13 +2,13 @@
 
 Operation commands cut across Orbit's command surface. They update Orbit installations, verify convergence, and run diagnostic workflows. Activity history reads live in their own family; see [`docs/domains/17_activity`](../17_activity/README.md).
 
-The operation domain does not own a state family. Operation commands may read, write, verify, or repair state that belongs to other families, but permanent drift keys remain the product family keys defined by the architecture, such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`.
+The operation domain does not own a state family. Operation commands may read, write, verify, or repair state that belongs to other families, but permanent drift keys remain the product family keys defined by the architecture, such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and `database_connection`.
 
 ## State Ownership
 
 The operation command domain does not own a state family. Operation commands are cross-family workflows.
 
-`doctor` routes concrete probes and issue codes to the family that owns the state: `doctor --family=node`, `doctor --family=app`, `doctor --family=workspace`, `doctor --family=process`, `doctor --family=proxy`, `doctor --family=schedule`, `doctor --family=tool`, and `doctor --family=firewall_rule`. Update commands may reference those families, but they must not invent operation-family drift.
+`doctor` routes concrete probes and issue codes to the family that owns the state: `doctor --family=node`, `doctor --family=app`, `doctor --family=workspace`, `doctor --family=process`, `doctor --family=proxy`, `doctor --family=schedule`, `doctor --family=tool`, `doctor --family=firewall_rule`, and `doctor --family=database_connection`. Update commands may reference those families, but they must not invent operation-family drift.
 
 ## Domain Rules
 

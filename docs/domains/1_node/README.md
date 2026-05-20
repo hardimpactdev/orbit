@@ -52,12 +52,14 @@ not own fleet state or run a local Orbit operator capability layer. They run wor
 services, call the gateway when a local command is invoked, and receive
 gateway-applied changes over SSH.
 
-Node-side CLI availability is not general write permission. The current
-node write exception is
-[`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [architecture.md#node](../../architecture.md#node); it remains a
-gateway-mediated local workflow, not local node ownership of
-configuration.
+Node-side CLI availability is not general write permission. Any node-side
+write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
+path requires the node's self-grant to include the permissions for that write. See
+[architecture.md#self-grants-and-self-serving](../../architecture.md#self-grants-and-self-serving).
+[`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
+the most visible example today — it works because the `app-development` and
+`app-production` self-grant baselines include the workspace permissions it
+needs.
 
 ### Compatibility matrix
 
@@ -84,14 +86,15 @@ Roles materialize baseline tool intent when a role assignment converges.
 | Role | Baseline intent |
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
-| `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
-| `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
+| `app-development` | Development DNS mapping |
+| `app-production` | `caddy`, `php`, and `supervisor` running |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 
-The `database` role does not preinstall every database client. Service-specific
-tools install their own helpers: `postgres` installs `postgresql-client`, and
-`mysql` installs `default-mysql-client`.
+Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
+any role or tool baseline. Orbit interacts with databases through the
+`database_connection` state family and `database:*` commands, which use PHP
+drivers — no client binary on the node is required.
 
 The `agent` role does not preinstall any agent tool. OpenClaw and Hermes are
 ordinary entries in the `tool` catalog with category `agent`; `node:new
@@ -107,17 +110,15 @@ applies the authorization policy attached to that node.
 
 A caller can be:
 
-- an unconfigured CLI, with no gateway configuration yet, which can only
+- an unconfigured client, with no gateway configuration yet, which can only
   perform first-gateway bootstrap for commands that support it;
-- a configured CLI, with local gateway configuration and a gateway-issued
+- a configured client, with local gateway configuration and a gateway-issued
   WireGuard identity, which can call the gateway over HTTPS through WireGuard.
 
-Client is an identity/onboarding concept, not a role. A joined
-client may have no roles. Caller eligibility comes from the
-authenticated WireGuard identity plus gateway grants. The CLI does not check or
-branch on caller role locally.
-Commands that reject specific roles state that in their Prerequisites and
-Failure Semantics.
+Client is an identity/onboarding concept, not a role. A configured client may
+have no role assignments. Caller eligibility comes from the authenticated
+WireGuard identity plus gateway grants. The CLI does not check or branch on
+caller role locally.
 
 ## Hub and spoke model
 
@@ -160,7 +161,7 @@ These rules apply to all node commands and define the invariants the family enfo
   [node-concepts.md](node-concepts.md#role-platform-support). Commands that
   provision a host or apply node-side artifacts must validate the observed host
   platform against that matrix before side effects.
-- Initial provisioning of gateway and hosted hosts is always performed over SSH.
+- Initial provisioning of the gateway and other nodes is always performed over SSH.
 - After bootstrap, CLI callers communicate with the gateway over HTTPS through
   WireGuard; the gateway applies node changes through its node execution
   primitive.
@@ -232,7 +233,7 @@ These rules apply to all node commands and define the invariants the family enfo
 
 Node transport has different rules before and after bootstrap:
 
-- Initial provisioning of gateway and hosted hosts uses SSH because the target host
+- Initial provisioning of the gateway and other nodes uses SSH because the target host
   does not yet have enough Orbit identity, certificates, network trust, or
   gateway registration to participate in Orbit HTTPS calls.
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
@@ -406,7 +407,7 @@ After onboarding,
 repair only local gateway CA trust without re-running identity verification or
 changing gateway settings.
 
-When a hosted host is already provisioned and can prove compatible node identity,
+When a node is already provisioned and can prove compatible node identity,
 `node:new` may adopt that hosted identity into gateway configuration. When a gateway is
 already known to the gateway registry, `node:new --role=gateway` converges that
 gateway-owned identity instead of minting a duplicate node. Missing gateway-row

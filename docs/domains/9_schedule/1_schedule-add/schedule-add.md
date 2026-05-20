@@ -37,15 +37,15 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 
 ## What Happens
 
-Use `schedule:add` when you need to define a new recurring task for an app or node. `schedule:add` validates the target, validates the execution source and interval, writes gateway schedule configuration, and confirms the target node's Orbit Scheduler is reachable. The scheduler picks up the new schedule on its next sync and begins evaluating it on each minute boundary.
+Use `schedule:add` when you need to define a new recurring task for an app or node. `schedule:add` validates the target, validates the execution source and interval, and writes gateway schedule configuration. The Orbit Scheduler (gateway-only) reads the gateway database every tick and dispatches due schedules to the resolved target via `RemoteShell`; target node SSH reachability is verified at dispatch time, not at `schedule:add` time.
 
 It does not create apps, nodes, app process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
 
 ## Output
 
-Run without `--json` to see progress while the command validates input, writes gateway configuration, and confirms the target node's Orbit Scheduler is reachable.
+Run without `--json` to see progress while the command validates input and writes gateway configuration.
 
-JSON output returns the created schedule entity and scheduler-pickup result.
+JSON output returns the created schedule entity.
 
 ## Requirements
 
