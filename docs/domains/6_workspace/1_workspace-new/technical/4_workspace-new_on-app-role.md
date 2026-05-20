@@ -29,4 +29,4 @@
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewOnAppNodeRejectionTest.php` | App-role caller rejection: `workspace:new` returns `error.code=caller_role_not_allowed` before any side effects when the gateway authenticates the caller's WireGuard peer identity as a node carrying an app role, with the documented human message in TTY output. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewOnAppNodeRejectionTest.php` | App-role caller rejection before side effects, with `caller_role_not_allowed` and documented TTY output. |

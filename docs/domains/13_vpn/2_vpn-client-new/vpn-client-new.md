@@ -33,7 +33,7 @@ runtime backend.
 peer for the requested client name. In this version the active `vpn` role is
 gateway-coupled, so Orbit still executes on the gateway host. From a client,
 Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
-and runs the VPN-role runtime operation there.
+and runs the operation against that runtime.
 
 The created peer is an admin VPN client. It is not an Orbit node identity, does
 not create a node record, and does not grant Orbit node access. Active Orbit

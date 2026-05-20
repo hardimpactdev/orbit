@@ -72,18 +72,24 @@ The node probe reads gateway node records and checks these layers:
     `firewall_rule`.
 11. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
-   drift. For `app-development`, assignments have a `tld` value, the hosted
-   node's local TLD default matches the active assignment, and the gateway
-   maps `*.{tld}` to the node's WireGuard address. The gateway development DNS
-   resolver must be WireGuard-reachable and must not expose a public open
-   resolver. For `agent`, assignments have a `tld` value, the gateway maps
-   `*.{tld}` to the node's WireGuard address through the same DNS
-   configuration model, and the node baseline includes Caddy,
-   Supervisor, and the shared unprivileged `agent` runtime user. For `vpn`,
-   assignments have valid `public_endpoint`, `wireguard_cidr`,
-   `wireguard_port`, and `dns_ip` settings, the node baseline includes the
-   WireGuard server runtime and VPN-facing DNS runtime, and the DNS runtime
-   served through the `vpn` role matches gateway-owned desired DNS mappings.
+   drift.
+
+   For `app-development`, assignments have a `tld` value, the hosted node's
+   local TLD default matches the active assignment, and the gateway maps
+   `*.{tld}` to the node's WireGuard address. The development DNS resolver that
+   the gateway maintains must be WireGuard-reachable and must not expose a
+   public open resolver.
+
+   For `agent`, assignments have a `tld` value, the gateway maps `*.{tld}` to
+   the node's WireGuard address through the same DNS configuration model, and
+   the node baseline includes Caddy, Supervisor, and the shared unprivileged
+   `agent` runtime user.
+
+   For `vpn`, assignments have valid `public_endpoint`, `wireguard_cidr`,
+   `wireguard_port`, and `dns_ip` settings. The node baseline includes the
+   WireGuard server runtime and DNS runtime, and the DNS runtime served through
+   the `vpn` role matches desired DNS mappings owned by the gateway.
+
    `app-production`, `database`, and `gateway` assignments have no role
    settings in v1.
 12. **Node-related defaults:** local `node:default` preferences point at
@@ -195,10 +201,10 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.agent_ide_default_invalid`.
 
 `node.vpn_runtime_missing` reports that the active gateway-coupled `vpn`
-assignment is missing WireGuard server or VPN-facing DNS runtime artifacts.
+assignment is missing WireGuard server artifacts or DNS runtime artifacts.
 
 `node.vpn_dns_mapping_mismatch` reports that the DNS runtime served through
-the `vpn` role does not match gateway-owned desired DNS mappings.
+the `vpn` role does not match desired DNS mappings owned by the gateway.
 
 `node.local_default_invalid` and `node.agent_ide_default_invalid` are
 reported only. `node:default` and `node:agent-ide` are explicit user actions;

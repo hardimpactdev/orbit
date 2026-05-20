@@ -31,7 +31,7 @@ Run this command to allow a disabled admin VPN client to connect again.
 backend client as enabled. In this version the active `vpn` role is
 gateway-coupled, so Orbit still executes on the gateway host. From a client,
 Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
-and runs the VPN-role runtime operation there.
+and runs the operation against that runtime.
 
 The command is limited to non-node VPN clients. Active Orbit node peers are
 protected because node WireGuard identity belongs to the node lifecycle.

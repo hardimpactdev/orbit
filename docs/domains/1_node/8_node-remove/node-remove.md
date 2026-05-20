@@ -10,6 +10,7 @@ deletes node access grants, tears down the node's WireGuard peer identity, and
 removes development DNS mappings that the gateway owns for development nodes. It
 does not clean up apps, workspaces, processes, schedules, tools, firewall rules,
 proxy routes, or deploy artifacts on the target server.
+
 Before removing a node with an app role that still owns apps, remove or migrate those apps
 through app-family commands such as
 [`app:remove`](../../5_app/6_app-remove/app-remove.md). `node:remove` does not
@@ -61,8 +62,9 @@ over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 5. Removes development DNS mappings that the gateway owns for development nodes.
 6. Removes the node record from the gateway registry.
 7. Reconciles the active `vpn` role DNS runtime so the removed node's TLD no
-   longer resolves over WG. In v1 this materializes the gateway-owned desired
-   DNS mappings and policy on the gateway-coupled `vpn` role runtime. Contract:
+   longer resolves over WG. In v1 this materializes the desired DNS mappings
+   and policy owned by the gateway on the gateway-coupled `vpn` role runtime.
+   Contract:
    [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
 8. Reports partial WireGuard detach or development DNS cleanup failures as
    structured warnings and remaining node-family drift.

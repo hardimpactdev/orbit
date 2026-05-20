@@ -79,9 +79,9 @@ that are directly affected by the changed metadata.
   to [`doctor --family=node --restore`](../node-doctor.md).
 - Reconciles the active `vpn` role DNS runtime when `tld` or
   `wireguard_address` actually change for a node. In v1 this materializes the
-  gateway-owned desired DNS mappings and policy onto the gateway-coupled `vpn`
-  role runtime without restarting the container. The contract for the DNS
-  substrate is
+  desired DNS mappings and policy owned by the gateway onto the
+  gateway-coupled `vpn` role runtime without restarting the container. The
+  contract for the DNS substrate is
   [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
   Other field changes do not touch DNS.
 - Does not change node role after creation. Role change is an identity

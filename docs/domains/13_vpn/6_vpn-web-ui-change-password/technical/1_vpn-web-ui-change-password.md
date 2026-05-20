@@ -93,7 +93,7 @@ but it does not rotate the VPN web UI password.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: caller-role denial, operator-caller SSH execution to the active `vpn` role node, VPN-role runtime backend execution, TOTP handling, password validation, destructive consent, credential update, session invalidation, credential-store update on the active `vpn` role host, secret redaction, and non-goals. |
+| `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: role denial, operator SSH, runtime execution, TOTP, password validation, destructive consent, credential update, session invalidation, redaction, and non-goals. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php` | Interactive password prompt, confirmation prompt, `--force` bypass, validation retry, declined confirmation failure before side effects, and prompt abort behavior. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php` | Non-interactive missing password failure, missing `--force` failure, `--json` forcing non-interactive mode, no prompts, and secret redaction in errors. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

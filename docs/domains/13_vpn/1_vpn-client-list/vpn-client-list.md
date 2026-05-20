@@ -30,7 +30,7 @@ client inventory.
 backend's client inventory. In this version the active `vpn` role is
 gateway-coupled, so Orbit still executes on the gateway host. From a client,
 Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
-and runs the VPN-role runtime operation there.
+and runs the operation against that runtime.
 
 The command may show backend peers that correspond to active Orbit node
 identities, but it does not verify node reachability or repair node drift.

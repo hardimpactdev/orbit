@@ -154,7 +154,7 @@ node-family drift. JSON output reports this under `success.meta.warnings` with
 
 Partial development DNS cleanup is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale
-VPN-served DNS runtime artifact on the active `vpn` role is node-family drift.
+DNS artifact served by the active `vpn` role is node-family drift.
 JSON output reports this under
 `success.meta.warnings` with `code=node.role_baseline_mismatch` and
 `next_command=doctor --fix --family=node --restore`.

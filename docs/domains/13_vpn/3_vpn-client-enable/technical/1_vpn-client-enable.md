@@ -75,5 +75,5 @@ active `vpn` role.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: caller-role denial, operator-caller SSH execution to the active `vpn` role node, VPN-role runtime backend execution, TOTP handling, existing disabled client enablement, already-enabled success, missing client failure, active node peer protection, and no node configuration writes. |
+| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: role denial, operator SSH, runtime execution, TOTP, enablement, idempotent success, missing-client failure, node-peer protection, and no node writes. |
 | `tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

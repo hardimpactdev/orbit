@@ -586,7 +586,8 @@ build on top of that foundation.
 
 ### Foundation domains
 
-These domains define the fleet, control-plane authority, node capabilities, and the core app/workspace foundation.
+These domains define the fleet, control-plane authority, and node capabilities.
+They also define the core app/workspace foundation.
 
 1. [Nodes](1_node/README.md)
 2. [Gateway](2_gateway/README.md)
@@ -594,13 +595,17 @@ These domains define the fleet, control-plane authority, node capabilities, and 
 4. [Firewall](4_firewall/README.md)
 5. [Apps](5_app/README.md)
 6. [Workspaces](6_workspace/README.md)
+
+Processes, proxy, and database support those foundation domains:
+
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
 9. [Database](18_database/README.md)
 
 ### Runtime workflow domains
 
-These domains coordinate scheduled tasks, deployments, and cross-family operations on top of the foundation.
+These domains coordinate scheduled tasks, deployments, and cross-family
+operations on top of the foundation.
 
 10. [Schedules](9_schedule/README.md)
 11. [Deployments](10_deploy/README.md)

@@ -139,8 +139,9 @@ Input mode behavior is split out of the canonical command contract:
   `app-development` plus `app-production` must fail before node creation or
   provisioning.
 - Create the node identity first, then add each requested role.
-- `app-development` assignments store `settings.tld`.
-- `app-production` and `database` assignments use empty settings.
+- Role settings are minimal: `app-development` assignments store
+  `settings.tld`, while `app-production` and `database` assignments use empty
+  settings.
 - `database` may be combined with `app-development` or `app-production` on the
   same provisioned host.
 - If an initial role is persisted with `status=error` because its first
@@ -225,7 +226,7 @@ contract.
 - Exit `2` only for invalid command usage before command execution.
 - Input contract violations fail before side effects through the selected input
   mode and output renderer.
-- Fail when a node with an app role is requested before a gateway is available.
+- App-role requests fail before side effects when no gateway is available.
 - Fail before provisioning when the observed target host platform is not
   supported for the requested role. Supported role/platform pairs are defined in
   [`node-concepts.md`](../../node-concepts.md#role-platform-support).

@@ -291,8 +291,8 @@ These terms describe how the gateway maintains DNS resolution for nodes with
 the `app-development` role.
 
 - **Development DNS mapping owned by the gateway:** Node-family gateway configuration
-  and gateway-owned desired DNS mappings and policy that map `*.{tld}` for an
-  active `app-development` role assignment to that node's WireGuard address.
+  and desired DNS mappings and policy owned by the gateway. They map `*.{tld}`
+  for an active `app-development` role assignment to that node's WireGuard address.
   Runtime reality for that mapping is served and probed on the active
   gateway-coupled `vpn` role in v1.
 - **Agent DNS mapping owned by the gateway:** Same node-family gateway
@@ -307,7 +307,7 @@ the `app-development` role.
   The canonical domain is `*.{tld}` and the canonical target is the
   node's WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that
-  uses gateway-owned desired DNS mappings and policy to converge or remove
+  uses desired DNS mappings and policy owned by the gateway to converge or remove
   resolver artifacts on the active `vpn` role runtime. In v1 that runtime is
   gateway-coupled. It is used by node provisioning, node adoption and
   materialization, node removal, and
@@ -334,7 +334,7 @@ The node family owns:
   plus the permission registry, presets, and normalization;
 - the development and agent DNS mappings the gateway maintains;
 - the `vpn` role's WireGuard server runtime, public endpoint settings, peer
-  defaults, and VPN-facing DNS runtime baseline;
+  defaults, and DNS baseline exposed through the VPN runtime;
 - node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process

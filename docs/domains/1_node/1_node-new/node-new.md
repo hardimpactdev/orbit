@@ -153,8 +153,8 @@ WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
 local gateway endpoint, and verifies gateway API access. After that successful
 flow, the initiating client does not run `gateway:add`.
 
-Gateway bootstrap also installs the gateway-coupled `vpn` role runtime
-substrate:
+Gateway bootstrap also installs the runtime substrate for the gateway-coupled
+`vpn` role:
 
 - `wg-easy` (the active `vpn` role WireGuard server runtime) is installed under
   `~/.config/orbit/wg-easy/`. The admin password is generated and persisted as
@@ -163,8 +163,8 @@ substrate:
 - `wg-easy` owns UDP `51820`. The gateway host's `wg-orbit` interface is
   configured as a peer/client of `wg-easy`, not as a second WireGuard server.
 - `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
-  sharing wg-easy's network namespace, so the gateway-coupled `vpn` role DNS
-  runtime answers DNS for fleet TLDs on the wg-easy WG IP. The initial
+  sharing wg-easy's network namespace. DNS for fleet TLDs is served by the
+  gateway-coupled `vpn` role on the wg-easy WG IP. The initial
   `dnsmasq.conf` reflects the current
   `node.tld` + `node.wireguard_address` state and is kept in sync by later
   `node:new`, `node:update`, and `node:remove` calls.

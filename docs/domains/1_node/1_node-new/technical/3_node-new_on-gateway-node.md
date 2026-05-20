@@ -70,9 +70,9 @@ side effects that the gateway owns begin.
 
 - The gateway is the source of truth for node records, node roles, WireGuard
   identity, and node access policy.
-- The active gateway-coupled `vpn` role WireGuard runtime is `wg-easy`; the
-  gateway host `wg-orbit` interface is a peer/client of that runtime and must
-  not bind UDP `51820`.
+- The active WireGuard runtime for the gateway-coupled `vpn` role is `wg-easy`;
+  the gateway host `wg-orbit` interface is a peer/client of that runtime and
+  must not bind UDP `51820`.
 - Gateway execution may write durable node state directly.
 - Gateway execution may use SSH to provision app-hosting nodes.
 - Gateway execution must not SSH to joined/client identities for omitted

@@ -1,9 +1,8 @@
 # VPN Commands
 
 VPN commands administer the active `vpn` role runtime for human/operator access
-clients. In this version the `vpn` role is gateway-coupled, so these remain
-gateway-host infrastructure commands rather than the normal node orchestration
-path.
+clients. In this version the `vpn` role is gateway-coupled. These commands run
+on the gateway host and do not use the normal node orchestration path.
 
 The VPN command family owns the compound `vpn-client:*` and `vpn-web-ui:*`
 command prefixes.
@@ -14,9 +13,9 @@ The `vpn` command domain does not own a state family. VPN commands administer
 VPN-role runtime clients and the backend admin credential.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns Orbit node WireGuard
-identity, gateway-managed node peers, VPN-role WireGuard readiness, VPN-served
-DNS runtime drift, and stale node-peer drift. There is no `doctor --family=vpn`
-contract.
+identity, node peers managed by the gateway, WireGuard readiness for the `vpn`
+role, drift in DNS served by the `vpn` role, and stale node-peer drift. There is
+no `doctor --family=vpn` contract.
 
 ## Domain Rules
 
@@ -40,11 +39,13 @@ Node identity is managed separately.
 - Orbit node identities are issued through [`node:new`](../1_node/1_node-new/node-new.md)
   and removed through [`node:remove`](../1_node/8_node-remove/node-remove.md),
   not through `vpn-client:new` or `vpn-client:remove`.
-- `vpn-client:list` may show active `vpn` role runtime backend peers that correspond to active
-  Orbit nodes, but node peers are protected from `vpn-client:enable`,
-  `vpn-client:disable`, and `vpn-client:remove`.
+- `vpn-client:list` may show backend peers from the runtime for the active
+  `vpn` role when those peers correspond to active Orbit nodes.
+- Node peers are protected from `vpn-client:enable`, `vpn-client:disable`, and
+  `vpn-client:remove`.
 - A VPN client name must not collide with an active Orbit node name.
-- VPN commands may pass a backend TOTP code when the active `vpn` role runtime backend requires
+- VPN commands may pass a backend TOTP code.
+- They do this only when the backend for the active `vpn` role requires
   second-factor authentication.
 - VPN commands do not create app routes, proxy routes, Cloudflare records,
   gateway development DNS mappings, or caller-local resolver overrides.
