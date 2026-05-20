@@ -10,55 +10,52 @@ Each term below has a precise meaning in the node command family.
 
 - **Node:** A gateway-owned fleet member with a stable name, role assignments,
   platform, identity, reachability metadata, and access policy.
-- **Gateway:** Special singleton authority role that owns durable Orbit state,
-  the typed API, WireGuard coordination, root CA material, DNS coordination,
-  node access policy, and doctor convergence. `gateway` is stored as a role
-  assignment, but normal hosted-role mutation does not add it.
-- **Joined client:** CLI caller configured to use a gateway. A joined client
-  stores local gateway configuration and WireGuard identity material, but it
-  is not a hosted role and does not orchestrate hosted nodes directly.
-- **Hosted node:** Workload host for apps, workspaces, databases, and managed
-  runtime artifacts. A hosted node may run the Orbit CLI as a stateless gateway
-  client, but it does not become a second gateway.
-- **Operator node:** Joined node acting through gateway-known WireGuard
-  identity and gateway grants. Operator is a capability/identity term, not a
-  hosted role, so a hosted node can also be an operator node.
-- **Hosted role:** A fixed code-defined bundle attached through a role
-  assignment. v1 hosted roles are `app-development`, `app-production`,
-  `database`, and `agent`.
-- **Agent hosted role:** Exclusive hosted role for first-party autonomous
-  agent workloads. Conflicts with `gateway`, `app-development`,
-  `app-production`, and `database`. Selectable only during `node:new`.
-- **Hosted role assignability:** Flag on a role that decides whether it may
-  be selected by `node:new`, by `node role:add`, or by both. `agent` is
+- **Client:** Node configured to use a gateway. A client stores local gateway
+  configuration and WireGuard identity material. Any node can act as a client
+  when it runs the Orbit CLI; the term emphasizes the CLI-caller perspective.
+- **Node role:** A fixed code-defined bundle attached through a role
+  assignment. The five roles are `gateway` (singleton authority),
+  `app-development`, `app-production`, `database`, and `agent`. The latter four
+  are workload roles.
+- **Gateway role:** The singleton authority role. The `gateway` role owns
+  durable Orbit state, the typed API, WireGuard coordination, root CA material,
+  DNS coordination, node access policy, and doctor convergence. It is stored as
+  a role assignment, but normal role-mutation commands do not add it.
+- **Agent role:** Exclusive workload role for first-party autonomous agent
+  workloads. Conflicts with `gateway`, `app-development`, `app-production`, and
+  `database`. Selectable only during `node:new`.
+- **Role assignability:** Flag on a role that decides whether it may be
+  selected by `node:new`, by `node role:add`, or by both. `agent` is
   assignable through `node:new` only; `node role:add` rejects it.
-- **Role assignment:** Gateway-owned record that attaches one role to one node,
-  carries any role-specific settings, and tracks convergence status.
-- **Hosted role settings:** Assignment-local configuration for a hosted role.
-  Role-local desired configuration lives on the role assignment, not on the
-  generic node record.
+- **Role assignment:** Gateway-owned record that attaches one role to one
+  node, carries any role-specific settings, and tracks convergence status.
+- **Role settings:** Assignment-local configuration for a role. Role-local
+  desired configuration lives on the role assignment, not on the generic node
+  record.
 - **Agent role TLD setting:** Role-assignment setting on the `agent` role.
   Default `agent`. Drives the DNS mapping the gateway owns for that TLD and
   the agent tool internal HTTPS hostnames such as `openclaw.agent` and
   `hermes.agent`.
-- **Agent role baseline:** Code-defined desired state for an `agent` node:
-  Caddy, Supervisor, WireGuard/node identity and trust material, and the
-  shared unprivileged `agent` runtime user.
+- **Agent role baseline:** Code-defined desired state for a node with the
+  `agent` role: Caddy, Supervisor, WireGuard/node identity and trust material,
+  and the shared unprivileged `agent` runtime user.
 - **Agent runtime user:** Shared unprivileged Linux user that owns agent
-  tool runtimes on an `agent` node. Agent tools never run as the privileged
-  `orbit` maintenance user.
+  tool runtimes on a node with the `agent` role. Agent tools never run as the
+  privileged `orbit` maintenance user.
 - **Role assignment status:** Lifecycle state of one role assignment:
   `pending`, `active`, `error`, or `removing`. Eligibility checks use only
   active assignments. Compatibility checks treat `active`, `pending`, and
   `error` assignments as unresolved conflicts and ignore `removing`.
 - **Caller identity:** The gateway-known WireGuard identity that authenticates a
-  CLI request. Operation is WireGuard identity plus gateway grants, not an
-  operator role. The CLI does not store or check a caller role locally.
+  CLI request. Operation is WireGuard identity plus gateway grants, not a
+  built-in role. The CLI does not store or check a caller role locally.
 
-## Legacy Control Terminology
+## Legacy Terminology
 
-Orbit now uses **operator node** for the product concept previously described as
-the control node. Legacy `control` remains only where migration compatibility
+Orbit now talks in nodes and role assignments. Earlier wording used
+"joined client", "hosted node", "operator node", and "control node" for what
+is now just a node — a machine with identity, possibly role assignments, and
+gateway-stored grants. Legacy terms remain only where migration compatibility
 still matters, such as persisted compatibility values, old CLI flags like
 `--control-name`, legacy JSON examples, or historical test and file names.
 
@@ -95,7 +92,7 @@ convergence path as adding the role. The `agent` role's `tld` follows the same
 single-lowercase-DNS-label rule as `app-development` and must be unique among
 active TLD-backed role assignments in the fleet.
 
-## Hosted Role Baselines
+## Role Baselines
 
 Role baselines are code-defined desired state, not editable package lists.
 
@@ -129,10 +126,10 @@ Eligibility checks only use `active` assignments. Assignments in `pending`,
 
 Each role is supported on a specific set of host platforms.
 
-| Role kind | Supported platforms |
+| Role | Supported platforms |
 | --- | --- |
 | `gateway` | Ubuntu |
-| joined client | macOS, Ubuntu |
+| client (no role assignments) | macOS, Ubuntu |
 | `app-development` | Ubuntu |
 | `app-production` | Ubuntu |
 | `database` | Ubuntu |
@@ -140,7 +137,7 @@ Each role is supported on a specific set of host platforms.
 
 Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's gateway role assignment or
-active hosted roles before side effects.
+active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
@@ -150,13 +147,13 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 
 - **Node identity:** The node record that the gateway owns, plus its WireGuard
   peer identity, assigned WireGuard address, role assignments, and node name.
-- **First-gateway bootstrap:** The one allowed no-gateway path. A joined client
-  provisions the first gateway over SSH, creates the initiating joined-client
+- **First-gateway bootstrap:** The one allowed no-gateway path. A client
+  provisions the first gateway over SSH, creates the initiating client
   identity, installs local trust and gateway config, and verifies gateway API
   access.
-- **Joined-client enrollment:** A two-machine path: the gateway mints the
-  joined-client identity, the client machine installs that WireGuard identity,
-  and then runs `gateway:add`.
+- **Client enrollment:** A two-machine path: the gateway mints the client
+  identity, the client machine installs that WireGuard identity, and then runs
+  `gateway:add`.
 - **Compatible existing node:** An active node whose role assignments are known
   to the gateway and whose role assignments, identity, host, and
   assignment-local settings match the resolved command input for the requested
@@ -166,12 +163,12 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 
 These terms describe how nodes communicate and how authority is enforced.
 
-- **CLI-to-gateway edge:** HTTPS over WireGuard from joined clients, hosted-node
-  CLI clients, or the gateway-local CLI to the gateway API.
-- **Gateway-to-hosted-node edge:** SSH through `RemoteShell` for node-side
-  applying.
-- **Hosted-node event ingestion:** Narrow hosted-node-to-gateway callbacks for
-  purpose-built lifecycle events, not hosted-node control-plane authority.
+- **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
+  gateway-local, or a node with workload roles — to the gateway API.
+- **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
+  from the gateway.
+- **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
+  lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
   WireGuard, SSH, reachability, and gateway runtime readiness for a node.
 
@@ -211,17 +208,17 @@ exists.
 - **Permission preset:** Code-defined named bundle of permissions selected by
   `--preset`. Presets do not embed wildcard permissions except the
   `gateway-admin` preset.
-- **Agent self preset:** Preset used by `agent` self grants. Contains
+- **Agent self preset:** Preset used by `agent` self-grants. Contains
   `doctor:verify`, `node:read`, `tool:read`, `tool:restart`, and
   `tool:update:agent-tools`. Excludes `node:update`, `tool:credentials`, `tool:install`,
   `tool:remove`, `tool:stop`, `tool:reconfigure`, firewall writes, grant
   writes, node role writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
-- **Operator preset:** Default cross-node preset for `agent` nodes and the
-  general-purpose preset for fleet operators. Reads firewall rules and
-  database registry or schema metadata, and reports firewall doctor findings,
-  but cannot create, update, or remove firewall rules. Excludes SQL query
-  access, database registry writes, `doctor:restore`, and `doctor:adopt` by
-  default.
+- **Operator preset:** Default cross-node preset for nodes with the `agent`
+  role and the general-purpose preset for fleet operators. Reads firewall
+  rules and database registry or schema metadata, and reports firewall doctor
+  findings, but cannot create, update, or remove firewall rules. Excludes SQL
+  query access, database registry writes, `doctor:restore`, and `doctor:adopt`
+  by default.
 - **Read-only preset:** Preset that grants only read permissions across the
   product surface. It includes `database:read` but not `database:query`,
   because reading table rows is separate from reading registry or schema
@@ -238,13 +235,14 @@ exists.
 
 These terms describe how grants are created and what shape they take.
 
-- **Self grant:** Explicit consumer-to-serving grant where consumer and
+- **Self-grant:** Explicit consumer-to-serving grant where consumer and
   serving are the same node. Required for self-access; never implicit.
 - **Gateway-admin grant:** Grant from a consumer to the gateway whose
   permissions include `*`. Confers fleet-wide super-admin authority,
   including authority over nodes added later.
 - **Cross-node grant:** Grant where consumer and serving are different
-  nodes. Default cross-node preset for `agent` nodes is `operator`.
+  nodes. Default cross-node preset for nodes with the `agent` role is
+  `operator`.
 - **Directional grant setup:** During `node:new`, optional configuration of
   grants from the new node to other nodes (`--grant-to`,
   `--grant-to-preset`, `--grant-to-permissions`) and from other nodes to
@@ -255,15 +253,16 @@ These terms describe how grants are created and what shape they take.
   set of agent tools selected for first install. Zero, one, or several
   agent tools may be selected; there is no default agent tool.
 - **Multi-agent-tool warning:** Warning emitted when a second running agent
-  tool is selected or started on the same agent node. Human callers receive
-  an interactive confirmation; machine-readable callers receive a structured
-  `tool.multiple_agent_tools_running` warning under `success.meta.warnings[]`
-  and the command proceeds when input is otherwise valid.
+  tool is selected or started on the same node with the `agent` role. Human
+  callers receive an interactive confirmation; machine-readable callers
+  receive a structured `tool.multiple_agent_tools_running` warning under
+  `success.meta.warnings[]` and the command proceeds when input is otherwise
+  valid.
 
 ## Development DNS Mapping
 
-These terms describe how the gateway maintains DNS resolution for development
-hosted nodes.
+These terms describe how the gateway maintains DNS resolution for nodes with
+the `app-development` role.
 
 - **Development DNS mapping owned by the gateway:** Node-family gateway configuration
   and gateway-local resolver reality that maps `*.{tld}` for an active
@@ -273,7 +272,7 @@ hosted nodes.
   configuration and resolver reality as the mapping that `app-development`
   uses, but derived from an active `agent` role assignment's `tld` setting
   (default `agent`). Routes agent tool internal HTTPS hostnames such as
-  `openclaw.agent` and `hermes.agent` to the agent node's WireGuard address.
+  `openclaw.agent` and `hermes.agent` to the node's WireGuard address.
 - **Development DNS configuration model:** Derived from the active
   `app-development` role assignment. A mapping exists only when that assignment
   is active, its `tld` setting is a single lowercase DNS label without a leading
@@ -282,8 +281,8 @@ hosted nodes.
   node's WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that
   converges or removes resolver artifacts on the gateway from
-  the derived configuration model. It is used by hosted-node provisioning,
-  hosted-node adoption and materialization, node removal, and
+  the derived configuration model. It is used by node provisioning,
+  node adoption and materialization, node removal, and
   `doctor --family=node --restore`.
 - **Development DNS probe:** Internal node-family gateway service that reads
   gateway-local resolver reality for derived development DNS configuration and
@@ -293,15 +292,15 @@ hosted nodes.
 Development DNS mappings are not a public `dns:*` command surface and do not
 create a `dns` state family. The `dns:*` commands own only the resolver overrides
 local to the caller. The node family owns the gateway mapping lifecycle because it is
-part of development hosted-role readiness.
+part of `app-development` role readiness.
 
 ## Node Family Boundaries
 
 The node family owns:
 
 - fleet membership, node roles, role assignments, and supported platforms;
-- gateway configuration, node identity, hosted-node reachability from the
-  gateway, and gateway runtime readiness;
+- gateway configuration, node identity, node reachability from the gateway,
+  and gateway runtime readiness;
 - the node access grant edge and the scoped permissions stored on each grant,
   plus the permission registry, presets, and normalization;
 - the development and agent DNS mappings the gateway maintains;

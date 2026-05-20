@@ -45,7 +45,7 @@ Run `activity:list` to retrieve recent gateway history filtered by app, node, ef
 3. Renders the matching entries newest first.
 
 The command is read-only. It does not inspect live node state, repair drift, or
-query app-node runtimes.
+query app-role runtimes.
 
 ## Output
 

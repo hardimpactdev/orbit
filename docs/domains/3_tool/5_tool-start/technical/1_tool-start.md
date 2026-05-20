@@ -24,13 +24,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered managed tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default` if set; otherwise self from gateway-known caller identity. | `Visible node slug.` |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | Visible app slug, domain, or `<slug>.<node-tld>` selector used to resolve the owning app node. |
+| `app` | `--app` | `Optional.` | `Never.` | `None.` | Visible app slug, domain, or `<slug>.<node-tld>` selector used to resolve the owning node. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 Target resolution is strict:
 
 1. If `--app` is present, resolve the app selector to its owning node.
-2. If `--app` and `--node` are both present, the resolved app node must match
+2. If `--app` and `--node` are both present, the resolved node must match
    the supplied node or the command fails with `validation_failed`.
 3. If `--app` is absent and `--node` is present, use `--node`.
 4. If neither explicit target exists, use local `node:default` when configured.

@@ -395,6 +395,10 @@ describe('node:new', function (): void {
             && ! str_contains($process->command, 'control-private-key'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
             && str_contains($process->command, 'orbit:internal:detect-platform --update-local-node'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, "'orbit'@'192.0.2.10'")
+            && str_contains($process->command, '99-orbit-hardening.conf')
+            && str_contains($process->command, 'PermitRootLogin no')
+            && str_contains($process->command, 'AllowUsers ${RUNTIME_USER}'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')

@@ -20,29 +20,6 @@ afterEach(function (): void {
     MockClient::destroyGlobal();
 });
 
-function createPhpLocalNode(string $role = 'gateway'): Node
-{
-    return Node::factory()->create([
-        'name' => "local-{$role}",
-        'role' => $role,
-        'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
-}
-
-function createPhpTool(Node $node, array $config = []): NodeTool
-{
-    return NodeTool::factory()->create([
-        'node_id' => $node->id,
-        'name' => 'php',
-        'expected_state' => 'running',
-        'config' => array_merge([
-            'versions' => ['8.5', '8.4'],
-            'cli_version' => '8.5',
-        ], $config),
-    ]);
-}
-
 describe('php:list command contract', function (): void {
     it('reports supported, installed, CLI, app, and workspace runtime facts on the gateway', function (): void {
         createPhpLocalNode('gateway');

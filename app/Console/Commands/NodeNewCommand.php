@@ -530,6 +530,15 @@ class NodeNewCommand extends Command
             if (is_int($sshAuthorization)) {
                 return $sshAuthorization;
             }
+
+            $sshHardening = $this->hardenRuntimeSshAccess(
+                host: $inputs['host'],
+                runtimeUser: $runtimeUser,
+            );
+
+            if (is_int($sshHardening)) {
+                return $sshHardening;
+            }
         }
 
         $node = $registryWriter->writeNodeIdentity(
@@ -1132,6 +1141,15 @@ class NodeNewCommand extends Command
             return $sshAuthorization;
         }
 
+        $sshHardening = $this->hardenRuntimeSshAccess(
+            host: $inputs['host'],
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($sshHardening)) {
+            return $sshHardening;
+        }
+
         $gatewayEndpoint = $this->gatewayEndpoint();
 
         $node = $registryWriter->writeAppNode(
@@ -1495,6 +1513,54 @@ class NodeNewCommand extends Command
         );
     }
 
+    private function hardenRuntimeSshAccess(string $host, string $runtimeUser): ?int
+    {
+        $script = sprintf(
+            <<<'SCRIPT'
+set -e
+RUNTIME_USER=%s
+sudo install -d -m 0755 /etc/ssh/sshd_config.d
+sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
+# Managed by Orbit.
+# Provisioned nodes accept operator SSH only through the orbit runtime user.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+AllowUsers ${RUNTIME_USER}
+EOF
+sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
+sudo sshd -t
+sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+sudo passwd -l root > /dev/null 2>&1 || true
+sudo rm -f /root/.ssh/authorized_keys
+SCRIPT,
+            escapeshellarg($runtimeUser),
+        );
+
+        $hardening = Process::timeout(60)->run(sprintf(
+            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
+            escapeshellarg($runtimeUser),
+            escapeshellarg($host),
+            escapeshellarg($script),
+        ));
+
+        if ($hardening->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Host '{$host}' could not harden steady-state SSH access.",
+            meta: [
+                'host' => $host,
+                'step' => 'ssh_hardening',
+                'error' => trim($hardening->errorOutput()."\n".$hardening->output()) ?: null,
+            ],
+        );
+    }
+
     private function ensureGatewayRuntimeDependencies(string $host, string $sshUser, string $runtimeUser): ?int
     {
         $script = sprintf(
@@ -1706,6 +1772,15 @@ SCRIPT,
 
         if (is_int($gatewayPlatform)) {
             return $gatewayPlatform;
+        }
+
+        $sshHardening = $this->hardenRuntimeSshAccess(
+            host: $host,
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($sshHardening)) {
+            return $sshHardening;
         }
 
         try {

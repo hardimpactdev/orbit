@@ -1,7 +1,7 @@
 # Workspace Commands
 
 Workspace commands manage gateway-owned workspace configuration and the
-app-node artifacts derived from that configuration. A workspace belongs to an
+app-role artifacts derived from that configuration. A workspace belongs to an
 app, has a canonical name, and owns one workspace route lifecycle.
 
 ## Domain Rules
@@ -65,10 +65,10 @@ returns the physical path that Orbit stores on the gateway workspace record.
   `<workspace>` from the requested `--base` ref. Orbit stores
   `agent_ide.adapter=opencode`, the returned workspace path, and the OpenCode
   session id when session creation succeeds (stored on a best-effort basis).
-- **Polyscope driver:** used when the effective adapter is `polyscope`. It
-  creates the workspace through the Polyscope SDK using the app node's
-  Polyscope server identity and the parent app's Polyscope repository id.
-  Orbit stores the Polyscope-returned path and workspace id. Polyscope paths
+- **PolyScope driver:** used when the effective adapter is `polyscope`. It
+  creates the workspace through the PolyScope SDK using the node's
+  PolyScope server identity and the parent app's PolyScope repository id.
+  Orbit stores the PolyScope-returned path and workspace id. PolyScope paths
   are allowed to live outside the parent app path, for example under
   `~/.polyscope/clones/...`.
 
@@ -80,15 +80,15 @@ Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
 Implementation-shape details for the process manager, Supervisor programs, and
-gateway-to-app-node application live in
+gateway-to-app-role application live in
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager),
 [tech-stack.md#scheduler](../../tech-stack.md#scheduler), and
-[tech-stack.md#gateway-to-app-node](../../tech-stack.md#gateway-to-app-node).
+[tech-stack.md#gateway-to-app-role](../../tech-stack.md#gateway-to-app-role).
 
 Workspace registry-only reads — `workspace:show`, `workspace:history`,
 `workspace:list`, and `workspace:log` for stored history — do not require a
 live process manager. `workspace:new`, `workspace:setup`, and
-`workspace:remove` require a live process manager on the owning app node
+`workspace:remove` require a live process manager on the owning node
 when they create, update, remove, or verify inherited runtime units.
 
 ## Workspace JSON Entity
@@ -120,8 +120,8 @@ than inside it.
 | --- | --- | --- |
 | `name` | string | Workspace identity slug. Unique within the parent app. |
 | `app` | string | Parent app slug. |
-| `node` | string | Owning app-node slug inherited from the parent app. |
-| `path` | string | Absolute workspace path on the owning app node. |
+| `node` | string | Owning app-role slug inherited from the parent app. |
+| `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent app PHP version; `false` when the workspace row stores an explicit override. |
@@ -153,14 +153,14 @@ caller's WireGuard peer identity and applies gateway-owned access policy.
 
 - Callers from control or gateway peers may run workspace read and write
   commands when authorized by gateway-owned access policy.
-- Callers from app-node peers may run workspace read commands when authorized.
+- Callers from app-role peers may run workspace read commands when authorized.
 - `workspace:setup` is the only workspace write command the gateway currently
-  authorizes from an app-node peer; it is a local workflow exception for
+  authorizes from an app-role peer; it is a local workflow exception for
   preparing the workspace the caller is already working inside. When invoked
-  from an app node, the gateway still applies setup steps by opening an SSH
-  connection back to that same app node through RemoteShell — the CLI never
+  from a node with an app role, the gateway still applies setup steps by opening an SSH
+  connection back to that same node through RemoteShell — the CLI never
   applies artifacts locally.
-- The gateway denies app-node peers running `workspace:new`,
+- The gateway denies app-role peers running `workspace:new`,
   `workspace:remove`, setup-step mutation, teardown-step mutation, or other
   mutations to workspace policy that the gateway owns, unless a command explicitly
   documents a future exception.

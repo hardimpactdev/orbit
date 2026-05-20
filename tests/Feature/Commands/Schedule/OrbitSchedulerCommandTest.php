@@ -3,13 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Http\Gateway\Requests\Schedules\StoreSchedulerHeartbeatRequest;
-use App\Http\Gateway\Requests\Schedules\StoreScheduleRunRequest;
-use App\Http\Gateway\Requests\Schedules\SyncSchedulesRequest;
 use App\Models\App;
-use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
@@ -17,27 +15,30 @@ use App\Models\ScheduleRun;
 use App\Services\Schedules\OrbitScheduler;
 use App\Services\Schedules\ScheduleInterval;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Saloon\Http\Faking\MockClient;
-use Saloon\Http\Faking\MockResponse;
+use Illuminate\Process\FakeInvokedProcess;
+use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
-afterEach(function (): void {
-    MockClient::destroyGlobal();
-});
-
 it('runs one scheduler daemon tick on demand', function (): void {
+    createOrbitSchedulerGatewayNode();
+
     $this->artisan('orbit-scheduler --once')
         ->expectsOutputToContain('Orbit Scheduler tick completed')
         ->assertSuccessful();
 });
 
-it('runs due local schedules through rendered hook material and records history', function (): void {
-    $localNode = createOrbitSchedulerLocalNode('gateway');
-    $schedule = Schedule::factory()->forNode($localNode)->create([
-        'name' => 'gateway-maintenance',
-        'schedule_key' => 'node:local-gateway:gateway-maintenance',
+it('dispatches due app schedules from the gateway and records run history centrally', function (): void {
+    $gateway = createOrbitSchedulerGatewayNode();
+    $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
+    Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+        'schedule_key' => 'app:docs:laravel-scheduler',
+        'execution_value' => 'php artisan schedule:run',
         'interval' => 'every minute',
     ]);
     $remoteShell = new OrbitSchedulerRecordingRemoteShell([
@@ -52,30 +53,94 @@ it('runs due local schedules through rendered hook material and records history'
 
     expect($result->dueSchedules)->toBe(1)
         ->and($result->executedSchedules)->toBe(1)
-        ->and($remoteShell->scripts)->toBe(['/opt/orbit/schedules/hooks/'.hash('sha256', $schedule->schedule_key).'.sh'])
+        ->and($remoteShell->nodes)->toBe(['app-1'])
+        ->and($remoteShell->scripts)->toBe(['php artisan schedule:run'])
         ->and($remoteShell->options[0]['timeout'])->toBe(900)
-        ->and($run->schedule_key)->toBe('node:local-gateway:gateway-maintenance')
+        ->and($remoteShell->options[0]['cwd'])->toBe('/srv/docs')
+        ->and($run->node_id)->toBe($appNode->id)
+        ->and($run->schedule_key)->toBe('app:docs:laravel-scheduler')
         ->and($run->status)->toBe('completed')
         ->and($run->stdout)->toBe("ran\n")
-        ->and($state->node_id)->toBe($localNode->id)
+        ->and($state->node_id)->toBe($gateway->id)
         ->and($state->heartbeat_at?->toIso8601String())->toBe('2026-05-06T12:34:00+00:00')
         ->and(ScheduleLock::query()->count())->toBe(0);
 });
 
-it('skips schedules that are not due or do not target the local node', function (): void {
-    $localNode = createOrbitSchedulerLocalNode('gateway');
-    $remoteNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
-    $remoteApp = App::factory()->create(['name' => 'remote', 'node_id' => $remoteNode->id]);
-
-    Schedule::factory()->forNode($localNode)->create([
-        'name' => 'daily-report',
-        'schedule_key' => 'node:local-gateway:daily-report',
-        'interval' => 'daily at 09:00',
-    ]);
-    Schedule::factory()->forApp($remoteApp)->create([
-        'name' => 'remote-report',
-        'schedule_key' => 'app:remote:remote-report',
+it('runs gateway-target schedules locally without remote shell dispatch', function (): void {
+    $gateway = createOrbitSchedulerGatewayNode();
+    Schedule::factory()->orbit()->create([
+        'name' => 'gateway-maintenance',
+        'schedule_key' => 'orbit:gateway:gateway-maintenance',
+        'execution_value' => 'php artisan orbit:cleanup',
         'interval' => 'every minute',
+    ]);
+    $remoteShell = new OrbitSchedulerRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+    Process::fake([
+        'php artisan orbit:cleanup' => Process::result(output: "local\n"),
+    ]);
+    Process::preventStrayProcesses();
+
+    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
+
+    $run = ScheduleRun::query()->firstOrFail();
+
+    expect($result->dueSchedules)->toBe(1)
+        ->and($result->executedSchedules)->toBe(1)
+        ->and($remoteShell->scripts)->toBe([])
+        ->and($run->node_id)->toBe($gateway->id)
+        ->and($run->status)->toBe('completed')
+        ->and($run->stdout)->toBe("local\n");
+
+    Process::assertRan('php artisan orbit:cleanup');
+});
+
+it('dispatches multiple remote schedules through the remote shell pool', function (): void {
+    createOrbitSchedulerGatewayNode();
+    $firstNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
+    $secondNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
+    $thirdNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
+
+    foreach ([[$firstNode, 'one'], [$secondNode, 'two'], [$thirdNode, 'three']] as [$node, $name]) {
+        $app = App::factory()->create([
+            'name' => $name,
+            'node_id' => $node->id,
+            'path' => "/srv/{$name}",
+        ]);
+
+        Schedule::factory()->forApp($app)->create([
+            'name' => 'scheduler',
+            'schedule_key' => "app:{$name}:scheduler",
+            'execution_value' => "echo {$name}",
+            'interval' => 'every minute',
+        ]);
+    }
+
+    $remoteShell = new OrbitSchedulerAsyncRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
+
+    expect($result->dueSchedules)->toBe(3)
+        ->and($result->executedSchedules)->toBe(3)
+        ->and($remoteShell->runCalls)->toBe(0)
+        ->and($remoteShell->started)->toBe([
+            ['node' => 'app-1', 'script' => 'echo one', 'cwd' => '/srv/one'],
+            ['node' => 'app-2', 'script' => 'echo two', 'cwd' => '/srv/two'],
+            ['node' => 'app-3', 'script' => 'echo three', 'cwd' => '/srv/three'],
+        ])
+        ->and($remoteShell->maxActiveProcesses)->toBe(3)
+        ->and(ScheduleRun::query()->where('status', 'completed')->count())->toBe(3)
+        ->and(ScheduleLock::query()->count())->toBe(0);
+});
+
+it('skips schedules that are not due', function (): void {
+    createOrbitSchedulerGatewayNode();
+
+    Schedule::factory()->orbit()->create([
+        'name' => 'daily-report',
+        'schedule_key' => 'orbit:gateway:daily-report',
+        'interval' => 'daily at 09:00',
     ]);
 
     $remoteShell = new OrbitSchedulerRecordingRemoteShell;
@@ -89,74 +154,36 @@ it('skips schedules that are not due or do not target the local node', function 
         ->and(ScheduleRun::query()->count())->toBe(0);
 });
 
-it('reports app-node scheduler heartbeat and run history to the gateway', function (): void {
+it('refuses to run the scheduler daemon away from the gateway', function (): void {
     config(['orbit.is_gateway' => false]);
+    createOrbitSchedulerAppHostNode(['name' => 'app-1']);
 
-    $localNode = createOrbitSchedulerLocalNode('app');
-    LocalGatewaySettings::current()->fill([
-        'gateway_url' => 'https://10.6.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
-    MockClient::global([
-        SyncSchedulesRequest::class => MockResponse::make([
-            'success' => [
-                'data' => [
-                    'schedules' => [[
-                        'schedule_key' => 'app:docs:laravel-scheduler',
-                        'name' => 'laravel-scheduler',
-                        'scope' => 'app',
-                        'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'local-app'],
-                        'interval' => 'every minute',
-                        'timezone' => 'UTC',
-                        'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
-                        'enabled' => true,
-                        'status' => 'expected',
-                    ]],
-                ],
-                'meta' => ['node' => 'local-app', 'count' => 1],
-            ],
-        ], 200),
-        StoreSchedulerHeartbeatRequest::class => MockResponse::make(['success' => ['data' => ['state' => []]]], 201),
-        StoreScheduleRunRequest::class => MockResponse::make(['success' => ['data' => ['run' => ['id' => 9]]]], 201),
-    ]);
-    app()->instance(RemoteShell::class, new OrbitSchedulerRecordingRemoteShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: "failed\n", durationMs: 25),
-    ]));
-
-    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
-
-    expect($result->dueSchedules)->toBe(1)
-        ->and($result->executedSchedules)->toBe(1)
-        ->and(Schedule::query()->where('schedule_key', 'app:docs:laravel-scheduler')->exists())->toBeTrue()
-        ->and(SchedulerState::query()->count())->toBe(0)
-        ->and(ScheduleRun::query()->count())->toBe(0);
+    $this->artisan('orbit-scheduler --once')
+        ->expectsOutputToContain('Orbit Scheduler can only run on the gateway.')
+        ->assertFailed();
 });
 
-it('exposes scheduler sync intent for schedules targeting the authenticated node', function (): void {
-    $caller = Node::factory()->create([
-        'name' => 'app-1',
-        'role' => 'app',
-        'wireguard_address' => '10.6.0.41',
-    ]);
-    $otherNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-    $otherApp = App::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+it('records remote dispatch failures as failed gateway history', function (): void {
+    createOrbitSchedulerGatewayNode();
+    $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
         'schedule_key' => 'app:docs:laravel-scheduler',
+        'interval' => 'every minute',
     ]);
-    Schedule::factory()->forApp($otherApp)->create([
-        'name' => 'other-scheduler',
-        'schedule_key' => 'app:other:other-scheduler',
-    ]);
+    app()->instance(RemoteShell::class, new OrbitSchedulerRecordingRemoteShell(throwable: new RuntimeException('ssh timeout')));
 
-    $response = $this->call('GET', '/api/schedules/sync', [], [], [], ['REMOTE_ADDR' => '10.6.0.41']);
+    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
+    $run = ScheduleRun::query()->firstOrFail();
 
-    $response->assertSuccessful()
-        ->assertJsonPath('success.meta.node', 'app-1')
-        ->assertJsonPath('success.meta.count', 1)
-        ->assertJsonPath('success.data.schedules.0.schedule_key', 'app:docs:laravel-scheduler')
-        ->assertJsonPath('success.data.schedules.0.name', 'laravel-scheduler');
+    expect($result->dueSchedules)->toBe(1)
+        ->and($result->executedSchedules)->toBe(1)
+        ->and($run->node_id)->toBe($appNode->id)
+        ->and($run->status)->toBe('failed')
+        ->and($run->exit_code)->toBe(1)
+        ->and($run->stderr)->toBe('ssh timeout')
+        ->and(ScheduleLock::query()->count())->toBe(0);
 });
 
 it('evaluates portable schedule interval expressions', function (): void {
@@ -172,19 +199,51 @@ it('evaluates portable schedule interval expressions', function (): void {
         ->and($interval->isDue('weekly on monday at 14:35', 'Europe/Amsterdam', $now))->toBeFalse();
 });
 
-function createOrbitSchedulerLocalNode(string $role): Node
+function createOrbitSchedulerGatewayNode(array $attributes = []): Node
 {
-    return Node::factory()->create([
-        'name' => "local-{$role}",
-        'role' => $role,
+    $node = Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
         'host' => '10.6.0.10',
         'wireguard_address' => '10.6.0.10',
         'status' => 'active',
+        ...$attributes,
     ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
+function createOrbitSchedulerAppHostNode(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'role' => 'app',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-development',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
 }
 
 final class OrbitSchedulerRecordingRemoteShell implements RemoteShell
 {
+    /**
+     * @var list<string>
+     */
+    public array $nodes = [];
+
     /**
      * @var list<string>
      */
@@ -200,6 +259,7 @@ final class OrbitSchedulerRecordingRemoteShell implements RemoteShell
      */
     public function __construct(
         private array $results = [],
+        private ?RuntimeException $throwable = null,
     ) {}
 
     /**
@@ -207,9 +267,138 @@ final class OrbitSchedulerRecordingRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if ($this->throwable instanceof RuntimeException) {
+            throw $this->throwable;
+        }
+
+        $this->nodes[] = $node->name;
         $this->scripts[] = $script;
         $this->options[] = $options;
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class OrbitSchedulerAsyncRemoteShell implements RemoteShell, StartsRemoteShellProcesses
+{
+    public int $runCalls = 0;
+
+    public int $activeProcesses = 0;
+
+    public int $maxActiveProcesses = 0;
+
+    /**
+     * @var list<array{node: string, script: string, cwd: string|null}>
+     */
+    public array $started = [];
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->runCalls++;
+
+        throw new RuntimeException('Synchronous remote shell should not be used for pooled scheduler dispatch.');
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        $this->started[] = [
+            'node' => $node->name,
+            'script' => $script,
+            'cwd' => is_string($options['cwd'] ?? null) ? $options['cwd'] : null,
+        ];
+        $this->activeProcesses++;
+        $this->maxActiveProcesses = max($this->maxActiveProcesses, $this->activeProcesses);
+
+        return new OrbitSchedulerTrackingInvokedProcess(
+            new FakeInvokedProcess(
+                command: $script,
+                process: Process::describe()
+                    ->output("ran {$node->name}")
+                    ->exitCode(0),
+            ),
+            function (): void {
+                $this->activeProcesses--;
+            },
+        );
+    }
+}
+
+final class OrbitSchedulerTrackingInvokedProcess implements InvokedProcess
+{
+    private bool $finished = false;
+
+    public function __construct(
+        private readonly InvokedProcess $process,
+        private readonly Closure $onFinished,
+    ) {}
+
+    public function id(): ?int
+    {
+        return $this->process->id();
+    }
+
+    public function command(): string
+    {
+        return $this->process->command();
+    }
+
+    public function signal(int $signal): static
+    {
+        $this->process->signal($signal);
+
+        return $this;
+    }
+
+    public function running(): bool
+    {
+        return $this->process->running();
+    }
+
+    public function output(): string
+    {
+        return $this->process->output();
+    }
+
+    public function errorOutput(): string
+    {
+        return $this->process->errorOutput();
+    }
+
+    public function latestOutput(): string
+    {
+        return $this->process->latestOutput();
+    }
+
+    public function latestErrorOutput(): string
+    {
+        return $this->process->latestErrorOutput();
+    }
+
+    public function wait(?callable $output = null): ProcessResult
+    {
+        $result = $this->process->wait($output);
+
+        $this->markFinished();
+
+        return $result;
+    }
+
+    public function waitUntil(?callable $output = null): ProcessResult
+    {
+        $result = $this->process->waitUntil($output);
+
+        $this->markFinished();
+
+        return $result;
+    }
+
+    private function markFinished(): void
+    {
+        if ($this->finished) {
+            return;
+        }
+
+        ($this->onFinished)();
+        $this->finished = true;
     }
 }

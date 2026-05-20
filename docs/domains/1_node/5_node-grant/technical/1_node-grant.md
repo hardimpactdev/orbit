@@ -13,7 +13,7 @@
   `authorization_failed`.
 - Gateway callers can read and write gateway-owned node configuration.
 - Operator callers have configured gateway access as defined in
-  [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md).
+  [`2_node-grant_on-client.md`](2_node-grant_on-client.md).
 
 **Post-input path eligibility:**
 - Both `consuming_node` and `serving_node` resolve to existing active node
@@ -168,7 +168,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, mode conflicts, unknown permissions and presets, elevated-grant consent, self-grant acceptance, operator-caller forwarding, app-node denial, JSON envelope, exhaustive `error.code` coverage, and warning payload shape under `success.meta.warnings[]`. |
+| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Command contract: successful grant, idempotent already-granted success, mode conflicts, unknown permissions and presets, elevated-grant consent, self-grant acceptance, operator-caller forwarding, app-role denial, JSON envelope, exhaustive `error.code` coverage, and warning payload shape under `success.meta.warnings[]`. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
 | `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS through WireGuard, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
@@ -179,6 +179,6 @@ Renderer-specific test mapping lives in:
 
 Role-specific test mapping lives in:
 
-- [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md#test-mapping)
+- [`2_node-grant_on-client.md`](2_node-grant_on-client.md#test-mapping)
 - [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md#test-mapping)
-- [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md#test-mapping)
+- [`4_node-grant_on-app-role.md`](4_node-grant_on-app-role.md#test-mapping)

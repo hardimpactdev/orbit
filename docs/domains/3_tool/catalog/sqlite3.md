@@ -28,7 +28,7 @@ is a local CLI utility, not a managed service.
 ## Orbit Notes
 
 SQLite is local storage. Orbit includes the `sqlite3` CLI in the
-`app-development` and `app-production` baselines so app nodes have the lightweight
+`app-development` and `app-production` baselines so nodes have the lightweight
 local database utility that Laravel development, tests, and small local data
 workflows commonly expect.
 

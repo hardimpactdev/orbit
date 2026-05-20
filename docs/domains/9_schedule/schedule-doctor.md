@@ -2,37 +2,39 @@
 
 [Back to Schedule commands.](README.md)
 
-`doctor --family=schedule` verifies whether gateway schedule configuration is being executed by a live Orbit Scheduler on the target node. It covers Orbit-owned schedules only.
+`doctor --family=schedule` verifies whether gateway schedule configuration is being executed by the gateway-resident Orbit Scheduler and that every schedule's target is reachable for dispatch. It covers Orbit-owned schedules only.
 
 The schedule family owns these facts:
 
 - gateway-owned schedule rows: scope, target, interval, timezone, execution source, enabled state, and scheduler metadata;
-- the `orbit_scheduler` Supervisor program on every gateway and app node that targets schedules;
-- Orbit Scheduler liveness, heartbeat freshness, registry-sync freshness, and schedule lock health;
-- the hooks needed to capture run history for schedule observability;
-- drift between gateway schedule configuration and scheduler-side execution reality.
+- the `orbit_scheduler` Supervisor program on the gateway;
+- Orbit Scheduler liveness, heartbeat freshness, and schedule lock health (all gateway-side);
+- SSH reachability from the gateway to each schedule's target node so dispatches can succeed;
+- drift between gateway schedule configuration and observed run history.
 
-App source, app PHP-FPM, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the Orbit Scheduler and its run-history hooks, not application health.
+App source, app PHP-FPM, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the gateway-resident scheduler and per-target dispatch reachability, not application health.
 
 ## Probe Layers
 
 The schedule probe reads gateway schedule configuration and checks these layers:
 
-1. **Registry configuration:** every selected schedule has valid scope, target, interval, timezone, execution source, enabled state, and scheduler metadata.
+1. **Registry configuration:** every selected schedule has valid scope, target, interval, timezone, execution source, and enabled state.
 2. **Target eligibility:** the app, node, or Orbit maintenance target resolves and is visible to the caller.
-3. **Node eligibility:** the target node resolves to a visible active gateway or app node with schedule capability.
-4. **Process manager availability:** the target node has Supervisor installed and reachable.
 
-If layer 4 fails, the probe reports `schedule.runtime_backend_unavailable` and skips the scheduler layers listed below.
+**Gateway scheduler layers** (verified once per doctor run, not per schedule):
 
-**Scheduler layers** (skipped when layer 4 fails):
+3. **Scheduler process manager availability:** the gateway has Supervisor installed and reachable.
+4. **Orbit Scheduler presence:** the `orbit_scheduler` Supervisor program exists on the gateway.
+5. **Orbit Scheduler liveness:** the `orbit_scheduler` program is in a running state.
+6. **Heartbeat freshness:** the most recent scheduler heartbeat is within the configured threshold.
+7. **Schedule lock health:** no schedule lock in `schedule_locks` exceeds the configured stale-lock threshold.
 
-5. **Orbit Scheduler presence:** the `orbit_scheduler` Supervisor program exists on the target node.
-6. **Orbit Scheduler liveness:** the `orbit_scheduler` program is in a running state and the daemon's local heartbeat is fresh enough to be considered live.
-7. **Heartbeat freshness:** the most recent heartbeat reported to the gateway is within the configured threshold.
-8. **Registry sync freshness:** the scheduler's most recent schedule-configuration sync is within the configured threshold.
-9. **Schedule lock health:** no schedule lock exceeds the configured stale-lock threshold.
-10. **Run-history hook material:** the hook material required to capture stdout and exit status for the selected schedules exists on the scheduler side and matches gateway configuration.
+If any of layers 3–7 fail, the corresponding issue code is emitted and downstream per-target dispatch checks are still attempted (so the operator sees both the scheduler-side problem and any reachability problems).
+
+**Per-target dispatch layers** (one set per schedule whose target is not the gateway):
+
+8. **Target SSH reachability:** the gateway can open a `RemoteShell` connection to the target node. Required for the gateway to dispatch the scheduled command.
+9. **Recent run health:** recent `schedule_runs` rows exist for enabled schedules and the latest status is healthy. Failures and stuck runs beyond the configured threshold surface as drift.
 
 ## Schedule Issue Codes
 
@@ -40,16 +42,15 @@ The table below lists every issue code the schedule probe may emit and the condi
 
 | Code | Detected when |
 | --- | --- |
-| `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, enabled state, or scheduler metadata required for comparison. |
+| `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, or enabled state. |
 | `schedule.target_invalid` | The schedule points at a missing, unauthorized, inactive, unsupported, or role-incompatible target. |
-| `schedule.runtime_backend_unavailable` | The target node's process manager (Supervisor) is not reachable. Downstream scheduler layer checks are skipped while this code is active. |
-| `schedule.scheduler_missing` | The process manager has no `orbit_scheduler` Supervisor program. |
-| `schedule.scheduler_stopped` | The `orbit_scheduler` Supervisor program is registered but not running. |
-| `schedule.heartbeat_stale` | The most recent scheduler heartbeat reported to the gateway is older than the configured threshold. |
-| `schedule.registry_sync_stale` | The scheduler has not synced schedule configuration within the configured threshold. |
-| `schedule.lock_stuck` | A schedule lock exceeds the configured stale-lock threshold. |
-| `schedule.run_history_hook_missing` | Scheduler-side run-history hook material is absent for a selected schedule. |
-| `schedule.run_history_hook_mismatch` | Scheduler-side run-history hook material differs from gateway configuration. |
+| `schedule.runtime_backend_unavailable` | The gateway's process manager (Supervisor) is not reachable. |
+| `schedule.scheduler_missing` | The gateway has no `orbit_scheduler` Supervisor program. |
+| `schedule.scheduler_stopped` | The `orbit_scheduler` Supervisor program on the gateway is registered but not running. |
+| `schedule.heartbeat_stale` | The most recent scheduler heartbeat is older than the configured threshold. |
+| `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
+| `schedule.target_unreachable` | The gateway cannot open a `RemoteShell` connection to the schedule's target node. Dispatch will fail until reachability is restored. |
+| `schedule.run_stuck` | The latest `schedule_runs` row for an enabled schedule has been in `running` state past the configured threshold. |
 
 ## Schedule Fix Map
 
@@ -58,17 +59,18 @@ The table below lists what `doctor --restore` does for each issue code.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Process manager recovery belongs to `tool` family doctor and node operations. |
-| `schedule.scheduler_missing` | Re-render and load the `orbit_scheduler` Supervisor program from node-level scheduler configuration. |
-| `schedule.scheduler_stopped` | Start the `orbit_scheduler` Supervisor program through the process manager. |
+| `schedule.scheduler_missing` | Re-render and load the `orbit_scheduler` Supervisor program on the gateway. |
+| `schedule.scheduler_stopped` | Start the `orbit_scheduler` Supervisor program on the gateway. |
 | `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler explicitly with `process:restart orbit_scheduler` or investigate the daemon. |
-| `schedule.registry_sync_stale` | No `doctor --restore` action. Sync is restored when scheduler-to-gateway connectivity recovers. |
-| `schedule.lock_stuck` | Release the stale lock on the target node and record the affected run as `failed`. |
-| `schedule.run_history_hook_missing` | Recreate run-history hook material for the selected schedule. |
-| `schedule.run_history_hook_mismatch` | Replace run-history hook material with the gateway-configured hook. |
+| `schedule.lock_stuck` | Release the stale lock row in `schedule_locks` and record the affected run as `failed`. |
 
 `doctor --restore` does not handle `schedule.record_incomplete`,
 `schedule.target_invalid`, `schedule.runtime_backend_unavailable`,
-`schedule.heartbeat_stale`, or `schedule.registry_sync_stale`.
+`schedule.heartbeat_stale`, `schedule.target_unreachable`, or
+`schedule.run_stuck`. `schedule.target_unreachable` is a downstream symptom of
+node or network drift; resolve through `doctor --family=node` and SSH-path
+diagnostics. `schedule.run_stuck` is observable history that points operators
+to `schedule:logs` for the affected run.
 
 ## Schedule Adopt Map
 
@@ -91,7 +93,7 @@ Required test files:
 | `tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
 | `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --fix --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
 
-`ScheduleProbeTest` covers registry configuration, target eligibility, node
-eligibility, process manager availability, scheduler presence, scheduler
-liveness, heartbeat freshness, registry sync freshness, schedule lock health,
-and run-history hook material.
+`ScheduleProbeTest` covers registry configuration, target eligibility, gateway
+scheduler process manager availability, scheduler presence, scheduler
+liveness, heartbeat freshness, schedule lock health, per-target SSH
+reachability, and stuck-run detection.

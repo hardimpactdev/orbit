@@ -8,6 +8,7 @@ use App\Services\Schedules\OrbitScheduler;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use RuntimeException;
 
 #[Signature('orbit-scheduler
     {--once : Run one scheduler tick and exit}
@@ -24,7 +25,14 @@ class OrbitSchedulerCommand extends Command
         $completedTicks = 0;
 
         do {
-            $result = $scheduler->tick();
+            try {
+                $result = $scheduler->tick();
+            } catch (RuntimeException $exception) {
+                $this->error($exception->getMessage());
+
+                return self::FAILURE;
+            }
+
             $completedTicks++;
 
             $this->line(sprintf(

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Nodes;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,13 +25,19 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->probe = app(NodesProbe::class);
+    $remoteShell = new NodesProbeRoleAssignmentsRemoteShell;
+    $developmentDnsConfigDir = storage_path('framework/testing/nodes-probe-role-dns/'.bin2hex(random_bytes(6)));
+    $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
 
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    $this->app->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
+    $this->app->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
+    $this->app->instance(RemoteShell::class, $remoteShell);
+    $this->app->instance(NodesProbe::class, new NodesProbe(remoteShell: $remoteShell));
+    $this->probe = app(NodesProbe::class);
 });
 
 afterEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 function roleDriftEntries(Node $node): array
@@ -141,8 +151,10 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
         'status' => $conflictingStatus->value,
     ]);
 
-    File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-    File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+    $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
+
+    File::ensureDirectoryExists($configDir);
+    File::put("{$configDir}/test.conf", implode("\n", [
         '# orbit-managed=node-development-dns',
         '# node=test',
         '# bind-scope=orbit_network',
@@ -259,8 +271,10 @@ it('does not require legacy environment when active role assignments provide the
         'settings' => ['tld' => 'test'],
     ]);
 
-    File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-    File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+    $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
+
+    File::ensureDirectoryExists($configDir);
+    File::put("{$configDir}/test.conf", implode("\n", [
         '# orbit-managed=node-development-dns',
         '# node=test',
         '# bind-scope=orbit_network',
@@ -437,7 +451,7 @@ it('restores role-owned settings-derived artifacts during reconcile', function (
         ],
     ));
 
-    expect(storage_path('app/orbit/node-development-dns.d/test.conf'))
+    expect(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf')
         ->toBeFile();
 });
 
@@ -497,3 +511,11 @@ it('only re-converges the role assignment that owns a baseline mismatch', functi
 
     expect($converger->convergedRoles)->toBe(['app-development']);
 });
+
+final class NodesProbeRoleAssignmentsRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

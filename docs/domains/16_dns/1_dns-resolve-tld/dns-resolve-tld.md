@@ -4,7 +4,7 @@
 
 Configure or remove a local resolver override for a development TLD on the caller machine.
 
-`dns:resolve-tld` is a local operator-node helper for machines that need browser
+`dns:resolve-tld` is a local client helper for machines that need browser
 or CLI access to development hostnames through a local resolver override. It
 writes only caller-machine resolver configuration. It does not create gateway
 development DNS mappings, app routes, proxy routes, Cloudflare records, or
@@ -59,7 +59,7 @@ whether local state changed.
 
 ## Requirements
 
-- The command is running from a operator-node caller.
+- The command is running from a client caller.
 - The caller machine uses a platform with an Orbit-supported local resolver
   backend.
 - The process has the local OS privileges required to update resolver
@@ -72,7 +72,7 @@ Use these commands alongside `dns:resolve-tld` for related DNS and provisioning 
 - [`dns:list`](../2_dns-list/dns-list.md) - inspect caller-local Orbit resolver
   overrides
 - [`node:new`](../../1_node/1_node-new/node-new.md) - create gateway-owned
-  development TLD mappings for app nodes
+  development TLD mappings for nodes
 - [`doctor --family=node --self`](../../1_node/node-doctor.md) - verify
   development TLD readiness for the node family
 

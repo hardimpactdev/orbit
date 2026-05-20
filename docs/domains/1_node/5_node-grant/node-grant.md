@@ -100,9 +100,9 @@ any redundant-permission warnings.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured operator node.
+- Must run on the gateway host or from a configured client.
 - The caller must hold a grant to the gateway whose permissions include
-  `node:grant` (or `*`). App-node callers without such a grant are rejected
+  `node:grant` (or `*`). App-role callers without such a grant are rejected
   before side effects.
 - Both nodes must have active records in gateway node configuration. Records still
   in `provisioning` are rejected as not found; live reachability is not

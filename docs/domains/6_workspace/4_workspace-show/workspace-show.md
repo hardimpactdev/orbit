@@ -33,7 +33,7 @@ orbit workspace:show [name] [--app=<app>] [--json]
 
 ## Behavior Summary
 
-Run `workspace:show` to inspect a workspace's gateway configuration without connecting to the app node.
+Run `workspace:show` to inspect a workspace's gateway configuration without connecting to the node.
 
 ### Registry Read
 
@@ -49,7 +49,7 @@ Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces an
 
 ### Registry-Only
 
-Does not SSH to app nodes, probe filesystems, check live process status, or verify live proxy routes.
+Does not SSH to nodes, probe filesystems, check live process status, or verify live proxy routes.
 
 ## Examples
 

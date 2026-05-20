@@ -5,7 +5,7 @@
 Start one process, or all processes, in an app or workspace runtime context.
 
 `process:start` starts derived runtime units through the gateway on the owning
-app node and records durable `started` events.
+node and records durable `started` events.
 
 ## Usage
 

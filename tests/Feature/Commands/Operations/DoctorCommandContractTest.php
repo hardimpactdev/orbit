@@ -766,19 +766,16 @@ describe('doctor command contract', function (): void {
             ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
                 'family' => 'schedule',
                 'node' => 'app-1',
-                'key' => 'schedule.runtime_backend_unavailable',
+                'key' => 'schedule.target_unreachable',
                 'kind' => 'missing',
             ]);
     });
 
     it('lets restore mode complete supported schedule scheduler actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        $appNode = createDoctorHostedAppNode('app-1');
-        $app = App::factory()->create(['node_id' => $appNode->id]);
-        Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("missing\n"));
 
-        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['schedule'], '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'local-gateway', '--family' => ['schedule'], '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -787,7 +784,7 @@ describe('doctor command contract', function (): void {
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'schedule',
-                'node' => 'app-1',
+                'node' => 'local-gateway',
                 'key' => 'schedule.scheduler_missing',
                 'mode' => 'restore',
                 'status' => 'completed',

@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
 | `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may run schedules for. |
-| `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may run schedules for. |
+| `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may run schedules for. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
@@ -37,7 +37,7 @@ When called with a schedule name, `schedule:run [name]` force-runs that one sche
 
 - Resolves one schedule from gateway configuration by name and optional app or node disambiguation.
 - Force-runs the schedule's stored command or script once on the target node, regardless of whether the schedule is currently due.
-- Runs app-scoped schedules in the app context on the owning app node.
+- Runs app-scoped schedules in the app context on the owning node.
 - Runs node-scoped schedules in the selected node context.
 - Does not change the recurring interval or enabled state.
 

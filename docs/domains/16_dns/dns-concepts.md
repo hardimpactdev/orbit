@@ -12,7 +12,7 @@ These terms define the scope of the DNS command domain and its relationship to t
   prefix. It manages the development DNS resolver overrides on the caller machine, but does
   not create a `dns` state family.
 - **Caller-local DNS administration:** Local-only DNS workflow allowed only for
-  operator-node callers. It mutates or reads the caller machine's resolver
+  client callers. It mutates or reads the caller machine's resolver
   configuration and never writes gateway configuration or node reality.
 - **Caller-local resolver override:** Resolver configuration that Orbit manages
   and that maps wildcard hostnames under a development TLD to a local
@@ -21,8 +21,8 @@ These terms define the scope of the DNS command domain and its relationship to t
   blocks written by Orbit on the caller machine. DNS commands may read or
   remove only this managed state, not arbitrary operator resolver entries.
 - **Local resolver backend:** Platform resolver implementation Orbit knows how
-  to inspect, write, refresh, or restart on a supported operator-node platform.
-- **Supported local DNS platform:** Operator-node platform with an Orbit-supported
+  to inspect, write, refresh, or restart on a supported client platform.
+- **Supported local DNS platform:** Client platform with an Orbit-supported
   local resolver backend. Unsupported platforms fail before local resolver
   reads or writes.
 
@@ -32,7 +32,7 @@ These terms describe the entries that DNS commands read and write on the caller 
 
 - **Development TLD:** Single lowercase DNS label without a leading dot, such as
   `test`. In the DNS command domain it names the local wildcard override; it is
-  not proof that the gateway has provisioned development TLD readiness for app nodes.
+  not proof that the gateway has provisioned development TLD readiness for nodes.
 - **Local DNS target:** IPv4 or IPv6 address used by a caller-local resolver
   override. `dns:resolve-tld` maps `*.{tld}` to this target through the local
   resolver backend.
@@ -58,12 +58,12 @@ These terms describe the entries that DNS commands read and write on the caller 
 These terms define what the DNS command domain must not touch.
 
 - **Development DNS mapping owned by the gateway:** Development DNS state for the node family
-  created during app-node provisioning and repaired by
+  created during app-role provisioning and repaired by
   `doctor --fix --family=node --restore`. DNS commands must not create, inspect, or
   repair these mappings.
-- **App-node resolver drift:** Node-family drift where app-node resolver state
+- **App-role resolver drift:** Node-family drift where app-role resolver state
   does not match the readiness expectations that the gateway owns. DNS commands must not
-  create an app-node write exception or repair app-node resolver state.
+  create an app-role write exception or repair app-role resolver state.
 - **Public DNS boundary:** Product boundary that keeps `dns:*` commands away
   from public DNS records and provider DNS/CDN state. Cloudflare provider DNS
   belongs to `cf-dns:*`, and Orbit ingress configuration belongs to app and proxy

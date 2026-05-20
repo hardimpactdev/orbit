@@ -65,7 +65,7 @@ coordinate of the `(app, workspace)` identity rather than a redundant flag.
    configuration the workspace owns or inherits:
    - workspace registry: name, parent app, branch, workspace path, canonical
      URL;
-   - owning app node: name and host (from the parent app's node record);
+   - owning node: name and host (from the parent app's node record);
    - runtime expectations: effective PHP version and inheritance source,
      PHP-FPM pool, derived hostname;
    - agent IDE configuration: effective adapter, resolution source, and
@@ -80,13 +80,13 @@ coordinate of the `(app, workspace)` identity rather than a redundant flag.
 `workspace:show` must not:
 - Mutate gateway configuration or node state.
 - Fix drift or trigger setup.
-- SSH into the owning app node directly from the caller.
+- SSH into the owning node directly from the caller.
 - Run live PHP-FPM, document-root, route, or process probes.
 - Block on slow or unreachable node runtime checks.
 
 ### Constraints & Invariants
 
-- **Registry-only**: The command **must not** SSH to app nodes, probe
+- **Registry-only**: The command **must not** SSH to nodes, probe
   filesystems, check FPM pools, or verify live proxy routes.
 - **No repair**: Does not fix drift or trigger setup.
 - **Read-only**: Does not mutate gateway state.

@@ -23,7 +23,7 @@ methods:
 | `canReconcile()` | `bool` | Whether this family supports `doctor --family=node --restore`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `doctor --family=node --adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
-| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven active hosted-node missing peers, proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
+| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven active node missing peers, proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
 
 ## Data Structures
@@ -123,7 +123,7 @@ These layers are implemented without external service dependencies:
    - Detects assignments left in `error` after synchronous convergence failed.
 
 2. **Local default preference** (`node.local_default_invalid`)
-   - Checks `LocalNodeDefault` setting against active `app-development` hosted nodes.
+   - Checks `LocalNodeDefault` setting against active `app-development` nodes.
    - Validates the default node exists, is development, and is authorized via `NodeAccess`.
    - Only runs when `--self` inspects the local CLI's configuration.
 
@@ -165,13 +165,13 @@ These layers perform bounded read-only remote inspection through `RemoteShell`.
 They do not mutate host state:
 
 - SSH reachability (`node.app_ssh_unreachable`)
-  - Runs only for active hosted-node records.
+  - Runs only for active node records.
   - Executes `true` through `RemoteShell` with a short timeout.
-  - Reports `Unverifiable` drift when the gateway cannot reach the hosted node over
+  - Reports `Unverifiable` drift when the gateway cannot reach the node over
     SSH.
 
-- Hosted-node runtime readiness (`node.app_runtime_missing`)
-  - Runs only for active hosted-node records.
+- Node-side runtime readiness (`node.app_runtime_missing`)
+  - Runs only for active node records.
   - Reuses `RuntimeBackendProbe` to verify the minimum remote process manager
     needed for gateway applying.
   - Reports `Unverifiable` drift when supervisor/runtime readiness is missing or
@@ -190,30 +190,30 @@ additional external services:
     activates the node only when the registry peer public key is present in live
     WireGuard reality and has exactly one unambiguous allowed address.
   - `NodesProbe` also consumes this read-only service with
-    `NodeIdentityArtifactProbe` for selected active hosted-node records missing a
+    `NodeIdentityArtifactProbe` for selected active node records missing a
     registry peer row. Adoption attaches a peer row only when the remote
     identity artifact matches the selected node configuration, the artifact reports the
     live interface public key, and live WireGuard reality has exactly one
     allowed address matching the node record.
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
-- Identity artifact readiness on hosted nodes (`node.node_identity_artifact_missing`)
+- Identity artifact readiness on nodes (`node.node_identity_artifact_missing`)
   - `NodeIdentityArtifactProbe` can read bounded non-secret identity facts from
     the selected host: local active node name, role assignments, assignment
     status, platform,
     WireGuard address, registry public key, and live interface public key when
     available.
-  - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active hosted node. Adoption of an unknown host or a node with the gateway role still requires
+  - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active node. Adoption of an unknown host or a node with the gateway role still requires
     a separate materialization path before the proof can be used safely.
 - Development DNS baseline reality (`node.role_baseline_mismatch`)
   - `DevelopmentDnsMappingProbe` reads gateway-local Orbit-managed development
     DNS resolver artifacts for the derived node configuration model:
     active `app-development` role assignments with non-empty `tld` and
     non-empty WireGuard addresses.
-  - The canonical mapping is `*.{tld}` to the hosted node's WireGuard
+  - The canonical mapping is `*.{tld}` to the node's WireGuard
     address, owned by the node name. Missing artifacts, conflicting
     ownership, target mismatches, and public exposure all report
     `node.role_baseline_mismatch`.
-  - `app-production`, `database`, gateway, and joined-client nodes must not have derived
+  - `app-production`, `database`, gateway, and client nodes must not have derived
     development DNS mappings.
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
@@ -233,13 +233,13 @@ Adopting an unknown host or adopting a missing peer on an active node requires s
 proof than a host supplied by the operator, a live WireGuard peer, or a registry row
 alone. `NodeIdentityArtifactProbe` reads bounded, non-secret identity facts
 from the target host. `NodesProbe` compares those facts with gateway configuration when
-adopting a missing peer on a selected active hosted node before it attaches unowned live
+adopting a missing peer on a selected active node before it attaches unowned live
 reality to a node record.
 
 The minimum proof set is:
 
 - the target host is reached through the path defined by its role: local read
-  for the gateway itself or gateway-owned SSH for hosted nodes;
+  for the gateway itself or gateway-owned SSH for nodes;
 - the target host reports the expected Orbit node name and role;
 - if WireGuard is already configured on the target host, the reported
   WireGuard public key or address matches a gateway-owned peer or the peer
@@ -264,10 +264,10 @@ private key is left empty.
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active hosted-node records when identity artifact proof and live WireGuard reality agree. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active node records when identity artifact proof and live WireGuard reality agree. |
 | `node.wireguard_address_mismatch` | Stub: reserved for gateway-managed peer rewrite. |
 | `node.gateway_runtime_unready` | Stub: reserved for gateway-side runtime restart. |
-| `node.app_runtime_missing` | Stub: reserved for hosted-node bootstrap rerun. |
+| `node.app_runtime_missing` | Stub: reserved for node bootstrap rerun. |
 | `node.access_grant_invalid` | Removes stale `NodeAccess` rows referencing missing or non-active nodes. |
 | `node.role_convergence_failed` | Retries convergence for selected `error` role assignments and persists `error` again on failure. |
 | `node.role_baseline_mismatch` | Re-applies the baseline artifacts that the selected active role assignments own, including development DNS mappings derived from role settings. |
@@ -298,7 +298,7 @@ private key is left empty.
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active hosted-node records when identity artifact proof and live WireGuard reality agree. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active node records when identity artifact proof and live WireGuard reality agree. |
 | `node.wireguard_peer_extra` | Activates the selected non-active node record when existing registry peer material matches a live WireGuard peer by public key and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the process manager is available; returns a conflict when runtime readiness cannot be verified. |

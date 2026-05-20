@@ -88,7 +88,7 @@ or from the `latest_setup_run.run_id` field returned by
 - Connect to running processes, tail process manager logs, or otherwise
   stream live output. Live process logs belong to
   [`orbit process:logs`](../../../7_process/8_process-logs/process-logs.md).
-- SSH into the owning app node. The command is gateway-only.
+- SSH into the owning node. The command is gateway-only.
 - Modify gateway configuration or node artifacts.
 - Rewrite or repair historical run rows or captured output.
 

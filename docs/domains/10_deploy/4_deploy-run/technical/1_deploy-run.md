@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-node callers are denied by the gateway before prompts or side effects because deployment runs mutate app-owned gateway history and execute node-side deployment steps.
+- App-role callers are denied by the gateway before prompts or side effects because deployment runs mutate app-owned gateway history and execute node-side deployment steps.
 - The gateway can reach the selected production app's owning node.
 
 ## Signature
@@ -38,7 +38,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the selected app through gateway app configuration.
 - Uses one gateway API action, `POST /api/deploy/run`. JSON callers receive the
-  normal JSON response; interactive operator-node callers request that same
+  normal JSON response; interactive client callers request that same
   action with `Accept: text/event-stream` and render streamed progress locally.
 - Fails before side effects unless the selected app is production.
 - Reads the app's deployment steps ordered by `order` ascending.
@@ -104,7 +104,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
 | Pipeline empty | The production app has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
-| Execution failed | The gateway cannot execute a step on the owning app node. | `error.code=deploy.execution_failed` |
+| Execution failed | The gateway cannot execute a step on the owning node. | `error.code=deploy.execution_failed` |
 | Step failed | A deployment step exits non-zero. | `error.code=deploy.step_failed` |
 | History write failed | The gateway cannot persist the run or final run status. | `error.code=deploy.history_write_failed` |
 
@@ -122,11 +122,11 @@ deployment status when reporting `app.latest_deployment_failed` or
 | `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering the deploy-run lifecycle; see detail below. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |
 
-`DeployCommandTest.php` covers production app lookup, app-node denial before
+`DeployCommandTest.php` covers production app lookup, app-role denial before
 prompts or side effects, authorization, empty pipeline failure, run creation,
 ordered step execution through the gateway from the app source path, timeout
 enforcement, metadata exposure, and progress-tree rendering.
 
-It also covers streamed operator-node progress, single-route stream negotiation,
+It also covers streamed client progress, single-route stream negotiation,
 step-failure stop behavior, latest deployment status updates, detached handoff,
 failure codes, and app-doctor handoff behavior.

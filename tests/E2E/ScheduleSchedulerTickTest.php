@@ -6,12 +6,11 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
-it('syncs app-node schedule intent and reports run history from a scheduler tick', function (): void {
+it('dispatches app-node schedules from the gateway scheduler tick', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $scheduleName = 'e2e-scheduler-'.strtolower(bin2hex(random_bytes(3)));
     $scheduleKey = "app:e2e-scheduler:{$scheduleName}";
-    $hookPath = '/opt/orbit/schedules/hooks/'.hash('sha256', $scheduleKey).'.sh';
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
@@ -21,20 +20,12 @@ it('syncs app-node schedule intent and reports run history from a scheduler tick
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         scheduleSchedulerSeedGatewayIntent($topology, $scheduleName, $scheduleKey);
-        scheduleSchedulerPrepareDevNode(
-            $topology,
-            e2eGatewayApiUrl($topology),
-            e2eGatewayWireGuardIp($topology),
-            $topology->instance('dev')->waitForIpv4(),
-            scheduleSchedulerGatewayRootCa($topology),
-            $hookPath,
-        );
 
         $tick = $topology->ssh(
-            'dev',
+            'gateway',
             sprintf(
                 'cd %s && php artisan orbit-scheduler --once',
-                escapeshellarg($topology->checkout('dev')),
+                escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
         );
@@ -47,9 +38,8 @@ it('syncs app-node schedule intent and reports run history from a scheduler tick
         expect($state['run_count'])->toBe(1)
             ->and($state['latest_status'])->toBe('completed')
             ->and($state['latest_stdout'])->toContain('scheduler-e2e-ran')
-            ->and($state['scheduler_synced'])->toBeTrue();
+            ->and($state['gateway_heartbeat'])->toBeTrue();
     } finally {
-        $topology->ssh('dev', 'sudo rm -f '.escapeshellarg($hookPath), timeoutSeconds: 60);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
@@ -66,7 +56,7 @@ function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, str
     [
         'node_id' => \$node->id,
         'environment' => 'development',
-        'path' => '/home/orbit/apps/e2e-scheduler',
+        'path' => '/home/orbit/orbit',
         'document_root' => 'public',
         'php_version' => '8.5',
         'adopted' => true,
@@ -100,90 +90,8 @@ PHP;
     );
 }
 
-function scheduleSchedulerPrepareDevNode($topology, string $gatewayUrl, string $gatewayWireGuardIp, string $devIp, string $gatewayRootCa, string $hookPath): void
-{
-    $gatewayUrlValue = var_export($gatewayUrl, true);
-    $gatewayWireGuardIpValue = var_export($gatewayWireGuardIp, true);
-    $devIpValue = var_export($devIp, true);
-    $caPath = $topology->checkout('dev').'/storage/app/orbit/gateway-ca/orbit.crt';
-    $caPathValue = var_export($caPath, true);
-
-    $php = <<<PHP
-\\App\\Models\\Node::query()->updateOrCreate(
-    ['name' => 'app-dev-1'],
-    [
-        'role' => 'app',
-        'environment' => 'development',
-        'tld' => 'test',
-        'host' => {$devIpValue},
-        'wireguard_address' => {$devIpValue},
-        'gateway_endpoint' => {$gatewayWireGuardIpValue},
-                'user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'status' => 'active',
-            ],
-);
-
-\$settings = \\App\\Models\\LocalGatewaySettings::current();
-\$settings->fill([
-    'gateway_url' => {$gatewayUrlValue},
-    'gateway_wg_ip' => {$gatewayWireGuardIpValue},
-    'ca_pem_path' => {$caPathValue},
-]);
-\$settings->save();
-
-echo 'configured';
-PHP;
-
-    $topology->ssh(
-        'dev',
-        'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-scheduler >/dev/null; fi && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && public_key=$(cat ~/.ssh/id_ed25519.pub) && grep -qxF "$public_key" ~/.ssh/authorized_keys || printf "%s\n" "$public_key" >> ~/.ssh/authorized_keys',
-        timeoutSeconds: 60,
-    );
-
-    $topology->ssh(
-        'dev',
-        sprintf(
-            'install -d -m 0775 %s && printf %%s %s > %s',
-            escapeshellarg(dirname($caPath)),
-            escapeshellarg($gatewayRootCa),
-            escapeshellarg($caPath),
-        ),
-        timeoutSeconds: 60,
-    );
-
-    $topology->ssh(
-        'dev',
-        'cd '.escapeshellarg($topology->checkout('dev')).' && php artisan tinker --execute='.escapeshellarg($php),
-        timeoutSeconds: 120,
-    );
-
-    $topology->ssh(
-        'dev',
-        sprintf(
-            'sudo install -d -m 0755 %s && printf %s | sudo tee %s >/dev/null && sudo chmod 0755 %s',
-            escapeshellarg(dirname($hookPath)),
-            escapeshellarg("#!/usr/bin/env bash\nset -euo pipefail\necho scheduler-e2e-ran\n"),
-            escapeshellarg($hookPath),
-            escapeshellarg($hookPath),
-        ),
-        timeoutSeconds: 60,
-    );
-}
-
-function scheduleSchedulerGatewayRootCa($topology): string
-{
-    $result = $topology->ssh(
-        'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg('echo app(\\App\\Services\\Ca\\OrbitCaService::class)->rootCert();'),
-        timeoutSeconds: 120,
-    );
-
-    return trim($result->output());
-}
-
 /**
- * @return array{run_count: int, latest_status: string|null, latest_stdout: string|null, scheduler_synced: bool}
+ * @return array{run_count: int, latest_status: string|null, latest_stdout: string|null, gateway_heartbeat: bool}
  */
 function scheduleSchedulerGatewayState($topology, string $scheduleKey): array
 {
@@ -195,14 +103,14 @@ function scheduleSchedulerGatewayState($topology, string $scheduleKey): array
     ->latest('id')
     ->first();
 \$state = \\App\\Models\\SchedulerState::query()
-    ->whereHas('node', fn (\$query) => \$query->where('name', 'app-dev-1'))
+    ->whereHas('node', fn (\$query) => \$query->where('name', 'gateway'))
     ->first();
 
 echo json_encode([
     'run_count' => \\App\\Models\\ScheduleRun::query()->where('schedule_key', {$scheduleKeyValue})->count(),
     'latest_status' => \$run?->status,
     'latest_stdout' => \$run?->stdout,
-    'scheduler_synced' => \$state?->registry_synced_at !== null,
+    'gateway_heartbeat' => \$state?->heartbeat_at !== null,
 ], JSON_THROW_ON_ERROR);
 PHP;
 
@@ -212,7 +120,7 @@ PHP;
         timeoutSeconds: 120,
     );
 
-    /** @var array{run_count: int, latest_status: string|null, latest_stdout: string|null, scheduler_synced: bool} $state */
+    /** @var array{run_count: int, latest_status: string|null, latest_stdout: string|null, gateway_heartbeat: bool} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;

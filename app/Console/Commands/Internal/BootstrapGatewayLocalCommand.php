@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Internal;
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
@@ -62,6 +63,17 @@ class BootstrapGatewayLocalCommand extends Command
                     'user' => 'orbit',
                     'orbit_path' => '/home/orbit/orbit',
                     'status' => 'active',
+                ],
+            );
+
+            NodeRoleAssignment::query()->updateOrCreate(
+                [
+                    'node_id' => $gateway->id,
+                    'role' => 'gateway',
+                ],
+                [
+                    'status' => 'active',
+                    'settings' => [],
                 ],
             );
 

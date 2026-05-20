@@ -29,7 +29,7 @@ execution.
 1. Resolve `node_update.name`.
 2. Validate the node exists.
 3. Validate role-conditional field eligibility.
-4. Validate `node_update.tld` when present: the target must be an app node whose
+4. Validate `node_update.tld` when present: the target must be a node with an app role whose
    effective environment is `development`, and no other active node may already
    own that TLD.
 5. Compute the configuration delta (which fields actually changed).
@@ -47,8 +47,8 @@ supplied `development` value.
 - Fail before side effects when no supported field flags are provided in
   non-interactive input mode.
 - Fail before side effects when a field is supplied for an incompatible node
-  role (`--environment` on a non-app node, or `--host`, `--public-ipv4`, or
-  `--public-ipv6` on a operator node).
+  role (`--environment` on a non-node, or `--host`, `--public-ipv4`, or
+  `--public-ipv6` on a client).
 - Fail before side effects when `--tld` is supplied for a gateway target,
   control target, or app target whose effective environment is `production`.
 - Fail before side effects with `node.tld_in_use` when `--tld` matches another

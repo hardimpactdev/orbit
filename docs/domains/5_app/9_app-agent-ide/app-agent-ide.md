@@ -95,7 +95,7 @@ payload shape.
 
 ## Requirements
 
-- The CLI caller role is `control` or `gateway`. App-node callers are denied
+- The CLI caller role is `control` or `gateway`. App-role callers are denied
   before prompts or side effects.
 - The current node identity is authorized to manage the app.
 - The adapter must be present in the gateway-owned adapter registry. Adapters

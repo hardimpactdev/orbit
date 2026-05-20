@@ -26,7 +26,7 @@ generation, persistence, repair, and credential rendering.
 - `tool:credentials` returns the connection fields owned by the selected tool
   catalog file.
 
-Development app-node service hostnames use the development TLD stored on the
+Development app-role service hostnames use the development TLD stored on the
 node record. HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 `mailpit.<node-tld>`. TCP tools expose WireGuard-only service endpoints on the
 node service host, such as `orbit.<node-tld>:5432`, and must not be represented
@@ -87,7 +87,7 @@ mail, and websocket capability.
 ### Agent IDE servers and autonomous agent tools
 
 These installable tools support agent IDE sessions and first-party
-autonomous agents that run under the `agent` hosted role.
+autonomous agents that run under the `agent` role.
 
 7. [`polyscope-server`](polyscope-server.md)
 8. [`opencode-server`](opencode-server.md)

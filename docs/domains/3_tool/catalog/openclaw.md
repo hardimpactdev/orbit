@@ -48,9 +48,9 @@ Example JSON shape:
 }
 ```
 
-Returning credentials requires the caller's grant to the agent node to
-include `tool:credentials`. The default agent self grant does not include
-`tool:credentials`, so the agent node cannot read its own OpenClaw
+Returning credentials requires the caller's grant to the node to
+include `tool:credentials`. The default agent self-grant does not include
+`tool:credentials`, so the node cannot read its own OpenClaw
 credentials from its own CLI.
 
 ## Service Endpoint
@@ -68,18 +68,18 @@ it as the shared unprivileged `agent` user, never as the privileged
 update path through the Orbit-managed binary and then restarts the
 Supervisor program that wraps it.
 
-`tool:update openclaw` from the agent node itself requires
-`tool:update:agent-tools` on the self grant. `tool:install openclaw`,
+`tool:update openclaw` from the node itself requires
+`tool:update:agent-tools` on the self-grant. `tool:install openclaw`,
 `tool:remove openclaw`, `tool:stop openclaw`, `tool:reconfigure openclaw`,
 and updates to baseline tools (Caddy, Supervisor, WireGuard) are not part
-of the default agent self grant; they require explicit permissions from a
+of the default agent self-grant; they require explicit permissions from a
 gateway-admin.
 
 Installing or starting OpenClaw while another agent tool is already
-running on the same agent node emits the
+running on the same node emits the
 `tool.multiple_agent_tools_running` warning. Orbit attributes activity
 at the node level, and the warning surfaces that this attribution is
-weaker when more than one agent tool runs on the same agent node.
+weaker when more than one agent tool runs on the same node.
 
 Activity emitted while OpenClaw is working is attributed to the agent
 node identity. Orbit does not claim per-tool sub-identities.

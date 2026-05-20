@@ -81,7 +81,7 @@ This command follows the shared
 `workspace-setup-step:remove` deletes a single gateway-owned setup-step
 record from an app's workspace lifecycle policy and compacts the surviving
 steps' `order` to a continuous sequence. The command writes only to gateway
-configuration. App nodes are not contacted.
+configuration. Nodes are not contacted.
 
 1. **Lookup.** Find the setup-step record by `(step_id, app, phase=setup)`.
    If not found, fail before side effects with
@@ -117,7 +117,7 @@ configuration. App nodes are not contacted.
 - Mutate `workspace_runs` or `workspace_step_runs` records.
 - Undo filesystem side effects, installed packages, migrations, or any
   other artifact produced by previous executions of the removed step on
-  app nodes. Past executions remain visible in
+  nodes. Past executions remain visible in
   [`workspace:history`](../../6_workspace-history/workspace-history.md).
 - Read project files (`composer.json`, `package.json`, `.php-version`, `.env`,
   lockfiles, or framework manifests) during parent-app inference.
@@ -178,7 +178,7 @@ setup-step removal attempts.
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php` | Atomic delete + order-compaction within `(app, phase=setup)`, refusal to remove a `phase=teardown` step, and rejection of step records that do not belong to the resolved app. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found handling, destructive consent (`--force` and `--json` interaction), and runtime-lock absence (full scope below). |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCallerRoleTest.php` | Operator / gateway peer acceptance and app-node peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCallerRoleTest.php` | Operator / gateway peer acceptance and app-role peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php` | Real gateway delete against a registered app with steps, verification of contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight `workspace:setup` run continues using its start-of-run snapshot. |
 
 `WorkspaceSetupStepRemoveCommandTest` covers:

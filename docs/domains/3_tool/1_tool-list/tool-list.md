@@ -26,7 +26,7 @@ orbit tool:list --json
 ## Arguments and options
 
 - `--node`: Limit results to one visible node.
-- `--app`: Resolve the owning app node from an app and limit results to that
+- `--app`: Resolve the owning node from an app and limit results to that
   node.
 - `--json`: Output JSON.
 

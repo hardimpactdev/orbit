@@ -58,15 +58,6 @@ RUN printf '%s\n' \
         'autorestart=true' \
         'stdout_logfile=/var/log/supervisor/sshd.log' \
         'stderr_logfile=/var/log/supervisor/sshd.err.log' \
-        '' \
-        '[program:orbit_scheduler]' \
-        'directory=/home/orbit/orbit' \
-        'command=/bin/bash -lc "php artisan orbit-scheduler --sleep-seconds=60"' \
-        'user=orbit' \
-        'autostart=true' \
-        'autorestart=true' \
-        'stdout_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.log' \
-        'stderr_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.err.log' \
         > /etc/supervisor/conf.d/orbit-e2e.conf \
     && printf '%s\n' \
         '#!/usr/bin/env bash' \

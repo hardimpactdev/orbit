@@ -8,7 +8,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
   parent app.
-- The gateway can reach the owning app node over SSH.
+- The gateway can reach the owning node over SSH.
 
 [Back to the public command page.](../workspace-setup.md)
 
@@ -26,13 +26,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When local workspace context cannot resolve it. | Local workspace context when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug. |
-| `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning app node. | Absolute path on the owning app node. See `--path` rules below. |
+| `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
-The `--path` value must be an absolute path on the owning app node. A relative
+The `--path` value must be an absolute path on the owning node. A relative
 or non-absolute value fails before side effects with
 `error.code=validation_failed`, `error.meta.field=path`. The path must exist
-on the app node and satisfy the parent app's workspace source policy. Generic
+on the node and satisfy the parent app's workspace source policy. Generic
 worktree paths must live under `<app path>/.worktrees/`.
 
 ## Input Resolution
@@ -106,13 +106,13 @@ worktree paths must live under `<app path>/.worktrees/`.
    - Workspace `path` returned by the CWD path-ownership lookup or stored on
      the existing workspace row.
    - Caller's current directory, resolved to an absolute path on the owning
-     app node, when adopting an unregistered path.
+     node, when adopting an unregistered path.
 3. **Validate Eligibility**:
-   - Target app node must be reachable.
+   - Target node must be reachable.
    - Path must satisfy the parent app's workspace source policy. Generic
      worktree paths must live under `<app path>/.worktrees/`; adapter-owned
      paths are represented by `workspace:new` through stored adapter metadata.
-   - Path must exist on the app node (created by `workspace:new` or manual
+   - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
    - Adoption is based on explicit command input and gateway path policy only.
      `workspace:setup` does not inspect project files such as `composer.json`,
@@ -141,12 +141,12 @@ phase boundaries.
    - Ensures a workspace-owned route record exists in `proxy`.
    - Updates the record if configuration has changed.
 3. **Artifact Apply** (`phase=artifacts`):
-   - Connects to the app node via SSH.
+   - Connects to the node via SSH.
    - Applies workspace-specific runtime artifacts (PHP-FPM pool, environment).
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
    - Reads configured setup step definitions for the parent app.
-   - Executes steps sequentially in the workspace directory on the app node.
+   - Executes steps sequentially in the workspace directory on the node.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
 5. **Processes** (`phase=processes`):
@@ -165,9 +165,9 @@ re-renders artifacts and verifies command-owned application. The outcome layer r
 
 - `set_up` — first-time setup of a workspace path that is already in gateway
   configuration (typically just created by `workspace:new`).
-- `adopted` — first-time setup where the path existed on the app node but was
+- `adopted` — first-time setup where the path existed on the node but was
   unmanaged. Identity may come from explicit input or from an agent-IDE
-  adapter probe (for example, a Polyscope worktree the adapter manages but
+  adapter probe (for example, a PolyScope worktree the adapter manages but
   Orbit did not yet know about). The durable `workspace.adopted` boolean is
   set to `true` for this run; subsequent re-runs report
   `result.action=converged` with `workspace.adopted=true` preserved. When
@@ -257,13 +257,13 @@ all documented command failures exit with the standard command failure status
 | `tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution across CWD outcomes and adapter probe branches, `workspace.path_is_app_root` pre-side-effect failure, `--path` absolute-validation, gateway-applied peer allowance, interactive prompts, JSON envelope alignment, and `success.meta.warnings[]` shape. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupPathResolutionTest.php` | CWD path-ownership outcomes (`workspace`, `app_root`, `inside_app`, `unregistered`); adapter-probe single/none/ambiguous/error branches; adapter-mismatch rejection against explicit `--app`/`[name]`; adapter-driven adoption recording `agent_ide` and `agent_ide_workspace_id`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupCallerRoleTest.php` | App-node peer forwarding to the gateway as a documented local-workflow exception, operator/gateway peer orchestration, and unauthorized-app rejection before side effects. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupCallerRoleTest.php` | App-role peer forwarding to the gateway as a documented local-workflow exception, operator/gateway peer orchestration, and unauthorized-app rejection before side effects. |
 | `tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
 | `tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
 | `tests/E2E/Ephemeral/WorkspaceSetupStepExecutionTest.php` | Real step execution with lifecycle env verification and step-failure reporting. |
 
 Role-specific behavior and test mapping live in:
 
-- [`2_workspace-setup_on-control-node.md`](2_workspace-setup_on-control-node.md)
+- [`2_workspace-setup_on-client.md`](2_workspace-setup_on-client.md)
 - [`3_workspace-setup_on-gateway-node.md`](3_workspace-setup_on-gateway-node.md)
-- [`4_workspace-setup_on-app-node.md`](4_workspace-setup_on-app-node.md)
+- [`4_workspace-setup_on-app-role.md`](4_workspace-setup_on-app-role.md)

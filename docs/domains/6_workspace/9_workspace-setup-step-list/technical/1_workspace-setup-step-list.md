@@ -120,7 +120,7 @@ numeric exit codes specific to it.
 ## Doctor Relationship
 
 - `workspace-setup-step:list` reports gateway-owned setup-step configuration.
-  It does not verify whether previous setup runs succeeded on app nodes.
+  It does not verify whether previous setup runs succeeded on nodes.
 - [`doctor --family=workspace`](../../workspace-doctor.md) owns the
   workspace-family probe, drift, fix, and adopt contract. Workspace
   setup-run reality (worktrees, FPM pools, lifecycle artifacts) is reported

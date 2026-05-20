@@ -16,7 +16,7 @@ used for app-specific preparation such as installing dependencies, copying
 environment files, or running project setup commands.
 
 Steps are stored as gateway-owned workspace policy and are executed in the
-workspace path on the owning app node.
+workspace path on the owning node.
 
 ## Arguments
 

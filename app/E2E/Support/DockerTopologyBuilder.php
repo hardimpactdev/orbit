@@ -143,6 +143,7 @@ final readonly class DockerTopologyBuilder
         $key = new SshKeyPair('/dev/null', '/dev/null');
 
         E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install', timeoutSeconds: 120);
+        E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan doctor --node=gateway --family=schedule --restore --json', timeoutSeconds: 120);
         E2EGatewayApi::seedControlIdentity($gateway, '10.6.0.3', 'control');
         if ($mode === 'dns-alias') {
             E2EGatewayApi::start(

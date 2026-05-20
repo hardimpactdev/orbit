@@ -6,7 +6,6 @@ return [
     'required' => [
         'name' => 'string',
         'node' => 'string',
-        'environment' => 'string',
         'url' => 'string',
         'path' => 'string',
         'root' => 'string',

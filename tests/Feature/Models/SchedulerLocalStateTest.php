@@ -10,8 +10,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('stores one scheduler heartbeat and registry sync state per node', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1']);
+it('stores the gateway scheduler heartbeat state', function (): void {
+    $node = Node::factory()->create(['name' => 'gateway', 'role' => 'gateway']);
 
     $state = SchedulerState::factory()->create([
         'node_id' => $node->id,
@@ -34,31 +34,25 @@ it('keeps scheduler state unique per node', function (): void {
         ->toThrow(QueryException::class);
 });
 
-it('stores schedule locks by stable schedule key per node', function (): void {
-    $firstNode = Node::factory()->create(['name' => 'app-1']);
-    $secondNode = Node::factory()->create(['name' => 'app-2']);
+it('stores gateway schedule locks by stable schedule key', function (): void {
+    $gateway = Node::factory()->create(['name' => 'gateway', 'role' => 'gateway']);
 
     $firstLock = ScheduleLock::factory()->create([
-        'node_id' => $firstNode->id,
+        'node_id' => $gateway->id,
         'schedule_key' => 'app:docs:laravel-scheduler',
         'owner_token' => 'tick-1',
         'locked_at' => '2026-05-06 12:34:00',
         'expires_at' => '2026-05-06 12:39:00',
     ]);
-    $secondLock = ScheduleLock::factory()->create([
-        'node_id' => $secondNode->id,
-        'schedule_key' => 'app:docs:laravel-scheduler',
-    ]);
 
-    expect($firstNode->scheduleLocks()->first()->is($firstLock))->toBeTrue()
-        ->and($firstLock->node->is($firstNode))->toBeTrue()
-        ->and($secondLock->node->is($secondNode))->toBeTrue()
+    expect($gateway->scheduleLocks()->first()->is($firstLock))->toBeTrue()
+        ->and($firstLock->node->is($gateway))->toBeTrue()
         ->and($firstLock->locked_at->toIso8601String())->toBe('2026-05-06T12:34:00+00:00')
         ->and($firstLock->expires_at?->toIso8601String())->toBe('2026-05-06T12:39:00+00:00');
 });
 
-it('keeps schedule lock keys unique within a node only', function (): void {
-    $node = Node::factory()->create();
+it('keeps schedule lock keys unique on the gateway', function (): void {
+    $node = Node::factory()->create(['name' => 'gateway', 'role' => 'gateway']);
 
     ScheduleLock::factory()->create([
         'node_id' => $node->id,

@@ -47,12 +47,12 @@ basic case.
 use function Laravel\Prompts\table;
 
 table(
-    headers: ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
+    headers: ['ROLES', 'NAME', 'PLATFORM', 'STATUS'],
     rows: [
-        ['app', 'app-1', 'development', 'ubuntu_24-04', 'active'],
-        ['app', 'app-2', 'production', 'ubuntu_24-04', 'active'],
-        ['gateway', 'gateway-1', '—', 'ubuntu_24-04', 'active'],
-        ['control', 'control-1', '—', 'macos_15-4', 'active'],
+        ['app-development', 'app-1', 'ubuntu_24-04', 'active'],
+        ['app-production, database', 'app-2', 'ubuntu_24-04', 'active'],
+        ['gateway', 'gateway-1', 'ubuntu_24-04', 'active'],
+        ['—', 'laptop', 'macos_15-4', 'active'],
     ],
 );
 ```

@@ -31,7 +31,7 @@ node provisioning and kept alive by host init (the distro
 
 ## Orbit Notes
 
-Supervisor is the process manager on every gateway and app node. It
+Supervisor is the process manager on every gateway and node. It
 supervises Orbit-managed runtime units (rendered as Supervisor programs)
 and the `orbit_scheduler` Supervisor program that runs the Orbit Scheduler
 daemon.

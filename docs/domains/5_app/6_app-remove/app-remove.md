@@ -52,7 +52,7 @@ You will receive a summary of the removal result in the chosen output format.
 
 - CLI caller must reach the Orbit gateway.
 - Authorized node identity for the target app or node.
-- Gateway SSH access to the app node is used for artifact cleanup when
+- Gateway SSH access to the node is used for artifact cleanup when
   available. If cleanup cannot finish after app configuration removal, the command
   still succeeds and reports warnings with repair commands.
 

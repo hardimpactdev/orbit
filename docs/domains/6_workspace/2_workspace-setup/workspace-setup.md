@@ -16,7 +16,7 @@ node, and runs configured setup steps.
 cd /var/www/my-app/.worktrees/feature-a
 orbit workspace:setup
 
-# Register and set up an adapter-managed worktree (e.g. a Polyscope worktree
+# Register and set up an adapter-managed worktree (e.g. a PolyScope worktree
 # Orbit does not yet know about): identity discovered from the adapter
 cd /var/www/my-app/.worktrees/feature-a
 orbit workspace:setup
@@ -34,7 +34,7 @@ orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/f
   can resolve it; can be prompted in interactive mode.
 - `--app=<app>`: The parent app slug. Defaults to the existing workspace's
   parent app, the local app context, or an interactive prompt.
-- `--path=<path>`: Absolute path to the workspace on the owning app node.
+- `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
   that node. Generic worktree paths must live under the parent app's
   `.worktrees/` directory. A relative or non-absolute value fails before side
@@ -69,7 +69,7 @@ on (caller node identity, absolute CWD) returns one of:
 ### Agent-IDE adapter probe
 
 `workspace:setup` registers adapter-managed worktrees on first run. Some
-adapters expose a `workspace_path_resolution` capability. Polyscope is one.
+adapters expose a `workspace_path_resolution` capability. PolyScope is one.
 An adapter with this capability answers a single question: which managed
 workspace does this absolute path belong to?
 
@@ -108,7 +108,7 @@ The following steps describe what the command does during a successful run.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
 - **Artifact Apply**: Applies runtime and proxy backend artifacts on the
-  app node via SSH.
+  node via SSH.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
   A failed probe is reported as a command warning, not as setup failure or a
@@ -124,7 +124,7 @@ operators and agents can see what changed.
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
   parent app.
-- The gateway can reach the owning app node over SSH.
+- The gateway can reach the owning node over SSH.
 
 ## Output Summary
 

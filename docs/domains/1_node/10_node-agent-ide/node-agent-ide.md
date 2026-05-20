@@ -6,7 +6,7 @@ Set the default agent IDE adapter for a node.
 
 Stores the default agent IDE for the node, used by apps and workspaces on that node
 when they do not define an app-level override. Used to make agent IDE messaging
-and crash-notification workflows work by default on a development app node.
+and crash-notification workflows work by default on a development node.
 
 ## Usage
 
@@ -89,7 +89,7 @@ payload shape.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured operator node.
+- Must run on the gateway host or from a configured client.
 - Operator callers must be authorized to update node registry configuration.
 - App callers are rejected by the gateway before side effects. Local input
   validation or prompting may occur before the final gateway write request
@@ -108,7 +108,7 @@ Use these commands alongside `node:agent-ide` to manage node configuration and v
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`node:update`](../7_node-update/node-update.md) — update node metadata
-- [`node:default`](../9_node-default/node-default.md) — set the local default development app node
+- [`node:default`](../9_node-default/node-default.md) — set the local default development node
 - [`app:prune`](../../5_app/7_app-prune/app-prune.md) — prune stale workspaces for an app
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 

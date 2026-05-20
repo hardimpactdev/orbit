@@ -26,7 +26,7 @@ orbit tool:logs redis --node=app-1 --json
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
-- `--node`: Target app node. Defaults to local `node:default` when configured.
+- `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app slug, app domain, or
   `<slug>.<node-tld>` selector such as `docs.dev1`.
 - `--lines`: Number of historical lines to show. Defaults to `100`.
@@ -35,7 +35,7 @@ orbit tool:logs redis --node=app-1 --json
 
 Target resolution prefers `--app`, then `--node`, then local `node:default`,
 then gateway-known self for non-gateway callers. `--app` and `--node` may be
-combined only when both resolve to the same app node. `tool:logs` does not use
+combined only when both resolve to the same node. `tool:logs` does not use
 the only visible tool node as an implicit target.
 
 `--follow --json` is forbidden until a future streaming JSON frame contract is

@@ -19,17 +19,16 @@ owning family concept document.
 - **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Node access grant** — gateway-stored edge that lets one node operate on another after WireGuard identity is authenticated. The grant edge is the first authorization gate; the scoped permissions stored on it are the second. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Node access permission** — normalized permission string stored on a node access grant; decides what the consuming node may do on the serving node. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Permission preset** — code-defined named bundle of node access permissions, such as `agent-self`, `operator`, `developer`, `admin`, `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Permission preset** — code-defined named bundle of node access permissions. The defined presets are `agent-self`, `operator`, `read-only`, `developer`, `admin`, and `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-admin grant** — a consumer-to-gateway grant whose permissions include `*` (the `gateway-admin` preset); confers fleet-wide super-admin authority including authority over future nodes. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Agent hosted role** — exclusive hosted role for autonomous agent workloads; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Operator node** — any joined node acting through gateway-known WireGuard identity plus grants. It is a capability term, not a hosted role, and can coexist with hosted roles. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
-- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on the gateway and on hosted nodes that run processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
+- **Agent role** — exclusive workload role for autonomous agent runtimes; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on every node that runs processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway and on hosted nodes with local schedules under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch, overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
+- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager that keeps Supervisor alive. systemd on Ubuntu. Not Orbit's process manager.
-- **RemoteShell** — gateway-to-hosted-node execution primitive. See [Tech Stack: Gateway To Hosted Node](tech-stack.md#gateway-to-hosted-node).
-- **CLI caller** — an Orbit CLI invocation from a joined client, hosted node, or the gateway host. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
+- **RemoteShell** — gateway-to-node execution primitive. See [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
+- **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
@@ -58,15 +57,13 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 
 <!-- concept-index:domains/1_node/node-concepts.md -->
 - **Node**
-- **Gateway**
-- **Joined client**
-- **Hosted node**
-- **Operator node**
-- **Hosted role**
-- **Agent hosted role**
-- **Hosted role assignability**
+- **Client**
+- **Node role**
+- **Gateway role**
+- **Agent role**
+- **Role assignability**
 - **Role assignment**
-- **Hosted role settings**
+- **Role settings**
 - **Agent role TLD setting**
 - **Agent role baseline**
 - **Agent runtime user**
@@ -74,11 +71,11 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Caller identity**
 - **Node identity**
 - **First-gateway bootstrap**
-- **Joined-client enrollment**
+- **Client enrollment**
 - **Compatible existing node**
 - **CLI-to-gateway edge**
-- **Gateway-to-hosted-node edge**
-- **Hosted-node event ingestion**
+- **Gateway-to-node edge**
+- **Node event ingestion**
 - **Node reality**
 - **Consuming node**
 - **Serving node**
@@ -95,7 +92,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Developer preset**
 - **Admin preset**
 - **Gateway-admin preset**
-- **Self grant**
+- **Self-grant**
 - **Gateway-admin grant**
 - **Cross-node grant**
 - **Directional grant setup**
@@ -140,7 +137,7 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App identity slug**
 - **App name argument**
 - **App selector argument**
-- **Owning app node**
+- **Owning node**
 - **Development app**
 - **Production app**
 - **App PHP version**
@@ -248,6 +245,7 @@ Source: [Database Concepts](domains/18_database/database-concepts.md).
 - **Environment prefix**
 - **Database connection restore**
 - **Database connection adopt**
+- **Existing-target rollout adoption**
 - **Database query execution**
 - **SQLite locality**
 - **Database-family boundaries**
@@ -303,6 +301,10 @@ Source: [Operation Concepts](domains/11_operation/operation-concepts.md).
 - **Family doctor contract**
 - **Doctor issue kind**
 - **Doctor action**
+- **Doctor verify permission**
+- **Doctor restore permission**
+- **Doctor adopt permission**
+- **Operator preset doctor boundary**
 - **Profile target**
 - **Profile request origin**
 - **Baseline profile result**
@@ -431,6 +433,7 @@ Source: [Firewall Concepts](domains/4_firewall/firewall-concepts.md).
 - **Reason**
 - **Eligible firewall target**
 - **Bootstrap policy**
+- **Operator preset firewall boundary**
 - **Firewall-family boundaries**
 <!-- /concept-index -->
 
@@ -464,7 +467,7 @@ Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
 - **DNS command domain**
 - **Caller-local DNS administration**
 - **Caller-local resolver override**
-- **Orbit-managed local resolver state**
+- **Local resolver state managed by Orbit**
 - **Local resolver backend**
 - **Supported local DNS platform**
 - **Development TLD**
@@ -475,8 +478,8 @@ Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
 - **Local DNS entry**
 - **Local resolver source**
 - **Local DNS entry status**
-- **Gateway-owned development DNS mapping**
-- **App-node resolver drift**
+- **Development DNS mapping owned by the gateway**
+- **App-role resolver drift**
 - **Public DNS boundary**
 - **DNS-domain boundaries**
 <!-- /concept-index -->
@@ -508,4 +511,5 @@ Source: [Activity Concepts](domains/17_activity/activity-concepts.md).
 - **Activity-domain boundaries**
 - **Activity is not metrics**
 - **Activity is not the live state**
+- **Agent activity attribution boundary**
 <!-- /concept-index -->

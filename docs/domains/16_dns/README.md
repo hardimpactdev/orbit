@@ -2,7 +2,7 @@
 
 DNS commands manage the resolver overrides that Orbit sets on the caller machine for development DNS.
 
-The DNS command domain is intentionally local. It helps a operator machine route
+The DNS command domain is intentionally local. It helps an operator machine route
 development hostnames to Orbit-managed targets for browser and CLI use. It does
 not create gateway configuration, app routes, proxy routes, Cloudflare records, public
 DNS records, or development DNS mappings owned by the gateway.
@@ -12,7 +12,7 @@ verified through node-family doctor behavior. The DNS command family only owns
 caller-local resolver overrides.
 
 Gateway development DNS infrastructure is deliberately WireGuard-scoped. It
-exists so Orbit nodes and configured control machines can resolve development
+exists so Orbit nodes and configured clients can resolve development
 TLDs inside the Orbit network, not as a public recursive resolver. Public
 resolver exposure is node-family drift and is checked by
 [`doctor --family=node`](../1_node/node-doctor.md).
@@ -23,7 +23,7 @@ The DNS command domain does not own a state family. DNS commands mutate
 only the resolver configuration on the caller machine.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns development TLD readiness
-as provisioned by the gateway, and app-node resolver drift. DNS commands must not
+as provisioned by the gateway, and app-role resolver drift. DNS commands must not
 create DNS doctor issues, gateway DNS configuration, or proxy route configuration.
 
 ## Domain Rules
@@ -37,7 +37,7 @@ These rules govern all DNS commands in this family.
 - DNS write commands require the local OS privileges needed to update resolver
   configuration and refresh the resolver backend.
 - The doctor contracts in the node family own development TLD readiness
-  provisioned by the gateway, and app-node resolver drift.
+  provisioned by the gateway, and app-role resolver drift.
 
 ## Commands
 

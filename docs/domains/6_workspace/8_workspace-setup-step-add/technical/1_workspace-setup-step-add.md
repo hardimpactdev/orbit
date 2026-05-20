@@ -90,7 +90,7 @@ command; it is applied by `workspace:new` and `workspace:setup` at
    `{ id, app, phase, order, command, timeout_seconds }`. Steps have no
    `name`, no per-step `working_directory`, no `env_overrides`, and no
    per-step `on_failure` knob. Working directory is pinned to the workspace
-   path on the owning app node and exposed through `ORBIT_WORKSPACE_PATH`
+   path on the owning node and exposed through `ORBIT_WORKSPACE_PATH`
    (see the [Workspaces README](../../README.md#lifecycle-step-environment)).
    Failure policy is the fail-fast contract shared across the family, resolved by
    `workspace:setup`.
@@ -105,7 +105,7 @@ command; it is applied by `workspace:new` and `workspace:setup` at
    snapshot the runner read at `phase=setup_steps` entry. Recovery from
    policy/runtime drift is the doctor's job, not this command's.
 7. **No Filesystem Side Effects**: The command writes only to gateway
-   configuration. App nodes are not contacted.
+   configuration. Nodes are not contacted.
 
 ## Renderer Contracts
 
@@ -159,5 +159,5 @@ setup-step creation attempts.
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/AddSetupStepActionTest.php` | Registry write for `(app, phase=setup, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php` | Input resolution (explicit `--app`, `.orbit/config` marker, gateway path lookup, interactive prompt, non-interactive failure), mutual exclusivity of `--before` / `--after`, strict positive `--timeout` validation including `0` rejection, additive (non-converging) re-run behavior, and absence of runtime lock against in-flight `workspace:setup`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCallerRoleTest.php` | Operator / gateway peer acceptance and app-node peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCallerRoleTest.php` | Operator / gateway peer acceptance and app-role peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceSetupStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification, and JSON envelope alignment. |

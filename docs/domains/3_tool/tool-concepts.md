@@ -21,7 +21,7 @@ These terms define the core vocabulary used across tool command contracts and th
   `infrastructure`, or `agent`. Used by authorization and routing rules.
 - **Agent tool category:** Tool category `agent`. Tools in this category are
   first-party autonomous agent runtimes (`openclaw`, `hermes`) that require
-  the `agent` hosted node role and run as the shared unprivileged
+  the `agent` node role and run as the shared unprivileged
   `agent` user.
 - **Tool row:** Gateway-owned record of expected state for one tool on one
   node, including expected lifecycle state, expected version when tracked,
@@ -43,7 +43,7 @@ These terms describe how Orbit relates to each tool in the catalog.
 - **Role baseline tool:** Tool materialized as a tool row during node
   provisioning so doctor has one gateway-owned source of truth per node.
 - **Agent tool:** Installable tool in the `agent` category. Requires the
-  `agent` hosted role on the node, runs as the shared unprivileged
+  `agent` role on the node, runs as the shared unprivileged
   `agent` user, and is supervised by Supervisor.
 - **Agent tool internal route:** Tool-owned proxy route under the agent
   role TLD, such as `https://openclaw.agent`. Reachable only over the
@@ -51,9 +51,9 @@ These terms describe how Orbit relates to each tool in the catalog.
 - **Agent tool credentials:** Web UI access metadata returned by
   `tool:credentials` for agent tools. Reading agent tool credentials
   requires the explicit `tool:credentials` permission; the default agent
-  self grant does not include that permission.
+  self-grant does not include that permission.
 - **Multi-agent-tool warning:** Warning emitted when more than one agent
-  tool is installed or running on the same agent node. Interactive callers
+  tool is installed or running on the same node. Interactive callers
   confirm; non-interactive callers receive
   `tool.multiple_agent_tools_running` under `success.meta.warnings[]` and
   the command proceeds.

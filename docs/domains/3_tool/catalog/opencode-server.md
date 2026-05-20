@@ -57,7 +57,7 @@ misleading empty password.
 ## Service Endpoint
 
 `opencode-server` exposes a tool-owned HTTPS proxy route at
-`https://opencode.<node-tld>` for development app nodes.
+`https://opencode.<node-tld>` for development nodes.
 
 ## Orbit Notes
 

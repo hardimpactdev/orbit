@@ -53,6 +53,8 @@ final class UpdateAllProgress
 
     private int $lastFrameAtUs = 0;
 
+    private readonly int $frameIntervalUs;
+
     private readonly bool $decorated;
 
     /**
@@ -63,6 +65,7 @@ final class UpdateAllProgress
         array $initialTargets,
     ) {
         $this->decorated = $output->isDecorated();
+        $this->frameIntervalUs = max(0, (int) config('orbit.progress.frame_interval_us', self::FRAME_INTERVAL_US));
         $this->tree = new SpinnerTreeRenderer($output->isDecorated());
         $this->summary = new LifecycleSummaryRenderer($output->isDecorated());
 
@@ -101,7 +104,7 @@ final class UpdateAllProgress
 
         $nowUs = (int) (microtime(true) * 1_000_000);
 
-        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < self::FRAME_INTERVAL_US) {
+        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < $this->frameIntervalUs) {
             return;
         }
 

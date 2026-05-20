@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Models\SchedulerState;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Platform\PlatformDetector;
@@ -45,6 +46,12 @@ function createRoleAwareLocalNode(string $role, string $name = 'local-node'): No
             'role' => 'gateway',
             'status' => 'active',
             'settings' => [],
+        ]);
+
+        SchedulerState::factory()->create([
+            'node_id' => $node->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
         ]);
     }
 
@@ -90,6 +97,7 @@ function roleAwareDoctorScope(array $payload): array
 describe('doctor role-aware categories', function (): void {
     it('defaults the target to the local node when no flags are supplied', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
 
         $exitCode = Artisan::call('doctor', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -104,10 +112,10 @@ describe('doctor role-aware categories', function (): void {
         expect($runner->categoriesForRole('control'))->toBe(['node']);
     });
 
-    it('exposes only the node family for a gateway target role', function (): void {
+    it('exposes node and schedule families for a gateway target role', function (): void {
         $runner = app(DoctorReportRunner::class);
 
-        expect($runner->categoriesForRole('gateway'))->toBe(['node']);
+        expect($runner->categoriesForRole('gateway'))->toBe(['node', 'schedule']);
     });
 
     it('exposes the full app-node category set for an app target role', function (): void {
@@ -143,13 +151,14 @@ describe('doctor role-aware categories', function (): void {
         expect($runner->categoriesForNode($databaseNode))->toBe(['node', 'tool']);
     });
 
-    it('runs only the node family for a local gateway target', function (): void {
+    it('runs node and schedule families for a local gateway target', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
 
         Artisan::call('doctor', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect(roleAwareDoctorScope($payload)['families'])->toBe(['node']);
+        expect(roleAwareDoctorScope($payload)['families'])->toBe(['node', 'schedule']);
     });
 
     it('rejects a family outside the target role category set before probes', function (): void {
@@ -212,6 +221,7 @@ describe('doctor role-aware categories', function (): void {
 
     it('renders the node family issue table as a dashed list without column headers', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway')->update(['platform' => null]);
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
 
         $exitCode = Artisan::call('doctor');
         $output = Artisan::output();
@@ -330,6 +340,10 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'supervisorctl status orbit_scheduler')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "running\n", stderr: '', durationMs: 1);
+        }
+
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
         $stdout = $isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout;
 

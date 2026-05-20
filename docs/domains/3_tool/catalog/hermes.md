@@ -48,8 +48,8 @@ Example JSON shape:
 }
 ```
 
-Returning credentials requires the caller's grant to the agent node to
-include `tool:credentials`. The default agent self grant does not include
+Returning credentials requires the caller's grant to the node to
+include `tool:credentials`. The default agent self-grant does not include
 `tool:credentials`.
 
 ## Service Endpoint
@@ -66,19 +66,19 @@ as the shared unprivileged `agent` user. `tool:update hermes` runs
 Hermes's native update path through the Orbit-managed binary and then
 restarts the Supervisor program that wraps it.
 
-`tool:update hermes` from the agent node itself requires
-`tool:update:agent-tools` on the self grant. `tool:install hermes`,
+`tool:update hermes` from the node itself requires
+`tool:update:agent-tools` on the self-grant. `tool:install hermes`,
 `tool:remove hermes`, `tool:stop hermes`, `tool:reconfigure hermes`, and
-updates to baseline tools are not part of the default agent self grant;
+updates to baseline tools are not part of the default agent self-grant;
 they require explicit permissions from a gateway-admin.
 
 Installing or starting Hermes while another agent tool is already running
-on the same agent node emits the `tool.multiple_agent_tools_running`
+on the same node emits the `tool.multiple_agent_tools_running`
 warning. Orbit attributes activity at the node level, and the warning
 surfaces that this attribution is weaker when more than one agent tool
-runs on the same agent node.
+runs on the same node.
 
-Activity emitted while Hermes is working is attributed to the agent node
+Activity emitted while Hermes is working is attributed to the node
 identity. Orbit does not claim per-tool sub-identities.
 
 ## Install Command

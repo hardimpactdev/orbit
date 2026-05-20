@@ -7,10 +7,10 @@ Unregister and detach a node from the Orbit fleet.
 Use `node:remove` when decommissioning servers or moving a host to a different
 Orbit project. The command removes the node from gateway-owned node configuration,
 deletes node access grants, tears down the node's WireGuard peer identity, and
-removes development DNS mappings that the gateway owns for development app nodes. It
+removes development DNS mappings that the gateway owns for development nodes. It
 does not clean up apps, workspaces, processes, schedules, tools, firewall rules,
 proxy routes, or deploy artifacts on the target server.
-Before removing an app node that still owns apps, remove or migrate those apps
+Before removing a node with an app role that still owns apps, remove or migrate those apps
 through app-family commands such as
 [`app:remove`](../../5_app/6_app-remove/app-remove.md). `node:remove` does not
 block on downstream family state and does not cascade into app cleanup.
@@ -58,7 +58,7 @@ over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 3. Removes all node access grants where the node is the consumer or the
    serving node.
 4. Removes the node's WireGuard peer identity that the gateway manages.
-5. Removes development DNS mappings that the gateway owns for development app nodes.
+5. Removes development DNS mappings that the gateway owns for development nodes.
 6. Removes the node record from the gateway registry.
 7. Reconciles the gateway-side `dnsmasq.conf` and SIGHUPs `orbit-dns` so the
    removed node's TLD no longer resolves over WG. Contract:
@@ -66,7 +66,7 @@ over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 8. Reports partial WireGuard detach or development DNS cleanup failures as
    structured warnings and remaining node-family drift.
 
-When a configured operator node removes its own node record, the removal is
+When a configured client removes its own node record, the removal is
 allowed if the caller is authorized for the gateway node. The machine loses
 Orbit gateway access after the gateway removes its node record and WireGuard
 peer. Local settings and local WireGuard configuration are left untouched.
@@ -109,9 +109,9 @@ successful and reports repair guidance in machine-readable metadata.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured operator node.
+- Must run on the gateway host or from a configured client.
 - Operator callers must be authorized to operate on the gateway node.
-- App-node callers are rejected before prompts or side effects.
+- App-role callers are rejected before prompts or side effects.
 - The target node must exist in gateway configuration.
 - The target node must not be any gateway node.
 - Removing a non-existent node is a validation failure, not an idempotent
@@ -128,7 +128,7 @@ Use these commands to clean up downstream state before or after removing a node.
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`app:remove`](../../5_app/6_app-remove/app-remove.md) — remove apps before
-  decommissioning their owning app node
+  decommissioning their owning node
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 
 ## Technical Contract

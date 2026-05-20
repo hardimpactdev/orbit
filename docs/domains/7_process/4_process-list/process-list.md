@@ -23,7 +23,7 @@ Use this command to inspect process configuration and last known state without l
 - **Context Resolution**: Resolves an app or workspace context.
 - **Runtime Identity**: Derives expected runtime unit identities for that context.
 - **Lifecycle Events**: Shows the latest durable process lifecycle event when one exists.
-- **No Live Probing**: Does not SSH to the owning app node and does not run live runtime probes.
+- **No Live Probing**: Does not SSH to the owning node and does not run live runtime probes.
 
 ## Related
 

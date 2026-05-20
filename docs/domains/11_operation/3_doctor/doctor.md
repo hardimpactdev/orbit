@@ -4,16 +4,23 @@
 
 Verify gateway configuration against observed node reality for one node at a time, and optionally repair or adopt supported drift.
 
-`doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`. The global command owns scope resolution, mode selection, authorization, result handling, and output selection. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
+`doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, and `workspace`. The global command owns scope resolution, mode selection, authorization, result handling, and output selection. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
 
 The categories rendered for a run are derived from the target node's active
 role assignments. The legacy node role field is only a compatibility shadow
-and does not by itself grant hosted-family probes:
+and does not by itself-grant workload-family probes:
 
-- joined client or gateway target: `Node`.
+- client target: `Node`.
+- `gateway` target: `Node`, `Scheduling`.
 - `database` target: `Node`, `Tools`.
+- `agent` target: `Node`, `Tools`.
 - `app-development` or `app-production` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
-  `Firewall`, `Tools`, `Scheduling`.
+  `Firewall`, `Tools`, `Scheduling`, `Databases`.
+
+`Scheduling` on a `gateway` target surfaces the scheduler daemon's health
+(presence, heartbeat, stuck locks) plus per-target dispatch reachability.
+`Scheduling` on an `app-development` or `app-production` target surfaces the
+run health of schedules targeting that node.
 
 A separate `DNS/TLD` row (operator/app targets) and `DNS` row (gateway target)
 is planned as a slice of the `node` family. It will render once a DNS
@@ -61,7 +68,7 @@ The command supports four modes. Verify mode (no flag) compares only and does no
 
 `--fix` is the interactive driver, not a direction. The two directions are restore (gateway to node) and adopt (node to gateway). `--restore` and `--adopt` are mutually exclusive. `--restore` is explicit repair-mode consent for family-declared safe actions. `--adopt` is explicit adoption-mode consent and the only doctor mode that mutates gateway configuration.
 
-The gateway authorizes verify-mode runs for app-node peers. It denies `--fix`, `--restore`, or `--adopt` from app-node peers unless a family doctor contract documents a narrow app-node write exception.
+The gateway authorizes verify-mode runs for app-role peers. It denies `--fix`, `--restore`, or `--adopt` from app-role peers unless a family doctor contract documents a narrow app-role write exception.
 
 ## Output
 
@@ -99,6 +106,7 @@ own concrete issue codes and action maps:
 - [`doctor --family=process`](../../7_process/process-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 - [`doctor --family=schedule`](../../9_schedule/schedule-doctor.md)
+- [`doctor --family=database_connection`](../../18_database/database-doctor.md)
 
 ## Related Commands
 

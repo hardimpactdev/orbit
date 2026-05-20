@@ -251,7 +251,7 @@ it('reports reserved technical slots with the wrong semantic filename', function
             'path' => 'docs/domains/1_node/1_node-new/technical/2_node-new_on-app-node.md',
             'severity' => 'error',
             'rule' => 'command_docs.technical_slot_semantics',
-            'message' => 'Reserved technical slot 2 must be named 2_node-new_on-control-node.md.',
+            'message' => 'Reserved technical slot 2 must be named 2_node-new_on-client.md.',
         ]);
 });
 
@@ -316,7 +316,7 @@ it('reports missing role companion contracts when canonical docs declare role-sp
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.role_companion_coverage',
-            'message' => 'Canonical contract declares role-specific companion behavior but 2_node-new_on-control-node.md is missing.',
+            'message' => 'Canonical contract declares role-specific companion behavior but 2_node-new_on-client.md is missing.',
         ]);
 });
 
@@ -992,9 +992,9 @@ it('reports app write commands without app-node denial contracts', function (): 
 
     expect($exitCode)->toBe(1)
         ->and(array_column($matchingFindings, 'message'))->toContain(
-            'App write commands must document app-node denial with error.code=caller_role_not_allowed.',
-            'App write commands must explicitly state that app-node callers are denied.',
-            'App-node denial must be documented as happening before prompts or side effects.',
+            'App write commands must document app-role denial with error.code=caller_role_not_allowed.',
+            'App write commands must explicitly state that app-role callers are denied.',
+            'App-role denial must be documented as happening before prompts or side effects.',
         );
 });
 

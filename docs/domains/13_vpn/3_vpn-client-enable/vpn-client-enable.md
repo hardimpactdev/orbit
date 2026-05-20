@@ -27,7 +27,7 @@ orbit vpn-client:enable laptop --json
 Run this command to allow a disabled admin VPN client to connect again.
 
 `vpn-client:enable` runs on the gateway host and marks the named VPN backend
-client as enabled. From a operator node, Orbit connects to the gateway over the
+client as enabled. From a client, Orbit connects to the gateway over the
 Orbit/WireGuard SSH path and runs the gateway-local operation there.
 
 The command is limited to non-node VPN clients. Active Orbit node peers are
@@ -42,7 +42,7 @@ output.
 
 ## Requirements
 
-- The caller is a gateway or authorized operator node.
+- The caller is a gateway or authorized client.
 - Operator callers can SSH to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The named client exists and is not an active Orbit node peer.

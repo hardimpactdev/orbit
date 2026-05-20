@@ -31,7 +31,7 @@ The following arguments and options shape an `app:register` invocation.
 
 - `name`: The name of the app.
 - `--path=<path>`: The absolute path to the app on the target node.
-- `--node=<name>`: The target app node.
+- `--node=<name>`: The target node.
 - `--root=<path>`: The document root relative to the app path. Default: `public`.
 - `--php-version=<version>`: The app PHP-FPM version to store in gateway app configuration.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
@@ -65,9 +65,9 @@ Run `app:register` when you need to install, re-apply, or retry Orbit management
 gateway and that its runtime artifacts are properly applied on the target app
 node.
 
-1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development app node.
+1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development node.
 2. **Registration/Adoption**: Writes the app's configuration to the gateway database. An existing path not yet managed by Orbit is adopted at this step.
-3. **Apply**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
+3. **Apply**: Connects to the node over SSH to configure PHP-FPM and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
 4. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
 Step 4 only runs when a domain is supplied.
@@ -95,8 +95,8 @@ A machine-readable result with the app's registry data. It includes a durable `a
 ## Requirements
 
 - The CLI caller must be able to reach the Orbit gateway.
-- The gateway must be able to reach the target app node over SSH.
-- The target node must be an active app node.
+- The gateway must be able to reach the target node over SSH.
+- The target node must be an active node.
 - The supplied `--path` on the resolved node must not already be owned by a different registered app. A path collision fails before side effects with `app.path_collision`.
 
 ## Related Commands

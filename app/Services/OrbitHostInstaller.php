@@ -112,6 +112,27 @@ if [ ! -d "/home/$USER" ]; then
     sudo mkdir -p "/home/$USER"
     sudo chown "$USER:$USER" "/home/$USER"
 fi
+sudo install -d -m 700 -o "$USER" -g "$USER" "/home/$USER/.ssh"
+TARGET_KEYS="/home/$USER/.ssh/authorized_keys"
+BOOTSTRAP_KEYS="${HOME:-}/.ssh/authorized_keys"
+if [ "$(id -u)" -eq 0 ]; then
+    BOOTSTRAP_KEYS="/root/.ssh/authorized_keys"
+fi
+if [ -s "$BOOTSTRAP_KEYS" ]; then
+    sudo touch "$TARGET_KEYS"
+    sudo chown "$USER:$USER" "$TARGET_KEYS"
+    sudo chmod 600 "$TARGET_KEYS"
+    while IFS= read -r key; do
+        if [ -n "$key" ] && ! sudo grep -qxF "$key" "$TARGET_KEYS"; then
+            printf '%%s\n' "$key" | sudo tee -a "$TARGET_KEYS" > /dev/null
+        fi
+    done < "$BOOTSTRAP_KEYS"
+fi
+sudo chown -R "$USER:$USER" "/home/$USER/.ssh"
+sudo chmod 700 "/home/$USER/.ssh"
+if [ -f "$TARGET_KEYS" ]; then
+    sudo chmod 600 "$TARGET_KEYS"
+fi
 printf '%%s ALL=(ALL:ALL) NOPASSWD:ALL\n' "$USER" | sudo tee /etc/sudoers.d/99-orbit > /dev/null
 sudo chmod 440 /etc/sudoers.d/99-orbit
 SCRIPT,

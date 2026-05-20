@@ -4,60 +4,48 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
-use App\Contracts\RemoteShell;
 use App\Data\Schedules\SchedulerTickResult;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Schedules\StoreSchedulerHeartbeatRequest;
-use App\Http\Gateway\Requests\Schedules\StoreScheduleRunRequest;
-use App\Http\Gateway\Requests\Schedules\SyncSchedulesRequest;
-use App\Http\Gateway\Responses\Schedules\ScheduleSyncResponse;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
-use App\Models\ScheduleRun;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
+use RuntimeException;
 
 final readonly class OrbitScheduler
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private ScheduleDispatcher $dispatcher,
         private ScheduleInterval $interval,
-        private ScheduleRunHistoryHookRenderer $hookRenderer,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     public function tick(?CarbonImmutable $now = null): SchedulerTickResult
     {
         $startedAt = $now ?? CarbonImmutable::now();
 
-        $localNode = $this->localNode();
+        $gatewayNode = $this->gatewayNode();
 
-        if (! $localNode instanceof Node) {
-            return new SchedulerTickResult(
-                startedAt: $startedAt,
-                finishedAt: CarbonImmutable::now(),
-                dueSchedules: 0,
-                executedSchedules: 0,
-            );
-        }
+        $this->recordHeartbeat($gatewayNode, $startedAt);
 
-        $this->recordHeartbeatAndSync($localNode, $startedAt);
-
-        $dueSchedules = $this->dueSchedules($localNode, $startedAt);
-        $executedSchedules = 0;
+        $dueSchedules = $this->dueSchedules($startedAt);
+        $claimedSchedules = [];
 
         foreach ($dueSchedules as $schedule) {
-            if (! $this->claimLock($localNode, $schedule, $startedAt)) {
+            if (! $this->claimLock($gatewayNode, $schedule, $startedAt)) {
                 continue;
             }
 
-            try {
-                $this->runSchedule($localNode, $schedule);
-                $executedSchedules++;
-            } finally {
-                $this->releaseLock($localNode, $schedule);
+            $claimedSchedules[] = $schedule;
+        }
+
+        try {
+            $dispatchResults = $this->dispatcher->runMany($claimedSchedules);
+        } finally {
+            foreach ($claimedSchedules as $schedule) {
+                $this->releaseLock($gatewayNode, $schedule);
             }
         }
 
@@ -65,7 +53,7 @@ final readonly class OrbitScheduler
             startedAt: $startedAt,
             finishedAt: CarbonImmutable::now(),
             dueSchedules: count($dueSchedules),
-            executedSchedules: $executedSchedules,
+            executedSchedules: count($dispatchResults),
         );
     }
 
@@ -81,50 +69,52 @@ final readonly class OrbitScheduler
         return 60 - $seconds;
     }
 
-    private function localNode(): ?Node
+    private function gatewayNode(): Node
     {
-        $role = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'app';
+        if (! (bool) config('orbit.is_gateway', false)) {
+            throw new RuntimeException('Orbit Scheduler can only run on the gateway.');
+        }
 
-        return Node::query()
-            ->where('role', $role)
+        $gatewayNode = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
+            ->first();
+
+        if ($gatewayNode instanceof Node) {
+            return $gatewayNode;
+        }
+
+        $legacyGatewayNode = Node::query()
+            ->where('role', 'gateway')
             ->where('status', 'active')
             ->first();
+
+        if ($legacyGatewayNode instanceof Node) {
+            return $legacyGatewayNode;
+        }
+
+        throw new RuntimeException('Orbit Scheduler can only run when an active gateway node is registered.');
     }
 
     /**
      * @return list<Schedule>
      */
-    private function dueSchedules(Node $localNode, CarbonImmutable $now): array
+    private function dueSchedules(CarbonImmutable $now): array
     {
         return Schedule::query()
             ->with(['app.node', 'node'])
             ->where('enabled', true)
             ->where('status', 'expected')
             ->get()
-            ->filter(fn (Schedule $schedule): bool => $this->targetsLocalNode($schedule, $localNode))
             ->filter(fn (Schedule $schedule): bool => $this->interval->isDue($schedule->interval, $schedule->timezone, $now))
             ->values()
             ->all();
     }
 
-    private function targetsLocalNode(Schedule $schedule, Node $localNode): bool
-    {
-        if ($schedule->scope === 'app') {
-            return $schedule->app?->node?->id === $localNode->id;
-        }
-
-        if ($schedule->scope === 'node') {
-            return $schedule->node?->id === $localNode->id;
-        }
-
-        return $schedule->scope === 'orbit' && $localNode->role === 'gateway';
-    }
-
-    private function claimLock(Node $localNode, Schedule $schedule, CarbonImmutable $now): bool
+    private function claimLock(Node $gatewayNode, Schedule $schedule, CarbonImmutable $now): bool
     {
         try {
             ScheduleLock::query()->create([
-                'node_id' => $localNode->id,
+                'node_id' => $gatewayNode->id,
                 'schedule_key' => $schedule->schedule_key,
                 'owner_token' => $this->ownerToken($schedule, $now),
                 'locked_at' => $now,
@@ -137,162 +127,27 @@ final readonly class OrbitScheduler
         }
     }
 
-    private function releaseLock(Node $localNode, Schedule $schedule): void
+    private function releaseLock(Node $gatewayNode, Schedule $schedule): void
     {
         ScheduleLock::query()
-            ->where('node_id', $localNode->id)
+            ->where('node_id', $gatewayNode->id)
             ->where('schedule_key', $schedule->schedule_key)
             ->delete();
     }
 
-    private function runSchedule(Node $localNode, Schedule $schedule): void
+    private function recordHeartbeat(Node $gatewayNode, CarbonImmutable $heartbeatAt): void
     {
-        $startedAt = CarbonImmutable::now();
-        $result = $this->remoteShell->run(
-            node: $localNode,
-            script: $this->hookRenderer->path($schedule),
-            options: ['timeout' => 900],
+        SchedulerState::query()->updateOrCreate(
+            ['node_id' => $gatewayNode->id],
+            [
+                'heartbeat_at' => $heartbeatAt,
+                'registry_synced_at' => $heartbeatAt,
+            ],
         );
-        $finishedAt = CarbonImmutable::now();
-        $status = $result->successful() ? 'completed' : 'failed';
-
-        if ($localNode->role === 'gateway') {
-            ScheduleRun::query()->create([
-                'node_id' => $localNode->id,
-                'schedule_key' => $schedule->schedule_key,
-                'status' => $status,
-                'exit_code' => $result->exitCode,
-                'stdout' => $result->stdout,
-                'stderr' => $result->stderr,
-                'started_at' => $startedAt,
-                'finished_at' => $finishedAt,
-            ]);
-
-            return;
-        }
-
-        GatewayConnector::forScheduler()
-            ->send(new StoreScheduleRunRequest(
-                scheduleKey: $schedule->schedule_key,
-                status: $status,
-                exitCode: $result->exitCode,
-                stdout: $result->stdout,
-                stderr: $result->stderr,
-                startedAt: $startedAt->toIso8601String(),
-                finishedAt: $finishedAt->toIso8601String(),
-            ));
-    }
-
-    private function recordHeartbeatAndSync(Node $localNode, CarbonImmutable $heartbeatAt): void
-    {
-        if ($localNode->role === 'gateway') {
-            SchedulerState::query()->updateOrCreate(
-                ['node_id' => $localNode->id],
-                [
-                    'heartbeat_at' => $heartbeatAt,
-                    'registry_synced_at' => $heartbeatAt,
-                ],
-            );
-
-            return;
-        }
-
-        $connector = GatewayConnector::forScheduler();
-        /** @var ScheduleSyncResponse $syncResponse */
-        $syncResponse = $connector->send(new SyncSchedulesRequest)->dto();
-        $this->syncSchedules($localNode, $syncResponse->schedules);
-
-        $connector->send(new StoreSchedulerHeartbeatRequest(
-            heartbeatAt: $heartbeatAt->toIso8601String(),
-            registrySyncedAt: $heartbeatAt->toIso8601String(),
-        ));
     }
 
     private function ownerToken(Schedule $schedule, CarbonImmutable $now): string
     {
         return hash('sha256', $schedule->schedule_key.'|'.$now->toIso8601String());
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $schedules
-     */
-    private function syncSchedules(Node $localNode, array $schedules): void
-    {
-        $seenKeys = [];
-
-        foreach ($schedules as $schedule) {
-            $scheduleKey = $this->stringValue($schedule, 'schedule_key');
-            $scope = $this->stringValue($schedule, 'scope');
-            $target = is_array($schedule['target'] ?? null) ? $schedule['target'] : [];
-            $execution = is_array($schedule['execution'] ?? null) ? $schedule['execution'] : [];
-
-            if ($scheduleKey === null || $scope === null) {
-                continue;
-            }
-
-            $seenKeys[] = $scheduleKey;
-
-            $appId = null;
-            $nodeId = null;
-            $targetName = $this->stringValue($target, 'name') ?? $localNode->name;
-
-            if ($scope === 'app') {
-                $app = App::query()->firstOrNew(['name' => $targetName]);
-                $app->node_id = $localNode->id;
-
-                if (! $app->exists) {
-                    $app->path = '/home/orbit/apps/'.$targetName;
-                }
-
-                $app->save();
-                $appId = $app->id;
-            }
-
-            if ($scope === 'node') {
-                $nodeId = $localNode->id;
-            }
-
-            Schedule::query()->updateOrCreate(
-                ['schedule_key' => $scheduleKey],
-                [
-                    'name' => $this->stringValue($schedule, 'name') ?? $scheduleKey,
-                    'scope' => $scope,
-                    'app_id' => $appId,
-                    'node_id' => $nodeId,
-                    'target_name' => $targetName,
-                    'interval' => $this->stringValue($schedule, 'interval') ?? 'every minute',
-                    'timezone' => $this->stringValue($schedule, 'timezone') ?? 'UTC',
-                    'execution_type' => $this->stringValue($execution, 'type') ?? 'command',
-                    'execution_value' => $this->stringValue($execution, 'value') ?? '',
-                    'enabled' => (bool) ($schedule['enabled'] ?? true),
-                    'status' => $this->stringValue($schedule, 'status') ?? 'expected',
-                ],
-            );
-        }
-
-        $this->pruneSyncedSchedules($localNode, $seenKeys);
-    }
-
-    /**
-     * @param  list<string>  $seenKeys
-     */
-    private function pruneSyncedSchedules(Node $localNode, array $seenKeys): void
-    {
-        Schedule::query()
-            ->with(['app.node', 'node'])
-            ->get()
-            ->filter(fn (Schedule $schedule): bool => $this->targetsLocalNode($schedule, $localNode))
-            ->reject(fn (Schedule $schedule): bool => in_array($schedule->schedule_key, $seenKeys, true))
-            ->each(fn (Schedule $schedule): ?bool => $schedule->delete());
-    }
-
-    /**
-     * @param  array<string, mixed>  $values
-     */
-    private function stringValue(array $values, string $key): ?string
-    {
-        $value = $values[$key] ?? null;
-
-        return is_string($value) && $value !== '' ? $value : null;
     }
 }

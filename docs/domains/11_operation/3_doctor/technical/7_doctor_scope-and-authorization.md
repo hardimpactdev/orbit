@@ -2,13 +2,13 @@
 
 [Back to `doctor` technical contract.](1_doctor.md)
 
-This page owns the cross-peer scope-resolution rules and app-node write
+This page owns the cross-peer scope-resolution rules and app-role write
 boundaries that the global [`doctor` technical contract](1_doctor.md) inherits.
 Authorization tables specific to each peer role live in the on-node companion
 contracts:
-[`2_doctor_on-control-node.md`](2_doctor_on-control-node.md),
+[`2_doctor_on-client.md`](2_doctor_on-client.md),
 [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md), and
-[`4_doctor_on-app-node.md`](4_doctor_on-app-node.md).
+[`4_doctor_on-app-role.md`](4_doctor_on-app-role.md).
 
 ## Scope and Authorization Rules
 
@@ -23,11 +23,11 @@ contracts:
 
 ## App-Node Write Boundaries
 
-- App-node CLI availability is not generic doctor write permission.
-- The gateway authorizes verify-mode scopes for app-node peers.
-- The gateway denies `--fix`, `--restore`, or `--adopt` from app-node peers.
-- A documented narrow app-node exception in the selected family doctor contract permits a resolution mode.
-- Working-directory hints from app-node peers may assist scope resolution in verify mode.
+- App-role CLI availability is not generic doctor write permission.
+- The gateway authorizes verify-mode scopes for app-role peers.
+- The gateway denies `--fix`, `--restore`, or `--adopt` from app-role peers.
+- A documented narrow app-role exception in the selected family doctor contract permits a resolution mode.
+- Working-directory hints from app-role peers may assist scope resolution in verify mode.
 - Such hints apply only where the family contract defines that behavior.
 - Working-directory hints do not authorize mutation of gateway configuration or node reality.
 
@@ -35,5 +35,5 @@ contracts:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Scope resolution, mutually exclusive flag rejection, family-key validation, gateway authorization by peer role, and app-node write-mode denial. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Scope resolution, mutually exclusive flag rejection, family-key validation, gateway authorization by peer role, and app-role write-mode denial. |
 | `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Rejection of family selections outside the target node's active-role category set. |

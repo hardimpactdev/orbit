@@ -2,7 +2,7 @@
 
 [Back to Nodes commands.](../README.md)
 
-Remove one hosted role assignment from a node.
+Remove one role assignment from a node.
 
 ## Usage
 

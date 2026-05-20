@@ -38,7 +38,7 @@ Target resolution uses this hierarchy:
 4. Self, using the gateway-known caller identity.
 
 When both `--app` and `--node` are present, the app's owning node must match
-the supplied node. Orbit does not select a node just because only one app node
+the supplied node. Orbit does not select a node just because only one node
 is visible.
 
 ## What Happens

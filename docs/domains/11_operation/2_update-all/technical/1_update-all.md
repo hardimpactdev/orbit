@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the calling WireGuard peer to update Orbit installations. App-node peers are rejected by the gateway.
+- The gateway authorizes the calling WireGuard peer to update Orbit installations. App-role peers are rejected by the gateway.
 - The gateway can reach each selected non-local installation through its node execution path.
 
 ## Signature
@@ -36,7 +36,7 @@ options are optional.
    managed Orbit installations from active gateway node configuration.
 3. Start the fleet update sequence through the selected output renderer's
    execution contract.
-4. After the gateway-local checkout succeeds, selected remote app-node
+4. After the gateway-local checkout succeeds, selected remote app-role
    installations are updated with bounded parallelism, up to four targets at a
    time.
 
@@ -61,22 +61,22 @@ execution details live in the renderer contracts.
 
 The expected target shape per calling peer role:
 
-| Peer role identified by gateway | Local target | Gateway target | App-node targets | Other operator-node targets |
+| Peer role identified by gateway | Local target | Gateway target | App-role targets | Other client targets |
 | --- | --- | --- | --- | --- |
-| `control` peer | The control checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active app node selected by the rules above. | Never. |
-| `gateway` peer | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active app node selected by the rules above. | Never. |
+| `control` peer | The control checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active node selected by the rules above. | Never. |
+| `gateway` peer | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
 
 ### Per-Installation Update Rules
 
 - Update each selected installation with the same local checkout update sequence
   documented by [`update`](../../1_update/technical/1_update.md).
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
-  Operator nodes do not SSH directly to the gateway, app nodes, or other control
+  Clients do not SSH directly to the gateway, nodes, or other control
   nodes as part of the command contract. The gateway does not SSH to control
   nodes as part of the command contract.
 - Update the caller-local checkout and gateway-local checkout as independent
   selected targets when both are selected.
-- After the gateway-local update succeeds, selected remote app-node
+- After the gateway-local update succeeds, selected remote app-role
   installations are updated in parallel, up to four targets at a time. Each
   individual target still runs `Pulling source`, `Installing dependencies`, and
   `Running migrations` in that order.
@@ -89,10 +89,10 @@ The expected target shape per calling peer role:
 - If every selected installation updates successfully, report a full fleet
   success. If one or more installations fail after side effects begin, report
   both successful and failed target results.
-- When the caller-local checkout fails, do not start app-node execution.
-- When update of the gateway checkout fails, do not start app-node execution.
-  When an app node fails, do not hide successful app-node updates and do not
-  cancel unrelated in-flight app-node updates.
+- When the caller-local checkout fails, do not start app-role execution.
+- When update of the gateway checkout fails, do not start app-role execution.
+  When a node with an app role fails, do not hide successful app-role updates and do not
+  cancel unrelated in-flight app-role updates.
 
 ### Scope Boundaries
 
@@ -115,8 +115,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Local update failed | The caller's local checkout update fails. | Failure |
-| Gateway update failed | The selected gateway checkout fails to update. | Failure with any completed target results; app-node targets are not started |
-| App-node update failed | One or more selected app-node installations fail to update. | Failure with partial target results |
+| Gateway update failed | The selected gateway checkout fails to update. | Failure with any completed target results; app-role targets are not started |
+| App-role update failed | One or more selected app-role installations fail to update. | Failure with partial target results |
 
 The shared [Exit Status](../../../README.md#exit-status) policy applies. Partial
 fleet failures are Orbit-handled command failures.
@@ -150,7 +150,7 @@ Primary existing test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap coverage for local plus registered-node update execution. Expand to cover: gateway denial of app-node peers, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
+| `tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap coverage for local plus registered-node update execution. Expand to cover: gateway denial of app-role peers, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
 
 Required split contract tests:
 

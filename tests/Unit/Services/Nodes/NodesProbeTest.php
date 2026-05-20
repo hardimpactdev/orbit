@@ -16,6 +16,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,13 +30,20 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    bindDevelopmentDnsMappingTestDoubles('nodes-probe-dns');
     $this->probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
 });
 
 afterEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
+
+function nodesProbeDevelopmentDnsPath(?string $file = null): string
+{
+    $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
+
+    return $file === null ? $configDir : "{$configDir}/{$file}";
+}
 
 function assignNodesProbeAppHostRole(Node $node, array $settings = ['tld' => 'test']): void
 {
@@ -915,8 +923,8 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=orbit_network',
@@ -972,8 +980,8 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=orbit_network',
@@ -1005,8 +1013,8 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=public',
@@ -1174,8 +1182,8 @@ describe('reconciliation', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=test',
             '# bind-scope=public',
@@ -1196,7 +1204,7 @@ describe('reconciliation', function (): void {
 
         $this->probe->reconcile($node, $entry);
 
-        expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
+        expect(File::get(nodesProbeDevelopmentDnsPath('test.conf')))
             ->toContain('# bind-scope=orbit_network')
             ->toContain('address=/test/10.6.0.5');
     });
@@ -1858,8 +1866,8 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'agent'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=agent-1',
             '# bind-scope=orbit_network',
@@ -1890,8 +1898,8 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'agent'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=agent-1',
             '# bind-scope=orbit_network',
@@ -1928,8 +1936,8 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'agent'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=agent-1',
             '# bind-scope=orbit_network',
@@ -1962,8 +1970,8 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'agent'],
         ]);
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/agent.conf'), implode("\n", [
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
             '# orbit-managed=node-development-dns',
             '# node=agent-1',
             '# bind-scope=orbit_network',

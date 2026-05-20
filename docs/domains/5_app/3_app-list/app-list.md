@@ -46,7 +46,7 @@ filters:
    and any registered workspaces.
 
 `app:list` does not:
-- SSH into app nodes.
+- SSH into nodes.
 - Probe app health or path existence (use [`doctor --family=app`](../app-doctor.md)).
 - Mutate gateway configuration or node artifacts.
 

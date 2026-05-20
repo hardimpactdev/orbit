@@ -98,11 +98,11 @@ certificate lifecycle belongs to the route-owning domain and its doctor family.
 ### Scope Boundaries
 
 `gateway:add` must not:
-- Create gateway node or operator node rows in the gateway registry.
+- Create gateway node or client rows in the gateway registry.
 - Create or update a local Orbit database as a registry mirror of the gateway
   or self node.
 - Mint WireGuard peer material, identity, or access policy.
-- SSH to the gateway or any app node.
+- SSH to the gateway or any node.
 - Provision hosts.
 - Act as a broad repair or reset command. After local onboarding exists,
   standalone CA trust repair belongs to `gateway:trust`, and broader node drift
@@ -131,13 +131,13 @@ Already-configured convergence is success, not failure.
 
 ## Doctor Relationship
 
-- `doctor --self` verifies local operator-node identity, trusted gateway
+- `doctor --self` verifies local client identity, trusted gateway
   material, configured gateway API endpoint, and gateway reachability. See
   [`node-doctor.md`](../../../1_node/node-doctor.md).
 - `doctor --family=node` verifies the gateway-owned node identity and access
   policy.
 - `gateway:add` owns only the explicit local onboarding flow for an already
-  issued operator-node identity. `doctor --fix --family=node --restore` owns later safe
+  issued client identity. `doctor --fix --family=node --restore` owns later safe
   repair of node drift when the caller has enough information and
   authorization.
 - `gateway:trust` owns the standalone repair command for local gateway CA trust
@@ -169,10 +169,10 @@ Required split contract tests:
 | `tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, node-shaped verified references, `added` and `converged` success payloads, error codes, and enum values. |
 | `tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
 | `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Authorization by caller role: operator callers proceed through onboarding, and gateway-local callers are rejected before prompts or side effects. No local app-role rejection point exists for `gateway:add`. |
-| `tests/E2E/GatewayAddTest.php` | Real-node end-to-end operator-node join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |
+| `tests/E2E/GatewayAddTest.php` | Real-node end-to-end client join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |
 
 Role-specific behavior and test mapping live in:
 
-- [`2_gateway-add_on-control-node.md`](2_gateway-add_on-control-node.md)
+- [`2_gateway-add_on-client.md`](2_gateway-add_on-client.md)
 - [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md)
-- [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md)
+- [`4_gateway-add_on-app-role.md`](4_gateway-add_on-app-role.md)

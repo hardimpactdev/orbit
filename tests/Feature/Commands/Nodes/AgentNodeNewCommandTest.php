@@ -170,6 +170,13 @@ it('creates an agent node with default self-grant', function (): void {
             'tool:restart',
             'tool:update:agent-tools',
         ]);
+
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'orbit'@'192.0.2.10'")
+        && str_contains((string) $process->command, '99-orbit-hardening.conf')
+        && str_contains((string) $process->command, 'PermitRootLogin no')
+        && str_contains((string) $process->command, 'PasswordAuthentication no')
+        && str_contains((string) $process->command, 'AllowUsers ${RUNTIME_USER}')
+        && str_contains((string) $process->command, 'rm -f /root/.ssh/authorized_keys'));
 });
 
 it('creates an agent node with default self-grant when omitted', function (): void {

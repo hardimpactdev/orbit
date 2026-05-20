@@ -9,13 +9,13 @@ a peer the gateway identifies as a **gateway node**.
 
 - **Allowed:** The gateway authorizes the request based on the authenticated
   WireGuard peer identity.
-- **Target eligibility:** The resolved target must be an active app node. The
+- **Target eligibility:** The resolved target must be an active node. The
   gateway is never a valid app target. `--node=<gateway-slug>` is rejected with
   `app.ineligible_node`.
-- **Path resolution:** `--path` is resolved on the target app node through
+- **Path resolution:** `--path` is resolved on the target node through
   gateway-owned SSH inspection and application, not on the gateway filesystem.
-- **Apply:** The gateway writes app configuration locally and applies app-node
-  artifacts over SSH to the target app node via `RemoteShell` — even when the
+- **Apply:** The gateway writes app configuration locally and applies app-role
+  artifacts over SSH to the target node via `RemoteShell` — even when the
   CLI invocation originated on the gateway host. The CLI still calls the
   gateway API; there is no client-side bypass.
 
@@ -23,4 +23,4 @@ a peer the gateway identifies as a **gateway node**.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway-peer authorization without a client-side shortcut, active app-node target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-node path resolution over gateway-owned SSH, and app-node artifact application through `RemoteShell`. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway-peer authorization without a client-side shortcut, active app-role target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-role path resolution over gateway-owned SSH, and app-role artifact application through `RemoteShell`. |

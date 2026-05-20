@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered managed tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default` if set; otherwise gateway-known self for non-gateway callers. | `Visible node slug.` |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | App slug, app domain, or `<slug>.<node-tld>` selector used to resolve the owning app node. |
+| `app` | `--app` | `Optional.` | `Never.` | `None.` | App slug, app domain, or `<slug>.<node-tld>` selector used to resolve the owning node. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 ## Input Resolution

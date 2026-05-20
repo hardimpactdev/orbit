@@ -54,7 +54,7 @@ Example JSON shape:
 ## Service Endpoint
 
 `reverb` exposes a tool-owned HTTPS/WebSocket proxy route at
-`https://reverb.<node-tld>` for development app nodes.
+`https://reverb.<node-tld>` for development nodes.
 
 ## Orbit Notes
 

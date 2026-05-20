@@ -88,7 +88,7 @@ These rules govern every command contract in this directory.
   not canonical command-domain failure semantics, unless the omitted input
   selects a documented alternate sub-action such as showing current state or
   prompting from authorized choices.
-- Commands that accept an app-node target should resolve it in this order:
+- Commands that accept an app-role target should resolve it in this order:
   explicit `--node`, app/workspace ownership, then interactive input prompt or
   non-interactive input failure.
 - Renderer and prompt primitive selection is governed by
@@ -214,9 +214,9 @@ When a command uses a `technical/` directory, reserve these slots:
 | Slot | Meaning |
 | --- | --- |
 | `1_command-name.md` | Canonical technical contract. |
-| `2_command-name_on-control-node.md` | Gateway authorization for operator callers. Keep legacy `control` terminology only when the contract must document compatibility values or existing file names. |
+| `2_command-name_on-client.md` | Gateway authorization for client callers. |
 | `3_command-name_on-gateway-node.md` | Gateway authorization for `gateway` callers, when caller role changes command semantics. |
-| `4_command-name_on-app-node.md` | Gateway authorization for `app` callers, when caller role changes command semantics. |
+| `4_command-name_on-app-role.md` | Gateway authorization for callers on nodes carrying an app role, when caller role changes command semantics. |
 | `5.1_command-name_input-mode_interactive.md` | Interactive input-mode contract. |
 | `5.2_command-name_input-mode_non-interactive.md` | Non-interactive input-mode contract. |
 | `6.1_command-name_output-render_human.md` | Human output renderer contract. |
@@ -596,22 +596,23 @@ These domains define the fleet, control-plane authority, node capabilities, and 
 6. [Workspaces](6_workspace/README.md)
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
+9. [Database](18_database/README.md)
 
 ### Runtime workflow domains
 
 These domains coordinate scheduled tasks, deployments, and cross-family operations on top of the foundation.
 
-9. [Schedules](9_schedule/README.md)
-10. [Deployments](10_deploy/README.md)
-11. [Operations](11_operation/README.md)
+10. [Schedules](9_schedule/README.md)
+11. [Deployments](10_deploy/README.md)
+12. [Operations](11_operation/README.md)
 
 ### Runtime integration and observability domains
 
 These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs, DNS, and activity logs.
 
-12. [Cloudflare](12_cf/README.md)
-13. [VPN Administration](13_vpn/README.md)
-14. [PHP Runtime](14_php/README.md)
-15. [Agent IDE](15_agent-ide/README.md)
-16. [DNS](16_dns/README.md)
-17. [Activity](17_activity/README.md)
+13. [Cloudflare](12_cf/README.md)
+14. [VPN Administration](13_vpn/README.md)
+15. [PHP Runtime](14_php/README.md)
+16. [Agent IDE](15_agent-ide/README.md)
+17. [DNS](16_dns/README.md)
+18. [Activity](17_activity/README.md)

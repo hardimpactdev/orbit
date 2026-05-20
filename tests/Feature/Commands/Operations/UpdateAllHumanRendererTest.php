@@ -20,6 +20,10 @@ beforeEach(function (): void {
     config(['orbit.is_gateway' => true]);
 });
 
+afterEach(function (): void {
+    updateAllHumanSpinnerInterval(300_000);
+});
+
 beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
@@ -59,6 +63,11 @@ function assignUpdateAllHumanAppHostRole(string $nodeName, string $role = 'app-d
     ]);
 }
 
+function updateAllHumanSpinnerInterval(int $microseconds): void
+{
+    config(['orbit.progress.frame_interval_us' => $microseconds]);
+}
+
 it('renders progress tree shape', function (): void {
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -85,7 +94,8 @@ it('renders the full decorated tree immediately and alternates active frames', f
     ]);
     Process::preventStrayProcesses();
 
-    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell(delayMicroseconds: 400_000));
+    updateAllHumanSpinnerInterval(10_000);
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell(delayMicroseconds: 40_000));
 
     $output = new BufferedOutput(decorated: true);
     $exitCode = Artisan::call('update:all', [], $output);
@@ -455,7 +465,7 @@ final readonly class UpdateAllHumanSlowGatewayStream implements UpdateAllGateway
 
         file_put_contents($this->logPath, json_encode(['event' => 'gateway_pull_started'], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND | LOCK_EX);
         $onEvent('step', ['key' => 'gateway', 'status' => 'pulling_source', 'message' => 'Pulling source - gateway']);
-        usleep(400_000);
+        usleep(200_000);
         $onEvent('step', ['key' => 'gateway', 'status' => 'installing_dependencies', 'message' => 'Installing dependencies - gateway']);
         $onEvent('step', ['key' => 'gateway', 'status' => 'running_migrations', 'message' => 'Running migrations - gateway']);
         $onEvent('step', ['key' => 'gateway', 'status' => 'done', 'message' => 'Done - gateway']);

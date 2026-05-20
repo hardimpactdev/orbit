@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway identifies the calling WireGuard peer and authorizes the selected scope.
-- For app-node peers, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects.
-- The selected family doctor contract may document a narrow exception that permits resolution modes for app-node peers.
+- For app-role peers, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects.
+- The selected family doctor contract may document a narrow exception that permits resolution modes for app-role peers.
 
 ## Signature
 
@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. Must intersect with the target's role-assignment category set. |
+| `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. Must intersect with the target's role-assignment category set. |
 | `node` | `--node` | Never. | `--self` is present. | The calling peer's node as identified by the gateway (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
 | `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
@@ -39,15 +39,16 @@ This command follows the shared
 
 The rendered category set is derived from the target node's active role
 assignments. The legacy node role field remains a compatibility shadow for
-identity and output, but hosted-family doctor eligibility comes from
+identity and output, but workload-family doctor eligibility comes from
 `node_roles`.
 
 | Target role assignment state | Categories |
 | --- | --- |
-| joined client with no active hosted role | `Node` |
-| active `gateway` role | `Node` |
+| client with no active role | `Node` |
+| active `gateway` role | `Node`, `Scheduling` |
 | active `database` role only | `Node`, `Tools` |
-| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| active `agent` role | `Node`, `Tools` |
+| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 
 Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
@@ -99,13 +100,13 @@ Input-mode-specific contracts are required for resolution modes:
 
 ### Scope, Authorization, and App-Node Write Boundaries
 
-Cross-peer scope-resolution rules and the app-node write boundary list are
+Cross-peer scope-resolution rules and the app-role write boundary list are
 owned by
 [`7_doctor_scope-and-authorization.md`](7_doctor_scope-and-authorization.md).
 Peer-specific authorization remains in the on-node companion contracts:
-[`2_doctor_on-control-node.md`](2_doctor_on-control-node.md),
+[`2_doctor_on-client.md`](2_doctor_on-client.md),
 [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md), and
-[`4_doctor_on-app-node.md`](4_doctor_on-app-node.md).
+[`4_doctor_on-app-role.md`](4_doctor_on-app-role.md).
 
 ### Result Classification Rules
 
@@ -188,7 +189,7 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-node write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-role write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
 | `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
 | `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
@@ -198,9 +199,9 @@ Test mapping for each family lives in its family doctor contract, such as
 
 Peer-specific behavior and test mapping live in:
 
-- [`2_doctor_on-control-node.md`](2_doctor_on-control-node.md)
+- [`2_doctor_on-client.md`](2_doctor_on-client.md)
 - [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md)
-- [`4_doctor_on-app-node.md`](4_doctor_on-app-node.md)
+- [`4_doctor_on-app-role.md`](4_doctor_on-app-role.md)
 
 ## Activity Logging
 

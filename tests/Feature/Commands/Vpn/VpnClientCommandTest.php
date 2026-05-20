@@ -7,28 +7,11 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Vpn\VpnBackendClient;
 use App\Models\Node;
 use App\Services\Vpn\ArrayVpnBackend;
-use App\Services\Vpn\VpnBackend;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
-
-function vpnLocalNode(string $role): Node
-{
-    return Node::factory()->create([
-        'name' => "local-{$role}",
-        'role' => $role,
-        'host' => '10.6.0.2',
-        'wireguard_address' => '10.6.0.2',
-        'status' => 'active',
-    ]);
-}
-
-function bindVpnBackend(ArrayVpnBackend $backend): void
-{
-    app()->instance(VpnBackend::class, $backend);
-}
 
 it('lists vpn clients with json metadata on gateway callers', function (): void {
     vpnLocalNode('gateway');

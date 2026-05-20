@@ -176,6 +176,11 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->and($node->roleAssignments->first()?->role)->toBe('app-development')
         ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value)
         ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test']);
+
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'orbit'@'192.0.2.20'")
+        && str_contains((string) $process->command, '99-orbit-hardening.conf')
+        && str_contains((string) $process->command, 'PermitRootLogin no')
+        && str_contains((string) $process->command, 'AllowUsers ${RUNTIME_USER}'));
 });
 
 it('rejects existing gateway development dns mappings before provisioning side effects', function (): void {

@@ -27,7 +27,7 @@ options are optional.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `app` | `--app` | Optional. | Never. | None. | App slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single app slug. Unknown slugs fail before side effects. |
-| `node` | `--node` | Optional. | Never. | None. | App-node slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single node slug. Unknown slugs fail before side effects. |
+| `node` | `--node` | Optional. | Never. | None. | App-role slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single node slug. Unknown slugs fail before side effects. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `--app` and `--node` are scalar slug filters. Multi-value semantics are not part

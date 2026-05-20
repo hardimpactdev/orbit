@@ -76,6 +76,7 @@ it('renders decorated progress tree glyphs and colors', function (): void {
     $exitCode = Artisan::call('app:new', [
         'name' => 'docs',
         '--node' => 'app-1',
+        '--no-interaction' => true,
     ], $output);
     $buffer = $output->fetch();
     $plainBuffer = preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $buffer) ?? $buffer;

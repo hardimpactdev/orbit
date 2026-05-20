@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\File;
 uses(RefreshDatabase::class);
 
 afterEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 /**
@@ -57,6 +58,11 @@ describe('node:list human renderer contract', function (): void {
     beforeEach(function (): void {
         config(['orbit.is_gateway' => true]);
 
+        $developmentDnsConfigDir = storage_path('framework/testing/node-list-human-dns/'.bin2hex(random_bytes(6)));
+        $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
+
+        app()->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
+        app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
         app()->instance(RemoteShell::class, new NodeListHumanRendererRemoteShell);
 
         DB::table('nodes')->insert([

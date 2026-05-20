@@ -60,7 +60,7 @@ fields and does not prompt.
 
 `update` must not:
 - Update other nodes.
-- SSH to the gateway or app nodes.
+- SSH to the gateway or nodes.
 - Query or mutate gateway fleet configuration as a command behavior.
 - Repair node, app, workspace, process, proxy route, schedule, tool, or
   firewall drift.
@@ -85,7 +85,7 @@ fields and does not prompt.
 
 - `update` changes the local Orbit installation.
 - It does not verify fleet drift or runtime readiness.
-- After updating a gateway or app node, run the `doctor --family=<family>`
+- After updating a gateway or node, run the `doctor --family=<family>`
   command for the family whose artifacts or readiness need verification.
 
 ## Activity Logging

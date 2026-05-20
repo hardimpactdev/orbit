@@ -26,7 +26,7 @@ orbit vpn-client:list --json
 Run this command to inspect the gateway VPN backend's current client inventory.
 
 `vpn-client:list` runs on the gateway host and reads the gateway VPN backend's
-client inventory. From a operator node, Orbit connects to the gateway over the
+client inventory. From a client, Orbit connects to the gateway over the
 Orbit/WireGuard SSH path and runs the gateway-local operation there.
 
 The command may show backend peers that correspond to active Orbit node
@@ -42,7 +42,7 @@ machine-readable output.
 
 ## Requirements
 
-- The caller is a gateway or authorized operator node.
+- The caller is a gateway or authorized client.
 - Operator callers can SSH to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The operator can authenticate to the VPN backend when TOTP is required.

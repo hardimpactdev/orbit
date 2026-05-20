@@ -191,17 +191,26 @@ it('counts running docker containers with the configured e2e instance prefix', f
 });
 
 it('acquires a control-gateway lease by launching containers from prepared images', function (): void {
-    Process::fake([
-        'command -v docker >/dev/null' => Process::result(),
-        'docker info >/dev/null' => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:control-gateway-control-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:control-gateway-gateway-current' >/dev/null" => Process::result(),
-        "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
-        "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
-        "docker run -d --name 'orbit-e2e-run123-control' --network 'orbit-e2e-run123' --ip '10.6.0.3' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:control-gateway-control-current'" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.6.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:control-gateway-gateway-current'" => Process::result(output: "gateway-id\n"),
-        'docker exec *' => Process::result(),
-    ]);
+    Process::fake(function ($process) {
+        $command = $process->command;
+
+        if (
+            $command === 'command -v docker >/dev/null'
+            || $command === 'docker info >/dev/null'
+            || str_starts_with($command, 'docker image inspect ')
+            || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
+            || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-control' ")
+            || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway' ")
+            || str_starts_with($command, 'docker exec ')
+        ) {
+            return str_contains($command, 'docker run -d ')
+                ? Process::result(output: "container-id\n")
+                : Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $command);
+    });
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -407,18 +416,31 @@ it('keeps the docker network until final cleanup across fresh resets', function 
 });
 
 it('cleans containers and network when docker acquire fails partway through', function (): void {
-    Process::fake([
-        'command -v docker >/dev/null' => Process::result(),
-        'docker info >/dev/null' => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:control-gateway-control-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:control-gateway-gateway-current' >/dev/null" => Process::result(),
-        "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
-        "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
-        "docker run -d --name 'orbit-e2e-run123-control' *" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(exitCode: 1, errorOutput: "failed\n"),
-        "docker rm -f 'orbit-e2e-run123-control' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true" => Process::result(),
-        "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true" => Process::result(),
-    ]);
+    Process::fake(function ($process) {
+        $command = $process->command;
+
+        if (
+            $command === 'command -v docker >/dev/null'
+            || $command === 'docker info >/dev/null'
+            || str_starts_with($command, 'docker image inspect ')
+            || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
+            || $command === "docker rm -f 'orbit-e2e-run123-control' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true"
+            || $command === "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true"
+        ) {
+            return Process::result();
+        }
+
+        if (str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-control' ")) {
+            return Process::result(output: "control-id\n");
+        }
+
+        if (str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway' ")) {
+            return Process::result(exitCode: 1, errorOutput: "failed\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $command);
+    });
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 

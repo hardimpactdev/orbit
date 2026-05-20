@@ -53,7 +53,7 @@ Example JSON shape:
 ## Service Endpoint
 
 `mysql` exposes a TCP service endpoint reachable only over WireGuard at
-`orbit.<node-tld>:3306` for development app nodes. This is DNS/service endpoint
+`orbit.<node-tld>:3306` for development nodes. This is DNS/service endpoint
 configuration owned by the tool definition, not an HTTP proxy route.
 
 ## Orbit Notes
@@ -67,7 +67,7 @@ only where the managed MySQL service is installed.
 
 `tool:install mysql` requires the target node to have an active `database`
 role assignment. Orbit does not select an app database host here. Installing
-MySQL on an app node is allowed only when that same node also has an active
+MySQL on a node with an app role is allowed only when that same node also has an active
 `database` role.
 
 ## Doctor Relationship

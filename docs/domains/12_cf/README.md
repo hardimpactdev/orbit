@@ -24,9 +24,9 @@ These rules constrain all Cloudflare commands.
 - Cloudflare commands are gateway-admin provider utilities.
 - The gateway is the only Orbit node that talks directly to the Cloudflare API.
 - Cloudflare API tokens are external secrets stored on the gateway.
-- Callers on operator nodes invoke Cloudflare commands through the gateway API and
+- Callers on clients invoke Cloudflare commands through the gateway API and
   must be authorized for provider administration.
-- App-node callers are denied before prompts or side effects. Cloudflare
+- App-role callers are denied before prompts or side effects. Cloudflare
   provider administration is not app-local runtime work.
 - Cloudflare commands require a real configured domain in a Cloudflare zone.
   Development TLDs and DNS resolver overrides local to the caller are not valid

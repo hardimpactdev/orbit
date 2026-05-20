@@ -40,12 +40,12 @@ These terms define certificate authority, leaf certificate scope, and hostname c
   certificates.
 - **Intermediate CA certificate:** A certificate with signing authority below
   the gateway root CA. Orbit does not issue intermediate CA certificates to app
-  nodes for routine proxy serving because that would let a compromised app node
+  nodes for routine proxy serving because that would let a compromised node
   mint trusted certificates outside its route ownership.
 - **TLS authority boundary:** The gateway owns certificate signing authority.
-  App nodes receive route-scoped leaf certificates and private keys as serving
+  Nodes receive route-scoped leaf certificates and private keys as serving
   artifacts only; they do not act as Orbit certificate authorities.
-- **Hostname compatibility material:** App-node files derived from route TLS
+- **Hostname compatibility material:** App-role files derived from route TLS
   configuration that let common Laravel Vite TLS detection paths find the route
   certificate. Owned by proxy convergence, not by the app or workspace family.
 

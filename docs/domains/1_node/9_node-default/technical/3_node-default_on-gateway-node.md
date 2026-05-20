@@ -17,15 +17,15 @@ self-call shortcut.
 The `show` and `clear` sub-actions are local-config-only operations. They do not
 require gateway reachability, do not call `/api/me`, and perform no role check.
 
-`node:default` exists to store a CLI-local preference for development app-node
+`node:default` exists to store a CLI-local preference for development app-role
 targeting. Gateway hosts are not the intended audience for this local config
-convenience. Gateway-local development work against app nodes is outside the
+convenience. Gateway-local development work against nodes is outside the
 current command contract.
 
 ## Error Contract
 
 ```text
-This command may only be run from a operator node.
+This command may only be run from a client.
 ```
 
 ## Failure Semantics

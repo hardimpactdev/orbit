@@ -43,7 +43,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### History Boundary Rules
 
 `deploy:log` reads past captured deployment output only. It must not stream
-live deployment output, SSH into the owning app node, read process manager
+live deployment output, SSH into the owning node, read process manager
 logs, mutate gateway configuration, mutate deployment history, or repair failed
 deployments.
 

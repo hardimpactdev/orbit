@@ -3,14 +3,14 @@
 [Back to Nodes commands.](../README.md)
 
 Register a new node identity in the Orbit fleet and optionally assign its
-initial hosted roles.
+initial roles.
 
-Use `node:new` when adding capacity to the fleet. Gateway and app nodes are
-provisioned over SSH when needed. Operator nodes are enrolled by the gateway so
+Use `node:new` when adding capacity to the fleet. Gateway and nodes are
+provisioned over SSH when needed. Clients are enrolled by the gateway so
 they can join the Orbit WireGuard network and then run `gateway:add`.
-The first gateway bootstrap is the exception: when a operator node with no
+The first gateway bootstrap is the exception: when a client with no
 configured gateway creates the first gateway, the command also onboards that
-initiating operator node and stores the local gateway configuration.
+initiating client and stores the local gateway configuration.
 
 ## Usage
 
@@ -42,16 +42,16 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
-- `--role`: repeatable initial hosted role assignment. Supported hosted roles:
+- `--role`: repeatable initial role assignment. Supported roles:
   `app-development`, `app-production`, `database`, and `agent`. No hosted
-  role means a joined client/control identity. `gateway` remains an internal
+  role means a client/control identity. `gateway` remains an internal
   bootstrap path. `agent` is exclusive and may only be selected during
-  `node:new`; combining it with another hosted role fails before side effects.
-- `--host`: required for gateway bootstrap and for any initial hosted role that
+  `node:new`; combining it with another role fails before side effects.
+- `--host`: required for gateway bootstrap and for any initial role that
   provisions a host. This is the SSH/bootstrap endpoint and never the canonical
   node address.
-- `--control-name`: initiating operator-node name for first-gateway bootstrap
-  (a operator node with no configured gateway running `--role=gateway`).
+- `--control-name`: initiating client name for first-gateway bootstrap
+  (a client with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
 - `--environment`: legacy compatibility input only. `--role=app` with
@@ -62,6 +62,8 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   leading dot.
 - `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
   steady-state `nodes.user` after the gateway-managed SSH user is set up.
+  After provisioning, operator SSH access is through that gateway-managed user;
+  root SSH login and password login are disabled.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
@@ -81,11 +83,11 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   set for the `--grant-from` direction. Mutually exclusive.
 - `--json`: Output JSON.
 
-## Hosted Roles
+## Workload Roles
 
 **Client / control identity**
 
-Creates a joined node identity with no hosted roles by default. This is the new
+Creates a joined node identity with no roles by default. This is the new
 baseline meaning of `node:new <name>` with no `--role` values.
 
 Legacy `--role=control` is accepted for one compatibility cycle and maps to the
@@ -93,27 +95,27 @@ same no-hosted-role identity. Human output warns when a legacy mapping is used.
 
 **`app-development`**
 
-Provisions a host-capable node identity and creates an active hosted role
+Provisions a host-capable node identity and creates an active role
 assignment with settings that include `tld`.
 
 Requires `--host` and non-empty `--tld`.
 
 **`app-production`**
 
-Provisions a host-capable node identity and creates an active hosted role
+Provisions a host-capable node identity and creates an active role
 assignment with no extra settings.
 
 Requires `--host`.
 
 **`database`**
 
-Creates an active hosted role assignment for database responsibilities. It may
+Creates an active role assignment for database responsibilities. It may
 be combined with `app-development` or `app-production` on the same provisioned
 host.
 
 `app-development` and `app-production` are mutually exclusive. Gateway and
-`agent` each conflict with every other hosted role and with each other.
-`gateway` is not command-assignable through the public hosted role flow.
+`agent` each conflict with every other role and with each other.
+`gateway` is not command-assignable through the public role flow.
 
 **`agent`**
 
@@ -142,11 +144,11 @@ or `--role=gateway` fails before side effects.
 Bootstraps or adopts the gateway node that owns fleet configuration, WireGuard
 identity, gateway APIs, and node access policy.
 
-When a operator node with no configured gateway bootstraps the first gateway,
-`node:new --role=gateway` also mints and installs the initiating operator node's
+When a client with no configured gateway bootstraps the first gateway,
+`node:new --role=gateway` also mints and installs the initiating client's
 WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
 local gateway endpoint, and verifies gateway API access. After that successful
-flow, the initiating operator node does not run `gateway:add`.
+flow, the initiating client does not run `gateway:add`.
 
 Gateway bootstrap also installs the gateway-side DNS substrate:
 
@@ -186,11 +188,11 @@ and requires a future explicit reset contract.
 ## What Happens
 
 `node:new` writes the node identity first, then creates each requested initial
-hosted role assignment. Development app bootstrap includes the node TLD and the
+role assignment. Development app bootstrap includes the node TLD and the
 gateway development DNS mapping for that TLD.
 
 If initial hosted-role validation fails, the command stops before provisioning
-or writing the node identity. If an initial hosted role is persisted but its
+or writing the node identity. If an initial role is persisted but its
 first convergence fails, the command fails and leaves that role assignment in
 `error` for later doctor recovery.
 
@@ -201,7 +203,7 @@ generated WireGuard peer configs. Public IP metadata, when needed, is recorded
 explicitly with [`node:update`](../7_node-update/node-update.md) and is not drift-checked
 by node doctor.
 
-`node:new` does not set the local default development app node. Run
+`node:new` does not set the local default development node. Run
 [`node:default`](../9_node-default/node-default.md) explicitly when the operator wants that
 local targeting preference.
 
@@ -209,9 +211,9 @@ local targeting preference.
 
 `node:new` always creates an explicit self-grant for the new node. Self-grants
 are required for self-access; they are never implicit. The self-grant preset
-for each hosted role is the union of role-default self-grant permissions
-across all active hosted roles on the node. Permission conflicts between
-hosted roles indicate role incompatibility rather than deny rules.
+for each role is the union of role-default self-grant permissions
+across all active roles on the node. Permission conflicts between
+roles indicate role incompatibility rather than deny rules.
 
 For interactive runs, `node:new` asks two grant questions:
 
@@ -245,7 +247,7 @@ Add `--json` when you need a machine-readable payload. The JSON output gives
 you the command result action, node name, role, lifecycle status,
 platform-version identifier, environment when applicable, development TLD when
 applicable, provisioning status, explicit node addresses, and any returned
-WireGuard configuration for operator-node enrollment.
+WireGuard configuration for client enrollment.
 
 Read the addresses carefully: the JSON distinguishes the SSH/bootstrap
 endpoint from the Orbit WireGuard address, the gateway endpoint used in
@@ -260,26 +262,26 @@ when already present.
 
 For first-gateway bootstrap:
 
-- Requires local permission to install the initiating operator node's WireGuard
+- Requires local permission to install the initiating client's WireGuard
   identity, trust the gateway CA, and store local gateway configuration. A
   successful first-gateway bootstrap completes local onboarding; do not run
-  `gateway:add` on that initiating operator node afterward.
-- Requires a resolved initiating operator-node name. Defaults to the
+  `gateway:add` on that initiating client afterward.
+- Requires a resolved initiating client name. Defaults to the
   normalized local short hostname.
 - Installs Docker Engine and Docker Compose on Ubuntu gateway hosts when they
   are missing, because the gateway DNS substrate runs `wg-easy` and
   `orbit-dns` as containers.
 
-For app-node creation:
+For app-role creation:
 
 - Requires an existing gateway and a resolved SSH/bootstrap endpoint.
-- Development app-node creation requires a unique development TLD.
+- Development app-role creation requires a unique development TLD.
 
-For operator-node enrollment:
+For client enrollment:
 
 - Must run against the gateway so the gateway can mint the WireGuard identity
   and matching node record.
-- After enrolling a operator node, install the returned WireGuard configuration,
+- After enrolling a client, install the returned WireGuard configuration,
   join the Orbit network, then run `orbit gateway:add`.
 
 ## Technical Contract

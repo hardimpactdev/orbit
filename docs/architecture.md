@@ -4,11 +4,11 @@ This document describes Orbit's architecture at a high level.
 
 ## Components
 
-Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singleton authority role, owns fleet configuration, serves a typed API, coordinates the VPN, and applies changes on hosted nodes. Joined clients and hosted nodes are spokes. They join the gateway-managed private network for secure communication.
+Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singleton authority role, owns fleet configuration, serves a typed API, coordinates the VPN, and applies changes on other nodes. Clients and nodes carrying workload roles are spokes. They join the gateway-managed private network for secure communication.
 
 ```text
               ┌─────────────────────┐
-              │    Joined Client    │
+              │       Client        │
               │     CLI caller      │
               └──────────┬──────────┘
                          │
@@ -25,8 +25,9 @@ Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singl
                          │
                          ▼
               ┌─────────────────────┐
-              │    Hosted Node      │
-              │  workload roles     │
+              │   Workload Node     │
+              │   one or more       │
+              │   workload roles    │
               └──────────┬──────────┘
                          │
                 public 80 / 443 only
@@ -39,9 +40,9 @@ Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singl
 
 One hub, one path: there is exactly one place to answer "what should exist?", and exactly one place changes are written. Spokes initiate commands and serve workloads, but durable configuration always lives on the gateway.
 
-### Joined client
+### Client
 
-A joined client is where you drive Orbit from, usually your Mac or Ubuntu workstation. It runs the Orbit CLI, presents a WireGuard identity, and communicates with the gateway to handle operations. Joined clients do not write fleet state directly; they call the gateway and let the gateway do the work.
+A client is where you drive Orbit from, usually your Mac or Ubuntu workstation. It runs the Orbit CLI, presents a WireGuard identity, and communicates with the gateway to handle operations. Clients do not write fleet state directly; they call the gateway and let the gateway do the work.
 
 ### Gateway node
 
@@ -49,23 +50,27 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 It runs the VPN server every Orbit node joins and acts as Orbit's certificate authority. Steady-state traffic stays on a private network, and HTTPS works without an external CA.
 
-The gateway exposes the typed API that the CLI talks to. It holds SSH access to hosted nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new hosted node can be provisioned from the same configuration that built the previous one.
+The gateway exposes the typed API that the CLI talks to. It holds SSH access to other nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new node can be provisioned from the same configuration that built the previous one.
 
-### Hosted node
+### Node roles
 
-A hosted node is a workload host with one or more active hosted role assignments. Hosted roles are fixed code-defined bundles: `app-development`, `app-production`, `database`, and `agent`. `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate hosted role.
+A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `app-development`, `app-production`, `database`, and `agent`. The `gateway` role is the singleton authority role described above. The other four are workload roles applied to nodes in the fleet.
 
-The `agent` role hosts first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. An agent node combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no public ingress baseline. Activity emitted while autonomous agent tools work is attributed to the agent node identity — Orbit does not claim per-tool sub-identities.
+`app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate role.
 
-Hosted nodes do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on a hosted node, but only as a joined client that calls the gateway like any other caller.
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no public ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+
+Roles compose when compatible. `app-development` and `app-production` may each combine with `database` on the same node, so a single node can serve apps and host their database tools together. `gateway` and `agent` are exclusive: they never share a node with another role. The full compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
+
+Nodes other than the gateway do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on any node, but only as a client that calls the gateway like any other caller.
 
 ### VPN
 
-The VPN is the secure network every Orbit node joins. Steady-state traffic flows over it: CLI calls to the gateway, changes the gateway pushes to hosted nodes, and events hosted nodes send back. Development nodes and database-only nodes do not need a public face. Hosted nodes with `app-production` expose only ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable only over the VPN. The current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
+The VPN is the secure network every Orbit node joins. Steady-state traffic flows over it: CLI calls to the gateway, changes the gateway pushes to other nodes, and events those nodes send back. Nodes with only `app-development` or `database` roles do not need a public face. Nodes with the `app-production` role expose only ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable only over the VPN. The current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
 
 ### CLI
 
-The CLI is the product surface for humans, AI agents, and CI. It runs on joined clients, on the gateway itself, and on hosted nodes as a gateway client. Every command takes the same path: gather local input, call the gateway typed API over the VPN, and render output. Commands that return structured data expose `--json`.
+The CLI is the product surface for humans, AI agents, and CI. It runs on clients, on the gateway itself, and on any node carrying workload roles as a gateway client. Every command takes the same path: gather local input, call the gateway typed API over the VPN, and render output. Commands that return structured data expose `--json`.
 
 ## Relationships
 
@@ -76,17 +81,17 @@ Orbit has two network edges, and only two.
 | Edge | Transport | Purpose |
 |---|---|---|
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
-| Gateway → hosted node | SSH | Running scripts, uploading config, streaming logs, controlling services |
+| Gateway → node | SSH | Running scripts, uploading config, streaming logs, controlling services |
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
 The blast radius of any single caller, including an AI agent driving Orbit, is bounded by the API surface. If a caller needs to be cut off — a runaway agent, a compromised laptop, a former contributor — revoking its VPN access shuts down everything it could do, immediately.
 
-CLI callers can run on a joined client, on the gateway itself, or on a hosted node. The caller location changes how local context (current app, current workspace) is resolved, but it never changes who writes state — that is always the gateway.
+CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved, but it never changes who writes state — that is always the gateway.
 
-Hosted nodes do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on a hosted node, the gateway opens the SSH connection and runs the work there. Hosted nodes do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
+Nodes other than the gateway do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on such a node, the gateway opens the SSH connection and runs the work there. They do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
 
-The SSH primitive the gateway uses to act on hosted nodes is called `RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives in [tech-stack.md](tech-stack.md#gateway-to-hosted-node).
+The SSH primitive the gateway uses to act on other nodes is called `RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives in [tech-stack.md](tech-stack.md#gateway-to-node).
 
 ### Authentication and authorization
 
@@ -94,19 +99,19 @@ Every Orbit command needs two things: an identity and permission.
 
 **Identity** comes from the VPN. Every node joins the VPN with its own credentials. The gateway knows which node is on the other end of every API call.
 
-**Permission** is controlled by the gateway. Operation is WireGuard identity plus gateway grants, not an operator role. For each node, the gateway stores which other nodes are allowed to manage it. A joined client can only act on the hosted nodes it has been granted access to. The same applies to gateway-owned data: only nodes granted access to the gateway can read gateway policy or activity history.
+**Permission** is controlled by the gateway. Operation is WireGuard identity plus gateway grants, not a built-in role. For each node, the gateway stores which other nodes are allowed to manage it. A client can only act on the nodes it has been granted access to. The same applies to gateway-owned data: only nodes granted access to the gateway can read gateway policy or activity history.
 
 Authorization is two gates: a grant edge between a consuming node and a serving node decides whether the consuming node can reach the serving node at all, and the scoped permission set stored on that grant decides what the consuming node may do once it does. A grant with no permissions denies every action. Permissions are normalized permission strings such as `node:read`, `tool:restart`, `firewall_rule:read`, or `doctor:verify`; wildcards `node:*` and `*` are dynamic and include future permissions added in that namespace. Self-grants are explicit and required — a node does not implicitly have access to itself. A grant from a node to the gateway with `*` (the `gateway-admin` preset) is the fleet-wide super-admin grant: it covers every current node and every node added in the future. `node:new` itself requires a gateway-admin grant on the calling node, or an explicit `node:new` permission on its grant to the gateway.
 
-An **operator node** is any joined node acting through that identity-and-grants path. Operator is a capability term, not a hosted role. A node can therefore be both a hosted node and an operator node at the same time when it has a gateway-known identity and the required grants.
+Any node with a gateway-known identity and the required grants can act through that identity-and-grants path. There is no separate "operator" or "control" role — capability comes from the grants attached to the node, not from a built-in label.
 
 This grant model lets you scope access naturally:
 
-- A developer's joined client might have a `developer` preset to `app-development` nodes and no grant at all to `app-production`.
-- A CI runner's joined client might have an `operator` preset only to the apps it deploys.
-- A hosted node's self-grant gives its own local CLI the actions it needs on itself — for example, an agent node's self-grant includes `tool:restart` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
+- A developer's client might have a `developer` preset to nodes with the `app-development` role and no grant at all to nodes with the `app-production` role.
+- A CI runner's client might have an `operator` preset only to the apps it deploys.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:restart` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
 
-Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no hosted-node config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
+Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no node-side config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
 
 ### Command and API model
 
@@ -185,7 +190,7 @@ The agent IDE adapter is configured per node, with optional override per app. Wh
 
 Agent IDE adapters are extension points. New IDEs can be supported by writing an adapter without touching the rest of Orbit.
 
-This integration is for human-driven coding sessions. Autonomous agents that operate the fleet on their own — OpenClaw, Hermes — run as ordinary managed tools under the `agent` hosted role instead. There is no default agent tool: an agent node may be created with zero, one, or several agent tools selected. Running multiple agent tools on the same agent node is allowed, but Orbit warns about weaker node-level traceability whenever a second running agent tool is started or installed — interactive callers see a confirmation prompt, machine-readable callers receive a structured warning under `success.meta.warnings[]` and the command proceeds when input is otherwise valid.
+This integration is for human-driven coding sessions. Autonomous agents that operate the fleet on their own — OpenClaw, Hermes — run as ordinary managed tools under the `agent` role instead. There is no default agent tool: a node with the `agent` role may be created with zero, one, or several agent tools selected. Running multiple agent tools on the same node is allowed, but Orbit warns about weaker node-level traceability whenever a second running agent tool is started or installed — interactive callers see a confirmation prompt, machine-readable callers receive a structured warning under `success.meta.warnings[]` and the command proceeds when input is otherwise valid.
 
 ### Identity names
 

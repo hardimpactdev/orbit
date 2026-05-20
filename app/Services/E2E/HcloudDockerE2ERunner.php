@@ -10,8 +10,12 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
-final class HcloudDockerE2ERunner
+final readonly class HcloudDockerE2ERunner
 {
+    public function __construct(
+        private int $retrySleepSeconds = 5,
+    ) {}
+
     /**
      * @return array{
      *     provider: string,
@@ -164,7 +168,7 @@ final class HcloudDockerE2ERunner
                 return $ip;
             }
 
-            sleep(2);
+            $this->sleepBetweenAttempts(min(2, $this->retrySleepSeconds));
         }
 
         throw new RuntimeException("hcloud server {$serverName} did not receive an IPv4 address.");
@@ -186,7 +190,7 @@ final class HcloudDockerE2ERunner
                 return;
             }
 
-            sleep(5);
+            $this->sleepBetweenAttempts($this->retrySleepSeconds);
         }
 
         throw new RuntimeException("Docker did not become ready on {$dockerHost}.");
@@ -231,6 +235,13 @@ final class HcloudDockerE2ERunner
         }
 
         return $result->output();
+    }
+
+    private function sleepBetweenAttempts(int $seconds): void
+    {
+        if ($seconds > 0) {
+            sleep($seconds);
+        }
     }
 
     private function cloudInit(): string

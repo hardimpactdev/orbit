@@ -12,6 +12,10 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    MockClient::destroyGlobal();
+});
+
 afterEach(function (): void {
     MockClient::destroyGlobal();
 });

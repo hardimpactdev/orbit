@@ -10,16 +10,29 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Schedule;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    $developmentDnsConfigDir = storage_path('framework/testing/doctor-runner-dns/'.bin2hex(random_bytes(6)));
+    $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
+
+    app()->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
+    app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
+});
+
+afterEach(function (): void {
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
+});
 
 function createDoctorRunnerAppHostNode(array $attributes = []): Node
 {
@@ -83,9 +96,11 @@ describe('DoctorReportRunner', function (): void {
 
     it('suppresses resolved issues when a supported restore completes', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $node = createDoctorRunnerAppHostNode();
-        $app = App::factory()->create(['node_id' => $node->id]);
-        Schedule::factory()->forApp($app)->create();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "missing\n", stderr: '', durationMs: 1),
@@ -93,7 +108,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['schedule']);
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -105,7 +120,7 @@ describe('DoctorReportRunner', function (): void {
             ->and($report['issues'])->toBe([])
             ->and($report['actions'][0])->toMatchArray([
                 'family' => 'schedule',
-                'node' => 'app-1',
+                'node' => 'gateway-1',
                 'key' => 'schedule.scheduler_missing',
                 'mode' => 'restore',
                 'status' => 'completed',
@@ -177,16 +192,18 @@ describe('DoctorReportRunner', function (): void {
 
     it('keeps the issue visible and records a failed action when a restore throws', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $node = createDoctorRunnerAppHostNode();
-        $app = App::factory()->create(['node_id' => $node->id]);
-        Schedule::factory()->forApp($app)->create();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "missing\n", stderr: '', durationMs: 1),
             new RuntimeException('supervisor update failed'),
         ]));
 
-        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['schedule']);
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
 
         expect($report['healthy'])->toBeFalse()
             ->and($report['summary'])->toMatchArray([
@@ -197,12 +214,12 @@ describe('DoctorReportRunner', function (): void {
             ])
             ->and($report['issues'][0])->toMatchArray([
                 'family' => 'schedule',
-                'node' => 'app-1',
+                'node' => 'gateway-1',
                 'key' => 'schedule.scheduler_missing',
             ])
             ->and($report['actions'][0])->toMatchArray([
                 'family' => 'schedule',
-                'node' => 'app-1',
+                'node' => 'gateway-1',
                 'key' => 'schedule.scheduler_missing',
                 'mode' => 'restore',
                 'status' => 'failed',
@@ -213,7 +230,7 @@ describe('DoctorReportRunner', function (): void {
     });
 
     it('restores supported node role drift through node family dispatch', function (): void {
-        File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+        File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 
         $node = Node::factory()->create([
             'name' => 'app-1',
@@ -254,7 +271,7 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
-            ->and(storage_path('app/orbit/node-development-dns.d/test.conf'))->toBeFile();
+            ->and(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf')->toBeFile();
     });
 
     it('skips unsupported node role drift during restore', function (): void {

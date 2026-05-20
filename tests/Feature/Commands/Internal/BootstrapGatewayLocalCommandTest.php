@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\WireGuardPeer;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
 use App\Services\Vpn\WgEasyServiceInstaller;
@@ -22,6 +23,21 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         $this->originalEnvironmentPath = app()->environmentPath();
         app()->useEnvironmentPath($this->tempStorage);
         File::put("{$this->tempStorage}/.env", "APP_NAME=Orbit\n");
+
+        app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService
+        {
+            public function ensureRootCa(): void
+            {
+                File::ensureDirectoryExists(storage_path('app/orbit/ca'));
+                File::put(storage_path('app/orbit/ca/root.key'), 'test-root-key');
+                File::put(storage_path('app/orbit/ca/root.crt'), $this->rootCert());
+            }
+
+            public function rootCert(): string
+            {
+                return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+            }
+        });
 
         $this->gatewayApiRuntimeInstaller = new class extends GatewayApiRuntimeInstaller
         {

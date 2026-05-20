@@ -2,14 +2,14 @@
 
 [Back to Process commands.](README.md)
 
-`doctor --family=process` verifies whether gateway process definitions still match the runtime-unit artifacts that make those definitions executable on their owning app nodes.
+`doctor --family=process` verifies whether gateway process definitions still match the runtime-unit artifacts that make those definitions executable on their owning nodes.
 
 The process family owns these facts:
 
 - gateway-owned process definitions: app, name, command, restart policy, and crash-notification policy;
 - derived runtime-unit identity for the main app instance and every workspace: `orbit_<app>_<workspace|main>_<process>`;
 - Supervisor programs rendered from process, app, workspace, and node configuration, including command, working directory, restart policy, and runtime environment;
-- lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-node units whose process definitions require crash event reporting;
+- lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-role units whose process definitions require crash event reporting;
 - stale Supervisor programs owned by Orbit whose identity no longer maps to an active app, workspace, or process definition.
 
 Node reachability belongs to `node`. App source, PHP runtime, and app-owned runtime configuration belong to `app`. Workspace source directories and setup state belong to `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside the process family.
@@ -61,7 +61,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | Code | Detected when |
 | --- | --- |
 | `process.record_incomplete` | A selected process definition lacks app, name, command, restart policy, or crash-notification policy. |
-| `process.owner_app_invalid` | The process definition points at a missing app, unauthorized app, or app whose owning node is not an active app node. |
+| `process.owner_app_invalid` | The process definition points at a missing app, unauthorized app, or app whose owning node is not an active node. |
 | `process.runtime_context_unresolved` | The expected main app or workspace runtime context cannot be derived from gateway configuration. |
 | `process.runtime_backend_unavailable` | Supervisor is not installed, `supervisord` is not running, or its control socket is not reachable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding Supervisor program. |

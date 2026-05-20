@@ -6,11 +6,11 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is a operator caller authorized to create apps on the
-  target app node, or the gateway itself.
-- The gateway can reach the target app node over SSH.
+- The current node identity is an operator caller authorized to create apps on the
+  target node, or the gateway itself.
+- The gateway can reach the target node over SSH.
 - The resolved target node is an active `app` node.
-- App-node callers are denied by the gateway with
+- App-role callers are denied by the gateway with
   `error.code=caller_role_not_allowed` before prompts or side effects.
   Database-only hosted-role callers are denied the same way.
 
@@ -44,8 +44,8 @@ This command follows the shared
 ### Input Resolution
 
 1. **Node Resolution:** Use explicit `--node`. If missing, interactive mode
-   prompts for a visible active app node and preselects the local
-   `node:default` development app node when one is configured. In
+   prompts for a visible active node and preselects the local
+   `node:default` development node when one is configured. In
    non-interactive mode, use local `node:default` if configured; otherwise
    fail.
 2. **Name Validation:** Validate `name` against the slug regex and length
@@ -53,7 +53,7 @@ This command follows the shared
    after node resolution so the operator can correct the value before repository
    input is requested.
 3. **Collision Check:** Fail if `name` is already taken in the gateway app
-   registry. App slugs are globally unique across all app nodes; there is no
+   registry. App slugs are globally unique across all nodes; there is no
    per-node uniqueness namespace and no `--node`-disambiguation prompt.
 4. **PHP Validation (gateway-side, static):** Validate `--php-version` against Orbit's
    supported PHP version set. An unsupported value fails before any side
@@ -75,10 +75,10 @@ node. Otherwise, create an empty directory at the app path.
 - All remote work is applied through the gateway over SSH via `RemoteShell`.
 - `--repo` accepts either a full Git URL or a GitHub-only `owner/repo` shorthand.
   GitHub shorthand and GitHub URLs are cloned with `gh repo clone` on the
-  target app node. Full Git URLs for other hosts are cloned with `git clone` as
-  supplied after validation and may point at any Git host the target app node
+  target node. Full Git URLs for other hosts are cloned with `git clone` as
+  supplied after validation and may point at any Git host the target node
   can access.
-- Cloning is non-interactive on the target app node and uses whatever
+- Cloning is non-interactive on the target node and uses whatever
   credentials that node already has provisioned. GitHub activity uses the
   node's GitHub CLI authentication; non-GitHub activity uses host SSH keys,
   machine git config, deploy tokens, or other git credentials already present
@@ -143,14 +143,14 @@ If `--domain` is supplied:
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 - **Caller Role Not Allowed:** Fails before registry reads, prompts, SSH, or
-  app writes if the gateway-known caller is neither a operator caller nor the
+  app writes if the gateway-known caller is neither an operator caller nor the
   gateway itself.
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
 - **Collision:** Fails if the app name is already registered in the gateway
   app registry on any node (`error.code=app.collision`,
   `error.meta.name`, `error.meta.node`).
-- **Transport Error:** Fails if the gateway cannot reach the app node over SSH.
+- **Transport Error:** Fails if the gateway cannot reach the node over SSH.
 - **Source Creation Failure:** Clone or directory creation failures occur before
   gateway app configuration is written. They use
   `error.code=app.source_creation_failed` with `error.meta.reason` and
@@ -202,6 +202,6 @@ slice.
 
 Role-specific behavior and test mapping live in:
 
-- [`2_app-new_on-control-node.md`](2_app-new_on-control-node.md)
+- [`2_app-new_on-client.md`](2_app-new_on-client.md)
 - [`3_app-new_on-gateway-node.md`](3_app-new_on-gateway-node.md)
-- [`4_app-new_on-app-node.md`](4_app-new_on-app-node.md)
+- [`4_app-new_on-app-role.md`](4_app-new_on-app-role.md)

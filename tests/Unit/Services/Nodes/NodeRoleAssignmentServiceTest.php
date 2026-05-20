@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
@@ -23,6 +24,16 @@ use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
+
+beforeEach(function (): void {
+    $developmentDnsConfigDir = storage_path('framework/testing/node-role-assignment-dns/'.bin2hex(random_bytes(6)));
+
+    app()->instance(DevelopmentDnsMappingEnactor::class, new DevelopmentDnsMappingEnactor($developmentDnsConfigDir));
+});
+
+afterEach(function (): void {
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
+});
 
 describe('node role assignment service', function (): void {
     it('activates a compatible role after convergence succeeds', function (): void {
@@ -434,9 +445,11 @@ describe('node role assignment service', function (): void {
     });
 
     it('removes the previous development dns mapping after an app-development tld update', function (): void {
-        File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
-        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
-        File::put(storage_path('app/orbit/node-development-dns.d/old.conf'), 'stale mapping');
+        $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
+
+        File::deleteDirectory($configDir);
+        File::ensureDirectoryExists($configDir);
+        File::put("{$configDir}/old.conf", 'stale mapping');
 
         $node = Node::factory()->create([
             'platform' => 'ubuntu_24-04',
@@ -457,10 +470,8 @@ describe('node role assignment service', function (): void {
 
         expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
             ->and($assignment->settings)->toBe(['tld' => 'new'])
-            ->and(storage_path('app/orbit/node-development-dns.d/old.conf'))->not->toBeFile()
-            ->and(storage_path('app/orbit/node-development-dns.d/new.conf'))->toBeFile();
-
-        File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+            ->and("{$configDir}/old.conf")->not->toBeFile()
+            ->and("{$configDir}/new.conf")->toBeFile();
     });
 
     it('rejects updates when a conflicting role is active', function (): void {

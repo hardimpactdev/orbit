@@ -3,7 +3,11 @@
     "name": "hardimpactdev/orbit",
     "type": "project",
     "description": "Orbit — Laravel environment control plane",
-    "keywords": ["laravel", "orbit", "environment"],
+    "keywords": [
+        "laravel",
+        "orbit",
+        "environment"
+    ],
     "license": "MIT",
     "require": {
         "php": "^8.4",
@@ -67,7 +71,7 @@
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan config:clear --ansi @no_additional_args",
-            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e"
+            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --parallel --compact"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",

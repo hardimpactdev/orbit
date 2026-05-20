@@ -13,11 +13,11 @@ The node family owns these facts:
   and the scoped permission set stored on each grant;
 - local caller identity: presented WireGuard identity, local gateway
   endpoint/trust config, and gateway-client endpoint and trust artifacts
-  that the gateway manages on the hosted node;
+  that the gateway manages on the node;
 - node connectivity: gateway API reachability for CLI callers and
-  gateway-owned SSH reachability for hosted nodes;
-- node bootstrap artifacts: gateway runtime readiness, hosted-node minimum Orbit
-  runtime, gateway-client endpoint and trust artifacts on the hosted node, node identity
+  gateway-owned SSH reachability for nodes;
+- node bootstrap artifacts: gateway runtime readiness, node minimum Orbit
+  runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
 - node-related defaults: `app-development` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
@@ -46,25 +46,25 @@ The node probe reads gateway node records and checks these layers:
 3. **Local caller identity:** for `--self`, a presented WireGuard identity
    resolves to exactly one active gateway-known node record. Pre-first-gateway-
    bootstrap callers without identity are accepted as the bootstrap path.
-4. **Gateway API reachability:** joined-client and hosted-node CLI callers reach the
+4. **Gateway API reachability:** client and node CLI callers reach the
    configured gateway API over HTTPS through WireGuard, trust the configured
    gateway certificate authority, and receive their node identity from
    `/api/me`.
 5. **WireGuard identity:** each active node record has matching
    WireGuard peer material that the gateway manages, and the peer address equals the
    recorded WireGuard address.
-6. **Platform reality:** gateway and hosted nodes report supported Ubuntu platform
-   identifiers through SSH. The local joined client reports a supported macOS or
+6. **Platform reality:** gateway and nodes report supported Ubuntu platform
+   identifiers through SSH. The local client reports a supported macOS or
    Ubuntu platform identifier when `--self` can inspect it. Remote joined
    clients are verified through identity and gateway API reachability, not SSH.
-7. **SSH reachability:** the gateway can SSH to hosted nodes. Joined clients are
+7. **SSH reachability:** the gateway can SSH to nodes. Clients are
    not SSH targets for node doctor checks.
 8. **Gateway runtime readiness:** the gateway node exposes the Orbit API and
    the gateway runtime required by CLI callers.
-9. **Hosted-node bootstrap readiness:** hosted nodes have the minimum Orbit runtime
+9. **Node-side bootstrap readiness:** nodes have the minimum Orbit runtime
    and node identity artifacts needed for the gateway to apply other state
    families over SSH.
-10. **Role bootstrap network policy:** gateway and hosted nodes have the
+10. **Role bootstrap network policy:** gateway and nodes have the
     baseline network policy that the node owns for its role and environment. This
     verifies bootstrap reachability policy only, including that SSH management
     traffic is not publicly exposed after bootstrap and instead uses the
@@ -77,13 +77,13 @@ The node probe reads gateway node records and checks these layers:
    maps `*.{tld}` to the node's WireGuard address. The gateway development DNS
    resolver must be WireGuard-reachable and must not expose a public open
    resolver. For `agent`, assignments have a `tld` value, the gateway maps
-   `*.{tld}` to the agent node's WireGuard address through the same DNS
-   configuration model, and the agent node baseline includes Caddy,
+   `*.{tld}` to the node's WireGuard address through the same DNS
+   configuration model, and the node baseline includes Caddy,
    Supervisor, and the shared unprivileged `agent` runtime user.
    `app-production`, `database`, and `gateway` assignments have no role
    settings in v1.
 12. **Node-related defaults:** local `node:default` preferences point at
-   active, authorized `app-development` hosted nodes when `--self` inspects the CLI's
+   active, authorized `app-development` nodes when `--self` inspects the CLI's
    local configuration, PHP CLI defaults at the node level point at installed
    supported PHP runtimes, and agent IDE defaults at the node level point at
    supported adapters.
@@ -141,19 +141,19 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
 | `node.access_permission_invalid` | A node access grant stores an unknown permission string or a permission set that does not normalize cleanly against the permission registry. |
 | `node.identity_unresolved` | The caller presents no WireGuard identity or an identity that does not resolve to exactly one active node record. |
-| `node.gateway_api_unreachable` | A joined-client or hosted-node CLI caller cannot reach the configured gateway API over WireGuard. |
+| `node.gateway_api_unreachable` | A client or node CLI caller cannot reach the configured gateway API over WireGuard. |
 | `node.gateway_ca_mismatch` | The gateway API presents a certificate chain that does not match the configured gateway trust. |
 | `node.wireguard_peer_missing` | An active node record has no matching gateway-managed WireGuard peer. |
 | `node.wireguard_peer_extra` | Gateway-managed WireGuard state contains a peer that does not belong to an active node record. |
 | `node.wireguard_address_mismatch` | A gateway-managed WireGuard peer address differs from the node record's WireGuard address. |
-| `node.platform_unsupported` | A gateway or hosted node reports an unsupported platform-version identifier. |
+| `node.platform_unsupported` | A gateway or node reports an unsupported platform-version identifier. |
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
-| `node.app_ssh_unreachable` | The gateway cannot SSH to a hosted node. |
+| `node.app_ssh_unreachable` | The gateway cannot SSH to a node. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway runtime. |
-| `node.app_runtime_missing` | A hosted node lacks the minimum Orbit runtime required for gateway applying. |
+| `node.app_runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
-| `node.bootstrap_network_policy_mismatch` | A gateway or hosted node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
-| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` hosted node. |
+| `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
+| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` node. |
 | `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway configuration is absent on the selected node or the target node's default `php` binary differs from gateway configuration. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
@@ -173,7 +173,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |
-| `node.app_runtime_missing` | Rerun the hosted-node bootstrap step that installs the minimum Orbit runtime. |
+| `node.app_runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
@@ -209,7 +209,7 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
 
 Conditions for `node.wireguard_peer_missing` adoption: the selected active
-hosted node has a non-secret identity artifact that matches gateway
+node has a non-secret identity artifact that matches gateway
 configuration, and live WireGuard reality proves exactly one allowed address.
 Private key material is not read or adopted.
 
@@ -223,7 +223,7 @@ unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
 tools, firewall rules, apps, workspaces, processes, proxy routes, schedules, or
 deployments.
 
-Adoption of a missing peer on an active hosted node requires proof of non-secret node identity
+Adoption of a missing peer on an active node requires proof of non-secret node identity
 from the target host. That proof must bind the selected node name, role,
 active role assignments, assignment-local settings, supported platform, live
 interface public key, and
@@ -252,6 +252,6 @@ assignment compatibility and status, access grant integrity, WireGuard
 identity, and presented caller identity resolving to a unique active node
 record. It also covers platform reality, SSH reachability, public IP metadata
 exclusion from probe/restore/adopt behavior, gateway runtime readiness,
-hosted-node bootstrap readiness, and development TLD mapping readiness. The
+node bootstrap readiness, and development TLD mapping readiness. The
 probe additionally covers `node.local_default_invalid`,
 `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`.

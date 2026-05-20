@@ -38,8 +38,8 @@ it('reports command docs lint severities in agent format', function (): void {
 it('keeps the aggregate quality gate complete', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    // The gate fans out docs-lint, phpstan, rector, pint, and pest concurrently
-    // via `bin/quality-check.sh`; the script is the canonical entry point.
+    // The gate fans out docs-lint, phpstan, rector, and pint concurrently while
+    // slicing the Laravel test suite through `bin/quality-check.sh`.
     expect($composer['scripts']['quality-check'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'bin/quality-check.sh',
@@ -52,7 +52,8 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('vendor/bin/pint')
-        ->toContain('vendor/pestphp/pest/bin/pest')
+        ->toContain('for test_path in tests/Unit tests/Feature/*')
+        ->toContain('php artisan test --compact --exclude-group=e2e --exclude-group=slow "$test_path" "$@"')
         ->toContain('--exclude-group=e2e');
 });
 

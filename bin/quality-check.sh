@@ -46,8 +46,16 @@ run_bg rector    vendor/bin/rector process "${RECTOR_ARGS[@]}"
 run_bg pint      vendor/bin/pint "${PINT_ARGS[@]}"
 
 php artisan config:clear --ansi >/dev/null 2>&1 || true
-php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow "$@"
-pest_exit=$?
+pest_exit=0
+for test_path in tests/Unit tests/Feature/*; do
+    php artisan test --compact --exclude-group=e2e --exclude-group=slow "$test_path" "$@"
+    code=$?
+
+    if [ "$code" -ne 0 ]; then
+        pest_exit=$code
+        break
+    fi
+done
 
 wait "$docs_lint_PID" 2>/dev/null
 wait "$phpstan_PID"   2>/dev/null

@@ -43,7 +43,7 @@ JSON output returns the removed step entity with removal metadata.
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
 - The caller is authorized to manage deployment policy for the production app.
-- App-node callers are denied before prompts or side effects.
+- App-role callers are denied before prompts or side effects.
 - Destructive consent is required: confirmation in interactive mode or
   `--force` in non-interactive mode.
 

@@ -23,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
-| `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | `Visible app-node slug.` |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
+| `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | `Visible app-role slug.` |
+| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `force` | `--force` | Required for non-JSON non-interactive destructive consent. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and implies destructive consent. |
 

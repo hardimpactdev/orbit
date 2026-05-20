@@ -6,9 +6,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to inspect or manage the target app or app node.
-- The gateway can reach the target app node over SSH.
-- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
+- The current node identity is authorized to inspect or manage the target app or node.
+- The gateway can reach the target node over SSH.
+- App-role callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 [Back to the public command page.](../app-register.md)
 
@@ -34,7 +34,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted) | n/a | App name slug. |
 | `--path` | `text` | Adopting an unmanaged path. | n/a | Absolute path on the target node. Must not be owned by a different registered app on the same node. |
-| `--node` | `text` | No default can be resolved. | Existing owner / gateway-resolved default app node | Valid app node name. |
+| `--node` | `text` | No default can be resolved. | Existing owner / gateway-resolved default node | Valid node name. |
 | `--root` | `text` | Optional | `public` | Path relative to app path. |
 | `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app PHP-FPM version. This is app runtime configuration, not the owning node's CLI PHP default. |
 | `--domain`| `text` | Optional | n/a | Valid hostname. |
@@ -46,7 +46,7 @@ This command follows the shared
 2. **Resolve Target Node**:
    - Explicit `--node`.
    - Existing app owner if `name` is already registered.
-   - The CLI's stored `node:default` development app node.
+   - The CLI's stored `node:default` development node.
    - Interactive prompt or non-interactive failure.
 3. **Resolve Path**:
    - Explicit `--path`.
@@ -82,7 +82,7 @@ This command follows the shared
 `app:register` converges gateway app configuration and node artifacts:
 
 - **Registry Convergence**: Ensures a gateway app record exists with the resolved name, node, path, root, and PHP version.
-- **Artifact Apply**: Connects to the app node over SSH to:
+- **Artifact Apply**: Connects to the node over SSH to:
   - Configure and restart the PHP-FPM pool for the app.
   - Install managed app runtime configuration (e.g., environment files).
   - Ensure app-owned route configuration exists in `proxy`.
@@ -136,7 +136,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   existing app first; there is no interactive re-assign prompt.
 - **Remote Execution Failures**: SSH timeout before configuration can be written, permission
   denied that prevents Orbit from determining whether configuration was applied, or
-  an app-node execution failure that is not convergent
+  an app-role execution failure that is not convergent
   (`error.code=app.enactment_failed`).
 - **Retryable Artifact Drift**: After configuration is durable, PHP-FPM or runtime
   configuration drift is reported as `success.meta.warnings[]` with singular
@@ -181,6 +181,6 @@ registration attempts.
 
 Role-specific behavior and test mapping live in:
 
-- [`2_app-register_on-control-node.md`](2_app-register_on-control-node.md)
+- [`2_app-register_on-client.md`](2_app-register_on-client.md)
 - [`3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)
-- [`4_app-register_on-app-node.md`](4_app-register_on-app-node.md)
+- [`4_app-register_on-app-role.md`](4_app-register_on-app-role.md)

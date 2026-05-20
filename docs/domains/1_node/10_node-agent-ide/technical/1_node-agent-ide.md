@@ -177,7 +177,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-node denial, operator-caller gateway forwarding, no downstream warning payloads, and read-only guarantees. |
+| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-role denial, operator-caller gateway forwarding, no downstream warning payloads, and read-only guarantees. |
 
 Read-only guarantees mean no SSH and no session creation during the command.
 

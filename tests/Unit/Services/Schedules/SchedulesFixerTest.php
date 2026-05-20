@@ -8,8 +8,10 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
+use App\Models\ScheduleRun;
 use App\Services\Schedules\SchedulesFixer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -17,14 +19,25 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+function createSchedulesFixerGatewayNode(): Node
+{
+    $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
 describe('SchedulesFixer', function (): void {
-    it('installs the orbit scheduler supervisor program when missing', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
-        $app = App::factory()->create(['node_id' => $node->id]);
-        $schedule = Schedule::factory()->forApp($app)->create();
+    it('installs the orbit scheduler supervisor program on the gateway when missing', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
 
-        $action = (new SchedulesFixer($shell))->fix($schedule, new DriftEntry(
+        $action = (new SchedulesFixer($shell))->fixGateway($gateway, new DriftEntry(
             family: 'schedule',
             key: 'schedule.scheduler_missing',
             kind: DriftKind::Missing,
@@ -33,7 +46,7 @@ describe('SchedulesFixer', function (): void {
 
         expect($action)->toMatchArray([
             'family' => 'schedule',
-            'node' => 'app-1',
+            'node' => 'gateway-1',
             'key' => 'schedule.scheduler_missing',
             'mode' => 'fix',
             'status' => 'completed',
@@ -41,13 +54,11 @@ describe('SchedulesFixer', function (): void {
             ->and($shell->scripts[0])->toContain("sudo supervisorctl update 'orbit_scheduler'");
     });
 
-    it('starts the orbit scheduler supervisor program when stopped', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
-        $app = App::factory()->create(['node_id' => $node->id]);
-        $schedule = Schedule::factory()->forApp($app)->create();
+    it('starts the orbit scheduler supervisor program on the gateway when stopped', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
 
-        $action = (new SchedulesFixer($shell))->fix($schedule, new DriftEntry(
+        $action = (new SchedulesFixer($shell))->fixGateway($gateway, new DriftEntry(
             family: 'schedule',
             key: 'schedule.scheduler_stopped',
             kind: DriftKind::Divergent,
@@ -56,63 +67,53 @@ describe('SchedulesFixer', function (): void {
 
         expect($action)->toMatchArray([
             'family' => 'schedule',
-            'node' => 'app-1',
+            'node' => 'gateway-1',
             'key' => 'schedule.scheduler_stopped',
             'mode' => 'fix',
             'status' => 'completed',
         ])->and($shell->scripts)->toBe(["sudo supervisorctl start 'orbit_scheduler'"]);
     });
 
-    it('releases stale schedule locks', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+    it('releases stale gateway schedule locks and marks running history failed', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
+        $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         ScheduleLock::factory()->create([
-            'node_id' => $node->id,
+            'node_id' => $gateway->id,
             'schedule_key' => $schedule->schedule_key,
             'locked_at' => now()->subMinutes(30),
             'expires_at' => now()->subMinutes(20),
         ]);
+        ScheduleRun::factory()->create([
+            'node_id' => $node->id,
+            'schedule_key' => $schedule->schedule_key,
+            'status' => 'running',
+            'exit_code' => null,
+            'finished_at' => null,
+        ]);
         $shell = new SchedulesFixerRemoteShell;
 
-        $action = (new SchedulesFixer($shell))->fix($schedule, new DriftEntry(
+        $action = (new SchedulesFixer($shell))->fixGateway($gateway, new DriftEntry(
             family: 'schedule',
             key: 'schedule.lock_stuck',
             kind: DriftKind::Divergent,
             summary: 'Schedule has a stale execution lock.',
-        ));
+            detail: ['schedule_key' => $schedule->schedule_key],
+        ), $schedule);
+
+        $run = ScheduleRun::query()->where('schedule_key', $schedule->schedule_key)->firstOrFail();
 
         expect($action)->toMatchArray([
             'family' => 'schedule',
-            'node' => 'app-1',
+            'node' => 'gateway-1',
             'key' => 'schedule.lock_stuck',
             'mode' => 'fix',
             'status' => 'completed',
         ])->and(ScheduleLock::query()->where('schedule_key', $schedule->schedule_key)->exists())->toBeFalse()
+            ->and($run->status)->toBe('failed')
+            ->and($run->stderr)->toContain('Schedule lock was released by doctor restore.')
             ->and($shell->scripts)->toBe([]);
-    });
-
-    it('installs run history hook material', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
-        $app = App::factory()->create(['node_id' => $node->id]);
-        $schedule = Schedule::factory()->forApp($app)->create();
-        $shell = new SchedulesFixerRemoteShell;
-
-        $action = (new SchedulesFixer($shell))->fix($schedule, new DriftEntry(
-            family: 'schedule',
-            key: 'schedule.run_history_hook_missing',
-            kind: DriftKind::Missing,
-            summary: 'Run-history hook material is missing.',
-        ));
-
-        expect($action)->toMatchArray([
-            'family' => 'schedule',
-            'node' => 'app-1',
-            'key' => 'schedule.run_history_hook_missing',
-            'mode' => 'fix',
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain('/opt/orbit/schedules/hooks')
-            ->and($shell->scripts[0])->toContain('sudo chmod 0755');
     });
 });
 

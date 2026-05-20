@@ -30,7 +30,7 @@ orbit node:show app-1 --json
 
 - `name`: node name to inspect. Optional. Interactive calls prompt with a data
   table when omitted. Non-interactive calls default to the local default
-  development app node when configured; otherwise they default to the calling
+  development node when configured; otherwise they default to the calling
   node.
   See
   [interactive missing-name resolution](technical/5.1_node-show_input-mode_interactive.md#missing-name-resolution)

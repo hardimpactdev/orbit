@@ -122,7 +122,7 @@ for the exact payload shape.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured operator node.
+- Must run on the gateway host or from a configured client.
 - The caller must hold a grant to the gateway whose permissions include `*`.
 - Both target nodes must exist in gateway configuration.
 - The mutually exclusive modes `--preset`, `--permissions`, `--add`, and

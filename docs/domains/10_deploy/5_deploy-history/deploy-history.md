@@ -6,7 +6,7 @@ List deployment runs for a production app.
 
 Use `deploy:history` to inspect durable deployment attempts recorded on the
 gateway. The command reads stored deployment history; it does not probe the
-owning app node or re-check application health.
+owning node or re-check application health.
 
 ## Usage
 

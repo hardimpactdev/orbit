@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Apps\PruneAppWorkspaces;
-use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
@@ -134,24 +133,6 @@ it('prunes using explicit adapter name', function (): void {
     expect($result['stale_workspaces'][0]['name'])->toBe('stale-ws');
     expect($result['stale_workspaces'][0]['removed'])->toBeTrue();
 });
-
-final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
-{
-    public function activeSession(array $target, string $adapter): ?array
-    {
-        return null;
-    }
-
-    public function deliver(array $target, string $adapter, array $session, string $message): array
-    {
-        return ['status' => 'failed'];
-    }
-
-    public function workspaces(array $target, string $adapter): array
-    {
-        return ['active-ws'];
-    }
-}
 
 final class PruneAppWorkspacesActionRemoteShell implements RemoteShell
 {

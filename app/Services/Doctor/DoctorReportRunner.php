@@ -35,6 +35,7 @@ use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use App\Services\Workspaces\WorkspacesFixer;
 use App\Services\Workspaces\WorkspacesProbe;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class DoctorReportRunner
 {
@@ -42,11 +43,13 @@ final readonly class DoctorReportRunner
 
     private const array CONTROL_CATEGORIES = ['node'];
 
-    private const array GATEWAY_CATEGORIES = ['node'];
+    private const array GATEWAY_CATEGORIES = ['node', 'schedule'];
 
     private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
     private const array DATABASE_CATEGORIES = ['node', 'tool'];
+
+    private const array AGENT_CATEGORIES = ['node', 'tool'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
@@ -85,7 +88,9 @@ final readonly class DoctorReportRunner
         return match ($role) {
             'control' => self::CONTROL_CATEGORIES,
             'gateway' => self::GATEWAY_CATEGORIES,
-            'app' => self::APP_CATEGORIES,
+            'app', NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value => self::APP_CATEGORIES,
+            NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
+            NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
             default => [],
         };
     }
@@ -105,6 +110,10 @@ final readonly class DoctorReportRunner
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
             return self::DATABASE_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveAgentRole($node)) {
+            return self::AGENT_CATEGORIES;
         }
 
         return self::CONTROL_CATEGORIES;
@@ -249,15 +258,15 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
-            $scheduleQuery = Schedule::query()
-                ->with(['app.node', 'node'])
-                ->where(function ($query) use ($node): void {
-                    $query
-                        ->where('node_id', $node->id)
-                        ->orWhereHas('app', fn ($appQuery) => $appQuery->where('node_id', $node->id));
-                });
+            if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
+                $snapshot = $this->schedulesProbe->introspectGateway($node);
 
-            foreach ($scheduleQuery->get() as $schedule) {
+                foreach ($this->schedulesProbe->diffGateway($node, $snapshot) as $entry) {
+                    $issues[] = $this->scheduleGatewayIssuePayload($entry, $node);
+                }
+            }
+
+            foreach ($this->schedulesForNode($node) as $schedule) {
                 $snapshot = $this->schedulesProbe->introspect($schedule);
 
                 foreach ($this->schedulesProbe->diff($schedule, $snapshot) as $entry) {
@@ -513,7 +522,7 @@ final readonly class DoctorReportRunner
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($key, $detail),
             'tool' => $this->applyToolIssue($key, $detail),
-            'schedule' => $this->applyScheduleIssue($key, $detail),
+            'schedule' => $this->applyScheduleIssue($node, $key, $detail, $issue),
             default => null,
         };
     }
@@ -807,9 +816,37 @@ final readonly class DoctorReportRunner
      * @param  array<string, mixed>  $detail
      * @return array<string, mixed>|null
      */
-    private function applyScheduleIssue(string $key, array $detail): ?array
+    private function applyScheduleIssue(Node $node, string $key, array $detail, array $issue): ?array
     {
         $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
+
+        if (in_array($key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.lock_stuck'], true)) {
+            $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $node;
+            $schedule = $scheduleKey === null
+                ? null
+                : Schedule::query()->where('schedule_key', $scheduleKey)->first();
+
+            try {
+                return $this->schedulesFixer->fixGateway(
+                    $gatewayNode,
+                    $this->driftEntryFromStoredParts('schedule', $key, $detail, $issue),
+                    $schedule instanceof Schedule ? $schedule : null,
+                );
+            } catch (\Throwable $e) {
+                return [
+                    'family' => 'schedule',
+                    'node' => $gatewayNode->name,
+                    'code' => $key,
+                    'key' => $key,
+                    'mode' => 'restore',
+                    'status' => 'failed',
+                    'summary' => "Failed to fix {$key}.",
+                    'details' => [
+                        'error' => $e->getMessage(),
+                    ],
+                ];
+            }
+        }
 
         if ($scheduleKey === null) {
             return null;
@@ -897,8 +934,6 @@ final readonly class DoctorReportRunner
             'tool.credentials_mismatch',
             'schedule.scheduler_missing',
             'schedule.scheduler_stopped',
-            'schedule.run_history_hook_missing',
-            'schedule.run_history_hook_mismatch',
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
@@ -1126,6 +1161,21 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function scheduleGatewayIssuePayload(DriftEntry $entry, Node $gatewayNode): array
+    {
+        return $this->annotateIssue([
+            'family' => $entry->family,
+            'node' => $gatewayNode->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function handleWorkspaceAction(Workspace $workspace, DriftEntry $entry): ?array
@@ -1261,6 +1311,43 @@ final readonly class DoctorReportRunner
         }
 
         return null;
+    }
+
+    /**
+     * @return Collection<int, Schedule>
+     */
+    private function schedulesForNode(Node $node): Collection
+    {
+        $query = Schedule::query()
+            ->with(['app.node', 'node'])
+            ->where('enabled', true)
+            ->where('status', 'expected');
+
+        if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
+            return $query->get();
+        }
+
+        return $query
+            ->where(function ($query) use ($node): void {
+                $query
+                    ->where('node_id', $node->id)
+                    ->orWhereHas('app', fn ($appQuery) => $appQuery->where('node_id', $node->id));
+            })
+            ->get();
+    }
+
+    private function gatewayNode(): ?Node
+    {
+        $node = Node::query()
+            ->where('status', 'active')
+            ->where(function ($query): void {
+                $query
+                    ->where('role', 'gateway')
+                    ->orWhereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::Gateway->value));
+            })
+            ->first();
+
+        return $node instanceof Node ? $node : null;
     }
 
     /**

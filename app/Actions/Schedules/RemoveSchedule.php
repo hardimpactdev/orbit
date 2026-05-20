@@ -7,12 +7,14 @@ namespace App\Actions\Schedules;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Schedules\SchedulePayload;
 
 final readonly class RemoveSchedule
 {
     public function __construct(
         private SchedulePayload $payload,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     /**
@@ -20,10 +22,10 @@ final readonly class RemoveSchedule
      */
     public function handle(Schedule $schedule): array
     {
-        $schedule->loadMissing(['app.node.schedulerState', 'node.schedulerState']);
+        $schedule->loadMissing(['app.node', 'node']);
 
-        $targetNode = $schedule->scope === 'app' ? $schedule->app?->node : $schedule->node;
-        $pickupConfirmed = $targetNode instanceof Node && $targetNode->schedulerState?->heartbeat_at !== null;
+        $schedulerNode = $this->gatewaySchedulerNode();
+        $pickupConfirmed = $schedulerNode instanceof Node && $schedulerNode->schedulerState?->heartbeat_at !== null;
 
         $schedule->forceFill([
             'enabled' => false,
@@ -32,13 +34,13 @@ final readonly class RemoveSchedule
 
         $serialized = $this->payload->forSchedule($schedule);
         $name = $schedule->name;
-        $node = $targetNode->name ?? $schedule->target_name;
+        $node = $schedulerNode->name ?? 'gateway';
 
         $schedule->delete();
 
         if (! $pickupConfirmed) {
             throw new GatewayApiException(
-                "Schedule '{$name}' was removed from gateway intent, but the Orbit Scheduler on node '{$node}' could not be confirmed reachable.",
+                "Schedule '{$name}' was removed from gateway intent, but the Orbit Scheduler on gateway node '{$node}' could not be confirmed reachable.",
                 'schedule.scheduler_unreachable',
                 ['next_command' => 'doctor --family=schedule'],
                 errorData: ['schedule' => $serialized],
@@ -52,5 +54,25 @@ final readonly class RemoveSchedule
                 'history_retained' => true,
             ],
         ];
+    }
+
+    private function gatewaySchedulerNode(): ?Node
+    {
+        $gatewayNode = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
+            ->with('schedulerState')
+            ->first();
+
+        if ($gatewayNode instanceof Node) {
+            return $gatewayNode;
+        }
+
+        $legacyGatewayNode = Node::query()
+            ->with('schedulerState')
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->first();
+
+        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 }

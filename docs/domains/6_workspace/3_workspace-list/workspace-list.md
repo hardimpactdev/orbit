@@ -38,7 +38,7 @@ When both `--app` and `--node` are supplied, results are the intersection
 
 ## What Happens
 
-Run `workspace:list` to view registered workspaces without connecting to app nodes.
+Run `workspace:list` to view registered workspaces without connecting to nodes.
 
 `workspace:list` reads the workspace registry from the gateway and applies the
 requested filters:
@@ -51,7 +51,7 @@ requested filters:
    canonical URLs, and registry lifecycle statuses.
 
 `workspace:list` does not:
-- SSH into app nodes.
+- SSH into nodes.
 - Probe workspace artifact health, FPM pools, or filesystem convergence (use
   [`doctor --family=workspace`](../workspace-doctor.md)).
 - Mutate gateway configuration or node artifacts.
@@ -79,7 +79,7 @@ the exact payload shape.
 Use these commands to inspect or act on individual workspaces.
 
 - [`workspace:new`](../1_workspace-new/workspace-new.md) — register a workspace
-- [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — apply workspace artifacts on the app node
+- [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — apply workspace artifacts on the node
 - [`workspace:show`](../4_workspace-show/workspace-show.md) — inspect a single workspace
 - [`workspace:remove`](../5_workspace-remove/workspace-remove.md) — remove a workspace
 - [`doctor --family=workspace`](../workspace-doctor.md) — verify and repair workspace drift

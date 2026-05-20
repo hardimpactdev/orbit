@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-node callers are denied by the gateway with
+- App-role callers are denied by the gateway with
   `error.code=caller_role_not_allowed` before prompts or side effects.
 - The target app name or hostname must resolve to exactly one gateway app record.
 - The caller is authorized to manage the target app.
@@ -89,7 +89,7 @@ If `dry_run` is `false`:
   - Phase B runs the workspace removal cleanup order: stop traffic, stop
     inherited processes, run teardown steps, remove the workspace FPM pool, and
     remove the worktree.
-  - SSH reachability of the app node for cleanup is not a pre-prune prerequisite.
+  - SSH reachability of the node for cleanup is not a pre-prune prerequisite.
   - A Phase B step that cannot finish after workspace configuration removal still completes the workspace removal with warnings.
   - Partial Phase B failures become `success.meta.warnings[]` using the same
     family warning vocabulary and `next_command` handoffs as

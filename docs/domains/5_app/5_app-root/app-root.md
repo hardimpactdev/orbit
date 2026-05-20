@@ -35,7 +35,7 @@ and then re-applies the necessary runtime artifacts on the application node.
     application. If the supplied root equals the current configuration, the configuration
     write is a no-op (`changed: false`); application still runs.
 2.  **Artifact Re-application:** Triggers the gateway to re-render and upload the
-    PHP-FPM configuration to the app node over SSH. The PHP-FPM pool reload
+    PHP-FPM configuration to the node over SSH. The PHP-FPM pool reload
     required to pick up the new document root is part of this step. App-owned
     proxy route configuration continues to belong to the app, but backend proxy
     artifact convergence belongs to the `proxy` family.
@@ -63,7 +63,7 @@ Use `--json` to receive structured output; omit it for a human-readable summary.
 ## Requirements
 
 - The application must exist and be managed by Orbit.
-- The CLI caller role must be `control` or `gateway`. App-node callers are
+- The CLI caller role must be `control` or `gateway`. App-role callers are
   denied before prompts or side effects.
 - The caller must have permission to manage the target application.
 - The application node must be reachable by the gateway over SSH.

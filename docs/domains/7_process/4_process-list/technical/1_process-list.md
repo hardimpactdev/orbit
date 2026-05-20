@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 5. Read latest durable lifecycle events for the selected runtime context when events exist.
 6. Render the selected output.
 
-`process:list` must not SSH to app nodes, run live process manager probes, mutate gateway configuration, or change runtime state.
+`process:list` must not SSH to nodes, run live process manager probes, mutate gateway configuration, or change runtime state.
 
 ## Renderer Contracts
 
@@ -55,7 +55,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 
-Owning app-node reachability is not part of the default list path and does not cause this command to fail.
+Owning app-role reachability is not part of the default list path and does not cause this command to fail.
 
 ## Doctor Relationship
 
@@ -79,7 +79,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, app-node caller allowance, unknown-role denial, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
+| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, app-role caller allowance, unknown-role denial, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
 | `tests/Feature/Commands/Processes/ProcessListInputContractTest.php` | App and workspace input resolution, missing context failures, ambiguous context failures, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

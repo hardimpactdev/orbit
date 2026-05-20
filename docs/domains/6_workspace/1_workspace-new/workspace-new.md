@@ -60,8 +60,8 @@ The following steps describe what the command does during a successful run.
 - **Gateway Configuration**: Creates initial workspace configuration on the
   gateway.
 - **Workspace Source**: Creates a new workspace source for the parent app on
-  the owning app node. Generic and OpenCode-backed sources use git worktrees;
-  Polyscope-backed sources are provisioned through the Polyscope SDK.
+  the owning node. Generic and OpenCode-backed sources use git worktrees;
+  PolyScope-backed sources are provisioned through the PolyScope SDK.
 - **Setup Pipeline**: Runs the same setup behavior exposed by
   [`workspace:setup`](../2_workspace-setup/workspace-setup.md). The pipeline
   creates workspace-owned proxy routes, renders workspace PHP-FPM artifacts,
@@ -72,7 +72,7 @@ The following steps describe what the command does during a successful run.
 
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target app.
-- The gateway can reach the owning app node over SSH.
+- The gateway can reach the owning node over SSH.
 
 ## Output Summary
 

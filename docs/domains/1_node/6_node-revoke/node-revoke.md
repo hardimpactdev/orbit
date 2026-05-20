@@ -85,9 +85,9 @@ status.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured operator node.
+- Must run on the gateway host or from a configured client.
 - Operator callers must be authorized to operate on the gateway node.
-- App-node callers are rejected before prompts or side effects.
+- App-role callers are rejected before prompts or side effects.
 - Both target nodes must exist in gateway configuration.
 - Revoking a grant that is already absent succeeds idempotently when both nodes
 exist. The endpoint node identities are still validated; only the grant

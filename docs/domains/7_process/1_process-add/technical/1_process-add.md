@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
 - `control` and `gateway` callers may proceed when authorized.
-- Runtime artifact rendering requires gateway reachability to the owning app node.
+- Runtime artifact rendering requires gateway reachability to the owning node.
 
 ## Signature
 
@@ -47,7 +47,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the app.
 3. Append gateway-owned process configuration after existing definitions for the app, with command, restart policy, and crash notification policy.
 4. Derive runtime-unit identities for the main app instance and all active workspaces.
-5. Render the derived runtime units on the owning app node.
+5. Render the derived runtime units on the owning node.
 6. When `--start` is present, start the rendered runtime units and record `started` events for units that start successfully.
 7. Render the selected output.
 

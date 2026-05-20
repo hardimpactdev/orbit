@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-node callers are denied by the gateway with
+- App-role callers are denied by the gateway with
   `error.code=caller_role_not_allowed` before prompts or side effects.
 - The authenticated peer is authorized to manage the app.
 - The target app exists in gateway configuration.
@@ -185,7 +185,7 @@ Primary test owners:
 | --- | --- |
 | `tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php` | Action contract: setting/clearing adapter, `inherit` semantics, adapter validation, and workspace cleanup side effects. |
 | `tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php` | Command contract: signature, input resolution, destructive consent logic, success/failure reporting, JSON alignment, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Feature/Commands/Apps/AppAgentIdeCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, and forwarded caller authorization failure. |
+| `tests/Feature/Commands/Apps/AppAgentIdeCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-role caller denial before prompts or side effects, and forwarded caller authorization failure. |
 
 Input-mode-specific test mapping lives in:
 

@@ -11,6 +11,48 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
+function orbitCaServiceTestSeedRootFiles(string $rootCrt = "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n", string $rootKey = 'test-root-key'): void
+{
+    $caDir = storage_path('app/orbit/ca');
+
+    File::ensureDirectoryExists($caDir);
+    File::put("{$caDir}/root.crt", $rootCrt);
+    File::put("{$caDir}/root.key", $rootKey);
+    chmod("{$caDir}/root.key", 0600);
+}
+
+function orbitCaServiceTestSeedValidRootFixture(): void
+{
+    static $fixture = null;
+
+    if ($fixture === null) {
+        $fixtureDir = sys_get_temp_dir().'/orbit-ca-service-fixture-'.getmypid();
+        File::ensureDirectoryExists($fixtureDir);
+
+        $rootKey = "{$fixtureDir}/root.key";
+        $rootCrt = "{$fixtureDir}/root.crt";
+
+        if (! File::exists($rootKey) || ! File::exists($rootCrt)) {
+            $factory = new Factory;
+            $factory->run(sprintf('openssl genrsa -out %s 2048', escapeshellarg($rootKey)))->throw();
+            $factory->run(implode(' ', [
+                'openssl req -x509 -new -nodes',
+                '-key '.escapeshellarg($rootKey),
+                '-sha256 -days 3650',
+                '-out '.escapeshellarg($rootCrt),
+                '-subj '.escapeshellarg('/CN=Orbit Test Root CA/O=Orbit Tests'),
+            ]))->throw();
+        }
+
+        $fixture = [
+            'crt' => File::get($rootCrt),
+            'key' => File::get($rootKey),
+        ];
+    }
+
+    orbitCaServiceTestSeedRootFiles($fixture['crt'], $fixture['key']);
+}
+
 describe('OrbitCaService', function () {
     beforeEach(function () {
         $this->tempStorage = sys_get_temp_dir().'/orbit-ca-test-'.uniqid();
@@ -37,6 +79,8 @@ describe('OrbitCaService', function () {
 
             $service = new OrbitCaService;
             $caDir = storage_path('app/orbit/ca');
+
+            orbitCaServiceTestSeedRootFiles();
 
             $service->ensureRootCa();
 
@@ -80,9 +124,9 @@ describe('OrbitCaService', function () {
             $service = new OrbitCaService;
             $caDir = storage_path('app/orbit/ca');
 
-            $service->ensureRootCa();
+            File::ensureDirectoryExists($caDir);
+            File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
             $crtContent = File::get("{$caDir}/root.crt");
-            File::delete("{$caDir}/root.key");
 
             expect(fn () => $service->ensureRootCa())
                 ->toThrow(RuntimeException::class, 'restore');
@@ -116,8 +160,7 @@ describe('OrbitCaService', function () {
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
-            $service = new OrbitCaService;
-            $service->ensureRootCa();
+            orbitCaServiceTestSeedValidRootFixture();
         });
 
         it('issues a runtime-private leaf cert for a DNS host and returns correct paths', function () {
@@ -134,7 +177,7 @@ describe('OrbitCaService', function () {
 
             $caDir = "{$dataPath}/ca";
             $verify = (new Factory)->run(
-                "openssl verify -CAfile {$caDir}/root.crt {$paths['cert']}"
+                sprintf('openssl verify -CAfile %s %s', escapeshellarg("{$caDir}/root.crt"), escapeshellarg($paths['cert']))
             );
             expect($verify->successful())->toBeTrue();
         });
@@ -148,8 +191,8 @@ describe('OrbitCaService', function () {
 
             $factory = new Factory;
 
-            $serial1 = $factory->run("openssl x509 -in {$paths1['cert']} -serial -noout")->output();
-            $serial2 = $factory->run("openssl x509 -in {$paths2['cert']} -serial -noout")->output();
+            $serial1 = $factory->run(sprintf('openssl x509 -in %s -serial -noout', escapeshellarg($paths1['cert'])))->output();
+            $serial2 = $factory->run(sprintf('openssl x509 -in %s -serial -noout', escapeshellarg($paths2['cert'])))->output();
 
             expect(trim($serial1))->toBe(trim($serial2));
         });
@@ -159,7 +202,7 @@ describe('OrbitCaService', function () {
             $paths = $service->issueLeaf('10.0.0.1');
 
             $factory = new Factory;
-            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+            $text = $factory->run(sprintf('openssl x509 -in %s -text -noout', escapeshellarg($paths['cert'])))->output();
 
             expect($text)->toContain('IP Address:10.0.0.1');
         });
@@ -169,7 +212,7 @@ describe('OrbitCaService', function () {
             $paths = $service->issueLeaf('demo.beast');
 
             $factory = new Factory;
-            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+            $text = $factory->run(sprintf('openssl x509 -in %s -text -noout', escapeshellarg($paths['cert'])))->output();
 
             expect($text)->toContain('DNS:demo.beast');
         });
@@ -237,7 +280,7 @@ describe('OrbitCaService', function () {
 
             $caDir = storage_path('app/orbit/ca');
             $service = new OrbitCaService;
-            $service->ensureRootCa();
+            orbitCaServiceTestSeedRootFiles();
 
             $pem = $service->rootCert();
 
@@ -264,7 +307,7 @@ describe('OrbitCaService', function () {
             ]);
 
             $service = new OrbitCaService;
-            $service->ensureRootCa();
+            orbitCaServiceTestSeedRootFiles();
 
             Node::query()->delete();
             Node::create([
@@ -289,7 +332,7 @@ describe('OrbitCaService', function () {
             ]);
 
             $service = new OrbitCaService;
-            $service->ensureRootCa();
+            orbitCaServiceTestSeedRootFiles();
 
             Node::query()->delete();
             Node::create([

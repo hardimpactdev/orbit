@@ -60,7 +60,7 @@ foreground runs. Detached JSON output returns the created run with
   gateway.
 - The caller is authorized to deploy the production app.
 - The gateway can reach the app's owning node.
-- App-node callers are denied before prompts or side effects.
+- App-role callers are denied before prompts or side effects.
 
 ## Related
 

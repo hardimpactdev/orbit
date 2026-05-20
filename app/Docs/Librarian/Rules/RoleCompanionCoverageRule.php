@@ -15,9 +15,9 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
      * @var array<int, string>
      */
     private const array ROLE_SUFFIXES = [
-        2 => '_on-control-node',
+        2 => '_on-client',
         3 => '_on-gateway-node',
-        4 => '_on-app-node',
+        4 => '_on-app-role',
     ];
 
     /**
@@ -25,9 +25,9 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
      */
     private const array BEHAVIOR_HEADINGS = [
         '## Allowed Paths',
-        '## App-Node Rules',
+        '## App-Role Rules',
         '## Behavior',
-        '## Control-Node Enrollment',
+        '## Client Enrollment',
         '## Error Contract',
         '## First-Gateway Bootstrap',
         '## Forwarding Contract',
@@ -140,8 +140,8 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
             $findings[] = $this->finding($file, 'Role companion files must define role-specific behavior, allowed paths, or denial behavior.');
         }
 
-        if (str_contains($suffix, 'app-node') && ! $this->describesAppNodePath($contents)) {
-            $findings[] = $this->finding($file, 'App-node role companion files must explicitly describe the app-node invocation path.');
+        if (str_contains($suffix, 'app-role') && ! $this->describesAppRolePath($contents)) {
+            $findings[] = $this->finding($file, 'App-role companion files must explicitly describe the app-role invocation path.');
         }
 
         if (! str_contains($contents, "\n## Test Mapping")) {
@@ -156,11 +156,14 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
         return array_any(self::BEHAVIOR_HEADINGS, fn ($heading) => str_contains($contents, (string) $heading));
     }
 
-    private function describesAppNodePath(string $contents): bool
+    private function describesAppRolePath(string $contents): bool
     {
         $lowerContents = strtolower($contents);
 
-        return str_contains($lowerContents, 'app node') || str_contains($lowerContents, 'app-node');
+        return str_contains($lowerContents, 'app role')
+            || str_contains($lowerContents, 'app-role')
+            || str_contains($lowerContents, 'app-development')
+            || str_contains($lowerContents, 'app-production');
     }
 
     private function finding(string $path, string $message): Finding

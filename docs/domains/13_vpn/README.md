@@ -28,7 +28,7 @@ These rules govern all VPN commands and their gateway-execution contract.
 - Operator callers may initiate VPN commands only when they can SSH to the
   gateway over the Orbit/WireGuard path. This is a gateway infrastructure
   exception and does not create a general public SSH path from control to gateway.
-- App-node callers are denied before prompts or side effects.
+- App-role callers are denied before prompts or side effects.
 - `vpn-client:*` commands manage VPN clients for humans and operators, not Orbit node peers.
 
 Node identity is managed separately.

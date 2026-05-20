@@ -62,7 +62,7 @@ Database cleanup requires Orbit to explicitly track a database as workspace-owne
 - The target app must be resolved and authorized.
 - The app must have at least one agent IDE adapter configured (directly or inherited).
 - The gateway must be able to query the effective agent IDE adapter(s).
-  SSH reachability of the app node for cleanup is not a pre-prune prerequisite; cleanup
+  SSH reachability of the node for cleanup is not a pre-prune prerequisite; cleanup
   failures after workspace configuration removal are reported as warnings with repair
   commands.
 

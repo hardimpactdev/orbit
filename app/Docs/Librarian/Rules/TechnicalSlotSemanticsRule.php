@@ -16,9 +16,9 @@ final readonly class TechnicalSlotSemanticsRule implements GroupedRule
      */
     private const array RESERVED_SLOT_SUFFIXES = [
         'slot:1' => '',
-        'slot:2' => '_on-control-node',
+        'slot:2' => '_on-client',
         'slot:3' => '_on-gateway-node',
-        'slot:4' => '_on-app-node',
+        'slot:4' => '_on-app-role',
         'slot:5.1' => '_input-mode_interactive',
         'slot:5.2' => '_input-mode_non-interactive',
         'slot:6.1' => '_output-render_human',

@@ -52,7 +52,7 @@ Example JSON shape:
 ## Service Endpoint
 
 `postgres` exposes a TCP service endpoint reachable only over WireGuard at
-`orbit.<node-tld>:5432` for development app nodes. This is DNS/service endpoint
+`orbit.<node-tld>:5432` for development nodes. This is DNS/service endpoint
 configuration owned by the tool definition, not an HTTP proxy route.
 
 ## Orbit Notes
@@ -66,7 +66,7 @@ only where the managed PostgreSQL service is installed.
 
 `tool:install postgres` requires the target node to have an active
 `database` role assignment. Orbit does not select an app database host here.
-Installing PostgreSQL on an app node is allowed only when that same node also
+Installing PostgreSQL on a node with an app role is allowed only when that same node also
 has an active `database` role.
 
 ## Doctor Relationship

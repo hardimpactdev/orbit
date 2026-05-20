@@ -4,9 +4,22 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('e2e-docker-image-contract');
+pest()->group('e2e', 'e2e-docker-image-contract');
 
 it('does not ship persisted orbit certificate material in the runtime image', function (): void {
+    $availability = new Process([
+        'docker',
+        'image',
+        'inspect',
+        'orbit-e2e-topology-runtime:current',
+    ]);
+
+    $availability->run();
+
+    if ($availability->getExitCode() !== 0) {
+        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current is not available.');
+    }
+
     $forbiddenPaths = [
         '/opt/orbit-source/storage/app/orbit/ca',
         '/opt/orbit-source/storage/app/orbit/certs',

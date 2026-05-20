@@ -7,7 +7,7 @@
 **Effects:** `read`, `gateway-admin`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized operator node with SSH access
+- The caller is a gateway node, or an authorized client with SSH access
   to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The operator can authenticate to the gateway VPN backend when TOTP is
@@ -51,7 +51,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Create, remove, enable, or disable peers.
 - Verify live node reachability.
 - Repair stale node peers or missing node peers.
-- Read app nodes or app-owned runtime state.
+- Read nodes or app-owned runtime state.
 
 ## Renderer Contracts
 

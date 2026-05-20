@@ -38,7 +38,7 @@ These terms define the adapter model that Agent IDE commands use to reach an act
   reverse-maps an absolute filesystem path to an adapter-managed workspace
   descriptor (workspace name, parent app slug, absolute path, adapter
   workspace id). It enables CWD-driven adoption flows such as
-  `workspace:setup` registering a Polyscope worktree on first run. The
+  `workspace:setup` registering a PolyScope worktree on first run. The
   adapter is not the owner of Orbit workspace state; resolved descriptors
   feed an Orbit-side registration that goes through the workspace family's
   standard adoption path.

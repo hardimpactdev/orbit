@@ -23,7 +23,7 @@ These terms describe the update workflow and its components.
 - **Update step:** Ordered local checkout update action: source pull, dependency installation, or migration execution.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
-Fleet update runs through gateway-owned authority, with remote execution using gateway-to-app-node `RemoteShell`. Operator nodes are never remote update targets. A target succeeds only when all required update steps succeed; target results include both successful and failed targets when a fleet update partially fails.
+Fleet update runs through gateway-owned authority, with remote execution using gateway-to-app-role `RemoteShell`. Clients are never remote update targets. A target succeeds only when all required update steps succeed; target results include both successful and failed targets when a fleet update partially fails.
 
 ## Doctor
 

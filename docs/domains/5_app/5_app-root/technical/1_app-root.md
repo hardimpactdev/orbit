@@ -15,9 +15,9 @@ command that writes production runtime state.
 
 **Prerequisites:**
 - The application record must exist in the gateway database.
-- The owning app node must be reachable from the gateway via SSH.
+- The owning node must be reachable from the gateway via SSH.
 - The caller must be authorized to manage the target application and its node.
-- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
+- App-role callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 ## Signature
 
@@ -95,7 +95,7 @@ is unchanged.
     are affected by the document root change.
 3.  **Re-apply Artifacts:**
     - Re-render the affected artifacts using the current configuration.
-    - Upload and apply the artifacts to the app node over SSH via
+    - Upload and apply the artifacts to the node over SSH via
       `RemoteShell::upload` / `run`.
     - The PHP-FPM pool reload required to pick up the new document root is
       part of this step. It is not a separate user-facing surface; it is the
@@ -123,7 +123,7 @@ to `success.meta.warnings[]`.
 ### Errors
 
 - `app.not_found`: The specified application could not be resolved.
-- `caller_role_not_allowed`: The gateway identifies the caller as an app-node peer.
+- `caller_role_not_allowed`: The gateway identifies the caller as an app-role peer.
 - `app.invalid_root`: `root` failed gateway-side string validation (resolves
   outside the app path, is empty, or is absolute).
   `error.meta.field=root`, `error.meta.root`, `error.meta.resolved_path`,
@@ -141,7 +141,7 @@ reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.
 
 | Code | Family | Meaning |
 | --- | --- | --- |
-| `app.fpm_config_mismatch` | `app` | The app's PHP-FPM configuration could not be re-applied to match gateway configuration on the owning app node. |
+| `app.fpm_config_mismatch` | `app` | The app's PHP-FPM configuration could not be re-applied to match gateway configuration on the owning node. |
 | `app.fpm_config_missing` | `app` | The app's PHP-FPM configuration could not be installed while applying. |
 | `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway configuration. |
 | `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed while applying. |

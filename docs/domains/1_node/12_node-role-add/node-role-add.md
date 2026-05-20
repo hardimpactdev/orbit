@@ -2,11 +2,11 @@
 
 [Back to Nodes commands.](../README.md)
 
-Add one hosted role assignment to a node.
+Add one role assignment to a node.
 
 ## Usage
 
-You can run this command to add an additional hosted role assignment to an
+You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash

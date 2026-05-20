@@ -14,18 +14,23 @@ uses(RefreshDatabase::class);
 
 function createScheduleAddInteractiveLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+    }
+
+    return $node;
 }
 
 it('prompts for name, scope, execution source, and interval when all are absent', function (): void {
     createScheduleAddInteractiveLocalNode('gateway');
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     DataTablePrompt::fake([Key::ENTER]);
@@ -43,7 +48,6 @@ it('prompts for name, scope, execution source, and interval when all are absent'
 it('skips name prompt when name argument is supplied', function (): void {
     createScheduleAddInteractiveLocalNode('gateway');
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     DataTablePrompt::fake([Key::ENTER]);
@@ -60,7 +64,6 @@ it('skips name prompt when name argument is supplied', function (): void {
 it('skips target prompt when --app is supplied', function (): void {
     createScheduleAddInteractiveLocalNode('gateway');
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $this->artisan('schedule:add my-schedule --app=docs')
@@ -74,7 +77,6 @@ it('skips target prompt when --app is supplied', function (): void {
 it('prompts for script path when script source is chosen', function (): void {
     createScheduleAddInteractiveLocalNode('gateway');
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $this->artisan('schedule:add my-schedule --app=docs --interval=every\ minute')
@@ -86,7 +88,6 @@ it('prompts for script path when script source is chosen', function (): void {
 it('skips all prompts when all options are supplied', function (): void {
     createScheduleAddInteractiveLocalNode('gateway');
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $this->artisan('schedule:add', [

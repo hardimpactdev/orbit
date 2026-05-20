@@ -9,13 +9,15 @@ use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
+use App\Models\ScheduleRun;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class SchedulesFixer
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private OrbitSchedulerProgramRenderer $renderer = new OrbitSchedulerProgramRenderer,
-        private ScheduleRunHistoryHookRenderer $hookRenderer = new ScheduleRunHistoryHookRenderer,
     ) {}
 
     /**
@@ -23,25 +25,27 @@ final readonly class SchedulesFixer
      */
     public function fix(Schedule $schedule, DriftEntry $entry): ?array
     {
-        $node = $this->targetNode($schedule);
+        $gatewayNode = $this->gatewayNode();
 
-        if (! $node instanceof Node) {
-            return null;
-        }
+        return $gatewayNode instanceof Node
+            ? $this->fixGateway($gatewayNode, $entry, $schedule)
+            : null;
+    }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function fixGateway(Node $gatewayNode, DriftEntry $entry, ?Schedule $schedule = null): ?array
+    {
         if ($entry->key === 'schedule.lock_stuck') {
-            ScheduleLock::query()
-                ->where('node_id', $node->id)
-                ->where('schedule_key', $schedule->schedule_key)
-                ->delete();
+            $this->releaseStuckLock($gatewayNode, $entry, $schedule);
 
-            return $this->action($schedule, $node, $entry);
+            return $this->action($gatewayNode, $entry, $schedule);
         }
 
         $script = match ($entry->key) {
-            'schedule.scheduler_missing' => $this->renderer->installScript($node),
+            'schedule.scheduler_missing' => $this->renderer->installScript($gatewayNode),
             'schedule.scheduler_stopped' => "sudo supervisorctl start 'orbit_scheduler'",
-            'schedule.run_history_hook_missing', 'schedule.run_history_hook_mismatch' => $this->hookRenderer->installScript($schedule),
             default => null,
         };
 
@@ -49,51 +53,84 @@ final readonly class SchedulesFixer
             return null;
         }
 
-        $this->remoteShell->run($node, $script, ['throw' => true]);
+        $this->remoteShell->run($gatewayNode, $script, ['throw' => true]);
 
-        return $this->action($schedule, $node, $entry);
+        return $this->action($gatewayNode, $entry, $schedule);
+    }
+
+    private function releaseStuckLock(Node $gatewayNode, DriftEntry $entry, ?Schedule $schedule): void
+    {
+        $scheduleKey = is_string($entry->detail['schedule_key'] ?? null)
+            ? $entry->detail['schedule_key']
+            : $schedule?->schedule_key;
+
+        $query = ScheduleLock::query()->where('node_id', $gatewayNode->id);
+
+        if ($scheduleKey !== null) {
+            $query->where('schedule_key', $scheduleKey);
+        }
+
+        $query->delete();
+
+        if ($scheduleKey === null) {
+            return;
+        }
+
+        $runningRun = ScheduleRun::query()
+            ->where('schedule_key', $scheduleKey)
+            ->where('status', 'running')
+            ->latest('started_at')
+            ->first();
+
+        if (! $runningRun instanceof ScheduleRun) {
+            return;
+        }
+
+        $runningRun->forceFill([
+            'status' => 'failed',
+            'exit_code' => $runningRun->exit_code ?? 1,
+            'stderr' => trim((string) $runningRun->stderr."\nSchedule lock was released by doctor restore."),
+            'finished_at' => now(),
+        ])->save();
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function action(Schedule $schedule, Node $node, DriftEntry $entry): array
+    private function action(Node $gatewayNode, DriftEntry $entry, ?Schedule $schedule): array
     {
         return [
             'family' => 'schedule',
-            'node' => $node->name,
+            'node' => $gatewayNode->name,
             'code' => $entry->key,
             'key' => $entry->key,
             'mode' => 'fix',
             'status' => 'completed',
-            'summary' => "Repaired Orbit Scheduler for schedule {$schedule->name}.",
-            'details' => [
-                'schedule' => $schedule->name,
-            ],
+            'summary' => $schedule instanceof Schedule
+                ? "Repaired Orbit Scheduler for schedule {$schedule->name}."
+                : 'Repaired gateway Orbit Scheduler.',
+            'details' => array_filter([
+                'schedule' => $schedule?->name,
+                ...($entry->detail ?? []),
+            ], fn (mixed $value): bool => $value !== null),
         ];
     }
 
-    private function targetNode(Schedule $schedule): ?Node
+    private function gatewayNode(): ?Node
     {
-        $schedule->loadMissing(['app.node', 'node']);
+        $gatewayNode = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
+            ->first();
 
-        if ($schedule->scope === 'app') {
-            return $schedule->app?->node;
+        if ($gatewayNode instanceof Node) {
+            return $gatewayNode;
         }
 
-        if ($schedule->scope === 'node') {
-            return $schedule->node;
-        }
+        $legacyGatewayNode = Node::query()
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->first();
 
-        if ($schedule->scope === 'orbit') {
-            $node = Node::query()
-                ->where('role', 'gateway')
-                ->where('status', 'active')
-                ->first();
-
-            return $node instanceof Node ? $node : null;
-        }
-
-        return null;
+        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 }

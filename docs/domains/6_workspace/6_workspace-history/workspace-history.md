@@ -31,7 +31,7 @@ Show workspace setup and lifecycle history.
 
 ## Description
 
-Retrieves a chronological audit log of lifecycle events and setup attempts for a workspace. This command reads durable history from the gateway; it does not perform live reality probes on app nodes.
+Retrieves a chronological audit log of lifecycle events and setup attempts for a workspace. This command reads durable history from the gateway; it does not perform live reality probes on nodes.
 
 Developers use this to:
 - track when a workspace was created or removed;

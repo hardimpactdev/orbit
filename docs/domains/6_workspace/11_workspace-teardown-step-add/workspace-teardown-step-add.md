@@ -19,7 +19,7 @@ for app-specific cleanup that needs the workspace path intact, such as
 dropping feature-specific databases or notifying external services.
 
 Steps are stored as gateway-owned workspace policy and are executed in the
-workspace path on the owning app node, before destructive workspace
+workspace path on the owning node, before destructive workspace
 artifact removal.
 
 ## Arguments

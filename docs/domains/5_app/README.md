@@ -1,7 +1,7 @@
 # App Commands
 
-App commands manage gateway-owned app configuration and the app-node artifacts derived
-from that configuration. Apps belong to app nodes. Gateway and operator nodes are not
+App commands manage gateway-owned app configuration and the app-role artifacts derived
+from that configuration. Apps belong to nodes. Gateway and clients are not
 valid app targets.
 
 ## Domain Rules
@@ -12,14 +12,14 @@ These rules govern all app family commands.
   health configuration.
 - App names are identity slugs: lowercase letters, digits, and hyphens only.
   They cannot start or end with a hyphen and are limited to 40 characters.
-- App-node artifacts are applied by the gateway over SSH.
+- App-role artifacts are applied by the gateway over SSH.
 - Apps may be development or production apps.
 - App hostnames are represented in `proxy` as app-owned route records.
   App commands create, update, and remove the app configuration that owns those
   routes; proxy route registry and backend artifact convergence belong to the
   `proxy` family.
 - Commands that create or set up apps use explicit `--node` first, then the
-  local `node:default` development app node when configured.
+  local `node:default` development node when configured.
 - `app:new` creates or clones app source/path and then uses `app:register`
   behavior to converge app configuration and node artifacts.
 - `app:register` is idempotent. It can adopt an existing app path, re-apply
@@ -39,8 +39,8 @@ These rules govern all app family commands.
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
 belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
-gateway-to-app-node application and process managers live in
-[tech-stack.md#gateway-to-app-node](../../tech-stack.md#gateway-to-app-node) and
+gateway-to-app-role application and process managers live in
+[tech-stack.md#gateway-to-app-role](../../tech-stack.md#gateway-to-app-role) and
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager).
 
 ## App Identity Arguments
@@ -71,7 +71,6 @@ canonical app entity.
 {
   "name": "docs",
   "node": "app-1",
-  "environment": "production",
   "url": "https://docs.example.com",
   "path": "/home/docs/app",
   "root": "public",
@@ -84,10 +83,9 @@ canonical app entity.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | App identity slug. Globally unique in the gateway app registry. |
-| `node` | string | Owning app-node slug. |
-| `environment` | string | `development` or `production`. |
+| `node` | string | Owning node slug. The node's active role (`app-development` or `app-production`) determines the app's environment; the app entity does not carry a separate `environment` field. |
 | `url` | string | Primary intended URL for the app. |
-| `path` | string | Absolute app path on the owning app node. |
+| `path` | string | Absolute app path on the owning node. |
 | `root` | string | Document root relative to `path`. |
 | `repository` | string \| null | Source repository URL recorded for the app, or `null` when none is configured. |
 | `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
@@ -103,14 +101,14 @@ repository value and stores `repository=null` when adopting an unmanaged path.
 ## Caller Role Rule
 
 App commands use gateway-owned access policy for visibility and authorization.
-App-node callers may run app read commands when authorized for the resolved app.
-Hosted-role callers that are not the gateway, including app nodes and
+App-role callers may run app read commands when authorized for the resolved app.
+Hosted-role callers that are not the gateway, including nodes and
 database-only nodes, may not initiate app-level writes, cross-node app creation,
 registration/adoption, destructive cleanup, source-of-truth pruning, or
 preference changes unless a command explicitly documents a narrow exception.
 The current local workflow exception is
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [architecture.md#app-node](../../architecture.md#app-node) and owned by the
+defined by [architecture.md#app-role](../../architecture.md#app-role) and owned by the
 workspace command contract.
 
 ## Commands

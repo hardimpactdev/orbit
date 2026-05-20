@@ -9,7 +9,7 @@
 **Prerequisites:**
 - For the `choose` or `set` sub-action: the CLI caller can reach the Orbit
   gateway, passes the `/api/me` operator-role preflight, and the target node is a
-  visible development app node. Gateway and app callers are rejected before
+  visible development node. Gateway and app callers are rejected before
   prompts or local default mutation.
 - For the `show` and `clear` sub-actions: no gateway reachability, `/api/me`
   preflight, or role check is required; these paths read or write local CLI
@@ -31,14 +31,14 @@ input:
 
 | Sub-action | Trigger | Description |
 | --- | --- | --- |
-| `choose` | Interactive input mode, no `name`, and no `--clear`. | Present visible development app nodes as choices, then store the selected node as the local default. |
+| `choose` | Interactive input mode, no `name`, and no `--clear`. | Present visible development nodes as choices, then store the selected node as the local default. |
 | `show` | Non-interactive input mode, no `name`, and no `--clear`. | Display the current local default. |
 | `set` | `name` is present and `--clear` is absent. | Store the resolved target node as the local default. |
 | `clear` | `--clear` is present. | Remove the local default. |
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Never; interactive input mode can prompt through the `choose` sub-action. | `--clear` is present. | None. | Must match a visible development app node when `set` sub-action is selected. Invalid or non-development nodes fail before side effects. |
+| `name` | `[name]` | Never; interactive input mode can prompt through the `choose` sub-action. | `--clear` is present. | None. | Must match a visible development node when `set` sub-action is selected. Invalid or non-development nodes fail before side effects. |
 | `clear` | `--clear` | Optional. | When `name` is present. | `false`. | Boolean flag. Mutually exclusive with `name`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
@@ -54,15 +54,15 @@ input:
      select `show`.
 2. Resolve `node_default.name`.
    - For `set`, resolve from `[name]`.
-   - For `choose`, prompt from the visible development app-node list. See
+   - For `choose`, prompt from the visible development app-role list. See
      [`5.1_node-default_input-mode_interactive.md`](5.1_node-default_input-mode_interactive.md).
    - For `show` and `clear`, no node target is resolved.
 3. Validate `node_default.name` immediately when the sub-action is `set` or
    `choose`.
    - Configured non-gateway callers must pass a `/api/me` preflight with
      `self.role=control` before prompts or local default writes.
-   - Must resolve to a visible development app node.
-   - Must not be a gateway or operator node.
+   - Must resolve to a visible development node.
+   - Must not be a gateway or client.
    - The caller must be authorized to see the target node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
@@ -75,17 +75,17 @@ input:
 
 ### Choose sub-action
 
-1. Query the gateway for visible development app nodes.
+1. Query the gateway for visible development nodes.
    - Configured callers that are not gateways first call `/api/me`; if `self.role` is not
      `control`, the gateway rejects the command before any prompt is rendered.
 2. Present the authorized nodes as choices.
-3. Store the selected node as the local default development app node.
+3. Store the selected node as the local default development node.
 4. Return the stored name and the `set` action. `choose` is an interactive
    input path, not a separate persisted result action.
 
 ### Show sub-action
 
-1. Read the locally stored default development app node name.
+1. Read the locally stored default development node name.
 2. If a default is set, return the stored name.
 3. If no default is set, return the empty-state result without failure.
 
@@ -98,14 +98,14 @@ interactively, that behavior belongs to the interactive input mode contract.
 1. For configured non-gateway callers, call `/api/me`; if `self.role` is not
    `control`, reject before local default mutation.
 2. Query the gateway for visible nodes.
-3. Validate that the resolved `name` matches a visible development app node.
+3. Validate that the resolved `name` matches a visible development node.
 4. Validate that the caller is authorized to operate against that node.
-5. Store the name as the local default development app node.
+5. Store the name as the local default development node.
 6. Return the stored name and the `set` action.
 
 ### Clear sub-action
 
-1. Remove the locally stored default development app node, if any.
+1. Remove the locally stored default development node, if any.
 2. Return the clear result, indicating whether a default was previously set.
 
 No gateway call, `/api/me` preflight, or role check is required for the clear
@@ -133,7 +133,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Mutually exclusive input | `--clear` is combined with `name`. | Failure |
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
-| Not a development app node | `set` sub-action and the selected node matches a node that is not a development app node. | Failure |
+| Not a development node | `set` sub-action and the selected node matches a node that is not a development node. | Failure |
 | Not authorized | `set` or `choose` sub-action and the caller is not authorized to see or operate on the selected node. | Failure |
 
 The `show` and `clear` sub-actions do not perform caller-role checks and do not
@@ -146,7 +146,7 @@ sub-action is selected instead.
 
 ## Doctor Relationship
 
-- `node:default` is local operator-node configuration, not gateway configuration.
+- `node:default` is local client configuration, not gateway configuration.
 - `doctor --self` may warn when the configured default no longer resolves or is
   no longer authorized. See `node.local_default_invalid` in
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
@@ -155,7 +155,7 @@ sub-action is selected instead.
 - `doctor --self --restore` reports an invalid local default but does not clear or
   replace it. Setting or clearing the local default remains an explicit
   `node:default` action. Recover from `node.local_default_invalid` by running
-  `orbit node:default <valid-development-app-node>` or
+  `orbit node:default <valid-development-app-role>` or
   `orbit node:default --clear`.
 
 ## Activity Logging
@@ -186,7 +186,7 @@ Primary test owners:
 
 `NodeDefaultCommandTest` covers:
 
-- interactive choose from authorized development app-node choices;
+- interactive choose from authorized development app-role choices;
 - show with and without default in non-interactive mode;
 - set with positional `name`;
 - set with invalid/non-development node;
@@ -209,6 +209,6 @@ Renderer-specific test mapping lives in:
 
 Role-specific test mapping lives in:
 
-- [`2_node-default_on-control-node.md`](2_node-default_on-control-node.md#test-mapping)
+- [`2_node-default_on-client.md`](2_node-default_on-client.md#test-mapping)
 - [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md#test-mapping)
-- [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md#test-mapping)
+- [`4_node-default_on-app-role.md`](4_node-default_on-app-role.md#test-mapping)

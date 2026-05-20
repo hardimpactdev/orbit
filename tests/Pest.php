@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Contracts\AgentIdeMessageAdapter;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Nodes\DevelopmentDnsMappingProbe;
+use App\Services\Vpn\ArrayVpnBackend;
+use App\Services\Vpn\VpnBackend;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\ParallelTesting;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -29,6 +36,26 @@ require_once __DIR__.'/E2E/Support/Pest.php';
 pest()->extend(TestCase::class)
     ->beforeEach(function (): void {
         config(['orbit.is_gateway' => true]);
+
+        if (orbitIsDnsCommandTest($this)) {
+            $storagePath = orbitDnsTestStoragePath();
+
+            File::deleteDirectory($storagePath);
+            File::ensureDirectoryExists($storagePath);
+
+            app()->useStoragePath($storagePath);
+        }
+    })
+    ->afterEach(function (): void {
+        if (orbitIsDnsCommandTest($this)) {
+            $storagePath = storage_path();
+
+            app()->useStoragePath(base_path('storage'));
+
+            if (str_starts_with($storagePath, base_path('storage/framework/testing/dns/'))) {
+                File::deleteDirectory($storagePath);
+            }
+        }
     })
     ->in('Feature');
 
@@ -183,6 +210,73 @@ function createTestGatewayNode(array $attributes = []): Node
     return $node;
 }
 
+function createPhpLocalNode(string $role = 'gateway'): Node
+{
+    return Node::factory()->create([
+        'name' => "local-{$role}",
+        'role' => $role,
+        'host' => '10.6.0.1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $config
+ */
+function createPhpTool(Node $node, array $config = []): NodeTool
+{
+    return NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'expected_state' => 'running',
+        'config' => array_merge([
+            'versions' => ['8.5', '8.4'],
+            'cli_version' => '8.5',
+        ], $config),
+    ]);
+}
+
+function vpnLocalNode(string $role): Node
+{
+    return Node::factory()->create([
+        'name' => "local-{$role}",
+        'role' => $role,
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+}
+
+function bindVpnBackend(ArrayVpnBackend $backend): void
+{
+    app()->instance(VpnBackend::class, $backend);
+}
+
+function bindDevelopmentDnsMappingTestDoubles(string $scope): DevelopmentDnsMappingEnactor
+{
+    $safeScope = preg_replace('/[^a-z0-9-]+/i', '-', $scope) ?: 'development-dns';
+    $configDir = storage_path("framework/testing/{$safeScope}/".bin2hex(random_bytes(6)));
+    $enactor = new DevelopmentDnsMappingEnactor($configDir);
+
+    app()->instance(DevelopmentDnsMappingEnactor::class, $enactor);
+    app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($enactor));
+
+    return $enactor;
+}
+
+function orbitDnsTestStoragePath(): string
+{
+    $token = ParallelTesting::token();
+    $suffix = $token === false ? 'single' : "parallel-{$token}";
+
+    return base_path("storage/framework/testing/dns/{$suffix}");
+}
+
+function orbitIsDnsCommandTest(object $testCase): bool
+{
+    return str_contains(orbitPestTestFilename($testCase), 'tests/Feature/Commands/Dns/');
+}
+
 function fakeHomebrewPrefix(): string
 {
     $prefix = storage_path('framework/testing/homebrew');
@@ -242,4 +336,22 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
             ],
         ],
     ];
+}
+
+final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
+{
+    public function activeSession(array $target, string $adapter): ?array
+    {
+        return null;
+    }
+
+    public function deliver(array $target, string $adapter, array $session, string $message): array
+    {
+        return ['status' => 'failed'];
+    }
+
+    public function workspaces(array $target, string $adapter): array
+    {
+        return ['active-ws'];
+    }
 }

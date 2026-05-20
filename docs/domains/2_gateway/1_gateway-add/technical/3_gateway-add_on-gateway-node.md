@@ -27,7 +27,7 @@ verified through `doctor --family=node`.
 Fail before prompts or side effects with:
 
 ```
-This command may only be run from a operator node.
+This command may only be run from a client.
 ```
 
 The JSON renderer returns the same message with `error.code:

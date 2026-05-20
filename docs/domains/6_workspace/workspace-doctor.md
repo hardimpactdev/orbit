@@ -44,10 +44,10 @@ The workspaces probe reads gateway workspace records and checks these layers:
 3. **Source path:** the workspace path exists on the parent app's node, is
    usable as the workspace source directory, and satisfies source-driver path
    policy. Generic worktrees must stay inside `<app path>/.worktrees/...`.
-   Adapter-owned sources such as Polyscope may live outside the parent app
+   Adapter-owned sources such as PolyScope may live outside the parent app
    path when the workspace row records the owning adapter metadata.
 4. **PHP runtime:** the effective workspace PHP version can serve the workspace
-   runtime on the owning app node, and the workspace PHP-FPM endpoint matches
+   runtime on the owning node, and the workspace PHP-FPM endpoint matches
    gateway workspace configuration.
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
@@ -74,12 +74,12 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.path_missing` | The configured workspace path does not exist on the parent app's node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
 | `workspace.path_outside_policy` | A generic workspace path resolves outside the parent app's workspace policy. Adapter-owned paths are checked against their adapter metadata instead of the generic app-root policy. |
-| `workspace.php_version_unavailable` | The effective workspace PHP version cannot serve the workspace runtime on the owning app node. |
+| `workspace.php_version_unavailable` | The effective workspace PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.fpm_config_missing` | The workspace PHP-FPM configuration or endpoint is absent. |
 | `workspace.fpm_config_mismatch` | The workspace PHP-FPM configuration or endpoint differs from gateway workspace configuration. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |
-| `workspace.artifact_extra` | An Orbit-owned workspace worktree, PHP-FPM artifact, or runtime artifact exists on an app node without matching active workspace configuration. |
+| `workspace.artifact_extra` | An Orbit-owned workspace worktree, PHP-FPM artifact, or runtime artifact exists on a node with an app role without matching active workspace configuration. |
 | `workspace.unregistered_path` | During an explicit adoption scope, a selected workspace path exists without a matching gateway workspace record. |
 | `workspace.php_hint_unsupported` | During adoption, `composer.json` provides a PHP version hint that Orbit does not support. |
 

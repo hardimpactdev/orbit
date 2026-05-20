@@ -7,7 +7,7 @@
 **Effects:** `write`, `destructive`, `gateway-admin`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized operator node with SSH access
+- The caller is a gateway node, or an authorized client with SSH access
   to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The operator can authenticate to the gateway VPN backend when TOTP is

@@ -52,7 +52,7 @@ Each activity entry carries the following fields.
   answers "who did this." For gateway-internal apply work that no operator
   initiated directly, causer is the gateway node identity. For work
   initiated by an autonomous agent tool running on an `agent` node, causer
-  is the agent node identity. Orbit does not attribute activity to a
+  is the node identity. Orbit does not attribute activity to a
   per-tool sub-identity, because per-tool identities are spoofable
   without a stronger identity mechanism than the node handshake.
 - **Properties:** Structured audit fields declared by the command or
@@ -182,5 +182,5 @@ These are the hard limits for the activity command domain.
   Doctor and family probes describe what is true now.
 - **Agent activity attribution boundary:** Activity emitted while an
   autonomous agent tool is working on an `agent` node is attributed to
-  the agent node identity. Orbit does not claim per-tool sub-identities,
+  the node identity. Orbit does not claim per-tool sub-identities,
   so a single causer covers every agent tool running on the node.

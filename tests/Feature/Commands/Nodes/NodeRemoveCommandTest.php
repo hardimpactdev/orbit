@@ -17,10 +17,14 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
 
-beforeEach(fn (): null => MockClient::destroyGlobal());
+beforeEach(function (): void {
+    MockClient::destroyGlobal();
+    bindDevelopmentDnsMappingTestDoubles('node-remove-command-dns');
+});
+
 afterEach(function (): void {
     MockClient::destroyGlobal();
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 /**
@@ -214,7 +218,9 @@ describe('node:remove base contract', function (): void {
         ]);
         app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
-        expect(File::exists(storage_path('app/orbit/node-development-dns.d/test.conf')))->toBeTrue();
+        $mappingPath = app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf';
+
+        expect(File::exists($mappingPath))->toBeTrue();
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'app-1',
@@ -223,7 +229,7 @@ describe('node:remove base contract', function (): void {
         ]);
 
         expect($exitCode)->toBe(0);
-        expect(File::exists(storage_path('app/orbit/node-development-dns.d/test.conf')))->toBeFalse();
+        expect(File::exists($mappingPath))->toBeFalse();
     });
 
     it('rejects gateway-node removal before side effects', function (): void {

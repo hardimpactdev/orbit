@@ -115,7 +115,7 @@ class SchedulePayload
     private function visibleSchedules(?Node $caller, ?array $visibleNodeIds): Builder
     {
         return Schedule::query()
-            ->with(['app.node.schedulerState', 'node.schedulerState', 'latestRun'])
+            ->with(['app.node', 'node', 'latestRun'])
             ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->where(function (Builder $query) use ($visibleNodeIds): void {
                 $query
                     ->whereIn('node_id', $visibleNodeIds ?? [])
@@ -150,7 +150,7 @@ class SchedulePayload
      */
     public function forSchedule(Schedule $schedule): array
     {
-        $schedule->loadMissing(['app.node.schedulerState', 'node.schedulerState', 'latestRun']);
+        $schedule->loadMissing(['app.node', 'node', 'latestRun']);
 
         return $this->serialize($schedule);
     }
@@ -160,9 +160,13 @@ class SchedulePayload
      */
     private function serialize(Schedule $schedule): array
     {
-        $targetNode = $schedule->scope === 'app'
-            ? $schedule->app?->node
-            : $schedule->node;
+        $gatewayNode = $this->gatewayNode();
+        $targetNode = match ($schedule->scope) {
+            'app' => $schedule->app?->node,
+            'node' => $schedule->node,
+            'orbit' => $gatewayNode,
+            default => null,
+        };
 
         return [
             'name' => $schedule->name,
@@ -181,9 +185,9 @@ class SchedulePayload
             'enabled' => $schedule->enabled,
             'status' => $schedule->status,
             'scheduler' => [
-                'node' => $targetNode?->name,
-                'heartbeat_at' => $targetNode?->schedulerState?->heartbeat_at?->toIso8601String(),
-                'registry_synced_at' => $targetNode?->schedulerState?->registry_synced_at?->toIso8601String(),
+                'node' => $gatewayNode?->name,
+                'heartbeat_at' => $gatewayNode?->schedulerState?->heartbeat_at?->toIso8601String(),
+                'registry_synced_at' => $gatewayNode?->schedulerState?->registry_synced_at?->toIso8601String(),
             ],
             'last_run' => $schedule->latestRun === null ? null : [
                 'id' => $schedule->latestRun->id,
@@ -193,5 +197,25 @@ class SchedulePayload
                 'finished_at' => $schedule->latestRun->finished_at?->toIso8601String(),
             ],
         ];
+    }
+
+    private function gatewayNode(): ?Node
+    {
+        $gatewayNode = app(NodeRoleAssignments::class)
+            ->activeGatewayNodeQuery()
+            ->with('schedulerState')
+            ->first();
+
+        if ($gatewayNode instanceof Node) {
+            return $gatewayNode;
+        }
+
+        $legacyGatewayNode = Node::query()
+            ->with('schedulerState')
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->first();
+
+        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 }

@@ -32,7 +32,7 @@ options are optional.
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `--role` aliases: `app` matches both app host roles; `control` matches nodes
-without an active hosted role assignment.
+without an active role assignment.
 
 `--role` and `--environment` are scalar enum filters with single-value
 semantics; comma-separated input fails as `validation_failed` because it is not
@@ -75,7 +75,7 @@ invocations.
 ### Filter and sort rules
 
 - If `--role` is present, include only nodes with the matching effective role assignment. The filter uses active `node_roles` assignments, not legacy node-row shadow fields.
-- If `--environment` is present, include only app nodes with the matching
+- If `--environment` is present, include only nodes with the matching
   environment. The filter uses active app role assignments.
 - Filters combine with AND semantics.
 - Preserve the gateway's sort order for every output renderer. The gateway sorts

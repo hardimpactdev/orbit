@@ -41,7 +41,7 @@ The following rules govern how the step is removed.
   history. Past executions of the removed step remain visible in
   [`workspace:history`](../6_workspace-history/workspace-history.md).
 - **Artifact Preservation**: This command does not remove files, artifacts, or
-  databases affected by previous executions of the step on app nodes.
+  databases affected by previous executions of the step on nodes.
 
 ## Examples
 

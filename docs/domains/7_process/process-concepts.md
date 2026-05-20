@@ -51,10 +51,10 @@ These terms define the durable lifecycle records that process commands produce a
 
 - **Process event:** Durable lifecycle history record. `started` and `stopped`
   events are recorded by successful gateway runtime lifecycle actions.
-  `crashed` events are recorded when the runtime hook on the app node reports an
+  `crashed` events are recorded when the runtime hook on the node reports an
   exit.
 - **Crash event:** A process event emitted by the runtime hooks that Orbit
-  manages on app nodes, for definitions whose crash-notification policy is
+  manages on nodes, for definitions whose crash-notification policy is
   enabled. Carries a stable event id, runtime unit name, exit code, exit status,
   and occurrence time.
 

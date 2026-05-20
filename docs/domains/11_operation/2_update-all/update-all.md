@@ -33,16 +33,16 @@ orbit update:all --json
 1. Ask the gateway to authorize the fleet update. The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
 2. Update the caller-local checkout and gateway-local checkout.
 3. After the gateway-local checkout succeeds, the gateway updates selected
-   remote app-node installations in parallel, up to four targets at a time. The
-   gateway is the only node that opens SSH connections to app nodes; the CLI
+   remote app-role installations in parallel, up to four targets at a time. The
+   gateway is the only node that opens SSH connections to nodes; the CLI
    never SSHes to other nodes itself.
 4. Report every per-installation result, including partial failures.
 
-`update:all` updates the local checkout, the gateway, and active app nodes.
-**Operator nodes other than the caller are never remote update targets.** Each
-operator node is an operator workstation and updates through `orbit update` on
+`update:all` updates the local checkout, the gateway, and active nodes.
+**Clients other than the caller are never remote update targets.** Each
+client is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
-updates the gateway checkout and selected app nodes only.
+updates the gateway checkout and selected nodes only.
 
 The command does not create nodes, deploy apps, change app runtime artifacts, or
 repair unrelated family drift. Run doctor after the update when the operator
@@ -62,8 +62,8 @@ the exact shape.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the calling WireGuard peer to update Orbit installations. App-node peers are rejected.
-- The gateway can reach every selected app node through its node execution path (SSH via `RemoteShell`).
+- The gateway authorizes the calling WireGuard peer to update Orbit installations. App-role peers are rejected.
+- The gateway can reach every selected node through its node execution path (SSH via `RemoteShell`).
 - Each selected installation has a writable Orbit checkout, Git remote,
   Composer, and PHP runtime capable of running migrations.
 

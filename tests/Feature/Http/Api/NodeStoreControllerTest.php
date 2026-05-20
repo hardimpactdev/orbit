@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -16,11 +17,11 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    bindDevelopmentDnsMappingTestDoubles('node-store-controller-dns');
 });
 
 afterEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 /**

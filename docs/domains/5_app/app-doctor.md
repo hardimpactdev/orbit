@@ -3,25 +3,27 @@
 [Back to App commands.](README.md)
 
 `doctor --family=app` verifies whether gateway app records still match the
-app facts that make those records runnable on their owning app nodes. It also
+app facts that make those records runnable on their owning nodes. It also
 detects stale runtime artifacts owned by Orbit whose identity no longer maps
 to active gateway app configuration, so post-removal cleanup can be repaired without
 recreating deleted app records.
 
 The app family owns these facts:
 
-- gateway-owned app records: name, environment, owning app node, app path,
-  document root, PHP version, production policy, deployment pipeline configuration,
-  and the agent IDE default set at the app level;
-- app source location: the managed app path exists on the owning app node and
+- gateway-owned app records: name, owning node, app path, document root, PHP
+  version, production policy, deployment pipeline configuration, and the agent
+  IDE default set at the app level (an app's environment is derived from the
+  owning node's `app-development` or `app-production` role and is not stored
+  separately on the app record);
+- app source location: the managed app path exists on the owning node and
   the configured document root exists inside that path;
 - app runtime artifacts: app PHP-FPM configuration, production app user and
-  ownership policy for production apps, app environment/runtime configuration,
+  ownership policy for production apps, managed app runtime configuration,
   and runtime readiness for the configured PHP version;
 - production app health: production app health checks, deployment pipeline
   validity, and latest deployment status recorded as app-owned gateway history;
 - app-owned adoption facts: selected existing app paths that can be tied to an
-  explicit app name and app node during `doctor --adopt`. During adoption,
+  explicit app name and node during `doctor --adopt`. During adoption,
   `composer.json` is the only project file Orbit may inspect for PHP-version
   hints, and only when the app path is a PHP project. Orbit must not read
   `.php-version`, `package.json`, or other project files for app adoption
@@ -39,19 +41,20 @@ and firewall policy belong to `tool` and `firewall_rule`.
 The apps probe reads gateway app records and checks these layers:
 
 1. **Registry configuration:** every selected app record has a valid name,
-   environment, owning app-node reference, app path, document root, PHP version,
-   and lifecycle fields required by the app model.
+   owning node reference, app path, document root, PHP version, and lifecycle
+   fields required by the app model.
 2. **Owning node eligibility:** the owning node reference resolves to an active
-   app node in gateway node configuration. Node runtime reachability is not diagnosed
+   node in gateway node configuration. Node runtime reachability is not diagnosed
    here; unreachable nodes are reported by the node family.
-3. **Source path:** the app path exists on the owning app node and is usable as
+3. **Source path:** the app path exists on the owning node and is usable as
    the app source directory.
 4. **Document root:** the configured document root exists inside the app path
    and is not outside the app path.
 5. **PHP runtime:** the configured PHP version can serve the app runtime on the
-   owning app node, and the app PHP-FPM endpoint matches gateway app configuration.
-6. **Runtime artifacts:** app environment/runtime configuration and managed
-   filesystem ownership match the app environment and production policy.
+   owning node, and the app PHP-FPM endpoint matches gateway app configuration.
+6. **Runtime artifacts:** managed app runtime configuration and filesystem
+   ownership match gateway app configuration and the production policy that
+   applies when the owning node carries `app-production`.
 7. **Production readiness:** production apps have required production runtime
    policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
@@ -71,19 +74,19 @@ Each code below corresponds to a specific layer in the apps probe.
 
 | Code | Detected when |
 | --- | --- |
-| `app.record_incomplete` | A selected app record lacks name, environment, owning app-node reference, app path, document root, PHP version, or required lifecycle fields. |
-| `app.owner_node_invalid` | The app record points at a missing node, unauthorized node, or node that is not an active app node. |
-| `app.path_missing` | The configured app path does not exist on the owning app node. |
+| `app.record_incomplete` | A selected app record lacks name, owning node reference, app path, document root, PHP version, or required lifecycle fields. |
+| `app.owner_node_invalid` | The app record points at a missing node, unauthorized node, or node that is not an active node. |
+| `app.path_missing` | The configured app path does not exist on the owning node. |
 | `app.path_unusable` | The configured app path exists but cannot be read, entered, or managed by Orbit. |
 | `app.root_missing` | The configured document root does not exist inside the app path. |
 | `app.root_outside_path` | The configured document root resolves outside the app path. |
-| `app.php_version_unavailable` | The app's configured PHP version cannot serve the app runtime on the owning app node. |
+| `app.php_version_unavailable` | The app's configured PHP version cannot serve the app runtime on the owning node. |
 | `app.fpm_config_missing` | The app's PHP-FPM configuration or endpoint is absent. |
 | `app.fpm_config_mismatch` | The app's PHP-FPM configuration or endpoint differs from gateway app configuration. |
 | `app.runtime_config_missing` | Managed app runtime configuration required by Orbit is absent. |
 | `app.runtime_config_mismatch` | Managed app runtime configuration exists but differs from gateway app configuration. |
-| `app.fpm_config_extra` | An Orbit-owned app PHP-FPM artifact exists on an app node without matching active app configuration. |
-| `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on an app node without matching active app configuration. |
+| `app.fpm_config_extra` | An Orbit-owned app PHP-FPM artifact exists on a node with an app role without matching active app configuration. |
+| `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
 | `app.production_user_missing` | A production app that requires app-user isolation has no matching app user or ownership policy. |
 | `app.production_user_mismatch` | Production app user, ownership, or PHP-FPM pool identity differs from gateway app configuration. |
 | `app.production_health_unhealthy` | A configured production app health check fails after app runtime is reachable. |
@@ -91,7 +94,7 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.latest_deployment_failed` | The latest deployment run for a production app finished as `failed` or `cancelled` and no newer successful deployment exists. |
 | `app.deployment_run_stuck` | The latest deployment run for a production app is still `running` after the deployment staleness threshold. |
 | `app.agent_ide_default_invalid` | The app-level agent IDE default points at a missing or unsupported adapter. |
-| `app.unregistered_path` | During an explicit adoption scope, a selected app path exists on an app node without a matching gateway app record. |
+| `app.unregistered_path` | During an explicit adoption scope, a selected app path exists on a node with an app role without a matching gateway app record. |
 
 ## App Fix Map
 
@@ -129,7 +132,7 @@ The table below shows what `doctor --adopt` does for each adoptable code.
 
 | Code | `doctor --adopt` behavior |
 | --- | --- |
-| `app.unregistered_path` | Create app configuration only when the selected scope provides an explicit app name, app node, and path, and the observed path is compatible with `app:register` adoption rules. |
+| `app.unregistered_path` | Create app configuration only when the selected scope provides an explicit app name, node, and path, and the observed path is compatible with `app:register` adoption rules. |
 | `app.fpm_config_mismatch` | Update app runtime configuration only when the observed PHP-FPM configuration proves the same app identity and the observed values are supported. |
 | `app.runtime_config_mismatch` | Update app runtime configuration only when the observed runtime configuration proves the same app identity and the observed values are supported. |
 

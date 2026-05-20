@@ -11,9 +11,11 @@ use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
+use App\Models\ScheduleRun;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
+use Throwable;
 
 final readonly class SchedulesProbe
 {
@@ -21,7 +23,7 @@ final readonly class SchedulesProbe
 
     public function __construct(
         private RuntimeBackendProbe $runtimeBackendProbe,
-        private ScheduleRunHistoryHookRenderer $hookRenderer = new ScheduleRunHistoryHookRenderer,
+        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
     ) {}
 
     public function key(): string
@@ -34,6 +36,42 @@ final readonly class SchedulesProbe
         return 'Schedules';
     }
 
+    public function introspectGateway(Node $gatewayNode): ProbeSnapshot
+    {
+        $runtime = $this->runtimeBackendProbe->check($gatewayNode);
+        $schedulerState = SchedulerState::query()->where('node_id', $gatewayNode->id)->first();
+        $schedulerStatus = null;
+
+        if ($runtime->available) {
+            $result = $this->runtimeBackendProbe->remoteShell()->run(
+                $gatewayNode,
+                'supervisorctl status orbit_scheduler 2>/dev/null | awk \'{print $2}\' || true',
+                ['timeout' => 15, 'throw' => false],
+            );
+            $schedulerStatus = $this->normalizeSchedulerStatus(trim($result->stdout));
+        }
+
+        return new ProbeSnapshot([
+            'gateway' => [
+                'runtime_available' => $runtime->available,
+                'scheduler_status' => $schedulerStatus,
+                'heartbeat_at' => $schedulerState?->heartbeat_at?->toISOString(),
+            ],
+        ]);
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    public function diffGateway(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        return [
+            ...$this->checkGatewayRuntimeAndScheduler($gatewayNode, $snapshot),
+            ...$this->checkGatewayFreshness($snapshot),
+            ...$this->checkGatewayLockHealth($gatewayNode, $snapshot),
+        ];
+    }
+
     public function introspect(Schedule $schedule): ProbeSnapshot
     {
         $node = $this->targetNode($schedule);
@@ -42,53 +80,29 @@ final readonly class SchedulesProbe
             return new ProbeSnapshot([]);
         }
 
-        $runtime = $this->runtimeBackendProbe->check($node);
-        $schedulerState = SchedulerState::query()->where('node_id', $node->id)->first();
+        $targetReachable = true;
+        $targetError = null;
 
-        $schedulerStatus = null;
-        $hookExists = null;
-        $hookHash = null;
-
-        if ($runtime->available) {
-            $result = $this->runtimeBackendProbe->remoteShell()->run(
-                $node,
-                'supervisorctl status orbit_scheduler 2>/dev/null | awk \'{print $2}\' || true',
-                ['timeout' => 15, 'throw' => false],
-            );
-            $schedulerStatus = $this->normalizeSchedulerStatus(trim($result->stdout));
-
-            if ($schedulerStatus === 'running') {
-                $hookResult = $this->runtimeBackendProbe->remoteShell()->run(
+        if (! $this->isGatewayNode($node)) {
+            try {
+                $result = $this->runtimeBackendProbe->remoteShell()->run(
                     $node,
-                    'if [ -f "$ORBIT_SCHEDULE_HOOK_PATH" ]; then printf "1\t%s\n" "$(sha256sum "$ORBIT_SCHEDULE_HOOK_PATH" | awk \'{print $1}\')"; else printf "0\t\n"; fi',
-                    [
-                        'timeout' => 15,
-                        'throw' => false,
-                        'env' => [
-                            'ORBIT_SCHEDULE_HOOK_PATH' => $this->hookRenderer->path($schedule),
-                        ],
-                    ],
+                    'true',
+                    ['timeout' => 15, 'throw' => false],
                 );
-                $parts = explode("\t", trim($hookResult->stdout), 2);
-                $hookExists = match ($parts[0] ?? '') {
-                    '1' => true,
-                    '0' => false,
-                    default => null,
-                };
-                $hookHash = ($parts[1] ?? '') !== '' ? $parts[1] : null;
+                $targetReachable = $result->successful();
+                $targetError = $result->successful() ? null : trim($result->output());
+            } catch (Throwable $throwable) {
+                $targetReachable = false;
+                $targetError = $throwable->getMessage();
             }
         }
 
         return new ProbeSnapshot([
             $schedule->schedule_key => [
-                'runtime_available' => $runtime->available,
-                'scheduler_status' => $schedulerStatus,
-                'heartbeat_at' => $schedulerState?->heartbeat_at?->toISOString(),
-                'registry_synced_at' => $schedulerState?->registry_synced_at?->toISOString(),
-                'run_history_hook_path' => $this->hookRenderer->path($schedule),
-                'run_history_hook_hash' => $hookHash,
-                'run_history_hook_expected_hash' => $this->hookRenderer->hash($schedule),
-                'run_history_hook_exists' => $hookExists,
+                'target_node' => $node->name,
+                'target_reachable' => $targetReachable,
+                'target_error' => $targetError,
             ],
         ]);
     }
@@ -101,10 +115,8 @@ final readonly class SchedulesProbe
         return [
             ...$this->checkRecordCompleteness($schedule),
             ...$this->checkTargetEligibility($schedule),
-            ...$this->checkRuntimeAndScheduler($schedule, $snapshot),
-            ...$this->checkFreshness($schedule, $snapshot),
-            ...$this->checkLockHealth($schedule, $snapshot),
-            ...$this->checkRunHistoryHook($schedule, $snapshot),
+            ...$this->checkTargetReachability($schedule, $snapshot),
+            ...$this->checkRunHealth($schedule),
         ];
     }
 
@@ -114,7 +126,7 @@ final readonly class SchedulesProbe
     private function checkRecordCompleteness(Schedule $schedule): array
     {
         $validScope = in_array($schedule->scope, ['app', 'node', 'orbit'], true);
-        $validExecution = in_array($schedule->execution_type, ['command', 'artisan'], true);
+        $validExecution = in_array($schedule->execution_type, ['command', 'script'], true);
 
         if (
             $schedule->schedule_key === ''
@@ -185,17 +197,71 @@ final readonly class SchedulesProbe
         return [];
     }
 
-    private function canRunSchedules(Node $node): bool
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkTargetReachability(Schedule $schedule, ProbeSnapshot $snapshot): array
     {
-        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
+        $observed = $snapshot->get($schedule->schedule_key);
+
+        if (($observed['target_reachable'] ?? null) !== false) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'schedule.target_unreachable',
+                kind: DriftKind::Missing,
+                summary: "Schedule {$schedule->name} target node is unreachable from the gateway.",
+                detail: [
+                    'schedule' => $schedule->name,
+                    'node' => is_string($observed['target_node'] ?? null) ? $observed['target_node'] : null,
+                    'error' => is_string($observed['target_error'] ?? null) ? $observed['target_error'] : null,
+                ],
+            ),
+        ];
     }
 
     /**
      * @return list<DriftEntry>
      */
-    private function checkRuntimeAndScheduler(Schedule $schedule, ProbeSnapshot $snapshot): array
+    private function checkRunHealth(Schedule $schedule): array
     {
-        $observed = $snapshot->get($schedule->schedule_key);
+        $latestRun = ScheduleRun::query()
+            ->where('schedule_key', $schedule->schedule_key)
+            ->latest('started_at')
+            ->first();
+
+        if (! $latestRun instanceof ScheduleRun || $latestRun->status !== 'running') {
+            return [];
+        }
+
+        if ($latestRun->started_at->gte(now()->subMinutes(self::FreshnessMinutes))) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'schedule.run_stuck',
+                kind: DriftKind::Divergent,
+                summary: "Schedule {$schedule->name} has a stuck running history entry.",
+                detail: [
+                    'schedule' => $schedule->name,
+                    'run_id' => $latestRun->id,
+                    'started_at' => $latestRun->started_at->toISOString(),
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayRuntimeAndScheduler(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get('gateway');
 
         if (($observed['runtime_available'] ?? null) !== true) {
             return [
@@ -203,9 +269,9 @@ final readonly class SchedulesProbe
                     family: $this->key(),
                     key: 'schedule.runtime_backend_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "Schedule {$schedule->name} target runtime backend is unavailable.",
+                    summary: "Gateway scheduler runtime backend is unavailable on node {$gatewayNode->name}.",
                     detail: [
-                        'schedule' => $schedule->name,
+                        'node' => $gatewayNode->name,
                     ],
                 ),
             ];
@@ -219,9 +285,9 @@ final readonly class SchedulesProbe
                     family: $this->key(),
                     key: 'schedule.scheduler_missing',
                     kind: DriftKind::Missing,
-                    summary: "Orbit Scheduler program is missing for schedule {$schedule->name}.",
+                    summary: "Orbit Scheduler program is missing on gateway node {$gatewayNode->name}.",
                     detail: [
-                        'schedule' => $schedule->name,
+                        'node' => $gatewayNode->name,
                     ],
                 ),
             ];
@@ -233,9 +299,9 @@ final readonly class SchedulesProbe
                     family: $this->key(),
                     key: 'schedule.scheduler_stopped',
                     kind: DriftKind::Divergent,
-                    summary: "Orbit Scheduler program is not running for schedule {$schedule->name}.",
+                    summary: "Orbit Scheduler program is not running on gateway node {$gatewayNode->name}.",
                     detail: [
-                        'schedule' => $schedule->name,
+                        'node' => $gatewayNode->name,
                         'observed_status' => $status,
                     ],
                 ),
@@ -248,70 +314,49 @@ final readonly class SchedulesProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkFreshness(Schedule $schedule, ProbeSnapshot $snapshot): array
+    private function checkGatewayFreshness(ProbeSnapshot $snapshot): array
     {
-        $observed = $snapshot->get($schedule->schedule_key);
+        $observed = $snapshot->get('gateway');
 
         if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
             return [];
         }
 
-        $issues = [];
         $heartbeatAt = $this->dateValue($observed['heartbeat_at'] ?? null);
-        $registrySyncedAt = $this->dateValue($observed['registry_synced_at'] ?? null);
 
-        if ($heartbeatAt === null || $heartbeatAt->lt(now()->subMinutes(self::FreshnessMinutes))) {
-            $issues[] = new DriftEntry(
+        if ($heartbeatAt !== null && $heartbeatAt->gte(now()->subMinutes(self::FreshnessMinutes))) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
                 family: $this->key(),
                 key: 'schedule.heartbeat_stale',
                 kind: DriftKind::Divergent,
-                summary: "Orbit Scheduler heartbeat is stale for schedule {$schedule->name}.",
-                detail: [
-                    'schedule' => $schedule->name,
-                ],
-            );
-        }
-
-        if ($registrySyncedAt === null || $registrySyncedAt->lt(now()->subMinutes(self::FreshnessMinutes))) {
-            $issues[] = new DriftEntry(
-                family: $this->key(),
-                key: 'schedule.registry_sync_stale',
-                kind: DriftKind::Divergent,
-                summary: "Orbit Scheduler registry sync is stale for schedule {$schedule->name}.",
-                detail: [
-                    'schedule' => $schedule->name,
-                ],
-            );
-        }
-
-        return $issues;
+                summary: 'Orbit Scheduler gateway heartbeat is stale.',
+            ),
+        ];
     }
 
     /**
      * @return list<DriftEntry>
      */
-    private function checkLockHealth(Schedule $schedule, ProbeSnapshot $snapshot): array
+    private function checkGatewayLockHealth(Node $gatewayNode, ProbeSnapshot $snapshot): array
     {
-        $observed = $snapshot->get($schedule->schedule_key);
+        $observed = $snapshot->get('gateway');
 
         if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
             return [];
         }
 
-        $node = $this->targetNode($schedule);
-
-        if (! $node instanceof Node) {
-            return [];
-        }
-
         $lock = ScheduleLock::query()
-            ->where('node_id', $node->id)
-            ->where('schedule_key', $schedule->schedule_key)
+            ->where('node_id', $gatewayNode->id)
             ->where(function ($query): void {
                 $query
                     ->where('expires_at', '<', now())
                     ->orWhere('locked_at', '<', now()->subMinutes(self::FreshnessMinutes));
             })
+            ->orderBy('locked_at')
             ->first();
 
         if (! $lock instanceof ScheduleLock) {
@@ -323,69 +368,14 @@ final readonly class SchedulesProbe
                 family: $this->key(),
                 key: 'schedule.lock_stuck',
                 kind: DriftKind::Divergent,
-                summary: "Schedule {$schedule->name} has a stale execution lock.",
+                summary: "Schedule {$lock->schedule_key} has a stale gateway execution lock.",
                 detail: [
-                    'schedule' => $schedule->name,
-                    'schedule_key' => $schedule->schedule_key,
+                    'schedule_key' => $lock->schedule_key,
                     'locked_at' => $lock->locked_at->toISOString(),
                     'expires_at' => $lock->expires_at?->toISOString(),
                 ],
             ),
         ];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRunHistoryHook(Schedule $schedule, ProbeSnapshot $snapshot): array
-    {
-        $observed = $snapshot->get($schedule->schedule_key);
-
-        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
-            return [];
-        }
-
-        $path = is_string($observed['run_history_hook_path'] ?? null) ? $observed['run_history_hook_path'] : $this->hookRenderer->path($schedule);
-        $expectedHash = is_string($observed['run_history_hook_expected_hash'] ?? null) ? $observed['run_history_hook_expected_hash'] : $this->hookRenderer->hash($schedule);
-        $observedHash = is_string($observed['run_history_hook_hash'] ?? null) ? $observed['run_history_hook_hash'] : null;
-
-        if (($observed['run_history_hook_exists'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'schedule.run_history_hook_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Schedule {$schedule->name} run-history hook is missing.",
-                    detail: [
-                        'schedule' => $schedule->name,
-                        'path' => $path,
-                    ],
-                ),
-            ];
-        }
-
-        if (($observed['run_history_hook_exists'] ?? null) !== true || $observedHash === null) {
-            return [];
-        }
-
-        if ($observedHash !== $expectedHash) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'schedule.run_history_hook_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Schedule {$schedule->name} run-history hook differs from gateway intent.",
-                    detail: [
-                        'schedule' => $schedule->name,
-                        'path' => $path,
-                        'expected_hash' => $expectedHash,
-                        'observed_hash' => $observedHash,
-                    ],
-                ),
-            ];
-        }
-
-        return [];
     }
 
     private function targetNode(Schedule $schedule): ?Node
@@ -401,19 +391,40 @@ final readonly class SchedulesProbe
         }
 
         if ($schedule->scope === 'orbit') {
-            $node = Node::query()
-                ->where('status', 'active')
-                ->where(function ($query): void {
-                    $query
-                        ->where('role', 'gateway')
-                        ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
-                })
-                ->first();
-
-            return $node instanceof Node ? $node : null;
+            return $this->gatewayNode();
         }
 
         return null;
+    }
+
+    private function gatewayNode(): ?Node
+    {
+        $gatewayNode = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
+            ->first();
+
+        if ($gatewayNode instanceof Node) {
+            return $gatewayNode;
+        }
+
+        $legacyGatewayNode = Node::query()
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->first();
+
+        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
+    }
+
+    private function canRunSchedules(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node)
+            || ($node->role === 'gateway' && $node->status === 'active');
+    }
+
+    private function isGatewayNode(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeIsGateway($node)
+            || ($node->role === 'gateway' && $node->status === 'active');
     }
 
     private function normalizeSchedulerStatus(string $status): string

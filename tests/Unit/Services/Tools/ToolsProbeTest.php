@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
@@ -87,7 +88,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => '',
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)->toBe(DriftKind::Missing);
     });
@@ -96,7 +97,7 @@ describe('ToolsProbe', function (): void {
         $node = Node::factory()->create(['role' => 'control', 'status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -105,7 +106,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'not-a-tool']);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.definition_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -267,7 +268,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'running',
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Missing)
             ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
@@ -292,7 +293,7 @@ describe('ToolsProbe', function (): void {
             'config' => toolsProbeAgentRouteConfig('openclaw'),
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_route_missing'))->toBeNull();
     });
@@ -311,7 +312,7 @@ describe('ToolsProbe', function (): void {
             'config' => ['owner_name' => 'hermes'],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
@@ -337,7 +338,7 @@ describe('ToolsProbe', function (): void {
             'config' => toolsProbeAgentRouteConfig('openclaw'),
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
@@ -368,7 +369,7 @@ describe('ToolsProbe', function (): void {
             ],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
@@ -388,7 +389,7 @@ describe('ToolsProbe', function (): void {
             'credentials' => null,
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_credentials_missing')?->kind)->toBe(DriftKind::Missing);
     });

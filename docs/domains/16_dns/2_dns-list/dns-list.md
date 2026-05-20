@@ -5,7 +5,7 @@
 List the DNS resolver overrides that Orbit manages on the caller machine.
 
 `dns:list` reads the resolver configuration that Orbit manages for development
-TLDs on the calling operator node. It is a troubleshooting command for local
+TLDs on the calling client. It is a troubleshooting command for local
 hostname resolution and does not query or mutate gateway configuration.
 
 ## Usage
@@ -44,7 +44,7 @@ Use `--json` for machine-readable resolver entries.
 
 ## Requirements
 
-- The command is running from a operator-node caller.
+- The command is running from a client caller.
 - The caller machine uses Linux or macOS with Orbit-managed local resolver
   configuration available under Orbit's local resolver storage path.
 

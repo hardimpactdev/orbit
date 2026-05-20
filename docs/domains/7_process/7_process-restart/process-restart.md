@@ -5,7 +5,7 @@
 Restart one process, or all processes, in an app or workspace runtime context.
 
 `process:restart` cycles derived runtime units through the gateway on the owning
-app node and records lifecycle events for the transition.
+node and records lifecycle events for the transition.
 
 ## Usage
 

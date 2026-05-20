@@ -89,20 +89,36 @@ function startProfileTestServer(string $documentRoot): array
             throw new RuntimeException('PHP HTTP server exited early: '.trim($stderr));
         }
 
-        $probe = @fsockopen('127.0.0.1', $port, $connectErrorCode, $connectErrorMessage, 0.1);
-
-        if (is_resource($probe)) {
-            fclose($probe);
-
+        if (profileTestServerIsReady($port)) {
             return [$process, $pipes, $port];
         }
 
-        usleep(100_000);
+        usleep(10_000);
     } while (microtime(true) < $deadline);
 
     stopProfileTestServer($process, $pipes);
 
     throw new RuntimeException('Timed out waiting for the PHP HTTP server to start.');
+}
+
+function profileTestServerIsReady(int $port): bool
+{
+    $handle = curl_init("http://127.0.0.1:{$port}/index.php");
+
+    if ($handle === false) {
+        return false;
+    }
+
+    curl_setopt_array($handle, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT_MS => 100,
+        CURLOPT_CONNECTTIMEOUT_MS => 100,
+    ]);
+
+    $response = curl_exec($handle);
+    $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+
+    return $status === 200 && $response === 'profile-ok';
 }
 
 /**

@@ -34,7 +34,7 @@ infrastructure. DNS records, zones, provider configuration, and DNS command
 behavior remain owned by the DNS command family.
 
 In the current topology, the DNS runtime tool is gateway infrastructure. App and
-operator nodes do not own DNS runtime rows unless a future DNS contract expands
+clients do not own DNS runtime rows unless a future DNS contract expands
 node-local DNS support.
 
 The runtime layout — `wg-easy` plus `orbit-dns` sharing wg-easy's network
@@ -44,6 +44,6 @@ namespace so dnsmasq binds the wg-easy WG IP — is specified in
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the DNS runtime tool. DNS record drift belongs
-to the DNS family. The three runtime drift kinds (`dns.container_missing`,
-`dns.port_not_listening`, `dns.config_drift`) are specified in
+to the DNS family. The three runtime drift kinds (`tool.dns_container_missing`,
+`tool.dns_port_not_listening`, `tool.dns_config_drift`) are specified in
 [the DNS bootstrap contract](../dns-bootstrap-contract.md).

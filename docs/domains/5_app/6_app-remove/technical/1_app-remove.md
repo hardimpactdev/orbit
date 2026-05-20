@@ -8,11 +8,11 @@
 - The CLI caller can reach the Orbit gateway.
 - The target app exists in the gateway app registry.
 - The current node identity is authorized to remove the resolved app.
-- The gateway uses SSH to the owning app node for artifact cleanup when
+- The gateway uses SSH to the owning node for artifact cleanup when
   available. SSH reachability is not a pre-configuration prerequisite; if cleanup
   cannot finish after app configuration removal, the command succeeds with structured
   warnings.
-- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
+- App-role callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 This is the canonical technical contract for the `app:remove` command. It owns the signature, input resolution, behavior, and failure semantics.
 
@@ -63,7 +63,7 @@ This command follows the shared
     - Delete app-owned `workspace` rows.
     - Stop and delete app-owned `process`.
 - **Step 3: Node Artifact Cleanup:**
-    - Connect to the app node over SSH.
+    - Connect to the node over SSH.
     - Remove app PHP-FPM configuration.
     - Remove managed runtime configuration.
     - Remove the app path if it is eligible for deletion (see below).
@@ -128,5 +128,5 @@ removal attempts.
 | --- | --- |
 | `tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Configuration removal, dependent artifact deletion logic, and self-targeting detection. |
 | `tests/Unit/Concerns/ResolvesAppFromPathTest.php` | App resolution from name, hostname, and current working directory context. |
-| `tests/Feature/Commands/Apps/AppRemoveCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, and forwarded caller authorization failure. |
+| `tests/Feature/Commands/Apps/AppRemoveCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-role caller denial before prompts or side effects, and forwarded caller authorization failure. |
 | `tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

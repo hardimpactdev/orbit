@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -14,7 +15,7 @@ use Tests\TestCase;
 uses(RefreshDatabase::class);
 
 afterEach(function (): void {
-    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 const CALLER_WG_IP = '10.6.0.99';
@@ -92,6 +93,7 @@ function getApiNodesJson(string $uri, array $server = []): TestResponse
 
 describe('NodeListController', function (): void {
     beforeEach(function (): void {
+        bindDevelopmentDnsMappingTestDoubles('node-list-controller-dns');
         app()->instance(RemoteShell::class, new NodeListControllerRemoteShell);
 
         createCallerNode();

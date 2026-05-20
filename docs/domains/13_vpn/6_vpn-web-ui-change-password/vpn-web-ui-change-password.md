@@ -50,7 +50,7 @@ machine-readable output.
 
 All of the following must be true before the command runs.
 
-- The caller is a gateway or authorized operator node.
+- The caller is a gateway or authorized client.
 - Operator callers can SSH to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
 - The operator can authenticate to the VPN backend when TOTP is required.

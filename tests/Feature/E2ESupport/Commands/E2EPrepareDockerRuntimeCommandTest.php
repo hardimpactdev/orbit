@@ -56,7 +56,7 @@ it('starts sshd for gateway to app node remote shell coverage', function (): voi
         ->toContain('CMD ["/usr/local/bin/orbit-e2e-container"]');
 });
 
-it('runs supervisord under tini and ships the scheduler supervisor program', function (): void {
+it('runs supervisord under tini without shipping the gateway scheduler program', function (): void {
     $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
@@ -64,9 +64,8 @@ it('runs supervisord under tini and ships the scheduler supervisor program', fun
         ->toContain('tini')
         ->toContain('ENTRYPOINT ["/usr/bin/tini", "--"]')
         ->toContain('exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf')
-        ->toContain('[program:orbit_scheduler]')
-        ->toContain('command=/bin/bash -lc "php artisan orbit-scheduler --sleep-seconds=60"')
-        ->toContain('stdout_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.log');
+        ->not->toContain('[program:orbit_scheduler]')
+        ->not->toContain('command=/bin/bash -lc "php artisan orbit-scheduler --sleep-seconds=60"');
 });
 
 it('fails clearly when the docker build fails', function (): void {

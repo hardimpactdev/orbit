@@ -2,10 +2,10 @@
 
 [Back to Nodes commands.](../README.md)
 
-Choose, show, set, or clear the local default development app node.
+Choose, show, set, or clear the local default development node.
 
-Stores a operator-node-local target preference so repeated development commands
-run against a chosen remote app node without requiring `--node` every time.
+Stores a client-local target preference so repeated development commands
+run against a chosen remote node without requiring `--node` every time.
 This is the only command that sets or clears the local default; `node:new`
 never sets it automatically.
 
@@ -17,7 +17,7 @@ orbit node:default
 ```
 
 Run without arguments in interactive input mode to choose from the visible
-development app nodes the current node identity may read. Provide `name` to set
+development nodes the current node identity may read. Provide `name` to set
 it directly. Use `--clear` to remove the preference.
 In non-interactive input mode, omitting `name` and `--clear` shows
 the current local default.
@@ -34,7 +34,7 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 
 ## Arguments and options
 
-- `name`: visible development app node name. Required for the `set` sub-action
+- `name`: visible development node name. Required for the `set` sub-action
   when no interactive prompt is available and a set is requested.
 - `--clear`: clear the local default node. Mutually exclusive with providing
   `name`.
@@ -42,49 +42,49 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 
 ## What Happens
 
-Run `node:default` when you want to choose, set, or clear the development app node your local commands target by default.
+Run `node:default` when you want to choose, set, or clear the development node your local commands target by default.
 
-`node:default` reads and writes local operator-node configuration only. It does
+`node:default` reads and writes local client configuration only. It does
 not mutate gateway node configuration, grant access to the default node, or
 change the gateway endpoint configured by `gateway:add`.
 
 ### Choose or set
 
 In interactive input mode, running `node:default` without a target queries the
-gateway for visible development app nodes and presents them as choices. If the
+gateway for visible development nodes and presents them as choices. If the
 current local default is still in that choice list, it is preselected. Selecting
 a node stores it as the local default. Providing `name` skips
 the choice prompt and validates that node directly.
 
 ### Show (non-interactive no `name`, no `--clear`)
 
-Reads the locally stored default development app node and displays it. No
+Reads the locally stored default development node and displays it. No
 gateway call is required when a default is already stored locally. If no default
 is set, reports that state without failure.
 
 ### Set (`name` provided)
 
-Validates that the named node is a visible development app node by querying the
-gateway, then stores the name as the local default development app node. Setting
+Validates that the named node is a visible development node by querying the
+gateway, then stores the name as the local default development node. Setting
 requires the CLI caller to reach the Orbit gateway and the target to be visible
 to the current identity.
 
 ### Clear (`--clear`)
 
-Removes the locally stored default development app node. This is a local
+Removes the locally stored default development node. This is a local
 configuration change only and does not require gateway reachability when the
 local preference exists.
 
-Commands that accept an app-node target use this resolution order: explicit
+Commands that accept an app-role target use this resolution order: explicit
 `--node`, app or workspace ownership, the local `node:default`, then interactive
 prompt or non-interactive failure.
 
 ### Recovery from doctor warnings
 
 When `doctor --self` reports `node.local_default_invalid`, the stored local
-default points at a missing, unauthorized, or non-development app node. Doctor
+default points at a missing, unauthorized, or non-development node. Doctor
 reports this only; it does not choose or clear a target automatically. Recover
-by running `orbit node:default <valid-development-app-node>` or
+by running `orbit node:default <valid-development-app-role>` or
 `orbit node:default --clear`.
 
 ## Output
@@ -105,8 +105,8 @@ and payload shapes.
 - Choosing or setting a default requires the CLI caller to reach the Orbit
   gateway and pass the `/api/me` operator-role preflight before prompts or local
   default mutation.
-- The target node must be a visible development app node.
-- App-node and gateway callers are rejected before prompts or side effects for
+- The target node must be a visible development node.
+- App-role and gateway callers are rejected before prompts or side effects for
   `choose` and `set`; `show` and `clear` perform no role check.
 
 ## Related Commands

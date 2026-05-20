@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
 - `control` and `gateway` callers may proceed when authorized.
-- Runtime artifact cleanup requires gateway reachability to the owning app node.
+- Runtime artifact cleanup requires gateway reachability to the owning node.
 
 ## Signature
 

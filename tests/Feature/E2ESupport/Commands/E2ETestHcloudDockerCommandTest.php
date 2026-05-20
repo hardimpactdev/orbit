@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Services\E2E\HcloudDockerE2ERunner;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
+    app()->instance(HcloudDockerE2ERunner::class, new HcloudDockerE2ERunner(retrySleepSeconds: 0));
+
     Process::preventStrayProcesses();
 });
 

@@ -11,7 +11,7 @@ The proxy family owns these facts:
   route;
 - managed proxy backend artifacts rendered from those rows;
 - managed TLS material needed by those routes;
-- hostname compatibility material derived from Orbit-managed TLS that app-node
+- hostname compatibility material derived from Orbit-managed TLS that app-role
   tooling can use for Laravel Vite TLS detection;
 - drift between gateway configuration and node proxy backend reality;
 - adoption facts for explicitly selected observed routes that can safely become
@@ -28,7 +28,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
 2. **Owner eligibility:** the owner reference still resolves when the route is
    owned by an app, workspace, gateway route, or tool.
 3. **Node eligibility:** the serving node resolves to a visible active Ubuntu
-   gateway or app node with proxy capability.
+   gateway or node with proxy capability.
 4. **Conflict boundary:** custom routes do not claim domains owned by app,
    workspace, gateway, or tool routes.
 5. **Backend presence:** the expected proxy backend route exists when gateway
@@ -40,11 +40,11 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets.
 7. **TLS material:** the TLS material that Orbit manages exists and matches the
-   route's policy. For DNS hostname routes, this includes the app-node
+   route's policy. For DNS hostname routes, this includes the app-role
    compatibility material used by Laravel Vite TLS detection. Internal IP-only
    routes skip hostname compatibility checks. Expected TLS material is a
    gateway-issued route leaf certificate and key — not CA material issued locally by Caddy,
-   and not an app-node intermediate CA.
+   and not an app-role intermediate CA.
 8. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway configuration are reported as extra route drift.
 9. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend

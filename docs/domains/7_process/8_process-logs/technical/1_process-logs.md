@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer to read process logs for the target app or workspace context. `unknown` callers are denied.
-- Log access requires gateway reachability to the owning app node.
+- Log access requires gateway reachability to the owning node.
 
 ## Signature
 
@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 1. Resolve target app or workspace context from supplied input or local context, and resolve the process definition.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Derive the runtime-unit identity for the selected context.
-4. Open a log read through the gateway on the owning app node.
+4. Open a log read through the gateway on the owning node.
 5. Read up to `lines` historical lines.
 6. If `--follow` is present, keep streaming appended log lines until the operator interrupts the command.
 7. Render the selected output.
@@ -60,7 +60,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
-| Log read failed | The gateway cannot read logs from the owning app node process manager. | Failure (`error.code=process.log_read_failed`). |
+| Log read failed | The gateway cannot read logs from the owning node process manager. | Failure (`error.code=process.log_read_failed`). |
 
 ## Doctor Relationship
 
@@ -87,7 +87,7 @@ Primary test owners:
 | `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for `process:logs` behavior; see detail below. |
 | `tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
 
-`ProcessLogsCommandTest.php` covers context resolution, app-node caller
+`ProcessLogsCommandTest.php` covers context resolution, app-role caller
 allowance, unknown-role denial, bounded log reads, follow-mode streaming, line
 count validation, `--json` with `--follow` rejection, no configuration mutation,
 no direct Supervisor log read, log read failure, and authorization failure.

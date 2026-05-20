@@ -14,6 +14,7 @@ use App\Models\ScheduleRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Spatie\Activitylog\Models\Activity;
@@ -111,6 +112,34 @@ it('returns schedule run failed with captured history for non-zero exits', funct
         ->and($payload['error']['data']['run']['exit_code'])->toBe(1)
         ->and($payload['error']['data']['output']['stderr'])->toBe("Backup target is not mounted.\n")
         ->and(ScheduleRun::query()->where('status', 'failed')->exists())->toBeTrue();
+});
+
+it('runs orbit scoped schedules locally on the gateway', function (): void {
+    createScheduleRunLocalNode('gateway');
+    Schedule::factory()->orbit()->create([
+        'name' => 'gateway-maintenance',
+        'schedule_key' => 'orbit:gateway:gateway-maintenance',
+        'execution_value' => 'php artisan orbit:cleanup',
+    ]);
+    $remoteShell = new ScheduleRunRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+    Process::fake([
+        'php artisan orbit:cleanup' => Process::result(output: "clean\n"),
+    ]);
+    Process::preventStrayProcesses();
+
+    $exitCode = Artisan::call('schedule:run', [
+        'name' => 'gateway-maintenance',
+        '--json' => true,
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['run']['target']['node'])->toBe('local-gateway')
+        ->and($payload['success']['data']['output']['stdout'])->toBe("clean\n")
+        ->and($remoteShell->scripts)->toBe([]);
+
+    Process::assertRan('php artisan orbit:cleanup');
 });
 
 it('forwards non-gateway schedule runs through the typed gateway request', function (): void {

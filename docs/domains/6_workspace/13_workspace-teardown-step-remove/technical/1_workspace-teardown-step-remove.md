@@ -81,7 +81,7 @@ This command follows the shared
 `workspace-teardown-step:remove` deletes a single gateway-owned teardown-step
 record from an app's workspace lifecycle policy and compacts the surviving
 steps' `order` to a continuous sequence. The command writes only to gateway
-configuration. App nodes are not contacted.
+configuration. Nodes are not contacted.
 
 1. **Lookup.** Find the teardown-step record by
    `(step_id, app, phase=teardown)`. If not found, fail before side effects with
@@ -114,7 +114,7 @@ configuration. App nodes are not contacted.
   and app pruning, not by this command.
 - Mutate `workspace_runs` or `workspace_step_runs` records.
 - Undo filesystem side effects, database cleanup, or any artifact produced by
-  previous executions of the removed step on app nodes. Past executions remain
+  previous executions of the removed step on nodes. Past executions remain
   visible in [`workspace:history`](../../6_workspace-history/workspace-history.md).
 - Read project files (`composer.json`, `package.json`, `.php-version`, `.env`,
   lockfiles, or framework manifests) during parent-app inference.
@@ -174,5 +174,5 @@ teardown-step removal attempts.
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/RemoveTeardownStepActionTest.php` | Atomic delete and order-compaction within `(app, phase=teardown)`, refusal to remove a `phase=setup` step, and rejection of step records that do not belong to the resolved app. |
 | `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found as hard validation failure, destructive consent, `--json` never implying `--force`, no runtime lock against in-flight `workspace:remove`, and no history mutation. |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCallerRoleTest.php` | Control and gateway peer acceptance plus app-node peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
+| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCallerRoleTest.php` | Control and gateway peer acceptance plus app-role peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceTeardownStepRemoveTest.php` | Real gateway delete against a registered app with teardown steps, contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight teardown run continues using its start-of-phase snapshot. |

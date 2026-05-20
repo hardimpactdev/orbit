@@ -46,15 +46,15 @@ final readonly class AppNodeWriteDenialRule implements GroupedRule
                 $contractContents = $this->combinedContractContents($commandDirectory);
 
                 if (! str_contains($contractContents, 'caller_role_not_allowed')) {
-                    $findings[] = $this->finding($canonicalFile, 'App write commands must document app-node denial with error.code=caller_role_not_allowed.');
+                    $findings[] = $this->finding($canonicalFile, 'App write commands must document app-role denial with error.code=caller_role_not_allowed.');
                 }
 
-                if (! $this->documentsAppNodeDenial($contractContents)) {
-                    $findings[] = $this->finding($canonicalFile, 'App write commands must explicitly state that app-node callers are denied.');
+                if (! $this->documentsAppRoleDenial($contractContents)) {
+                    $findings[] = $this->finding($canonicalFile, 'App write commands must explicitly state that app-role callers are denied.');
                 }
 
                 if (! $this->documentsPreSideEffectDenial($contractContents)) {
-                    $findings[] = $this->finding($canonicalFile, 'App-node denial must be documented as happening before prompts or side effects.');
+                    $findings[] = $this->finding($canonicalFile, 'App-role denial must be documented as happening before prompts or side effects.');
                 }
             }
         }
@@ -86,9 +86,9 @@ final readonly class AppNodeWriteDenialRule implements GroupedRule
         return strtolower(implode("\n", $contents));
     }
 
-    private function documentsAppNodeDenial(string $contents): bool
+    private function documentsAppRoleDenial(string $contents): bool
     {
-        return str_contains($contents, 'app-node callers are denied')
+        return str_contains($contents, 'app-role callers are denied')
             || str_contains($contents, 'app callers are denied')
             || str_contains($contents, '| `app` | denied')
             || str_contains($contents, 'deny `app` nodes')

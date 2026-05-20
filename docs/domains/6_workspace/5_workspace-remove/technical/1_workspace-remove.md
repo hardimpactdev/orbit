@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The target workspace exists in the gateway workspaces registry.
 - The current node identity is authorized to manage the resolved workspace or its parent app.
-- The gateway uses SSH to the owning app node for artifact cleanup when
+- The gateway uses SSH to the owning node for artifact cleanup when
   available. SSH reachability is not a pre-configuration prerequisite; if
   cleanup cannot finish after workspace configuration removal, the command
   succeeds with structured warnings.
@@ -18,7 +18,7 @@
 This is the canonical technical contract for the `workspace:remove` command. It
 owns the signature, input resolution, behavior, and failure semantics for the
 primary destructive command of the workspace family. It removes
-gateway-owned workspace configuration and its derived app-node artifacts.
+gateway-owned workspace configuration and its derived app-role artifacts.
 
 ## Signature
 
@@ -35,7 +35,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--app` for cross-app disambiguation). |
 | `app` | `--app=<app>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug. Used to disambiguate the workspace lookup. |
-| `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the app node after configuration removal. |
+| `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
@@ -86,7 +86,7 @@ residue afterwards is non-fatal drift.
   removed (proxy routes, inherited processes, FPM pool, teardown steps,
   worktree).
 - When `--keep-files` is present, the prompt body must explicitly state that
-  the worktree will be preserved on the app node.
+  the worktree will be preserved on the node.
 
 ### 3. Execution Sequence
 
@@ -113,12 +113,12 @@ definition.
   (Supervisor programs) for this workspace. Parent app process definitions
   are not modified.
 - **Step 5: Run teardown steps.** Execute configured workspace teardown steps
-  on the app node. The worktree is still present and processes are stopped at
+  on the node. The worktree is still present and processes are stopped at
   this point so teardown scripts see a stable workspace lifecycle environment.
 - **Step 6: Remove FPM pool.** Remove the workspace PHP-FPM pool config and
   reload PHP-FPM.
 - **Step 7: Remove worktree.** Remove the workspace worktree directory on the
-  app node. Skipped when `--keep-files` is set.
+  node. Skipped when `--keep-files` is set.
 
 Each Phase B step reports an outcome of `removed`, `already_absent`, or
 `failed`. `already_absent` is a clean step (registry configuration and node
@@ -151,7 +151,7 @@ runs.
    parent app.
 3. **Worktree Cleanup:**
    - If `--keep-files` is `false`, Step 7 deletes the workspace directory on
-     the app node.
+     the node.
    - If `--keep-files` is `true`, Step 7 is skipped and the worktree is left
      untouched.
 4. **Teardown Steps:** Configured teardown steps run before FPM and worktree
@@ -159,7 +159,7 @@ runs.
 5. **Authorization:**
    - Control and gateway peers must be authorized by the gateway to manage
      the target workspace or its parent app.
-   - App-node peers are denied by the gateway before any side effects.
+   - App-role peers are denied by the gateway before any side effects.
 6. **Idempotence Boundary:**
    - If the workspace record exists, the command proceeds.
    - If the workspace record is absent, the command fails with
@@ -174,7 +174,7 @@ runs.
    environment file, convention, or setup-step side effect. Express database
    cleanup as a workspace teardown step.
 8. **CWD Drift:** When the workspace exists in gateway configuration but the
-   worktree is missing on the app node (or any other node-side artifact has
+   worktree is missing on the node (or any other node-side artifact has
    already been removed out of band), the corresponding Phase B step reports
    `already_absent` and the command still completes Phase A and remaining
    Phase B steps. Registry configuration wins; absent node-side artifacts
@@ -231,5 +231,5 @@ family doctor — not a removal failure.
 | `tests/Feature/Actions/Workspaces/RemoveWorkspaceActionTest.php` | Phase A atomic configuration removal, Phase B step ordering, `--keep-files` worktree preservation, partial cleanup warnings, and teardown step execution. |
 | `tests/Feature/Concerns/ResolveWorkspaceFromCwdTest.php` | CWD-to-workspace resolution, self-targeting detection, and unresolved-CWD failure. |
 | `tests/Unit/Actions/Workspaces/TeardownStepRunnerTest.php` | Teardown step ordering and execution environment. |
-| `tests/Feature/Commands/Workspaces/WorkspaceRemoveCallerRoleTest.php` | Control and gateway peer allowance and app-node peer denial before any side effects, asserted via gateway-applied authorization. |
+| `tests/Feature/Commands/Workspaces/WorkspaceRemoveCallerRoleTest.php` | Control and gateway peer allowance and app-role peer denial before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceRemoveTest.php` | End-to-end `workspace:remove` flow with SSH artifact cleanup, `--keep-files`, `--force`, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

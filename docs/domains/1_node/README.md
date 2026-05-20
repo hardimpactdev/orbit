@@ -1,11 +1,11 @@
 # Node Commands
 
 Nodes are Orbit's foundation. The first machine a new user meets Orbit on is usually a
-joined client: the machine where the CLI is installed, prompts are answered, and
+client: the machine where the CLI is installed, prompts are answered, and
 commands are run.
 
 From there, nodes define the fleet, the role assignments of each machine, which
-platforms are supported, how the gateway reaches hosted nodes, and which consuming nodes may
+platforms are supported, how the gateway reaches nodes, and which consuming nodes may
 operate on which serving nodes.
 
 Node commands are not app runtime commands. They establish where Orbit may run
@@ -16,9 +16,9 @@ build on top of the node model.
 The stable node-family vocabulary is defined in
 [`node-concepts.md`](node-concepts.md). The node-family drift, restore, and adopt
 contract is defined in [`node-doctor.md`](node-doctor.md). Implementation-shape
-details for runtime roles, transport edges, and gateway-to-hosted-node applying
+details for runtime roles, transport edges, and gateway-to-node applying
 live in [tech-stack.md](../../tech-stack.md#platform-and-roles) and
-[tech-stack.md#gateway-to-hosted-node](../../tech-stack.md#gateway-to-hosted-node).
+[tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node).
 
 ## Role Model
 
@@ -28,31 +28,31 @@ Orbit distinguishes three concepts:
   the typed API, WireGuard coordination, certificate authority material,
   development DNS coordination, grants, and doctor convergence. A gateway role
   assignment is stored in the role assignment model but cannot be added through
-  normal role commands and conflicts with every hosted role.
-- **Hosted node roles:** composable roles that prepare a node to serve a kind of
-  workload. The initial hosted roles are `app-development`, `app-production`,
+  normal role commands and conflicts with every role.
+- **Node roles:** composable roles that prepare a node to serve a kind of
+  workload. The initial roles are `app-development`, `app-production`,
   `database`, and `agent`. `agent` is exclusive and selectable only during
   `node:new`; `node role:add` rejects it.
-- **Joined client identity:** a CLI installation that has gateway configuration
-  and a gateway-issued WireGuard identity. A joined client may have no hosted
+- **Client identity:** a CLI installation that has gateway configuration
+  and a gateway-issued WireGuard identity. A client may have no hosted
   roles. It can request self-scoped actions and can operate other nodes only
   through explicit gateway grants.
 
-Hosted roles are code-defined bundles, not open-ended labels. Orbit stores role
+Roles are code-defined bundles, not open-ended labels. Orbit stores role
 assignments only; capabilities are derived internally from the active
 assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
-Hosted nodes may run the Orbit CLI as a stateless gateway client, but they do
+Nodes may run the Orbit CLI as a stateless gateway client, but they do
 not own fleet state or run a local Orbit operator capability layer. They run workload
 services, call the gateway when a local command is invoked, and receive
 gateway-applied changes over SSH.
 
-Hosted-node CLI availability is not general write permission. The current
-hosted-node write exception is
+Node-side CLI availability is not general write permission. The current
+node write exception is
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [architecture.md#hosted-node](../../architecture.md#hosted-node); it remains a
-gateway-mediated local workflow, not local hosted-node ownership of
+defined by [architecture.md#node](../../architecture.md#node); it remains a
+gateway-mediated local workflow, not local node ownership of
 configuration.
 
 ### Compatibility matrix
@@ -67,9 +67,9 @@ Active role assignments must satisfy this matrix:
 | `database` | `app-development`, `app-production` | `gateway`, `agent` |
 | `agent` | none | `gateway`, `app-development`, `app-production`, `database` |
 
-### Hosted role baselines
+### Role baselines
 
-Hosted roles materialize baseline tool intent when a role assignment converges.
+Roles materialize baseline tool intent when a role assignment converges.
 
 | Role | Baseline intent |
 | --- | --- |
@@ -101,8 +101,8 @@ A caller can be:
 - a configured CLI, with local gateway configuration and a gateway-issued
   WireGuard identity, which can call the gateway over HTTPS through WireGuard.
 
-Joined client is an identity/onboarding concept, not a hosted role. A joined
-client may have no hosted roles. Caller eligibility comes from the
+Client is an identity/onboarding concept, not a role. A joined
+client may have no roles. Caller eligibility comes from the
 authenticated WireGuard identity plus gateway grants. The CLI does not check or
 branch on caller role locally.
 Commands that reject specific roles state that in their Prerequisites and
@@ -111,14 +111,14 @@ Failure Semantics.
 ## Hub and spoke model
 
 Orbit uses the
-[hub-and-spoke topology](../../architecture.md#hub-and-spoke) defined by the
-architecture. The gateway is the hub. Joined clients and hosted nodes are spokes
+[hub-and-spoke topology](../../architecture.md#components) defined by the
+architecture. The gateway is the hub. Clients and nodes are spokes
 connected to the gateway; they do not coordinate Orbit work with each other
 directly.
 
 ```text
                       +--------------+
-                      | joined client |
+                      | client |
                       +------+-------+
                              |
                              | HTTPS over WireGuard
@@ -130,12 +130,12 @@ directly.
                              ^
                              | event callbacks only
                              |
-                        hosted-node hooks
+                        node hooks
 ```
 
-Joined clients consume the gateway API. Hosted nodes serve workloads and receive
-gateway-applied changes over SSH. CLI calls from hosted nodes also consume the gateway
-API and may infer local app or workspace context. Non-CLI hosted-node to gateway
+Clients consume the gateway API. Nodes serve workloads and receive
+gateway-applied changes over SSH. CLI calls from nodes also consume the gateway
+API and may infer local app or workspace context. Non-CLI node to gateway
 traffic is limited to narrow event callbacks such as process lifecycle hooks.
 
 ## Domain Rules
@@ -151,15 +151,15 @@ These rules apply to all node commands and define the invariants the family enfo
   platform against that matrix before side effects.
 - Initial provisioning of gateway and hosted hosts is always performed over SSH.
 - After bootstrap, CLI callers communicate with the gateway over HTTPS through
-  WireGuard; the gateway applies hosted-node changes through its node execution
+  WireGuard; the gateway applies node changes through its node execution
   primitive.
-- Joined clients are dedicated CLI callers; hosted nodes may also act as CLI callers
+- Clients are dedicated CLI callers; nodes may also act as CLI callers
   when commands are run from an app or workspace path. Neither role owns fleet
   state.
-- A joined client may store a local default development hosted node. Commands that
-  accept a hosted-node target may use this local default when `--node` is omitted
+- A client may store a local default development node. Commands that
+  accept a node target may use this local default when `--node` is omitted
   and no app or workspace context already determines the owning node.
-- `node:new` never sets the local default development hosted node automatically.
+- `node:new` never sets the local default development node automatically.
   The operator must run `node:default` explicitly.
 - Nodes may store a default agent IDE adapter for apps and workspaces on that
   node. App-level settings override the node default.
@@ -224,19 +224,19 @@ Node transport has different rules before and after bootstrap:
   does not yet have enough Orbit identity, certificates, network trust, or
   gateway registration to participate in Orbit HTTPS calls.
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
-  local gateway configuration. This lets joined clients and CLI clients on hosted nodes
+  local gateway configuration. This lets clients and CLI clients on nodes
   operate without owning fleet state.
 - Gateway VPN administration is the exception: `vpn-client:*` and
-  `vpn-web-ui:*` commands run on the gateway host, so a joined client initiating
+  `vpn-web-ui:*` commands run on the gateway host, so a client initiating
   them needs SSH access to the gateway over Orbit/WireGuard.
-- The gateway uses SSH to communicate with hosted nodes. On-node work such as file
+- The gateway uses SSH to communicate with nodes. On-node work such as file
   writes, service control, log access, package installation, and shell execution
-  is simpler and more explicit over SSH than through an HTTP operator capability layer on the hosted node.
+  is simpler and more explicit over SSH than through an HTTP operator capability layer on the node.
 
 The steady-state paths are therefore:
 
 1. CLI caller to gateway over HTTPS through WireGuard;
-2. gateway to hosted node over SSH when node-side work is required.
+2. gateway to node over SSH when node-side work is required.
 
 ## Role Bootstrap Network Policy
 
@@ -244,14 +244,14 @@ Node provisioning owns the first network policy that makes a node reachable
 without turning node bootstrap into editable firewall configuration. The policy
 is role-aware:
 
-- every managed Ubuntu gateway or hosted node denies unsolicited inbound traffic
+- every managed Ubuntu gateway or node denies unsolicited inbound traffic
   by default, allows outbound traffic, and keeps the Orbit WireGuard interface
   open for in-network traffic;
 - gateway nodes expose only the WireGuard endpoint publicly. Gateway API HTTPS
   ingress is an Orbit-network service bound to the gateway's WireGuard address;
-- hosted nodes with `app-development` do not expose app routes publicly by baseline. Their
+- nodes with `app-development` do not expose app routes publicly by baseline. Their
   Orbit-managed HTTPS routes are reachable through the Orbit network;
-- hosted nodes with `app-production` expose public HTTP/HTTPS ingress for production domains
+- nodes with `app-production` expose public HTTP/HTTPS ingress for production domains
   only. SSH and other node-management access stay on the Orbit network.
 
 Node bootstrap applies this baseline with rollback and reachability checks so a
@@ -260,7 +260,7 @@ configuration after bootstrap belongs to the `firewall_rule` family, but public
 SSH is not part of the steady-state baseline. SSH management traffic must use
 the Orbit/WireGuard path.
 
-Development DNS infrastructure is also node-owned during gateway/hosted-node
+Development DNS infrastructure is also node-owned during gateway/node
 bootstrap. Gateway-provisioned development DNS must be reachable through the
 Orbit network and must not expose an open public resolver.
 
@@ -271,7 +271,7 @@ The node domain owns:
 - fleet membership;
 - node roles, role assignments, and supported platforms;
 - gateway configuration and consuming-node identity;
-- hosted-node reachability from the gateway;
+- node reachability from the gateway;
 - consuming-to-serving node grants;
 - gateway runtime readiness;
 - node lifecycle checks and removal safety.
@@ -293,10 +293,10 @@ own domains.
 
 The ideal node lifecycle is:
 
-1. Start from a joined client with the Orbit CLI.
+1. Start from a client with the Orbit CLI.
 2. Add an existing gateway to local config or bootstrap/register a new gateway.
-3. Register and provision hosted nodes.
-4. Optionally run `node:default` to set a local default development hosted node
+3. Register and provision nodes.
+4. Optionally run `node:default` to set a local default development node
    for repeated local work.
 5. Grant consuming nodes access to serving nodes.
 6. Inspect, update, verify, or remove nodes through gateway-owned configuration.
@@ -321,7 +321,7 @@ Node access grants use role-agnostic relationship terms:
 - `consuming_node`: the node that receives permission to make an Orbit request.
 - `serving_node`: the node that may be accessed by that request.
 
-A serving node can be a hosted node or a gateway when policy allows it. Role
+A serving node can be a node or a gateway when policy allows it. Role
 constraints belong to access policy, not to the argument names.
 
 Each grant carries a normalized permission set stored on the grant row. The
@@ -356,35 +356,35 @@ node is an active node whose role assignments are known to the gateway and
 whose role assignments, node identity, host, and assignment-local settings match the resolved command input for the path
 being requested.
 
-Gateway, hosted-node, and joined-client identities are minted or adopted during
-[`orbit node:new [name]`](1_node-new/node-new.md). Preparing a joined client
+Gateway, node, and client identities are minted or adopted during
+[`orbit node:new [name]`](1_node-new/node-new.md). Preparing a client
 starts with local CLI installation: clone Orbit, install dependencies, and
 symlink `artisan` as `orbit`; the project README owns those installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
-joined client. When a joined client with no configured gateway runs
+client. When a client with no configured gateway runs
 `orbit node:new <gateway-name> --role=gateway --host=<host> --control-name=<control-name>`,
-Orbit provisions the gateway and creates the initiating joined-client identity named by `<control-name>`.
+Orbit provisions the gateway and creates the initiating client identity named by `<control-name>`.
 It then installs that local WireGuard identity, trusts the gateway CA, and stores local
 gateway configuration using `<host>` as the initial gateway endpoint for WireGuard peer configs.
 Finally it verifies gateway API access.
-That initiating joined client does not run `gateway:add` afterward.
+That initiating client does not run `gateway:add` afterward.
 
-Joined-client enrollment is a two-machine flow:
+Client enrollment is a two-machine flow:
 
-1. On the gateway, run the joined-client enrollment flow to create the active
+1. On the gateway, run the client enrollment flow to create the active
    `node` row and mint the WireGuard peer config.
 2. Install the returned WireGuard config on the client machine and connect it
    to the Orbit network.
 3. On the client machine, run `orbit gateway:add [gateway_ip]` to trust the
    gateway CA, verify `/api/me`, and store local gateway settings.
 
-Before a joined client can run
+Before a client can run
 [`orbit gateway:add [gateway_ip]`](../2_gateway/1_gateway-add/gateway-add.md),
 it must already have the WireGuard identity material that the gateway issued installed, and
 the Orbit WireGuard network must be active. `gateway:add` discovers or verifies
 the gateway and stores local gateway connection settings; it does not create
-identity or access policy. This does not apply to the initiating joined client
+identity or access policy. This does not apply to the initiating client
 after successful first-gateway bootstrap, because that flow already performs the
 local onboarding work.
 
@@ -412,7 +412,7 @@ Run this command to detect and repair drift across all node-family artifacts.
 
 Use these commands to register and provision new fleet members.
 
-1. New gateway or hosted node:
+1. New gateway or node:
    [`orbit node:new [name]`](1_node-new/node-new.md)
 
 Gateway onboarding and gateway trust repair commands live in
@@ -438,7 +438,16 @@ serving nodes and what scoped permissions each grant carries.
 
 Use these commands to update, remove, or configure node settings after initial provisioning.
 
-6. [`orbit node:update [name]`](7_node-update/node-update.md)
-7. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
-8. [`orbit node:default [name]`](9_node-default/node-default.md)
-9. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)
+7. [`orbit node:update [name]`](7_node-update/node-update.md)
+8. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
+9. [`orbit node:default [name]`](9_node-default/node-default.md)
+10. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)
+
+### Role assignments
+
+Use these commands to inspect and mutate the role assignments on an existing node.
+
+11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)
+12. [`orbit node role:add [node] [role]`](12_node-role-add/node-role-add.md)
+13. [`orbit node role:update [node] [role]`](13_node-role-update/node-role-update.md)
+14. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)

@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 Target resolution happens before side effects in this order:
 
-1. `--app` resolves the owning app node. If `--node` is also present, it must
+1. `--app` resolves the owning node. If `--node` is also present, it must
    resolve to the same node.
 2. `--node` resolves the target directly.
 3. Local `node:default` is used when no explicit target is supplied.
@@ -37,7 +37,7 @@ Target resolution happens before side effects in this order:
    explicit/default target.
 
 The command must not select a target by cardinality, such as "the only visible
-app node."
+node."
 
 ## Behavior Contract
 

@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-node callers are denied by the gateway before prompts or side effects because deployment policy is app-owned gateway configuration.
+- App-role callers are denied by the gateway before prompts or side effects because deployment policy is app-owned gateway configuration.
 
 ## Signature
 
@@ -84,5 +84,5 @@ policy when reporting `app.deployment_pipeline_invalid`.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php` | Command contract for input validation, production-app eligibility, app-node denial before prompts or side effects, authorization, deployment policy write, order insertion, timeout metadata, retention metadata, failure codes, and app-doctor handoff behavior. |
+| `tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php` | Command contract for input validation, production-app eligibility, app-role denial before prompts or side effects, authorization, deployment policy write, order insertion, timeout metadata, retention metadata, failure codes, and app-doctor handoff behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, production app resolution, order insertion rules, timeout validation, retention validation, and deploy-step entity mapping. |

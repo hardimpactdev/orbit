@@ -4,12 +4,12 @@
 
 ## Catalog
 
-These fields describe the Polyscope Server tool's identity, backend, and support model in Orbit.
+These fields describe the PolyScope Server tool's identity, backend, and support model in Orbit.
 
 | Field | Value |
 | --- | --- |
 | Slug | `polyscope-server` |
-| Label | Polyscope Server |
+| Label | PolyScope Server |
 | Backend | user systemd service |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
@@ -27,7 +27,7 @@ contract.
 
 ## Orbit Notes
 
-Polyscope Server is an agent IDE server capability. Agent IDE workspace and
+PolyScope Server is an agent IDE server capability. Agent IDE workspace and
 provider behavior remain owned by the agent IDE domain when that domain is
 ported.
 
@@ -36,7 +36,7 @@ completed remotely, `tool:install polyscope-server` may report a manual
 `polyscope-server login` recovery step, but that login state is not exposed as
 `tool:credentials`.
 
-`tool:update polyscope-server` runs Polyscope Server's standalone updater and
+`tool:update polyscope-server` runs PolyScope Server's standalone updater and
 then restarts the user systemd service that Orbit manages.
 
 ## Doctor Relationship

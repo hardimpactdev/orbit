@@ -2,7 +2,7 @@
 
 Process commands manage app-owned runtime configuration. A process definition belongs to one app, is stored on the gateway, and is inherited by every workspace for that app.
 
-The gateway is the source of truth for process configuration. When node-side work is required, the gateway renders and applies derived runtime units on the owning app node.
+The gateway is the source of truth for process configuration. When node-side work is required, the gateway renders and applies derived runtime units on the owning node.
 
 ## Domain Rules
 
@@ -42,11 +42,11 @@ Process definitions may opt in to crash notification. When the policy is enabled
 
 ### Crash event intake
 
-These rules describe the narrow internal path that delivers crash events from app nodes to the gateway.
+These rules describe the narrow internal path that delivers crash events from nodes to the gateway.
 
-- Crash events come from a narrow internal app-node-to-gateway intake path
+- Crash events come from a narrow internal app-role-to-gateway intake path
   emitted by Orbit-managed runtime hooks.
-- Crash intake accepts only authenticated active app-node identities and only
+- Crash intake accepts only authenticated active app-role identities and only
   `crashed` events.
 - The intake is idempotent by event id.
 - The intake path is not a CLI command contract.
@@ -59,14 +59,14 @@ These rules describe the durable history that records process state transitions.
   Orbit records `started`, `stopped`, and `crashed` events for SSE consumers,
   CLI streams, and automation.
 - `started` and `stopped` events are recorded by successful gateway runtime lifecycle actions.
-- `crashed` events are recorded when the runtime hook on the app node reports an exit.
+- `crashed` events are recorded when the runtime hook on the node reports an exit.
 
 ### Read commands
 
 These rules describe what default process read commands cover and where live data lives.
 
 - Default process read commands report gateway configuration and the latest durable process events.
-- They do not SSH to app nodes or run live process manager probes.
+- They do not SSH to nodes or run live process manager probes.
 - Live runtime verification belongs to [`doctor --family=process`](process-doctor.md). Live event delivery belongs to the internal event stream.
 
 ### Runtime lifecycle commands
@@ -112,7 +112,7 @@ Derived process runtime units expose a runtime environment that is separate from
 
 ## Development Server Runtime
 
-Process commands store the operator-provided command and do not rewrite it for a specific frontend server. A development server that must be reachable from a operator node browser or support HMR across the Orbit network must bind to a node-reachable interface instead of loopback. For Vite-backed processes, the expected command shape is:
+Process commands store the operator-provided command and do not rewrite it for a specific frontend server. A development server that must be reachable from a client browser or support HMR across the Orbit network must bind to a node-reachable interface instead of loopback. For Vite-backed processes, the expected command shape is:
 
 ```text
 npm run dev -- --host=0.0.0.0
@@ -124,7 +124,7 @@ Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by the
 
 ## Crash Event Delivery
 
-The crash hooks that Orbit manages on app nodes post `crashed` events back to the gateway when the process definition's crash-notification policy is enabled. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
+The crash hooks that Orbit manages on nodes post `crashed` events back to the gateway when the process definition's crash-notification policy is enabled. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
 
 When the runtime unit name resolves to active process configuration, the event is linked to the process, app, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
 

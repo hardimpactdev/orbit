@@ -16,7 +16,7 @@ For agents the gap is the same shape. An LLM can drive each tool as a separate s
 
 Orbit wraps that model in a single command surface — the same commands from `orbit app:new` on day one to a security-update sweep on day three hundred. Because Orbit runs on always-on machines, an agent can keep working against a stable environment while you're away from the keyboard.
 
-That surface sits on a private VPN. Orbit uses a gateway as the fleet authority; every other actor — hosted nodes, developer machines, CI runners, agent nodes running first-party tools like OpenClaw or Hermes — joins the VPN as a peer and acts through the gateway.
+That surface sits on a private VPN. Orbit uses a gateway as the fleet authority; every other actor — workload nodes, developer machines, CI runners, nodes running first-party agent tools like OpenClaw or Hermes — joins the VPN as a peer and acts through the gateway.
 
 There is no SSH path in from outside, and inside the network every action is bound to a revocable grant. Revoke the grant and the actor loses its permissions; disable the peer and it falls off the network entirely. The same mechanism that lets an agent operate the fleet is what lets you shut it down in one command.
 
@@ -26,10 +26,10 @@ Every action flowing through the gateway also makes the fleet auditable by defau
 
 Orbit is an open-source tool for web app infrastructure. It manages local development, hosted apps, workspaces, services, deployment steps, scheduler entries, process supervision, proxy routes, DNS integration, and drift repair through one CLI.
 
-To understand how Orbit is designed — gateway and hosted nodes, state families, the CLI command contract, and how drift is resolved — read [Architecture](architecture.md).
+To understand how Orbit is designed — gateway, node roles, state families, the CLI command contract, and how drift is resolved — read [Architecture](architecture.md).
 
 ## Boundaries
 
-Orbit is open source: no fee for the tool itself, no third party between you and your servers, fully sovereign. The trade-off is infrastructure ownership. Orbit is built around a gateway node and one or more hosted nodes, so you pay for and operate that infrastructure. In exchange, you can develop from a low-powered machine over the network, see the app you're building on any device on the fleet, and treat dev, staging, and production as one system.
+Orbit is open source: no fee for the tool itself, no third party between you and your servers, fully sovereign. The trade-off is infrastructure ownership. Orbit is built around a gateway node and one or more workload nodes, so you pay for and operate that infrastructure. In exchange, you can develop from a low-powered machine over the network, see the app you're building on any device on the fleet, and treat dev, staging, and production as one system.
 
 To see the current implementation choices that make that architecture real — Laravel, WireGuard, Caddy, Supervisor, PHP-FPM, and the gateway API runtime — read [Tech Stack](tech-stack.md).

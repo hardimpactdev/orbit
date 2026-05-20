@@ -2,7 +2,7 @@
 
 [Back to App commands.](../README.md)
 
-Create a new Orbit-managed app on an app node.
+Create a new Orbit-managed app on a node with an app role.
 
 ## Usage
 
@@ -15,7 +15,7 @@ orbit app:new [name] --domain=example.com --json
 
 ## Description
 
-`app:new` creates or clones a new application on a target app node through the
+`app:new` creates or clones a new application on a target node through the
 gateway over SSH. After creating the app source, it writes initial gateway configuration
 and runs the standard app registration pipeline to converge app runtime artifacts,
 proxy routes, and process definitions.
@@ -56,8 +56,8 @@ The steps below describe what the command does during a successful run.
 ## Requirements
 
 - The CLI caller must be able to reach the Orbit gateway.
-- The gateway must be able to reach the target app node over SSH.
-- The target node must be an active app node.
+- The gateway must be able to reach the target node over SSH.
+- The target node must be an active node.
 
 ## Output
 

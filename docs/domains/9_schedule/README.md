@@ -2,9 +2,9 @@
 
 Schedule commands manage recurring Orbit-owned work. The command family and durable state family are both `schedule`.
 
-The Orbit Scheduler is the schedule executor. It is a resident `orbit-scheduler` Artisan-command daemon supervised by the process manager (Supervisor) on every gateway and app node. Schedule configuration and durable run history live on the gateway; the scheduler reads configuration, dispatches due runs locally, and reports run history back over the existing CLI-to-gateway HTTPS edge.
+The Orbit Scheduler is the schedule executor. It is a resident `orbit-scheduler` Artisan-command daemon supervised by Supervisor **on the gateway only**. Schedule definitions, locks, heartbeat, and durable run history all live in the gateway database.
 
-The scheduler evaluates due schedules at least once per minute, aligned to wall-clock minute boundaries. Each tick fetches the node's schedule list from the gateway, evaluates which schedules are due in the current minute, and fires them. Schedule expressions remain minute-resolution; the tick interval is an implementation detail. `orbit schedule:run` performs one such tick on demand and shares its evaluation logic with the daemon.
+The scheduler evaluates due schedules at least once per minute, aligned to wall-clock minute boundaries. Each tick reads every enabled schedule from the gateway database, claims a per-schedule lock, then dispatches each due schedule in parallel. Schedules whose target resolves to the gateway run locally; schedules targeting any other node execute on that node through `RemoteShell` (SSH). The result of every run — success, failure, exit code, captured output, dispatch failure — is recorded centrally in `schedule_runs`. Schedule expressions remain minute-resolution; the tick interval is an implementation detail. `orbit schedule:run` performs one such tick on demand and shares its evaluation logic with the daemon.
 
 ## Domain Rules
 
@@ -21,14 +21,14 @@ These rules describe what the schedule command family owns and where each kind o
 
 #### Schedule scope and target
 
-Schedules may target an app, a node, or Orbit-owned maintenance work. Each scope determines where the schedule runs.
+Schedules may target an app, a node, or Orbit-owned maintenance work. The scope determines which node physically runs the command; the gateway always dispatches.
 
-- App-scoped schedules run in the app context on the owning app node.
-- Node-scoped schedules run on the selected node.
-- Orbit-scoped maintenance schedules run on the gateway by default.
+- App-scoped schedules execute in the app context on the app's owning node.
+- Node-scoped schedules execute on the selected node.
+- Orbit-scoped maintenance schedules execute on the gateway by default. A command may override that default by documenting another serving node explicitly.
 - A Laravel scheduler is a normal app-scoped schedule that runs `php artisan schedule:run` every minute.
 
-A command may override the Orbit-scoped default by documenting another serving node explicitly.
+When the target is not the gateway itself, the gateway dispatches the run through `RemoteShell` (SSH). The scheduled command executes on the target node, but the gateway records every result centrally.
 
 #### Execution source and intervals
 
@@ -41,12 +41,14 @@ These rules describe how schedule writes propagate to the Orbit Scheduler and ho
 
 #### Write propagation
 
-- Schedule write commands mutate gateway configuration first.
-- The Orbit Scheduler on the target node observes the change on its next sync,
-  claims due runs with a local schedule lock, and executes them.
-- There is no per-schedule node-side artifact to apply. The only applied
-  artifact is the `orbit_scheduler` Supervisor program, which is applied once
-  per node by node provisioning.
+- Schedule write commands mutate gateway configuration. There is no node-side
+  schedule mirror to sync; the gateway scheduler reads every tick from the
+  gateway database directly.
+- The Orbit Scheduler claims due-run locks in the gateway database and
+  dispatches each due schedule to its target on the next tick.
+- The only applied artifact is the `orbit_scheduler` Supervisor program, which
+  is applied once on the gateway by gateway provisioning. Non-gateway nodes do
+  not run an Orbit Scheduler instance.
 
 #### Reads and adoption
 

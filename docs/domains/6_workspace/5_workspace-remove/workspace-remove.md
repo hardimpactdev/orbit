@@ -64,7 +64,7 @@ orbit workspace:remove feature-api --force
   is ambiguous across multiple apps.
 - `--keep-files`: remove Orbit configuration and runtime artifacts (proxy
   routes, inherited processes, FPM pool) but leave the workspace worktree on
-  the app node.
+  the node.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt. Required in non-interactive input mode. `--json` never implies
   `--force`.
@@ -76,7 +76,7 @@ The following steps describe the removal sequence in order.
 
 `workspace:remove` performs gateway-orchestrated removal of a workspace. The
 gateway owns the workspace registry record and applies artifact cleanup on the
-app node over SSH. The execution sequence has two phases.
+node over SSH. The execution sequence has two phases.
 
 1. **Pre-flight:** Resolve the target workspace from `name` or CWD; detect
    self-targeting when the caller is inside the worktree.
@@ -113,10 +113,10 @@ The output format depends on whether `--json` is passed.
 ## Requirements
 
 - CLI caller must reach the Orbit gateway.
-- Must be run from a control or gateway peer. The gateway denies app-node
+- Must be run from a control or gateway peer. The gateway denies app-role
   peers before any side effects.
 - Authorized node identity for the target workspace or parent app.
-- Gateway SSH access to the app node is used for artifact cleanup when
+- Gateway SSH access to the node is used for artifact cleanup when
   available. If cleanup cannot finish after workspace configuration removal,
   the command still succeeds and reports warnings with repair commands.
 - Destructive consent is required through the interactive confirmation prompt

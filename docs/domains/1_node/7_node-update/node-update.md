@@ -17,7 +17,7 @@ orbit node:update [name] [--host=<host>] [--environment=<development|production>
 
 Run without arguments from a control or gateway node in a TTY to let the
 interactive input mode prompt for the node name and which field to change.
-App-node callers are gateway clients; the gateway rejects them before
+App-role callers are gateway clients; the gateway rejects them before
 gateway-owned side effects.
 
 In non-interactive input mode, at least one field flag must be provided;
@@ -41,9 +41,9 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   gateway endpoint used in WireGuard peer configs. `node:new --role=gateway
   --host=<host>` seeds that endpoint only during first-gateway bootstrap before
   peer configs have been issued; `node:update --host` is later node metadata.
-- `--environment=<development|production>`: app-node environment. Only valid
+- `--environment=<development|production>`: app-role environment. Only valid
   for `app` nodes.
-- `--tld=<tld>`: development TLD for development app nodes. Valid only when the
+- `--tld=<tld>`: development TLD for development nodes. Valid only when the
   effective environment is `development`.
 - `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator. Valid for
   `gateway` and `app` nodes. Forbidden on `control` nodes.
@@ -72,8 +72,8 @@ that are directly affected by the changed metadata.
 - Re-applies node-owned host artifacts when a changed setting has node-side
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
-- Changes a development app node's TLD when `--tld` is supplied. `--tld` is
-  valid only for targets that are app nodes and whose effective environment is `development`;
+- Changes a development node's TLD when `--tld` is supplied. `--tld` is
+  valid only for targets that are nodes and whose effective environment is `development`;
   gateway targets, control targets, and production-effective app targets are
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
@@ -107,9 +107,9 @@ for the envelope shape.
 
 ## Requirements
 
-- Must run on the gateway host or from a configured operator node.
+- Must run on the gateway host or from a configured client.
 - Operator callers must be authorized to operate on the gateway node.
-- App-node callers are gateway clients; the gateway rejects them before
+- App-role callers are gateway clients; the gateway rejects them before
   gateway-owned side effects.
 - The target node must exist in gateway configuration.
 - At least one supported field must be provided in non-interactive input mode.

@@ -41,8 +41,22 @@ it('installs Orbit CA leaf certificates into the node Orbit cert directory', fun
         'user' => 'deploy',
     ]);
 
-    $ca = new OrbitCaService;
-    $ca->ensureRootCa();
+    $ca = new readonly class extends OrbitCaService
+    {
+        public function issueLeaf(string $host, array $additionalSans = []): array
+        {
+            $certsDir = storage_path('app/orbit/certs');
+            File::ensureDirectoryExists($certsDir);
+
+            $certPath = "{$certsDir}/{$host}.crt";
+            $keyPath = "{$certsDir}/{$host}.key";
+
+            File::put($certPath, 'test-cert');
+            File::put($keyPath, 'test-key');
+
+            return ['cert' => $certPath, 'key' => $keyPath];
+        }
+    };
     $shell = new OrbitSiteCertificateInstallerTestShell;
 
     $paths = (new OrbitSiteCertificateInstaller($ca, $shell))->ensureFor($appNode, 'cta.example.test');

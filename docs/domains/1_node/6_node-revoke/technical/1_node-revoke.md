@@ -12,7 +12,7 @@
   rejected.
 - Gateway callers can read and write gateway-owned node configuration.
 - Operator callers have configured gateway access as defined in
-[`2_node-revoke_on-control-node.md`](2_node-revoke_on-control-node.md).
+[`2_node-revoke_on-client.md`](2_node-revoke_on-client.md).
 - Both `consuming_node` and `serving_node` exist in gateway node configuration.
 
 **Post-input path eligibility:**
@@ -157,7 +157,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation, idempotent absent success, node-not-found validation, operator-caller forwarding, app-node denial, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
+| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation, idempotent absent success, node-not-found validation, operator-caller forwarding, app-role denial, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
 | `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before prompts or side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
@@ -172,6 +172,6 @@ Renderer-specific test mapping lives in:
 
 Role-specific test mapping lives in:
 
-- [`2_node-revoke_on-control-node.md`](2_node-revoke_on-control-node.md#test-mapping)
+- [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md#test-mapping)
 - [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md#test-mapping)
-- [`4_node-revoke_on-app-node.md`](4_node-revoke_on-app-node.md#test-mapping)
+- [`4_node-revoke_on-app-role.md`](4_node-revoke_on-app-role.md#test-mapping)

@@ -8,9 +8,11 @@ the [Architecture](../../architecture.md).
 
 The terms below define the core identity vocabulary for the app family.
 
-- **App:** An application record owned by the gateway, bound to one app node, with a
-  stable identity slug, environment, primary URL, app path, document root, and
-  optional repository.
+- **App:** An application record owned by the gateway, bound to one node, with a
+  stable identity slug, primary URL, app path, document root, and optional
+  repository. The app's environment (development versus production) is derived
+  from the owning node's active app role and is not a separate field on the app
+  record.
 - **App identity slug:** Lowercase identity slug used as the app's globally
   unique gateway registry key. Maximum 40 characters.
 - **App name argument:** Positional `[name]` argument used by commands that
@@ -19,20 +21,25 @@ The terms below define the core identity vocabulary for the app family.
   read, update, prune, or remove an existing app. May be a name or hostname when
   the command contract opts into hostname resolution; name matches win over
   hostname matches.
-- **Owning app node:** The app-node slug that hosts the app's path, runtime, and
-  app-derived artifacts. Apps may only run on app nodes; gateway and control
-  nodes are never valid app targets.
+- **Owning node:** The node slug that hosts the app's path, runtime, and
+  app-derived artifacts. Apps may only run on nodes with an active
+  `app-development` or `app-production` role; a node without an active app
+  role is not a valid app target.
 
 ## Environment and hosting
 
-These terms describe the two environments an app may occupy.
+These terms describe the two environments an app may occupy. An app's
+environment is determined by the owning node's active app role —
+`app-development` or `app-production` — not a separate field stored on the app
+record.
 
-- **Development app:** App whose hostname uses the development TLD. Workspaces
-  may attach to the app for branch-style isolation.
-- **Production app:** App whose hostname is a public DNS name. Production
-  domains are globally unique across the Orbit network and are activated only
-  after DNS verification against the owning node's recorded production
-  addresses.
+- **Development app:** App whose owning node carries the `app-development`
+  role. Hostname uses the development TLD. Workspaces may attach to the app for
+  branch-style isolation.
+- **Production app:** App whose owning node carries the `app-production` role.
+  Hostname is a public DNS name. Production domains are globally unique across
+  the Orbit network and are activated only after DNS verification against the
+  owning node's recorded production addresses.
 - **App PHP version:** Gateway-tracked configuration for the PHP version used by the
   app's PHP-FPM pool and CLI runtime. Workspaces inherit this value unless they
   store an override.

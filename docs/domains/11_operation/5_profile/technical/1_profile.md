@@ -27,7 +27,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `target` | `[target]` | Required in non-interactive mode when `--app` is absent and no app can be resolved from the current directory. | `--app` is present. | Current directory app/workspace context, then interactive app selection. | Domain, app hostname, full `http`/`https` URL, or absolute existing app path. Full URLs are split into host target and request URI. Absolute paths must resolve to a gateway-known app. |
 | `app` | `--app` | Never. | `[target]` is present. | `null`. | Existing app name or hostname visible to the caller. |
-| `node` | `--node` | Never. | Never. | Owning node from resolved app, or all authorized app nodes during interactive app selection. | Gateway-known app node name. Used only to constrain app resolution or app selection. |
+| `node` | `--node` | Never. | Never. | Owning node from resolved app, or all authorized nodes during interactive app selection. | Gateway-known node name. Used only to constrain app resolution or app selection. |
 | `uri` | `--uri` | Never. | Never. | `/`, or the path/query parsed from a full URL target when `--uri` was not supplied. | Non-empty request path. Values are normalized to start with `/`. |
 | `as_first_user` | `--as-first-user` | Never. | `--user` is present. | `false`. | Selects Toolbar auth mode `first-user`. |
 | `user` | `--user` | Never. | `--as-first-user` is present. | `null`. | Non-empty user primary key string. Selects Toolbar auth mode `user`. |
@@ -56,7 +56,7 @@ This command follows the shared
    selection.
 6. The gateway authorizes the calling peer for the resolved app.
 7. Resolve request origin:
-   - `caller` when the CLI's calling peer is identified as a operator peer and the resolved URL is reachable from that machine;
+   - `caller` when the CLI's calling peer is identified as an operator peer and the resolved URL is reachable from that machine;
    - `gateway` for gateway peers, app peers, and operator peers whose environment cannot resolve or reach the route but whose gateway can.
 8. Generate a per-run request id.
 9. Resolve Toolbar auth headers:
@@ -75,9 +75,9 @@ This command follows the shared
 - Name matches win over hostname matches when both could resolve.
 - Workspace hostnames resolve to the workspace and parent app context; `--node`
   constrains target resolution but does not grant access.
-- Absolute path targets are local-context selectors. A operator node that cannot
+- Absolute path targets are local-context selectors. A client that cannot
   map the supplied path to a gateway-known app must fail and ask for a domain
-  target or `--app`; it must not guess which remote app-node path the user
+  target or `--app`; it must not guess which remote app-role path the user
   meant.
 
 ### Request Measurement Rules

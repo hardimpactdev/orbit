@@ -12,7 +12,7 @@
   rejected.
 - Gateway callers can read and write gateway-owned node configuration.
 - Operator callers have configured gateway access as defined in
-  [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md).
+  [`2_node-update_on-client.md`](2_node-update_on-client.md).
 
 **Post-input path eligibility:**
 - The target node name resolves to an existing active node record.
@@ -49,7 +49,7 @@ to the duplicated field name. Last-wins is not an accepted behavior.
 
 The target node role restricts which fields are valid to update. Bootstrap
 fields shared with `node:new` keep the same role constraints, and public address
-metadata is valid only for gateway and app nodes. Concretely:
+metadata is valid only for gateway and nodes. Concretely:
 
 | Field | Valid target roles | Forbidden when |
 | --- | --- | --- |
@@ -59,14 +59,14 @@ metadata is valid only for gateway and app nodes. Concretely:
 | `--public-ipv4` | `gateway`, `app` | Target node role = `control`. |
 | `--public-ipv6` | `gateway`, `app` | Target node role = `control`. |
 
-Operator nodes are CLI callers reached through WireGuard. They have no SSH
+Clients are CLI callers reached through WireGuard. They have no SSH
 bootstrap endpoint and no public ingress, so `--host`, `--public-ipv4`, and
 `--public-ipv6` are all forbidden on control targets. Public IPv4 and IPv6
 metadata is supported on `gateway` and `app` target nodes; the gateway
 endpoint used in WireGuard peer configs lives on a separate field and is not
 updated by `--public-ipv4` or `--public-ipv6`.
 
-`node:update --tld` updates development TLD metadata for app nodes only. The
+`node:update --tld` updates development TLD metadata for nodes only. The
 effective environment is the supplied `--environment` value when present,
 otherwise the node's current stored environment. A production app can receive
 `--tld` only in the same update that changes it to
@@ -221,7 +221,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Field role-incompatible | A field is supplied for a node role or effective environment that does not support it. | Failure |
 | TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
 
-Examples: `--environment` for a non-app node, host/public-IP fields for a control
+Examples: `--environment` for a non-node, host/public-IP fields for a control
 node, or `--tld` for gateway, control, or production-effective app targets.
 
 Artifact applying failure after a successful configuration write is **not** a
@@ -274,6 +274,6 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md#test-mapping)
+- [`2_node-update_on-client.md`](2_node-update_on-client.md#test-mapping)
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md#test-mapping)
-- [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md#test-mapping)
+- [`4_node-update_on-app-role.md`](4_node-update_on-app-role.md#test-mapping)

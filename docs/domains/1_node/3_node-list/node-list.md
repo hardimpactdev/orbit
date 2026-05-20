@@ -32,11 +32,11 @@ This section defines each accepted filter and output flag for `node:list`.
 
 ### `--role`
 
-Filters by effective role assignment. Accepts a single value, one of `gateway`, `app`, `app-development`, `app-production`, `database`, or `control`. `app` matches both app host roles. `control` matches nodes without an active hosted role assignment. Comma-separated input is rejected.
+Filters by effective role assignment. Accepts a single value, one of `gateway`, `app`, `app-development`, `app-production`, `database`, or `control`. `app` matches both app host roles. `control` matches nodes without an active role assignment. Comma-separated input is rejected.
 
 ### `--environment`
 
-Filters app nodes by environment. Accepts a single value, one of `development` or `production`. Comma-separated input is rejected.
+Filters nodes by environment. Accepts a single value, one of `development` or `production`. Comma-separated input is rejected.
 
 ### `--doctor`
 

@@ -18,7 +18,7 @@ These terms define the VPN command domain and how commands reach the gateway.
 - **Gateway-local execution path:** Operator-caller path that uses SSH to the
   gateway over Orbit/WireGuard, then runs the VPN command on the gateway.
   It is limited to VPN administration and is not a general public SSH path or
-  an app-node orchestration path.
+  an app-role orchestration path.
 - **Gateway VPN backend:** WireGuard administration backend that runs on the
   gateway, used by VPN commands to read, create, enable, disable, remove, and
   authenticate VPN clients. Backend storage layout and API paths are not the

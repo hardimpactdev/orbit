@@ -38,7 +38,7 @@ the calling peer's role.
 | Target role assignment state | Categories |
 | --- | --- |
 | active `gateway` role (default or `--self`) | `Node` |
-| joined client with no active hosted role | `Node` |
+| client with no active role | `Node` |
 | active `database` role only | `Node`, `Tools` |
 | active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
@@ -57,9 +57,9 @@ The gateway owns the family dispatch loop for the single-node target. Each selec
 | Family | Gateway-owned probing behavior |
 | --- | --- |
 | `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. |
-| `app` | Check app configuration and app-node runtime facts on the target app node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
-| `workspace` | Check workspace configuration and the target app node's workspace reality, using app-suffixed workspace identifiers in human output. |
-| `process` | Check process configuration and process supervisor/runtime reality on the target app node. |
+| `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
+| `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
+| `process` | Check process configuration and process supervisor/runtime reality on the target node. |
 | `proxy` | Check proxy route configuration and Caddy or proxy backend reality on the target node. |
 | `firewall_rule` | Check firewall rule configuration and backend firewall reality on the target node. |
 | `tool` | Check tool configuration, installed versions, configuration, and lifecycle state on the target node. |

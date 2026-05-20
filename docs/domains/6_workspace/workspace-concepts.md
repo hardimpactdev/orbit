@@ -18,7 +18,7 @@ The terms below define the core identity vocabulary for the workspace family.
 - **Workspace hostname:** Hostname formed by prepending the workspace slug as
   its own DNS label to the parent app's primary hostname. For development apps
   this yields `{workspace}.{app}.{tld}`.
-- **Workspace path:** Absolute path on the owning app node where workspace
+- **Workspace path:** Absolute path on the owning node where workspace
   files live. Derived from gateway configuration and applied over SSH.
 - **Workspace lifecycle status:** Registry configuration lifecycle field,
   currently `expected` or `setup-pending`. It is not setup-run status and not a

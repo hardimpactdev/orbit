@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer to operate process runtime state for the target app or workspace context. `unknown` callers are denied.
-- Runtime lifecycle actions require gateway reachability to the owning app node.
+- Runtime lifecycle actions require gateway reachability to the owning node.
 
 ## Signature
 
@@ -43,7 +43,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    - when `[name]` is omitted, select every process definition for the app in process order.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
 4. Derive runtime-unit identities for the selected context.
-5. Restart each runtime unit through the gateway on the owning app node.
+5. Restart each runtime unit through the gateway on the owning node.
 6. Record and publish lifecycle events for each successful stopped and started runtime transition.
 7. Render the selected output.
 
@@ -61,7 +61,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | `[name]` is supplied and the named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
 | No processes configured | `[name]` is omitted and the owning app has no process definitions. | Failure (`error.code=process.none_configured`). |
-| Runtime action failed | The gateway cannot restart the runtime unit on the owning app node. | Failure (`error.code=process.runtime_action_failed`). |
+| Runtime action failed | The gateway cannot restart the runtime unit on the owning node. | Failure (`error.code=process.runtime_action_failed`). |
 
 ## Doctor Relationship
 
@@ -88,7 +88,7 @@ Primary test owners:
 | `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, caller-role acceptance and denial, process selection, runtime-unit derivation, successful restart, durable event recording, partial bulk failure, and authorization failure (full scope below). |
 | `tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
-`ProcessRestartCommandTest` covers context resolution, app-node caller
+`ProcessRestartCommandTest` covers context resolution, app-role caller
 allowance, unknown-role denial, named and all-process selection, process-order
 execution, runtime-unit derivation, successful restart, durable lifecycle
 event recording, partial bulk failure reporting, no configuration mutation, no

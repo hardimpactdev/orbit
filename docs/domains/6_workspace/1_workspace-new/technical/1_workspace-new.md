@@ -7,7 +7,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the parent app.
-- The gateway can reach the parent app's owning app node over SSH.
+- The gateway can reach the parent app's owning node over SSH.
 
 [Back to the public command page.](../workspace-new.md)
 
@@ -26,7 +26,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent app. |
 | `--app` | `text` | No local context or default. | CWD-inferred parent app | Valid parent app slug. |
-| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; Polyscope passes it as `base_branch` to the Polyscope API. |
+| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
 | `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 
@@ -101,7 +101,7 @@ register an existing path use
    agent IDE adapter from app -> node -> default, then create the source
    through the selected source driver.
    - With no effective adapter, create a generic Git worktree on the parent
-     app node at `<app path>/.worktrees/<name>` by creating branch `<name>`
+     node at `<app path>/.worktrees/<name>` by creating branch `<name>`
      from the requested `--base` ref.
    - With effective adapter `opencode`, resolve the parent OpenCode project
      through the OpenCode API, ask OpenCode to create a UI-visible workspace,
@@ -109,8 +109,8 @@ register an existing path use
      requested `--base` ref, and best-effort create an OpenCode session titled
      `<name>` attached to that OpenCode workspace id.
    - With effective adapter `polyscope`, create the workspace through the
-     Polyscope SDK using the app node's Polyscope server identity, the parent
-     app's Polyscope repository id, `branch=<name>`, and
+     PolyScope SDK using the node's PolyScope server identity, the parent
+     app's PolyScope repository id, `branch=<name>`, and
      `base_branch=<base>`.
    - Any effective adapter without a dedicated workspace source driver fails
      before side effects with `error.code=workspace.agent_ide_driver_missing`.
@@ -119,7 +119,7 @@ register an existing path use
    hostname, `php_version` (or `null` for inheritance), adapter metadata, and
    lifecycle fields. For OpenCode, store `agent_ide=opencode` and the
    best-effort session id in `agent_ide_workspace_id` when OpenCode returns
-   one. For Polyscope, store `agent_ide=polyscope` and the Polyscope workspace
+   one. For PolyScope, store `agent_ide=polyscope` and the PolyScope workspace
    id in `agent_ide_workspace_id`; generic worktrees store both values as
    `null`. Workspace identity uniqueness is enforced before any side effects
    and again at this step.
@@ -129,7 +129,7 @@ register an existing path use
      proxy route record; backend artifact convergence is owned by the
      `proxy` family.
    - **PHP-FPM:** render and install the FPM pool config specific to this workspace
-     on the app node.
+     on the node.
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
@@ -164,7 +164,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Parent app ineligible** — the resolved parent app is missing,
   unauthorized, or unable to own workspaces
   (`error.code=workspace.parent_app_invalid`).
-- **SSH failure (pre-configuration)** — gateway cannot reach the app node
+- **SSH failure (pre-configuration)** — gateway cannot reach the node
   *before* the gateway workspace row is written
   (`error.code=workspace.ssh_failure`).
 - **Workspace source failure (pre-configuration)** — the selected workspace
@@ -200,10 +200,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
-| `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |
+| `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |
 
 Role-specific behavior and test mapping live in:
 
-- [`2_workspace-new_on-control-node.md`](2_workspace-new_on-control-node.md)
+- [`2_workspace-new_on-client.md`](2_workspace-new_on-client.md)
 - [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md)
-- [`4_workspace-new_on-app-node.md`](4_workspace-new_on-app-node.md)
+- [`4_workspace-new_on-app-role.md`](4_workspace-new_on-app-role.md)

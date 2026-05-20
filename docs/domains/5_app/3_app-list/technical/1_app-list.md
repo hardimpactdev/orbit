@@ -26,7 +26,7 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `node` | `--node` | Optional. | Never. | None. | App-node name in the gateway registry. Single value only. |
+| `node` | `--node` | Optional. | Never. | None. | App-role name in the gateway registry. Single value only. |
 | `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
