@@ -39,7 +39,7 @@ it('keeps the aggregate quality gate complete', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     // The gate fans out docs-lint, phpstan, rector, and pint concurrently while
-    // slicing the Laravel test suite through `bin/quality-check.sh`.
+    // the default Pest suite runs in parallel through `bin/quality-check.sh`.
     expect($composer['scripts']['quality-check'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'bin/quality-check.sh',
@@ -52,9 +52,11 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('vendor/bin/pint')
-        ->toContain('for test_path in tests/Unit tests/Feature/*')
-        ->toContain('php artisan test --compact --exclude-group=e2e --exclude-group=slow "$test_path" "$@"')
-        ->toContain('--exclude-group=e2e');
+        ->toContain('vendor/pestphp/pest/bin/pest')
+        ->toContain('--exclude-group=e2e')
+        ->toContain('--exclude-group=slow')
+        ->toContain('--parallel')
+        ->toContain('--compact');
 });
 
 it('runs default ephemeral e2e through prepared topology lanes', function (): void {
@@ -64,7 +66,10 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
         ->sequence(
             fn ($script) => $script->toBe('Composer\\Config::disableProcessTimeout'),
             fn ($script) => $script->toContain('artisan config:clear'),
-            fn ($script) => $script->toContain('pest --exclude-group=e2e'),
+            fn ($script) => $script
+                ->toContain('pest --exclude-group=e2e')
+                ->toContain('--parallel')
+                ->toContain('--compact'),
         );
 
     $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test @additional_args';

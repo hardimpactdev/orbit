@@ -343,13 +343,12 @@ it('cleans up partial artifacts when preparation fails before parallel lanes sta
         setE2ETestCommandInput($command, []);
 
         $plans = failingPreparationPlans();
-        $before = currentDockerTimingsFiles();
 
         expect(function () use ($command, &$plans): void {
             invokeE2ETestCommandMethod($command, 'runPlans', [&$plans]);
         })->toThrow(ErrorException::class, 'DefinitelyMissingTest.php');
 
-        assertNoLeakedPlanArtifacts($plans, $before);
+        assertNoLeakedPlanArtifacts($plans);
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_TIMINGS')
@@ -366,13 +365,12 @@ it('cleans up partial artifacts when preparation fails before sequential lanes s
         setE2ETestCommandInput($command, ['--sequential-lanes' => true]);
 
         $plans = failingPreparationPlans();
-        $before = currentDockerTimingsFiles();
 
         expect(function () use ($command, &$plans): void {
             invokeE2ETestCommandMethod($command, 'runPlansSequentially', [&$plans]);
         })->toThrow(ErrorException::class, 'DefinitelyMissingTest.php');
 
-        assertNoLeakedPlanArtifacts($plans, $before);
+        assertNoLeakedPlanArtifacts($plans);
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_TIMINGS')
@@ -473,18 +471,20 @@ function failingPreparationPlans(): array
 
 /**
  * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
- * @param  list<string>  $beforeTimingsFiles
  */
-function assertNoLeakedPlanArtifacts(array $plans, array $beforeTimingsFiles): void
+function assertNoLeakedPlanArtifacts(array $plans): void
 {
     $plan = $plans['docker'];
     $testPath = $plan['test_path'] ?? null;
+    $timingsFile = $plan['timings_file'] ?? null;
 
     expect($testPath)->toBeString()
         ->and(is_dir(base_path($testPath)))->toBeFalse()
         ->and(is_dir(dirname(base_path($testPath))))->toBeFalse();
 
-    expect(currentDockerTimingsFiles())->toBe($beforeTimingsFiles);
+    if (is_string($timingsFile)) {
+        expect(file_exists($timingsFile))->toBeFalse();
+    }
 }
 
 /**
@@ -511,20 +511,4 @@ function invokeE2ETestCommandMethod(E2ETestCommand $command, string $method, arr
     $target = $reflection->getMethod($method);
 
     return $target->invokeArgs($command, $arguments);
-}
-
-/**
- * @return list<string>
- */
-function currentDockerTimingsFiles(): array
-{
-    $matches = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'orbit-e2e-docker-*');
-
-    if ($matches === false) {
-        return [];
-    }
-
-    sort($matches);
-
-    return array_values($matches);
 }

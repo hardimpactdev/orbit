@@ -66,7 +66,7 @@
         "test": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan config:clear --ansi @no_additional_args",
-            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow"
+            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow --parallel --compact"
         ],
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",

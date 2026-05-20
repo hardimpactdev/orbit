@@ -452,23 +452,22 @@ it('cleans containers and network when docker acquire fails partway through', fu
 });
 
 it('starts docker containers as a batch and rolls back when one start fails', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_PARALLEL_STARTS');
-    putenv('ORBIT_E2E_DOCKER_PARALLEL_STARTS=1');
+    withE2EEnvironment(['ORBIT_E2E_DOCKER_PARALLEL_STARTS', 'TEST_TOKEN'], [
+        'ORBIT_E2E_DOCKER_PARALLEL_STARTS' => '1',
+    ], function (): void {
+        Process::fake([
+            'command -v docker >/dev/null' => Process::result(),
+            'docker info >/dev/null' => Process::result(),
+            "docker image inspect 'orbit-e2e-topology:operator-gateway-control-current' >/dev/null" => Process::result(),
+            "docker image inspect 'orbit-e2e-topology:operator-gateway-gateway-current' >/dev/null" => Process::result(),
+            "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
+            "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
+            "docker run -d --name 'orbit-e2e-run123-control' *" => Process::result(exitCode: 1, errorOutput: "control failed\n"),
+            "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
+            "docker rm -f 'orbit-e2e-run123-control' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true" => Process::result(),
+            "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true" => Process::result(),
+        ]);
 
-    Process::fake([
-        'command -v docker >/dev/null' => Process::result(),
-        'docker info >/dev/null' => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:operator-gateway-control-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:operator-gateway-gateway-current' >/dev/null" => Process::result(),
-        "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
-        "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
-        "docker run -d --name 'orbit-e2e-run123-control' *" => Process::result(exitCode: 1, errorOutput: "control failed\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker rm -f 'orbit-e2e-run123-control' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true" => Process::result(),
-        "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true" => Process::result(),
-    ]);
-
-    try {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
         expect(fn () => $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
@@ -476,11 +475,7 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
 
         Process::assertRan("docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.6.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator-gateway-gateway-current'");
         Process::assertRan("docker rm -f 'orbit-e2e-run123-control' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true");
-    } finally {
-        $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_PARALLEL_STARTS')
-            : putenv("ORBIT_E2E_DOCKER_PARALLEL_STARTS={$previous}");
-    }
+    });
 });
 
 it('starts docker containers sequentially by default to avoid ssh startup bursts', function (): void {
@@ -517,7 +512,7 @@ it('uses dns aliases and primes the gateway api in dns-alias mode', function ():
         'docker exec *' => Process::result(),
     ]);
 
-    withE2EEnvironment(['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'], [
+    withE2EEnvironment(['ORBIT_E2E_DOCKER_TOPOLOGY_MODE', 'TEST_TOKEN'], [
         'ORBIT_E2E_DOCKER_TOPOLOGY_MODE' => 'dns-alias',
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
