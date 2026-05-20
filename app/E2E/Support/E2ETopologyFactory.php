@@ -94,7 +94,8 @@ final readonly class E2ETopologyFactory
         return match ($kind) {
             E2ETopologyKind::Control,
             E2ETopologyKind::ControlGateway,
-            E2ETopologyKind::ControlGatewayDev => E2ETopologyKind::ControlGatewayDevProd,
+            E2ETopologyKind::ControlGatewayDev,
+            E2ETopologyKind::ControlGatewayDevProd => E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
             default => $kind,
         };
     }

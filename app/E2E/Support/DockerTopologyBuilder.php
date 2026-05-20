@@ -54,6 +54,17 @@ final readonly class DockerTopologyBuilder
                 $container = "{$network}-{$role}";
                 $image = self::imageNameFor($kind, $role, $mode);
 
+                if (! self::shouldCommitRole($kind, $role)) {
+                    $manifest[] = [
+                        'role' => $role,
+                        'container' => $container,
+                        'image' => $image,
+                        'reused' => true,
+                    ];
+
+                    continue;
+                }
+
                 $this->mustRun(
                     sprintf(
                         'docker commit --change %s --change %s --change %s --change %s --change %s --change %s %s %s',
@@ -97,16 +108,34 @@ final readonly class DockerTopologyBuilder
             E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
             E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
         };
     }
 
     public static function imageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'legacy-retarget'): string
     {
+        $effectiveKind = self::imageKindFor($kind, $role);
+
         if ($mode === 'legacy-retarget') {
-            return "orbit-e2e-topology:{$kind->value}-{$role}-current";
+            return "orbit-e2e-topology:{$effectiveKind->value}-{$role}-current";
         }
 
-        return "orbit-e2e-topology:{$kind->value}-{$role}-{$mode}-current";
+        return "orbit-e2e-topology:{$effectiveKind->value}-{$role}-{$mode}-current";
+    }
+
+    private static function imageKindFor(E2ETopologyKind $kind, string $role): E2ETopologyKind
+    {
+        return $kind;
+    }
+
+    private static function shouldCommitRole(E2ETopologyKind $kind, string $role): bool
+    {
+        return self::ownsImage($kind, $role);
+    }
+
+    public static function ownsImage(E2ETopologyKind $kind, string $role): bool
+    {
+        return self::imageKindFor($kind, $role) === $kind;
     }
 
     private function runCommand(string $container, string $network, string $ip): string
@@ -173,6 +202,7 @@ final readonly class DockerTopologyBuilder
         }
 
         $this->seedRemoteShellSshAccess($gateway, $containers);
+        $this->seedRemoteShellAgentSshAccess($gateway, $containers);
 
         if (isset($containers['dev'])) {
             $host = $mode === 'dns-alias' ? 'dev' : '10.6.0.4';
@@ -186,6 +216,13 @@ final readonly class DockerTopologyBuilder
             $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
 
             E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host={$host} --wireguard-address=10.6.0.5 --environment=production --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+        }
+
+        if (isset($containers['agent'])) {
+            $host = $mode === 'dns-alias' ? 'agent' : '10.6.0.6';
+            $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
+
+            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-agent-node agent-1 --host={$host} --wireguard-address=10.6.0.6 --tld=agent --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
         }
     }
 
@@ -207,6 +244,20 @@ final readonly class DockerTopologyBuilder
 
             $this->authorizeGatewaySshKey($containers[$role], $publicKey);
         }
+    }
+
+    /**
+     * @param  array<string, DockerBuildInstance>  $containers
+     */
+    private function seedRemoteShellAgentSshAccess(DockerBuildInstance $gateway, array $containers): void
+    {
+        if (! isset($containers['agent'])) {
+            return;
+        }
+
+        $publicKey = $this->gatewayPublicKey($gateway);
+
+        $this->authorizeGatewaySshKey($containers['agent'], $publicKey);
     }
 
     private function gatewayPublicKey(DockerBuildInstance $gateway): string
@@ -248,6 +299,7 @@ final readonly class DockerTopologyBuilder
             'control' => '10.6.0.3',
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
+            'agent' => '10.6.0.6',
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
     }

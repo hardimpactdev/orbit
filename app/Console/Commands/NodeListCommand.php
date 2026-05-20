@@ -25,14 +25,14 @@ use Throwable;
 use function Laravel\Prompts\table;
 
 #[Signature('node:list
-    {--role= : Filter by role (gateway|vpn|app|app-development|app-production|database|control)}
+    {--role= : Filter by role (gateway|vpn|app|app-development|app-production|database|agent|control)}
     {--environment= : Filter by environment (development|production)}
     {--doctor : Include node doctor checks and summaries}
     {--json : Output as JSON}')]
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'agent', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 

@@ -46,6 +46,7 @@ final readonly class DockerTopologyNetworkPlan
             'control' => $this->ip(3),
             'dev' => $this->ip(4),
             'prod' => $this->ip(5),
+            'agent' => $this->ip(6),
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
     }

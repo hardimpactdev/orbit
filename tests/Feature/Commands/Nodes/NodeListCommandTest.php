@@ -251,12 +251,12 @@ describe('node:list validation', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('role')
             ->and($payload['error']['meta']['value'])->toBe('bogus')
-            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control']);
+            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'agent', 'control']);
     });
 
     it('rejects invalid --role with human error message', function (): void {
         $this->artisan('node:list', ['--role' => 'bogus'])
-            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, vpn, app, app-development, app-production, database, control.")
+            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, vpn, app, app-development, app-production, database, agent, control.")
             ->assertFailed();
     });
 

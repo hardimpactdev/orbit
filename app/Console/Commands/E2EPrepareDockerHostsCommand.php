@@ -180,18 +180,23 @@ class E2EPrepareDockerHostsCommand extends Command
             return [];
         }
 
-        $roles = DockerTopologyBuilder::rolesFor($kind);
+        $roles = array_values(array_filter(
+            DockerTopologyBuilder::rolesFor($kind),
+            fn (string $role): bool => DockerTopologyBuilder::ownsImage($kind, $role),
+        ));
+
+        $images = array_map(
+            fn (string $role): array => [
+                'role' => $role,
+                'image' => DockerTopologyBuilder::imageNameFor($kind, $role, $mode),
+            ],
+            $roles,
+        );
 
         return [[
             'name' => 'topology',
             'command' => sprintf('composer e2e:prepare-docker-topology -- --force --topology-mode=%s %s', escapeshellarg($mode), escapeshellarg($kind->value)),
-            'images' => array_map(
-                fn (string $role): array => [
-                    'role' => $role,
-                    'image' => DockerTopologyBuilder::imageNameFor($kind, $role, $mode),
-                ],
-                $roles,
-            ),
+            'images' => $images,
         ]];
     }
 

@@ -46,10 +46,10 @@ it('superset strategy resolves smaller requests to ControlGatewayDevProd', funct
     withE2ETopologyEnvironment(['ORBIT_E2E_TOPOLOGY_STRATEGY' => 'superset'], function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
-        expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::ControlGatewayDevProd)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGatewayDevProd)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::ControlGatewayDevProd)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+        expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+            ->and($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
     });
 });
 

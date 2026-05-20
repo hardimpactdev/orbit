@@ -16,6 +16,7 @@ final readonly class IncusTopologyTemplate
             E2ETopologyKind::ControlGateway => ['control', 'gateway'],
             E2ETopologyKind::ControlGatewayDev => ['control', 'gateway', 'dev'],
             E2ETopologyKind::ControlGatewayDevProd => ['control', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
         };
     }
 

@@ -431,7 +431,7 @@ final readonly class SchedulesProbe
     {
         return match (strtolower($status)) {
             'running' => 'running',
-            'missing' => 'missing',
+            'missing', 'error' => 'missing',
             'stopped', 'exited', 'fatal', 'backoff', 'starting' => 'stopped',
             '' => 'missing',
             default => 'stopped',

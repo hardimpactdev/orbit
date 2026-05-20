@@ -38,28 +38,28 @@ it('superset strategy: Control resolves to ControlGatewayDevProd', function (): 
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
     $factory = E2ETopologyFactory::fromEnvironment();
 
-    expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+    expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 });
 
 it('superset strategy: ControlGateway resolves to ControlGatewayDevProd', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
     $factory = E2ETopologyFactory::fromEnvironment();
 
-    expect($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+    expect($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 });
 
 it('superset strategy: ControlGatewayDev resolves to ControlGatewayDevProd', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
     $factory = E2ETopologyFactory::fromEnvironment();
 
-    expect($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+    expect($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 });
 
 it('superset strategy: ControlGatewayDevProd resolves to ControlGatewayDevProd', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
     $factory = E2ETopologyFactory::fromEnvironment();
 
-    expect($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+    expect($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 });
 
 it('unknown strategy falls back to minimal behavior', function (): void {
@@ -90,5 +90,5 @@ it('ORBIT_E2E_TOPOLOGY_STRATEGY=superset enables superset', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
     $factory = E2ETopologyFactory::fromEnvironment();
 
-    expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+    expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 });

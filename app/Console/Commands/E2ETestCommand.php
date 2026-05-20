@@ -158,7 +158,7 @@ class E2ETestCommand extends Command
             return "ORBIT_E2E_PARALLEL_PROCESSES must match total Docker slots [{$totalSlots}] for the measured Docker lane.";
         }
 
-        $requiredContainers = max($config->dockerHostSlots) * 4;
+        $requiredContainers = max($config->dockerHostSlots) * 5;
 
         if ($config->dockerMaxContainersPerHost < $requiredContainers) {
             return "ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least {$requiredContainers} for the largest configured Docker host slot count.";
@@ -232,6 +232,8 @@ class E2ETestCommand extends Command
      */
     private function incusPlan(array $passThroughArguments): array
     {
+        $testPath = null;
+        $testFiles = [];
         $command = [
             'php',
             'artisan',
@@ -240,6 +242,7 @@ class E2ETestCommand extends Command
             '--group=e2e-provider-incus',
             '--exclude-group=e2e-provision',
             '--exclude-group=e2e-topology-contract',
+            '--exclude-group=e2e-feature-reachability',
         ];
 
         $processes = $this->envInt('ORBIT_E2E_INCUS_PARALLEL_PROCESSES', 1);
@@ -249,7 +252,13 @@ class E2ETestCommand extends Command
             $command[] = "--processes={$processes}";
         }
 
-        return [
+        if (! $this->hasExplicitTestPath($passThroughArguments)) {
+            $testPath = 'tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
+            $testFiles = $this->incusTestFiles();
+            $command[] = $testPath;
+        }
+
+        $plan = [
             'lane' => 'incus',
             'command' => [...$command, ...$passThroughArguments],
             'environment' => [
@@ -262,6 +271,70 @@ class E2ETestCommand extends Command
                 'ORBIT_E2E_TOPOLOGY_STRATEGY' => 'minimal',
             ],
         ];
+
+        if ($testPath !== null) {
+            $plan['test_path'] = $testPath;
+            $plan['test_files'] = $testFiles;
+        }
+
+        return $plan;
+    }
+
+    private function incusTestRunDirectory(): string
+    {
+        return 'run_'.getmypid().'_'.bin2hex(random_bytes(4));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function incusTestFiles(): array
+    {
+        $directory = base_path('tests/E2E');
+
+        if (! is_dir($directory)) {
+            return [];
+        }
+
+        $files = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($iterator as $file) {
+            if (! $file instanceof \SplFileInfo || ! $file->isFile()) {
+                continue;
+            }
+
+            $path = $file->getPathname();
+
+            if (str_contains($path, DIRECTORY_SEPARATOR.'.docker-feature-tests'.DIRECTORY_SEPARATOR)
+                || str_contains($path, DIRECTORY_SEPARATOR.'.incus-feature-tests'.DIRECTORY_SEPARATOR)
+            ) {
+                continue;
+            }
+
+            if (! str_ends_with($path, 'Test.php')) {
+                continue;
+            }
+
+            $contents = file_get_contents($path);
+
+            if (! is_string($contents)
+                || ! str_contains($contents, 'e2e-provider-incus')
+                || str_contains($contents, 'e2e-feature-reachability')
+                || str_contains($contents, 'e2e-provision')
+                || str_contains($contents, 'e2e-topology-contract')
+            ) {
+                continue;
+            }
+
+            $files[] = str_replace(base_path().'/', '', $path);
+        }
+
+        sort($files);
+
+        return $files;
     }
 
     /**

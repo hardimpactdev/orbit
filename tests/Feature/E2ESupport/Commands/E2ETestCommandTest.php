@@ -130,7 +130,7 @@ it('rejects docker container caps below the largest configured host slot capacit
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $this->artisan('e2e:test --dry-run --json --lanes=docker')
-            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 16')
+            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 20')
             ->assertFailed();
     });
 });

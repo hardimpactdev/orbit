@@ -76,6 +76,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
             gatewayApiIp: self::GatewayWireGuardIp,
+            agent: $instances['agent'] ?? null,
         );
     }
 
@@ -100,6 +101,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $timer->measure("command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
         }
 
+        $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances));
         $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair));
         $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances));
@@ -402,6 +404,32 @@ PHP;
             }
 
             $this->waitForGatewaySsh($gateway, $this->wireGuardIpForRole($role));
+        }
+    }
+
+    /**
+     * Clones inherit `~/.ssh/known_hosts` from their templates. Templates pick
+     * up stale entries from earlier bake-time SSHes (e.g. control bootstrapping
+     * dev/prod through their provider IPs), and Incus reuses provider IPs
+     * across runs, so the clone IPs collide with stale fingerprints and trip
+     * StrictHostKeyChecking inside production SSH paths.
+     *
+     * Wipe per-user known_hosts on every leased clone so the lease starts with
+     * an empty trust file. Future SSHes use `StrictHostKeyChecking=accept-new`
+     * and repopulate cleanly.
+     *
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function clearKnownHosts(array $instances): void
+    {
+        foreach ($instances as $instance) {
+            $instance->exec(
+                'for d in /root /home/*; do '
+                    .'[ -d "$d/.ssh" ] || continue; '
+                    .'rm -f "$d/.ssh/known_hosts" "$d/.ssh/known_hosts.old"; '
+                .'done',
+                timeoutSeconds: 30,
+            );
         }
     }
 

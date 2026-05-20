@@ -2,22 +2,11 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\E2ETopologyCapabilities;
-use App\E2E\Support\E2ETopologyFactory;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
-use App\E2E\Support\E2ETopologyUnavailable;
 
 it('starts a managed system service tool on an app node from the gateway', function (): void {
-    try {
-        $lease = E2ETopologyFactory::fromEnvironment()
-            ->requireCapabilities(E2ETopologyCapabilities::vm())
-            ->require(E2ETopologyKind::OperatorGatewayAppdev);
-    } catch (E2ETopologyUnavailable $exception) {
-        test()->markTestSkipped($exception->getMessage());
-    }
-
-    $topology = new E2ETopologyHarness($lease)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {

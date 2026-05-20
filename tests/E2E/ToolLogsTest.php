@@ -4,22 +4,11 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
-use App\E2E\Support\E2ETopologyCapabilities;
-use App\E2E\Support\E2ETopologyFactory;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
-use App\E2E\Support\E2ETopologyUnavailable;
 
 it('reads finite managed system service tool logs from an app node through the gateway', function (): void {
-    try {
-        $lease = E2ETopologyFactory::fromEnvironment()
-            ->requireCapabilities(E2ETopologyCapabilities::vm())
-            ->require(E2ETopologyKind::OperatorGatewayAppdev);
-    } catch (E2ETopologyUnavailable $exception) {
-        test()->markTestSkipped($exception->getMessage());
-    }
-
-    $topology = new E2ETopologyHarness($lease)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true)
         ->withCurrentCheckout(roles: ['control', 'gateway']);
 
     try {

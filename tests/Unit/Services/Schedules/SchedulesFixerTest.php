@@ -71,7 +71,9 @@ describe('SchedulesFixer', function (): void {
             'key' => 'schedule.scheduler_stopped',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and($shell->scripts)->toBe(["sudo supervisorctl start 'orbit_scheduler'"]);
+        ])->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toContain('[program:orbit_scheduler]')
+            ->and($shell->scripts[0])->toContain("sudo supervisorctl update 'orbit_scheduler'")
+            ->and($shell->scripts[0])->toContain("sudo supervisorctl start 'orbit_scheduler'");
     });
 
     it('releases stale gateway schedule locks and marks running history failed', function (): void {

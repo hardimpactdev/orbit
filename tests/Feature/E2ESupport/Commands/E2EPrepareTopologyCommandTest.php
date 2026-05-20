@@ -156,7 +156,7 @@ it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent. Legacy control topology names are accepted as aliases.',
         ],
     ], JSON_THROW_ON_ERROR);
 

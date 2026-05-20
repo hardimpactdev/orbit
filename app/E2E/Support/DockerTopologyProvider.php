@@ -118,6 +118,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             teardown: $teardown,
             gatewayApiIp: $networkPlan->ipForRole('gateway'),
             resourceLease: $resourceLease,
+            agent: $instances['agent'] ?? null,
         );
     }
 
@@ -161,6 +162,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
             E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
         };
     }
 

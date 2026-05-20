@@ -10,6 +10,7 @@ enum E2ETopologyKind: string
     case OperatorGateway = 'operator-gateway';
     case OperatorGatewayAppdev = 'operator-gateway-appdev';
     case OperatorGatewayAppdevAppprod = 'operator-gateway-appdev-appprod';
+    case OperatorGatewayAppdevAppprodAgent = 'operator-gateway-appdev-appprod-agent';
 
     #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
     public const self Control = self::Operator;
@@ -44,6 +45,7 @@ enum E2ETopologyKind: string
             self::OperatorGateway => ['control-gateway'],
             self::OperatorGatewayAppdev => ['control-gateway-dev'],
             self::OperatorGatewayAppdevAppprod => ['control-gateway-dev-prod'],
+            self::OperatorGatewayAppdevAppprodAgent => [],
         };
     }
 

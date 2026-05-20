@@ -2,25 +2,13 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\E2ETopologyCapabilities;
-use App\E2E\Support\E2ETopologyFactory;
-use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
-use App\E2E\Support\E2ETopologyUnavailable;
 
 it('adopts observed UFW rules into the gateway registry', function (): void {
-    try {
-        $lease = E2ETopologyFactory::fromEnvironment()
-            ->requireCapabilities(E2ETopologyCapabilities::vm())
-            ->require(E2ETopologyKind::OperatorGatewayAppdev);
-    } catch (E2ETopologyUnavailable $exception) {
-        test()->markTestSkipped($exception->getMessage());
-    }
-
-    $topology = new E2ETopologyHarness($lease)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
-    $gatewayWireGuardIp = $lease->gatewayApiIp();
+    $gatewayWireGuardIp = $topology->lease()->gatewayApiIp();
     $gatewayLanIp = $topology->instance('gateway')->waitForIpv4();
     $devLanIp = $topology->instance('dev')->waitForIpv4();
     $wireGuardCidr = firewallDoctorAdoptWireGuardCidr($gatewayWireGuardIp);

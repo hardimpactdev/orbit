@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 #[Signature('e2e:prepare-topology
-    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod)}
+    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod|operator-gateway-appdev-appprod-agent)}
     {--force : Create Incus topology templates}
     {--branch= : Build the source archive from the named git ref via git archive}
     {--source-archive= : Use this pre-built source archive instead of tarring the current checkout}
@@ -50,7 +50,7 @@ class E2EPrepareTopologyCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.");
+            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent. Legacy control topology names are accepted as aliases.");
         }
 
         $config = E2EConfig::fromEnvironment();

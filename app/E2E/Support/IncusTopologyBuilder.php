@@ -132,6 +132,7 @@ class IncusTopologyBuilder
                 E2ETopologyKind::ControlGateway => $this->buildGatewayStage($key),
                 E2ETopologyKind::ControlGatewayDev => $this->buildDevelopmentAppStage($key),
                 E2ETopologyKind::ControlGatewayDevProd => $this->buildProductionAppStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildAgentStage($key),
             };
 
             $manifests[$stage->value] = $this->finalizeInstances($stage, $instances);
@@ -150,6 +151,7 @@ class IncusTopologyBuilder
             E2ETopologyKind::ControlGateway,
             E2ETopologyKind::ControlGatewayDev,
             E2ETopologyKind::ControlGatewayDevProd,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
         ];
 
         $targetIndex = array_search($target, $stages, true);
@@ -289,6 +291,32 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildAgentStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['control', 'gateway', 'dev', 'prod'], $key);
+
+        $this->timer->measure('agent.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('agent.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-agent'));
+        $this->timer->measure('agent.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
+
+        $agent = $this->launchBlankRole('agent', $key);
+        $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
+        $instances['agent'] = $agent;
+
+        $this->timer->measure('agent.node-new', fn () => $this->runAgentNodeNew(
+            $instances['control'],
+            $key,
+            'agent-1',
+            $agentIp,
+        ));
+        $this->timer->measure('agent.real-wireguard', fn () => $this->installRealWireGuard($instances));
+
+        return $instances;
+    }
+
+    /**
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
@@ -378,6 +406,32 @@ PHP;
         if ($tld !== null) {
             $parts[] = '--tld='.escapeshellarg($tld);
         }
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            implode(' ', $parts),
+            timeoutSeconds: 900,
+        );
+
+        E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
+    }
+
+    private function runAgentNodeNew(
+        IncusInstance $control,
+        SshKeyPair $key,
+        string $name,
+        string $host,
+    ): void {
+        $parts = [
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
+            escapeshellarg($name),
+            '--role=agent',
+            '--host='.escapeshellarg($host),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--json',
+        ];
 
         E2ECommand::ssh(
             $control,
@@ -597,6 +651,8 @@ PHP;
         foreach ($instances as $role => $instance) {
             $name = $instance->name();
 
+            $this->timer->measure("finalize.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
+
             $result = $this->timer->measure("finalize.stop.{$role}", fn () => $this->host->stopInstance($name));
             if (! $result->successful()) {
                 throw new RuntimeException("Could not stop {$name}: {$result->errorOutput()}");
@@ -615,6 +671,31 @@ PHP;
         }
 
         return $manifest;
+    }
+
+    /**
+     * Wipe every user's known_hosts inside the instance before snapshotting it.
+     *
+     * Bake-time SSH between roles populates `~/.ssh/known_hosts` with the
+     * provider IPs the template peers had at bake time. Incus reuses provider
+     * IPs across runs (the bridge DHCP pool is small), and clones get fresh
+     * SSH host keys, so stale entries collide with new clones and trip
+     * StrictHostKeyChecking inside production SSH paths (e.g. doctor probes
+     * SSHing from the gateway clone into an app clone).
+     *
+     * Clearing per-user known_hosts before the snapshot keeps the snapshot
+     * state hermetic — every lease starts with an empty trust file and lets
+     * `StrictHostKeyChecking=accept-new` repopulate it cleanly.
+     */
+    private function clearKnownHosts(IncusInstance $instance): void
+    {
+        $instance->exec(
+            'for d in /root /home/*; do '
+                .'[ -d "$d/.ssh" ] || continue; '
+                .'rm -f "$d/.ssh/known_hosts" "$d/.ssh/known_hosts.old"; '
+            .'done',
+            timeoutSeconds: 30,
+        );
     }
 
     private function launchBlank(string $target): void
