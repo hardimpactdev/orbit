@@ -10,14 +10,14 @@ use App\Services\Security\UnattendedUpgradesInstaller;
 use JsonException;
 use Throwable;
 
-final class UnattendedUpgradesDriver implements UpdateDriver
+final readonly class UnattendedUpgradesDriver implements UpdateDriver
 {
     private UnattendedUpgradesAptConfig $config;
 
     private UnattendedUpgradesInstaller $installer;
 
     public function __construct(
-        private readonly RemoteShell $remoteShell,
+        private RemoteShell $remoteShell,
         ?UnattendedUpgradesAptConfig $config = null,
         ?UnattendedUpgradesInstaller $installer = null,
     ) {
@@ -265,56 +265,56 @@ final class UnattendedUpgradesDriver implements UpdateDriver
 
     private function probeScript(): string
     {
-        return strtr(<<<'SH'
-set -euo pipefail
-php <<'PHP'
-<?php
+        return strtr(<<<'SH_WRAP'
+        set -euo pipefail
+        php <<'PHP'
+        <?php
 
-$autoPath = '/etc/apt/apt.conf.d/20auto-upgrades';
-$unattendedPath = '/etc/apt/apt.conf.d/50unattended-upgrades';
-$logPath = '/var/log/unattended-upgrades/unattended-upgrades.log';
+        $autoPath = '/etc/apt/apt.conf.d/20auto-upgrades';
+        $unattendedPath = '/etc/apt/apt.conf.d/50unattended-upgrades';
+        $logPath = '/var/log/unattended-upgrades/unattended-upgrades.log';
 
-$installed = trim(shell_exec('command -v unattended-upgrade 2>/dev/null') ?? '') !== '';
-$autoExists = is_file($autoPath);
-$unattendedExists = is_file($unattendedPath);
-$dryRunExit = 127;
+        $installed = trim(shell_exec('command -v unattended-upgrade 2>/dev/null') ?? '') !== '';
+        $autoExists = is_file($autoPath);
+        $unattendedExists = is_file($unattendedPath);
+        $dryRunExit = 127;
 
-if ($installed) {
-    exec('sudo unattended-upgrade --dry-run >/tmp/orbit-unattended-upgrade-dry-run.log 2>&1', result_code: $dryRunExit);
-}
+        if ($installed) {
+            exec('sudo unattended-upgrade --dry-run >/tmp/orbit-unattended-upgrade-dry-run.log 2>&1', result_code: $dryRunExit);
+        }
 
-$lastRunStatus = 'unknown';
+        $lastRunStatus = 'unknown';
 
-if (is_file($logPath)) {
-    $logTail = shell_exec('tail -n 80 ' . escapeshellarg($logPath) . ' 2>/dev/null') ?? '';
+        if (is_file($logPath)) {
+            $logTail = shell_exec('tail -n 80 ' . escapeshellarg($logPath) . ' 2>/dev/null') ?? '';
 
-    if (preg_match('/error|failed|traceback|exception/i', $logTail) === 1) {
-        $lastRunStatus = 'failed';
-    } elseif (trim($logTail) !== '') {
-        $lastRunStatus = 'completed';
-    }
-}
+            if (preg_match('/error|failed|traceback|exception/i', $logTail) === 1) {
+                $lastRunStatus = 'failed';
+            } elseif (trim($logTail) !== '') {
+                $lastRunStatus = 'completed';
+            }
+        }
 
-$packages = [];
-$packagePath = '/var/run/reboot-required.pkgs';
+        $packages = [];
+        $packagePath = '/var/run/reboot-required.pkgs';
 
-if (is_file($packagePath)) {
-    $packages = array_values(array_filter(array_map('trim', file($packagePath) ?: [])));
-}
+        if (is_file($packagePath)) {
+            $packages = array_values(array_filter(array_map('trim', file($packagePath) ?: [])));
+        }
 
-echo json_encode([
-    'installed' => $installed,
-    'auto_exists' => $autoExists,
-    'unattended_exists' => $unattendedExists,
-    'auto_hash_ok' => $autoExists && hash_file('sha256', $autoPath) === '__AUTO_SHA256__',
-    'unattended_hash_ok' => $unattendedExists && hash_file('sha256', $unattendedPath) === '__UNATTENDED_SHA256__',
-    'dry_run_exit' => $dryRunExit,
-    'last_run_status' => $lastRunStatus,
-    'reboot_required' => is_file('/var/run/reboot-required'),
-    'reboot_required_packages' => $packages,
-], JSON_THROW_ON_ERROR);
-PHP
-SH, [
+        echo json_encode([
+            'installed' => $installed,
+            'auto_exists' => $autoExists,
+            'unattended_exists' => $unattendedExists,
+            'auto_hash_ok' => $autoExists && hash_file('sha256', $autoPath) === '__AUTO_SHA256__',
+            'unattended_hash_ok' => $unattendedExists && hash_file('sha256', $unattendedPath) === '__UNATTENDED_SHA256__',
+            'dry_run_exit' => $dryRunExit,
+            'last_run_status' => $lastRunStatus,
+            'reboot_required' => is_file('/var/run/reboot-required'),
+            'reboot_required_packages' => $packages,
+        ], JSON_THROW_ON_ERROR);
+        PHP
+        SH_WRAP, [
             '__AUTO_SHA256__' => $this->config->autoUpgradesSha256(),
             '__UNATTENDED_SHA256__' => $this->config->unattendedUpgradesSha256(),
         ]);

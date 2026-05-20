@@ -1503,7 +1503,7 @@ final readonly class DoctorReportRunner
         }
 
         $actionIds = array_filter(array_map(
-            fn (array $action): ?string => $this->issueResolutionId($action),
+            $this->issueResolutionId(...),
             $existingActions,
         ));
 
