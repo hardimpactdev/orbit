@@ -57,6 +57,29 @@ describe('node role:update', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
+    it('rejects vpn updates through the command surface', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'gateway-client',
+            'role' => 'gateway',
+            'environment' => null,
+        ]);
+
+        assignNodeRole($node, 'vpn');
+
+        $exitCode = Artisan::call('node role:update', [
+            'node' => 'gateway-client',
+            'role' => 'vpn',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe("Role 'vpn' is gateway-coupled and cannot be assigned independently.");
+    });
+
     it('updates database without role-local settings', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([

@@ -120,10 +120,10 @@ class NodeRoleAddCommand extends Command
      */
     private function validateRoleInput(string $role): ?array
     {
-        if ($role === 'gateway') {
+        if (in_array($role, ['gateway', 'vpn'], true)) {
             return [
                 'code' => 'validation_failed',
-                'message' => 'The gateway role cannot be managed through node role commands.',
+                'message' => "Role '{$role}' is gateway-coupled and cannot be assigned independently.",
                 'meta' => ['field' => 'role', 'role' => $role],
             ];
         }

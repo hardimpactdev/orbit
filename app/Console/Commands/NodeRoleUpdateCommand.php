@@ -43,8 +43,8 @@ class NodeRoleUpdateCommand extends Command
         $nodeName = (string) $this->argument('node');
         $role = (string) $this->argument('role');
 
-        if ($role === 'gateway') {
-            return $this->failCommand('validation_failed', 'The gateway role cannot be managed through node role commands.', ['field' => 'role', 'role' => $role]);
+        if (in_array($role, ['gateway', 'vpn'], true)) {
+            return $this->failCommand('validation_failed', "Role '{$role}' is gateway-coupled and cannot be assigned independently.", ['field' => 'role', 'role' => $role]);
         }
 
         $settings = $this->settingsForRole($role);

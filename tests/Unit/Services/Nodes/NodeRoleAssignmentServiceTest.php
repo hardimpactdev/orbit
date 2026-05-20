@@ -511,25 +511,34 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'app-development' does not support platform 'macos_15'.");
     });
 
-    it('rejects gateway assignment through the normal service', function (): void {
+    it('rejects gateway-coupled role assignment through the normal service', function (string $role): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'gateway', []))
-            ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be assigned through this service.");
-    });
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, $role, []))
+            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
 
-    it('rejects gateway updates through the normal service', function (): void {
+        expect(fn () => app(NodeRoleAssignmentService::class)->addDuringCreation($node, $role, []))
+            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+    })->with([
+        'gateway' => 'gateway',
+        'vpn' => 'vpn',
+    ]);
+
+    it('rejects gateway-coupled role updates through the normal service', function (string $role): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'gateway',
+            'role' => $role,
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'gateway', []))
-            ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be updated through this service.");
-    });
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, $role, []))
+            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+    })->with([
+        'gateway' => 'gateway',
+        'vpn' => 'vpn',
+    ]);
 
     it('rejects unknown roles during removal through the registry', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
@@ -538,18 +547,21 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, 'Unknown node role [queue].');
     });
 
-    it('rejects gateway removal through the normal service', function (): void {
+    it('rejects gateway-coupled role removal through the normal service', function (string $role): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'gateway',
+            'role' => $role,
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'gateway'))
-            ->toThrow(InvalidArgumentException::class, "Role 'gateway' cannot be removed through this service.");
-    });
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, $role))
+            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+    })->with([
+        'gateway' => 'gateway',
+        'vpn' => 'vpn',
+    ]);
 
     it('rejects agent assignment through the normal service', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);

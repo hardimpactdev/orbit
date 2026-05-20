@@ -26,6 +26,8 @@ class NodeRoleAssignmentService
      */
     public function add(Node $node, string $role, array $settings): NodeRoleAssignment
     {
+        $this->guardNotGatewayCoupledInfrastructureRole($role);
+
         $definition = $this->registry->definition($role);
 
         if (! $definition->assignableByRoleCommand) {
@@ -40,6 +42,8 @@ class NodeRoleAssignmentService
      */
     public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
     {
+        $this->guardNotGatewayCoupledInfrastructureRole($role);
+
         $definition = $this->registry->definition($role);
 
         if (! $definition->assignableByNodeNew) {
@@ -82,6 +86,8 @@ class NodeRoleAssignmentService
      */
     public function update(Node $node, string $role, array $settings): NodeRoleAssignment
     {
+        $this->guardNotGatewayCoupledInfrastructureRole($role);
+
         $definition = $this->registry->definition($role);
 
         if (! $definition->assignableByRoleCommand) {
@@ -114,6 +120,8 @@ class NodeRoleAssignmentService
 
     public function remove(Node $node, string $role, bool $force = false, bool $purgeData = false): void
     {
+        $this->guardNotGatewayCoupledInfrastructureRole($role);
+
         $definition = $this->registry->definition($role);
 
         if ($purgeData && ! $force) {
@@ -175,6 +183,15 @@ class NodeRoleAssignmentService
 
             throw $throwable;
         }
+    }
+
+    private function guardNotGatewayCoupledInfrastructureRole(string $role): void
+    {
+        if (! in_array($role, [NodeRoleName::Gateway->value, NodeRoleName::Vpn->value], true)) {
+            return;
+        }
+
+        throw new InvalidArgumentException("Role '{$role}' is gateway-coupled and cannot be assigned independently.");
     }
 
     private function converge(Node $node, NodeRoleAssignment $assignment, ?NodeRoleAssignment $previousAssignment = null): NodeRoleAssignment

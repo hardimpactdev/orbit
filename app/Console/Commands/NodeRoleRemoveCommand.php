@@ -50,12 +50,12 @@ class NodeRoleRemoveCommand extends Command
         $force = (bool) $this->option('force');
         $purgeData = (bool) $this->option('purge-data');
 
-        if ($purgeData && ! $force) {
-            return $this->failCommand('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge-data']);
+        if (in_array($role, ['gateway', 'vpn'], true)) {
+            return $this->failCommand('validation_failed', "Role '{$role}' is gateway-coupled and cannot be assigned independently.", ['field' => 'role', 'role' => $role]);
         }
 
-        if ($role === 'gateway') {
-            return $this->failCommand('validation_failed', 'The gateway role cannot be managed through node role commands.', ['field' => 'role', 'role' => $role]);
+        if ($purgeData && ! $force) {
+            return $this->failCommand('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge-data']);
         }
 
         if (! $force && ($this->wantsJson() || ! $this->input->isInteractive())) {

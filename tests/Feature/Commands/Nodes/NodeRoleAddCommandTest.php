@@ -77,6 +77,27 @@ describe('node role:add', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
+    it('rejects adding vpn through the command surface', function (): void {
+        setupNodeRoleGatewayCaller();
+        createHostedNode([
+            'name' => 'gateway-vpn-1',
+            'role' => 'gateway',
+            'environment' => null,
+        ]);
+
+        $exitCode = Artisan::call('node role:add', [
+            'node' => 'gateway-vpn-1',
+            'role' => 'vpn',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe("Role 'vpn' is gateway-coupled and cannot be assigned independently.");
+    });
+
     it('rejects adding agent through the command surface', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
