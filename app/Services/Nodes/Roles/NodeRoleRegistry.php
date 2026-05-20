@@ -9,6 +9,7 @@ use App\Data\Nodes\RoleSettings\AppDevelopmentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
 use App\Data\Nodes\RoleSettings\EmptyRoleSettings;
+use App\Data\Nodes\RoleSettings\VpnRoleSettings;
 use App\Enums\Nodes\NodeRoleName;
 use InvalidArgumentException;
 
@@ -40,17 +41,33 @@ final class NodeRoleRegistry
                     NodeRoleName::AppDevelopment->value,
                     NodeRoleName::AppProduction->value,
                     NodeRoleName::Database->value,
+                    NodeRoleName::Agent->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
                 assignableByRoleCommand: false,
                 assignableByNodeNew: true,
             ),
+            NodeRoleName::Vpn->value => new NodeRoleDefinition(
+                name: NodeRoleName::Vpn->value,
+                conflictsWith: [
+                    NodeRoleName::AppDevelopment->value,
+                    NodeRoleName::AppProduction->value,
+                    NodeRoleName::Database->value,
+                    NodeRoleName::Agent->value,
+                ],
+                supportedPlatforms: ['ubuntu'],
+                settingsClass: VpnRoleSettings::class,
+                assignableByRoleCommand: false,
+                assignableByNodeNew: false,
+            ),
             NodeRoleName::AppDevelopment->value => new NodeRoleDefinition(
                 name: NodeRoleName::AppDevelopment->value,
                 conflictsWith: [
                     NodeRoleName::Gateway->value,
+                    NodeRoleName::Vpn->value,
                     NodeRoleName::AppProduction->value,
+                    NodeRoleName::Agent->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: AppDevelopmentRoleSettings::class,
@@ -59,7 +76,9 @@ final class NodeRoleRegistry
                 name: NodeRoleName::AppProduction->value,
                 conflictsWith: [
                     NodeRoleName::Gateway->value,
+                    NodeRoleName::Vpn->value,
                     NodeRoleName::AppDevelopment->value,
+                    NodeRoleName::Agent->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: AppProductionRoleSettings::class,
@@ -68,6 +87,8 @@ final class NodeRoleRegistry
                 name: NodeRoleName::Database->value,
                 conflictsWith: [
                     NodeRoleName::Gateway->value,
+                    NodeRoleName::Vpn->value,
+                    NodeRoleName::Agent->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: DatabaseRoleSettings::class,
@@ -76,6 +97,7 @@ final class NodeRoleRegistry
                 name: NodeRoleName::Agent->value,
                 conflictsWith: [
                     NodeRoleName::Gateway->value,
+                    NodeRoleName::Vpn->value,
                     NodeRoleName::AppDevelopment->value,
                     NodeRoleName::AppProduction->value,
                     NodeRoleName::Database->value,

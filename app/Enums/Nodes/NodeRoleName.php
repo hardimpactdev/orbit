@@ -7,6 +7,7 @@ namespace App\Enums\Nodes;
 enum NodeRoleName: string
 {
     case Gateway = 'gateway';
+    case Vpn = 'vpn';
     case AppDevelopment = 'app-development';
     case AppProduction = 'app-production';
     case Database = 'database';

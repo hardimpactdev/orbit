@@ -71,6 +71,11 @@ class NodeRoleAssignments
         return $this->nodeHasActiveRole($node, NodeRoleName::Gateway->value);
     }
 
+    public function nodeHasActiveVpnRole(Node $node): bool
+    {
+        return $this->nodeHasActiveRole($node, NodeRoleName::Vpn->value);
+    }
+
     public function nodeHasActiveAgentRole(Node $node): bool
     {
         return $this->nodeHasActiveRole($node, NodeRoleName::Agent->value);
@@ -81,6 +86,13 @@ class NodeRoleAssignments
         return Node::query()
             ->where('status', 'active')
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Gateway->value));
+    }
+
+    public function activeVpnNodeQuery(): Builder
+    {
+        return Node::query()
+            ->where('status', 'active')
+            ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Vpn->value));
     }
 
     public function nodeIsGateway(Node $node): bool

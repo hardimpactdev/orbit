@@ -96,6 +96,37 @@ describe('node role assignments', function (): void {
             ->and($assignments->nodeIsGateway($inactiveAssignedGateway))->toBeFalse();
     });
 
+    it('discovers the active vpn node from role assignments', function (): void {
+        $activeVpnNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+        $inactiveVpnNode = Node::factory()->create(['role' => 'control', 'status' => 'provisioning']);
+        $pendingVpnNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+        $legacyVpnNode = Node::factory()->create(['role' => 'vpn', 'status' => 'active']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $activeVpnNode->id,
+            'role' => 'vpn',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $inactiveVpnNode->id,
+            'role' => 'vpn',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $pendingVpnNode->id,
+            'role' => 'vpn',
+            'status' => 'pending',
+        ]);
+
+        $assignments = app(NodeRoleAssignments::class);
+
+        expect($assignments->nodeHasActiveVpnRole($activeVpnNode))->toBeTrue()
+            ->and($assignments->nodeHasActiveVpnRole($inactiveVpnNode))->toBeTrue()
+            ->and($assignments->nodeHasActiveVpnRole($pendingVpnNode))->toBeFalse()
+            ->and($assignments->nodeHasActiveVpnRole($legacyVpnNode))->toBeFalse()
+            ->and($assignments->activeVpnNodeQuery()->pluck('id')->all())->toBe([$activeVpnNode->id]);
+    });
+
     it('labels effective roles from active assignments', function (): void {
         $gateway = Node::factory()->create(['role' => 'control']);
         $development = Node::factory()->create(['role' => 'control']);
