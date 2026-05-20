@@ -12,6 +12,12 @@ final class VpnClientRemoveController extends VpnControllerSupport
 {
     public function __invoke(Request $request, string $name): JsonResponse
     {
+        $manager = $this->manager();
+
+        if ($manager instanceof VpnFailure) {
+            return $this->fail($manager);
+        }
+
         if (! $request->boolean('force')) {
             return $this->fail(new VpnFailure('validation_failed', 'Use --force to remove this VPN client.', [
                 'field' => 'force',
@@ -19,7 +25,7 @@ final class VpnClientRemoveController extends VpnControllerSupport
             ]), 422);
         }
 
-        $result = $this->manager()->remove($name, $request->string('totp')->trim()->toString() ?: null);
+        $result = $manager->remove($name, $request->string('totp')->trim()->toString() ?: null);
 
         if ($result instanceof VpnFailure) {
             return $this->fail($result, 422);

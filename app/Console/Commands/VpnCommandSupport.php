@@ -13,11 +13,12 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
 use App\Exceptions\PromptAborted;
-use App\Models\Node;
+use App\Services\Vpn\ActiveVpnNodeUnavailable;
 use App\Services\Vpn\FileVpnBackend;
 use App\Services\Vpn\VpnBackend;
 use App\Services\Vpn\VpnClientManager;
 use App\Services\Vpn\VpnFailure;
+use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyVpnBackend;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
@@ -29,6 +30,8 @@ abstract class VpnCommandSupport extends Command implements Loggable
     use LogsCommandActivity;
     use WithSpinner;
     use WithStepTree;
+
+    private const string VPN_RUNTIME_SSH_UNAVAILABLE = 'vpn_runtime_ssh_unavailable';
 
     protected ?string $activityClientName = null;
 
@@ -84,30 +87,26 @@ abstract class VpnCommandSupport extends Command implements Loggable
 
     protected function forwardToGateway(string $command, array $arguments = [], array $options = []): array|VpnFailure
     {
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->orderByDesc('id')
-            ->first();
-
-        if (! $gateway instanceof Node) {
+        try {
+            $vpnNode = app(VpnNodeResolver::class)->activeVpnNode();
+        } catch (ActiveVpnNodeUnavailable) {
             return new VpnFailure(
-                code: 'gateway_ssh_unavailable',
-                message: 'Gateway SSH execution is required for VPN administration.',
+                code: 'vpn_runtime_unavailable',
+                message: 'No active VPN role node is available for VPN administration.',
             );
         }
 
         $script = $this->gatewayScript($command, $arguments, $options);
 
         try {
-            $result = app(RemoteShell::class)->run($gateway, $script, [
-                'cwd' => $gateway->orbit_path ?: '/home/orbit/orbit',
+            $result = app(RemoteShell::class)->run($vpnNode, $script, [
+                'cwd' => $vpnNode->orbit_path ?: '/home/orbit/orbit',
                 'timeout' => 120,
             ]);
         } catch (Throwable) {
             return new VpnFailure(
-                code: 'gateway_ssh_unavailable',
-                message: 'Gateway SSH execution is required for VPN administration.',
+                code: self::VPN_RUNTIME_SSH_UNAVAILABLE,
+                message: 'VPN runtime SSH execution is required for VPN administration.',
             );
         }
 
@@ -115,8 +114,8 @@ abstract class VpnCommandSupport extends Command implements Loggable
             $details = trim($result->errorOutput()) !== '' ? trim($result->errorOutput()) : trim($result->output());
 
             return new VpnFailure(
-                code: 'gateway_ssh_unavailable',
-                message: $details !== '' ? $details : 'Gateway SSH execution failed.',
+                code: self::VPN_RUNTIME_SSH_UNAVAILABLE,
+                message: $details !== '' ? $details : 'VPN runtime SSH execution failed.',
             );
         }
 
@@ -159,19 +158,19 @@ abstract class VpnCommandSupport extends Command implements Loggable
             $payload = json_decode(trim($result->stdout), true, 512, JSON_THROW_ON_ERROR);
         } catch (Throwable) {
             return new VpnFailure(
-                code: 'gateway_ssh_unavailable',
-                message: 'Gateway VPN command did not return JSON.',
+                code: self::VPN_RUNTIME_SSH_UNAVAILABLE,
+                message: 'VPN runtime command did not return JSON.',
             );
         }
 
         if (! is_array($payload)) {
-            return new VpnFailure('gateway_ssh_unavailable', 'Gateway VPN command did not return JSON.');
+            return new VpnFailure(self::VPN_RUNTIME_SSH_UNAVAILABLE, 'VPN runtime command did not return JSON.');
         }
 
         if (isset($payload['error']) && is_array($payload['error'])) {
             return new VpnFailure(
-                code: is_string($payload['error']['code'] ?? null) ? $payload['error']['code'] : 'gateway_ssh_unavailable',
-                message: is_string($payload['error']['message'] ?? null) ? $payload['error']['message'] : 'Gateway VPN command failed.',
+                code: is_string($payload['error']['code'] ?? null) ? $payload['error']['code'] : self::VPN_RUNTIME_SSH_UNAVAILABLE,
+                message: is_string($payload['error']['message'] ?? null) ? $payload['error']['message'] : 'VPN runtime command failed.',
                 meta: is_array($payload['error']['meta'] ?? null) ? $payload['error']['meta'] : [],
             );
         }

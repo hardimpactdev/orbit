@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Services\Vpn\VpnFailure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -11,7 +12,13 @@ final class VpnClientListController extends VpnControllerSupport
 {
     public function __invoke(Request $request): JsonResponse
     {
-        $clients = $this->manager()->list($this->totp($request));
+        $manager = $this->manager();
+
+        if ($manager instanceof VpnFailure) {
+            return $this->fail($manager);
+        }
+
+        $clients = $manager->list($this->totp($request));
 
         return response()->json([
             'success' => [

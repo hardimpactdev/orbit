@@ -6,10 +6,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Services\Vpn\ActiveVpnNodeUnavailable;
 use App\Services\Vpn\FileVpnBackend;
 use App\Services\Vpn\VpnBackend;
 use App\Services\Vpn\VpnClientManager;
 use App\Services\Vpn\VpnFailure;
+use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyVpnBackend;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -17,12 +19,21 @@ use Illuminate\Http\Request;
 
 abstract class VpnControllerSupport implements Loggable
 {
-    protected function manager(): VpnClientManager
+    protected function manager(): VpnClientManager|VpnFailure
     {
         $fakeBackendPath = config('services.wg_easy.fake_backend_path');
 
         if (is_string($fakeBackendPath) && $fakeBackendPath !== '') {
             return new VpnClientManager(new FileVpnBackend($fakeBackendPath));
+        }
+
+        try {
+            app(VpnNodeResolver::class)->activeVpnNode();
+        } catch (ActiveVpnNodeUnavailable) {
+            return new VpnFailure(
+                code: 'vpn_runtime_unavailable',
+                message: 'No active VPN role node is available for VPN administration.',
+            );
         }
 
         $backend = app()->bound(VpnBackend::class)

@@ -12,6 +12,12 @@ final class VpnWebUiChangePasswordController extends VpnControllerSupport
 {
     public function __invoke(Request $request): JsonResponse
     {
+        $manager = $this->manager();
+
+        if ($manager instanceof VpnFailure) {
+            return $this->fail($manager);
+        }
+
         $password = $request->string('password')->toString();
 
         if ($password === '') {
@@ -25,7 +31,7 @@ final class VpnWebUiChangePasswordController extends VpnControllerSupport
             ]), 422);
         }
 
-        $result = $this->manager()->changeWebUiPassword($password, $request->string('totp')->trim()->toString() ?: null);
+        $result = $manager->changeWebUiPassword($password, $request->string('totp')->trim()->toString() ?: null);
 
         if ($result instanceof VpnFailure) {
             return $this->fail($result, 422);

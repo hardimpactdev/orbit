@@ -14,7 +14,13 @@ final class VpnClientCreateController extends VpnControllerSupport
     {
         $name = $request->string('name')->trim()->toString();
         $includeConfig = $request->boolean('config');
-        $client = $this->manager()->create($name, $includeConfig, $request->string('totp')->trim()->toString() ?: null);
+        $manager = $this->manager();
+
+        if ($manager instanceof VpnFailure) {
+            return $this->fail($manager);
+        }
+
+        $client = $manager->create($name, $includeConfig, $request->string('totp')->trim()->toString() ?: null);
 
         if ($client instanceof VpnFailure) {
             return $this->fail($client, 422);

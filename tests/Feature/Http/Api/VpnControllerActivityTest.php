@@ -4,19 +4,26 @@ declare(strict_types=1);
 
 use App\Data\Vpn\VpnBackendClient;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Vpn\ArrayVpnBackend;
 use App\Services\Vpn\VpnBackend;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
 it('logs vpn api activity with safe metadata', function (): void {
-    Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'vpn',
         'status' => 'active',
     ]);
 
@@ -38,4 +45,59 @@ it('logs vpn api activity with safe metadata', function (): void {
     expect($entry->properties->get('method'))->toBe('GET');
     expect($entry->properties->get('path'))->toBe('api/vpn/clients');
     expect(json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR))->not->toContain('123456');
+});
+
+it('returns vpn runtime unavailable when no active vpn role node exists', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+
+    app()->instance(VpnBackend::class, new ArrayVpnBackend);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+        ->getJson('/api/vpn/clients')
+        ->assertStatus(400)
+        ->assertJsonPath('error.code', 'vpn_runtime_unavailable')
+        ->assertJsonPath('error.message', 'No active VPN role node is available for VPN administration.');
+});
+
+it('uses the configured fake backend without requiring an active vpn role node', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+
+    $backendPath = storage_path('framework/testing/vpn-api-fake-'.bin2hex(random_bytes(6)).'.json');
+    File::ensureDirectoryExists(dirname($backendPath));
+    File::put($backendPath, json_encode([
+        'clients' => [
+            [
+                'id' => 'client-1',
+                'name' => 'laptop',
+                'address' => '10.6.0.7',
+                'enabled' => true,
+                'latest_handshake_at' => null,
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
+    config(['services.wg_easy.fake_backend_path' => $backendPath]);
+
+    try {
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+            ->getJson('/api/vpn/clients')
+            ->assertSuccessful()
+            ->assertJsonPath('success.meta.count', 1)
+            ->assertJsonPath('success.data.clients.0.name', 'laptop');
+    } finally {
+        File::delete($backendPath);
+    }
 });

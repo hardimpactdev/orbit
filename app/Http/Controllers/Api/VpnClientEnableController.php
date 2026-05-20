@@ -13,7 +13,13 @@ class VpnClientEnableController extends VpnControllerSupport
 {
     public function __invoke(Request $request, string $name): JsonResponse
     {
-        return $this->respond($this->manager()->enable($name, $request->string('totp')->trim()->toString() ?: null));
+        $manager = $this->manager();
+
+        if ($manager instanceof VpnFailure) {
+            return $this->fail($manager);
+        }
+
+        return $this->respond($manager->enable($name, $request->string('totp')->trim()->toString() ?: null));
     }
 
     protected function respond(VpnClientMutationResult|VpnFailure $result): JsonResponse

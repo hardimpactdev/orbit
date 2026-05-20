@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Vpn\VpnBackendClient;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Vpn\ArrayVpnBackend;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -15,6 +16,11 @@ uses(RefreshDatabase::class);
 
 it('lists vpn clients with json metadata on gateway callers', function (): void {
     vpnLocalNode('gateway');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     bindVpnBackend(new ArrayVpnBackend([
         new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, '2026-04-26T10:00:00Z'),
     ]));
@@ -36,6 +42,11 @@ it('lists vpn clients with json metadata on gateway callers', function (): void 
 
 it('creates admin vpn clients without creating node records', function (): void {
     vpnLocalNode('gateway');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     bindVpnBackend(new ArrayVpnBackend);
 
     $before = Node::query()->count();
@@ -57,6 +68,11 @@ it('creates admin vpn clients without creating node records', function (): void 
 
 it('enables disables and removes non-node clients', function (): void {
     vpnLocalNode('gateway');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     bindVpnBackend(new ArrayVpnBackend([
         new VpnBackendClient('client-1', 'laptop', '10.6.0.7', false, null),
     ]));
@@ -86,6 +102,11 @@ it('enables disables and removes non-node clients', function (): void {
 
 it('requires force for remove in json mode before backend deletion', function (): void {
     vpnLocalNode('gateway');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     $backend = new ArrayVpnBackend([
         new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null),
     ]);
@@ -105,6 +126,11 @@ it('requires force for remove in json mode before backend deletion', function ()
 
 it('protects active node peers from vpn-client writes', function (): void {
     vpnLocalNode('gateway');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
@@ -131,6 +157,11 @@ it('protects active node peers from vpn-client writes', function (): void {
 
 it('runs on gateway machines without client-side role checks', function (): void {
     vpnLocalNode('app');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     $backend = new ArrayVpnBackend;
     bindVpnBackend($backend);
 
@@ -146,10 +177,15 @@ it('forwards control callers to the gateway over remote shell', function (): voi
     config(['orbit.is_gateway' => false]);
 
     vpnLocalNode('control');
-    Node::factory()->create([
-        'name' => 'gateway-1',
+    $vpnNode = Node::factory()->create([
+        'name' => 'vpn-1',
         'role' => 'gateway',
         'wireguard_address' => '10.6.0.1',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $vpnNode->id,
+        'role' => 'vpn',
         'status' => 'active',
     ]);
 
@@ -157,8 +193,11 @@ it('forwards control callers to the gateway over remote shell', function (): voi
     {
         public string $script = '';
 
+        public ?Node $node = null;
+
         public function run(Node $node, string $script, array $options = []): RemoteShellResult
         {
+            $this->node = $node;
             $this->script = $script;
 
             return new RemoteShellResult(
@@ -191,12 +230,33 @@ it('forwards control callers to the gateway over remote shell', function (): voi
 
     expect($exitCode)->toBe(0)
         ->and($payload['success']['data']['clients'][0]['name'])->toBe('laptop')
+        ->and(app(RemoteShell::class)->node?->is($vpnNode))->toBeTrue()
         ->and(app(RemoteShell::class)->script)->toContain('vpn-client:list')
         ->and(app(RemoteShell::class)->script)->toContain('--json');
 });
 
+it('fails when no active vpn role node is available for forwarded commands', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    vpnLocalNode('control');
+
+    $exitCode = Artisan::call('vpn-client:list', ['--json' => true]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'vpn_runtime_unavailable',
+            'message' => 'No active VPN role node is available for VPN administration.',
+        ]);
+});
+
 it('logs vpn command activity without secrets', function (): void {
     vpnLocalNode('gateway');
+    NodeRoleAssignment::factory()->create([
+        'node_id' => Node::query()->firstOrFail()->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
     bindVpnBackend(new ArrayVpnBackend([
         new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null),
     ]));

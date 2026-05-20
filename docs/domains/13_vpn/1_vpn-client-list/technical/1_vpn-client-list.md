@@ -66,7 +66,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH. In v1 this still targets the gateway-coupled host. | `error.code=gateway_ssh_unavailable` |
+| VPN runtime SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH. In v1 this still targets the gateway-coupled host. | `error.code=vpn_runtime_ssh_unavailable` |
 | VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
