@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<issue-key>] [--fix|--restore|--adopt] [--dry-run] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's role-assignment category set. |
-| `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Exact doctor issue key. Filters reported drift after probes and before action planning. Does not imply or select a family. |
+| `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Single exact doctor issue-key filter. Filters reported drift after probes and before action planning. Does not imply or select a family. |
 | `node` | `--node` | Never. | `--self` is present. | The calling peer's node as identified by the gateway (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
 | `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |

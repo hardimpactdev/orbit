@@ -55,7 +55,7 @@
 - [x] Task 2c: **Remove deprecated `env` API** + arch test (only after 2a + 2b have migrated every caller)
 - [x] Task 3: **`SshdHardenedInstaller`** — installs hardened sshd config bound to WireGuard + loopback
 - [x] Task 4: **`PublicSshDenyInstaller`** — UFW deny port 22 on the public interface via the new `interface` column
-- [x] Task 5: **`UnattendedUpgradesInstaller`**
+- [x] Task 5: **`UnattendedUpgradesInstaller`** — installs the package and writes expected apt auto-upgrade config. It does not expose doctor posture keys; node update posture is owned by `node.updates`.
 - [x] Task 6: **Fleet-wide RemoteShell activity logging** for every `RemoteShell::run`, `::stream`, `::start`
 - [x] Task 7: **Production app runtime security** — extends the existing `app` doctor family with `app.security.*` keys; production nodes do not use the workspace family
 - [x] Task 8: **Development workspace security** — extends the existing `workspace` doctor family with development-only `workspace.security.*` keys
@@ -377,8 +377,7 @@ Audit on 2026-05-16. The table separates in-scope gaps from the accepted current
 | `node.security.sshd_config` | rendered config restricts root/password auth and binds to WG + loopback | re-render + reload | ❌ | Replaces current ad-hoc `99-orbit-hardening.conf` flow |
 | `node.security.sshd_listen` | `ss -tlnp` shows only WG + loopback | re-render + reload | ❌ | |
 | `node.security.public_ssh_deny` | UFW v4 + v6 deny rows with `interface='public'`, from `ufw status numbered` | re-enact through `FirewallRuleFixer` | ❌ | Node owns role bootstrap network policy; firewall helpers parse/enact |
-| `node.security.unattended_upgrades` | `apt-config dump` matches expected | re-render apt config | ❌ | |
-| `node.security.reboot_required` | `test -f /var/run/reboot-required` | n/a | n/a | Info-only |
+| `node.updates` | Security baseline installs unattended-upgrades and writes the expected apt auto-upgrade configuration during provisioning. Ongoing verification and restore belongs to `doctor --family=node --key=node.updates`. Reboot-required state is `node.updates_reboot_required` drift, not `node.security.*`. | n/a | n/a | Owned by the node update posture slice |
 | `node.security.sysctl` | `sysctl -a` matches expected | re-render sysctl config and reload | ❌ | |
 | `node.security.home_perms` | `stat /home/orbit` returns `700 orbit orbit` | **NOT RESTORABLE** | ❌ | Bake-time only; drift means out-of-band tamper, warrants re-bake |
 

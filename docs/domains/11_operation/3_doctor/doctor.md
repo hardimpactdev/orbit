@@ -32,7 +32,7 @@ diagnostic source exists; until then, findings related to DNS stay inside the
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<issue-key>] [--fix|--restore|--adopt] [--dry-run] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json]
 ```
 
 ## Examples
@@ -54,7 +54,7 @@ orbit doctor --restore --family=node --key=node.security.host_key.app-1 --dry-ru
   `security` is not a family. Security issue keys are reported inside their
   owning families, such as `node.security.*`, `app.security.*`, and
   `workspace.security.*`.
-- `--key`: Limit reported drift to one exact issue key inside the selected family/families.
+- `--key`: Limit reported drift to a single exact issue-key filter inside the selected family/families.
 - `--node`: Limit the run to one gateway-known node.
 - `--self`: Limit the run to the caller's gateway-known node identity.
 - `--app`: Limit the run to one app and the family facts owned by that app.

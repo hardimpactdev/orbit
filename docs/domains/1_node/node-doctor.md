@@ -20,8 +20,10 @@ The node family owns these facts:
   runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
 - node-owned security baseline: host-key pinning metadata, canonical
-  steady-state SSH user, SSH management exposure policy, unattended upgrades,
-  sysctl baseline, and permissions for home directories set during bake;
+  steady-state SSH user, SSH management exposure policy, sysctl baseline, and
+  permissions for home directories set during bake;
+- node update posture: managed Ubuntu server update readiness through a
+  supported update driver, starting with Ubuntu `unattended-upgrades`;
 - node-related defaults: `app-development` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
   safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`, and PHP CLI and
@@ -79,7 +81,13 @@ The node probe reads gateway node records and checks these layers:
    `nodes.user` values other than `orbit` are reported as legacy drift. The
    `node:new --user` option remains valid as a bootstrap-only SSH user and is
    not itself drift.
-12. **Role assignment readiness:** active role assignments have the settings
+12. **Node update posture:** managed Ubuntu server nodes may expose
+   `node.updates` posture when the operator selects the exact
+   `--key=node.updates` filter. The update layer runs only when a registered
+   update driver supports the selected target. Unsupported targets are silent:
+   node doctor never creates `node.updates_not_applicable` or
+   `node.updates_driver_unsupported` findings.
+13. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
    drift.
 
@@ -101,7 +109,7 @@ The node probe reads gateway node records and checks these layers:
 
    `app-production`, `database`, and `gateway` assignments have no role
    settings in v1.
-13. **Node-related defaults:** local `node:default` preferences point at
+14. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` nodes when `--self` inspects the CLI's
    local configuration, PHP CLI defaults at the node level point at installed
    supported PHP runtimes, and agent IDE defaults at the node level point at
@@ -177,9 +185,14 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.security.host_key.<node>` | A managed Linux node has no pinned host key, a mismatched host key, or host-key metadata that cannot be verified. First pin is adoptable only with explicit operator consent. |
 | `node.security.ssh_user` | A persisted managed node record uses a steady-state SSH user other than `orbit`. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
-| `node.security.unattended_upgrades` | A provisioned Linux node is missing the expected unattended-upgrades package or configuration. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
 | `node.security.home_perms` | `/home/orbit` or `/home/orbit/.ssh` permissions are weaker than the bake-time baseline. Report-only; restore requires operator re-bake. |
+| `node.updates_config_missing` | A supported update driver found that `unattended-upgrades` or required apt auto-upgrade config is absent. The issue object uses `key=node.updates` and this value as `code`. |
+| `node.updates_config_mismatch` | A supported update driver found apt auto-upgrade config that differs from Orbit's expected policy. The issue object uses `key=node.updates` and this value as `code`. |
+| `node.updates_dry_run_failed` | A supported update driver found that `sudo unattended-upgrade --dry-run` failed. The issue object uses `key=node.updates` and this value as `code`. |
+| `node.updates_last_run_failed` | A supported update driver found recent unattended-upgrades evidence reporting a failed run. The issue object uses `key=node.updates` and this value as `code`. |
+| `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
+| `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` node. |
 | `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway configuration is absent on the selected node or the target node's default `php` binary differs from gateway configuration. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
@@ -206,8 +219,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.security.public_ssh_deny` | Reapply the node-owned public SSH deny policy through the node family while preserving user-owned firewall rules. |
-| `node.security.unattended_upgrades` | Restore the unattended-upgrades package and managed apt auto-upgrade configuration. |
 | `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
+| `node.updates` | For exact `--key=node.updates`, repair apt auto-upgrade config through `UnattendedUpgradesInstaller`, run `sudo unattended-upgrade`, re-probe, and report any remaining drift. Orbit never reboots automatically. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
 
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
@@ -229,6 +242,10 @@ the `vpn` role does not match desired DNS mappings owned by the gateway.
 reported only. `node:default` and `node:agent-ide` are explicit user actions;
 doctor must not silently clear or replace those preferences under
 `doctor --family=node --restore`.
+
+`node.updates_reboot_required` is non-restorable drift. The restore path may
+repair configuration and run the trusted backend, but a required reboot remains
+visible until an operator explicitly reboots the server.
 
 Node doctor never creates fleet membership, grants access, adds the `gateway`
 role through role mutation, or edits public IPv4/IPv6 metadata. Those

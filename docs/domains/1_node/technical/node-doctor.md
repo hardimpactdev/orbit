@@ -19,7 +19,7 @@ methods:
 | `key()` | `string` | Machine-readable family key: `'node'`. Singular per [Architecture: State families](../../../architecture.md#state-families). |
 | `label()` | `string` | Human-readable label: `'Node'`. |
 | `introspect(Node $node)` | `ProbeSnapshot` | Read physical node state. Current implementation returns an empty snapshot (stub for future probe layers). |
-| `diff(Node $node, ProbeSnapshot $snapshot)` | `list<DriftEntry>` | Compare node record against probe snapshot and return drift entries. |
+| `diff(Node $node, ProbeSnapshot $snapshot, ?string $key = null)` | `list<DriftEntry>` | Compare node record against probe snapshot and return drift entries. The optional key is a single exact issue-key filter used by expensive keyed layers such as `node.updates`. |
 | `canReconcile()` | `bool` | Whether this family supports `doctor --family=node --restore`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `doctor --family=node --adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
@@ -192,6 +192,15 @@ They do not mutate host state:
   - Reports `node.vpn_dns_mapping_mismatch` when the DNS runtime served through
     the `vpn` role does not match desired DNS mappings owned by the gateway.
 
+- Node update posture (`node.updates`)
+  - Runs only for exact `--key=node.updates`.
+  - Builds an update target from the selected node and asks the registered
+    update driver registry for matching drivers.
+  - Emits nothing when no driver supports the target.
+  - Maps driver issues to `DriftEntry` objects with `key=node.updates` and the
+    precise driver issue code in details.
+  - Reports reboot-required state as non-restorable drift. Restore never reboots.
+
 ### Stubs (External Service Required)
 
 These layers are reserved for future probe implementations that require
@@ -291,6 +300,7 @@ private key is left empty.
 | `node.role_baseline_mismatch` | Re-applies the baseline artifacts that the selected active role assignments own, including development DNS mappings derived from role settings. |
 | `node.vpn_runtime_missing` | Re-applies the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | Rewrites the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
+| `node.updates` | For exact `--key=node.updates`, selects matching update drivers, repairs configuration through the driver apply path, runs the trusted backend, and leaves reboot-required drift visible after re-probe. |
 
 ### Unsupported Keys
 
@@ -308,6 +318,7 @@ Reconciliation throws `RuntimeException` for all other keys, including:
 - `node.local_default_invalid`
 - `node.agent_ide_default_invalid`
 - `node.cli_php_default_mismatch`
+- `node.updates_reboot_required`
 
 ## Adoption
 
@@ -325,6 +336,9 @@ private key is left empty.
 | `node.vpn_runtime_missing` | Verifies compatible `vpn` runtime readiness when the WireGuard server and VPN-facing DNS runtime can be proven; returns a conflict when runtime readiness cannot be verified. |
 | `node.vpn_dns_mapping_mismatch` | Adopts the observed VPN-served DNS runtime mapping only when it can be proven to belong to the active `vpn` role and match gateway-owned node intent. |
 | `node.platform_record_mismatch` | Updates the node record to the observed platform when local platform detection is supported and unambiguous. |
+
+`node.updates` is not adoptable. Update posture is observed host reality and
+trusted backend behavior, not gateway configuration to ingest from a node.
 
 ## Extensibility
 
