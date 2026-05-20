@@ -30,6 +30,8 @@ These rules govern all uses of `show-detail` in Orbit commands.
   which uses `└`.
 - A blank tree continuation line `│` renders between property rows. No spacer
   renders after the final `└` row.
+- When terminal decoration is enabled, tree connector glyphs are dimmed. Title
+  text, labels, and values remain normal terminal text.
 - Property labels use human title case, not raw JSON keys.
 - Values are one-line summaries. Lists render comma-separated.
 - Missing values render as `—` (em dash) for human display; JSON keeps `null`.

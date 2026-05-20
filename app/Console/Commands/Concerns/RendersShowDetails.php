@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Concerns;
 
+use App\Support\Cli\SpinnerTreeRenderer;
+
 trait RendersShowDetails
 {
     /**
@@ -16,16 +18,16 @@ trait RendersShowDetails
         $last = count($properties) - 1;
 
         $this->newLine();
-        $this->line("┌  {$title}");
-        $this->line('│');
+        $this->line($this->showDetailFrame('┌')."  {$title}");
+        $this->line($this->showDetailFrame('│'));
 
         foreach (array_values($properties) as $index => $value) {
             $label = $labels[$index];
-            $prefix = $index === $last ? '└' : '├';
+            $prefix = $this->showDetailFrame($index === $last ? '└' : '├');
             $this->line($prefix.'  '.str_pad($label, $width + 3).$this->showDetailValue($value));
 
             if ($index !== $last) {
-                $this->line('│');
+                $this->line($this->showDetailFrame('│'));
             }
         }
 
@@ -58,5 +60,14 @@ trait RendersShowDetails
         $json = json_encode($value);
 
         return is_string($json) ? $json : '—';
+    }
+
+    protected function showDetailFrame(string $glyph): string
+    {
+        if (! $this->getOutput()->isDecorated()) {
+            return $glyph;
+        }
+
+        return SpinnerTreeRenderer::DIM.$glyph.SpinnerTreeRenderer::RESET;
     }
 }

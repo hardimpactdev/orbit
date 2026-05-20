@@ -127,6 +127,27 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->not->toContain('○');
     });
 
+    it('dims decorated detail tree connector glyphs only', function (): void {
+        DB::table('nodes')->insert(nodeShowHumanRow());
+
+        $output = new BufferedOutput(decorated: true);
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1'], $output);
+        $buffer = $output->fetch();
+        $plainBuffer = preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $buffer) ?? $buffer;
+
+        expect($exitCode)->toBe(0)
+            ->and($plainBuffer)->toContain('┌  Node: app-1')
+            ->and($plainBuffer)->toContain('├  Role')
+            ->and($plainBuffer)->toContain('│')
+            ->and($plainBuffer)->toContain('└  Consuming')
+            ->and($buffer)->toContain("\e[38;5;242m┌\e[39m")
+            ->and($buffer)->toContain("\e[38;5;242m├\e[39m")
+            ->and($buffer)->toContain("\e[38;5;242m│\e[39m")
+            ->and($buffer)->toContain("\e[38;5;242m└\e[39m")
+            ->and($buffer)->not->toContain("\e[38;5;242mNode: app-1")
+            ->and($buffer)->not->toContain("\e[38;5;242mRole");
+    });
+
     it('renders spacer rows between detail properties', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
 
