@@ -52,6 +52,46 @@ describe('node role:list', function (): void {
             ]);
     });
 
+    it('lists gateway-coupled vpn role assignments in json', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'gateway-vpn-1',
+            'role' => 'gateway',
+            'environment' => null,
+        ]);
+
+        assignNodeRole($node, 'gateway');
+        assignNodeRole($node, 'vpn', settings: [
+            'public_endpoint' => 'vpn.example.test',
+            'wireguard_cidr' => '10.44.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.44.0.1',
+        ]);
+
+        $exitCode = Artisan::call('node role:list', [
+            'node' => 'gateway-vpn-1',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $roles = collect($payload['success']['data']['roles'])->keyBy('role');
+
+        expect($exitCode)->toBe(0)
+            ->and($roles->keys()->all())->toBe(['gateway', 'vpn'])
+            ->and($roles['vpn'])->toMatchArray([
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => [
+                    'public_endpoint' => 'vpn.example.test',
+                    'wireguard_cidr' => '10.44.0.0/24',
+                    'wireguard_port' => 51820,
+                    'dns_ip' => '10.44.0.1',
+                ],
+                'last_error' => null,
+            ])
+            ->and($roles['vpn']['converged_at'])->toBeString();
+    });
+
     it('lists one node role assignments in human output', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([

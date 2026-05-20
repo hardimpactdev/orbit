@@ -189,7 +189,7 @@ class NodeShowCommand extends Command
      *     status: string,
      *     environment: string|null,
      *     platform: string,
-     *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass, last_error: string|null, converged_at: string|null}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{
@@ -241,7 +241,7 @@ class NodeShowCommand extends Command
      *     status: string,
      *     environment: string|null,
      *     platform: string,
-     *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass, last_error: string|null, converged_at: string|null}>,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{
@@ -331,7 +331,7 @@ class NodeShowCommand extends Command
     }
 
     /**
-     * @return list<array{role: string, status: string, settings: array<string, mixed>|stdClass}>
+     * @return list<array{role: string, status: string, settings: array<string, mixed>|stdClass, last_error: string|null, converged_at: string|null}>
      */
     private function normalizeRoles(mixed $roles): array
     {
