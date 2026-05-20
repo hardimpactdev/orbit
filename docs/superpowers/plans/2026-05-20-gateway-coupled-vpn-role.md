@@ -1278,17 +1278,17 @@
 
   Expected: pass.
 
-- [ ] **Step 5: Run live smoke only if touching live-node behavior is intended**
+- [ ] **Step 5: Run the ephemeral E2E aggregate if touching integrated VPN/DNS paths**
 
-  If the implementation changes active live-node VPN/DNS provisioning paths and
-  live nodes are available, run:
+  If the implementation changes VPN/DNS provisioning paths that the prepared
+  topology covers, run:
 
   ```bash
-  composer test:live
+  composer test:e2e
   ```
 
-  Expected: pass. If live nodes are unavailable, document that live smoke was
-  not run and why.
+  Expected: pass. For changes that touch real provisioning, WireGuard, or host
+  mutation, run `composer test:e2e:provision` instead.
 
 - [ ] **Step 6: Final commit**
 

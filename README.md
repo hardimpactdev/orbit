@@ -30,7 +30,7 @@ Useful checks:
 
 ```bash
 composer quality-check
-composer test:live
+composer test:e2e
 ```
 
 ## Legacy Reference

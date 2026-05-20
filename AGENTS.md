@@ -76,16 +76,15 @@ Before handing off a code change that should be broadly safe, run:
 composer quality-check
 ```
 
-For standing live-node smoke verification, run:
+When behavior touches the integrated topology, run the ephemeral E2E lane:
 
 ```bash
-composer test:live
+composer test:e2e
 ```
 
-Standing live-node smoke must stay read-only or idempotent. Destructive,
-provisioning, host-mutation, or repair/adoption flows require ephemeral E2E.
-
-See `TESTING.md` for the current node topology notes.
+There is no standing live-node test lane. Provisioning, host-mutation, and
+repair/adoption flows belong in `composer test:e2e:provision`. See `TESTING.md`
+for the full verification model and lane map.
 
 ## AI Guideline Precedence
 

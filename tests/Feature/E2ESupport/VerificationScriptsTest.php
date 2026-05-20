@@ -25,6 +25,39 @@ it('does not expose a standing live smoke test lane', function (): void {
         ->and($composer['scripts'])->not->toHaveKey('test:live');
 });
 
+it('keeps composer test:live and bin/live-smoke out of every doc surface agents read', function (): void {
+    $files = collect([
+        base_path('AGENTS.md'),
+        base_path('README.md'),
+    ]);
+
+    foreach (['.agents/skills', 'docs/superpowers/plans'] as $relative) {
+        $absolute = base_path($relative);
+
+        if (! is_dir($absolute)) {
+            continue;
+        }
+
+        $files = $files->merge(
+            collect(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($absolute, FilesystemIterator::SKIP_DOTS)))
+                ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'md')
+                ->map(fn (SplFileInfo $file): string => $file->getPathname())
+        );
+    }
+
+    $offenders = $files
+        ->filter(fn (string $path): bool => is_file($path))
+        ->mapWithKeys(fn (string $path): array => [$path => (string) file_get_contents($path)])
+        ->filter(fn (string $contents): bool => str_contains($contents, 'composer test:live') || str_contains($contents, 'bin/live-smoke'))
+        ->keys()
+        ->map(fn (string $path): string => str_replace(base_path().'/', '', $path))
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($offenders)->toBe([]);
+});
+
 it('reports command docs lint severities in agent format', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 

@@ -1100,10 +1100,10 @@ Examples:
 php artisan test --compact tests/E2E/Ephemeral
 ```
 
-- [ ] **Step 4: Run smoke tests**
+- [ ] **Step 4: Run the ephemeral E2E aggregate**
 
 ```bash
-composer test:live
+composer test:e2e
 ```
 
 Expected: PASS (or document any unrelated pre-existing failures).

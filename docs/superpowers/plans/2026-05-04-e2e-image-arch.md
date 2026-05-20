@@ -153,8 +153,8 @@ composer test:e2e:topology-contract:control-gateway
 composer e2e:prepare-topology -- --force control-gateway-dev-prod   # the previously-blocked lane
 composer test:e2e:topology-contract:control-gateway-dev-prod
 
-# Standing live smoke must remain unaffected
-composer test:live
+# Ephemeral topology aggregate must remain unaffected
+composer test:e2e
 ```
 
 ---

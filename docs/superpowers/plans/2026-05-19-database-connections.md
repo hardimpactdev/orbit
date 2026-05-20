@@ -356,7 +356,7 @@
   ```
 - [ ] Add an E2E smoke if schema/query commands touch real remote execution paths:
   ```bash
-  composer test:live
+  composer test:e2e
   ```
 - [ ] Commit final fixes: `chore: verify database commands`.
 
