@@ -419,14 +419,6 @@ class NodeShowCommand extends Command
     }
 
     /**
-     * @return array<string, mixed>|stdClass
-     */
-    private function normalizeRoleSettings(mixed $settings): array|stdClass
-    {
-        return NodeRoleAssignmentPayload::settings($settings);
-    }
-
-    /**
      * @param  array<string, mixed>  $data
      */
     private function jsonSuccess(array $data): int

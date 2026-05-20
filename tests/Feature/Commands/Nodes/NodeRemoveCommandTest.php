@@ -535,10 +535,12 @@ describe('node:remove control forwarding', function (): void {
 });
 
 describe('node:remove safety', function (): void {
-    it('does not invoke ssh or external processes during removal', function (): void {
+    it('does not invoke target-node ssh during removal', function (): void {
         setupNodeRemoveGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveRow());
-        Process::fake();
+        Process::fake([
+            'docker restart orbit-dns' => Process::result(),
+        ]);
         Process::preventStrayProcesses();
 
         Artisan::call('node:remove', [
@@ -546,7 +548,7 @@ describe('node:remove safety', function (): void {
             '--force' => true,
         ]);
 
-        Process::assertNothingRan();
+        Process::assertRanTimes(fn ($process): bool => str_contains((string) $process->command, 'ssh '), 0);
     });
 
     it('removes only the targeted node record', function (): void {

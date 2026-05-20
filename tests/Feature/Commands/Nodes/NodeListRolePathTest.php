@@ -87,6 +87,8 @@ describe('node:list role paths', function (): void {
                                         'role' => 'gateway',
                                         'status' => 'active',
                                         'settings' => [],
+                                        'last_error' => null,
+                                        'converged_at' => null,
                                     ],
                                 ],
                             ],
@@ -108,6 +110,8 @@ describe('node:list role paths', function (): void {
                     'role' => 'gateway',
                     'status' => 'active',
                     'settings' => [],
+                    'last_error' => null,
+                    'converged_at' => null,
                 ],
             ])
             ->and($rawOutput)->toContain('"settings":{}');

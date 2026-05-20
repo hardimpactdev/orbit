@@ -250,6 +250,45 @@ it('fails when no active vpn role node is available for forwarded commands', fun
         ]);
 });
 
+it('fails when the active vpn role node cannot run forwarded commands over ssh', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    vpnLocalNode('control');
+    $vpnNode = Node::factory()->create([
+        'name' => 'vpn-1',
+        'role' => 'gateway',
+        'wireguard_address' => '10.6.0.1',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $vpnNode->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new class implements RemoteShell
+    {
+        public function run(Node $node, string $script, array $options = []): RemoteShellResult
+        {
+            return new RemoteShellResult(
+                exitCode: 255,
+                stdout: '',
+                stderr: 'Permission denied (publickey).',
+                durationMs: 1,
+            );
+        }
+    });
+
+    $exitCode = Artisan::call('vpn-client:list', ['--json' => true]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'vpn_runtime_ssh_unavailable',
+            'message' => 'Permission denied (publickey).',
+        ]);
+});
+
 it('logs vpn command activity without secrets', function (): void {
     vpnLocalNode('gateway');
     NodeRoleAssignment::factory()->create([

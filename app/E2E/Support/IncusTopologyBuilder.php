@@ -408,7 +408,7 @@ PHP;
         $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
 
         $php = <<<PHP
-\\App\\Models\\Node::query()->updateOrCreate(
+\$gateway = \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'gateway'],
     [
         'role' => 'gateway',
@@ -422,6 +422,26 @@ PHP;
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
             ],
+);
+
+\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$gateway->id, 'role' => 'gateway'],
+    ['status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => now()],
+);
+
+\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$gateway->id, 'role' => 'vpn'],
+    [
+        'status' => 'active',
+        'settings' => [
+            'public_endpoint' => {$gatewayIpValue},
+            'wireguard_cidr' => '10.6.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.6.0.1',
+        ],
+        'last_error' => null,
+        'converged_at' => now(),
+    ],
 );
 PHP;
 

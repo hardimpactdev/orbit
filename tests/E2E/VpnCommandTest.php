@@ -74,6 +74,26 @@ if (! \$gateway instanceof \App\Models\Node) {
     'status' => 'active',
 ])->save();
 
+\App\Models\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$gateway->id, 'role' => 'gateway'],
+    ['status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => now()],
+);
+
+\App\Models\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$gateway->id, 'role' => 'vpn'],
+    [
+        'status' => 'active',
+        'settings' => [
+            'public_endpoint' => 'gateway',
+            'wireguard_cidr' => '10.6.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.6.0.1',
+        ],
+        'last_error' => null,
+        'converged_at' => now(),
+    ],
+);
+
 echo 'prepared';
 PHP;
 

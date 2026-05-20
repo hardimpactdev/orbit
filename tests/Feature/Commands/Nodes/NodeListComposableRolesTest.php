@@ -35,14 +35,14 @@ describe('node:list composable roles', function (): void {
             'status' => 'active',
         ]);
 
-        NodeRoleAssignment::factory()->create([
+        $appDevelopmentRole = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
             'role' => 'app-development',
             'status' => 'active',
             'settings' => ['tld' => 'orbit.test'],
         ]);
 
-        NodeRoleAssignment::factory()->create([
+        $databaseRole = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
             'role' => 'database',
             'status' => 'error',
@@ -69,11 +69,15 @@ describe('node:list composable roles', function (): void {
                     'role' => 'app-development',
                     'status' => 'active',
                     'settings' => ['tld' => 'orbit.test'],
+                    'last_error' => null,
+                    'converged_at' => $appDevelopmentRole->converged_at?->toJSON(),
                 ],
                 [
                     'role' => 'database',
                     'status' => 'error',
                     'settings' => [],
+                    'last_error' => null,
+                    'converged_at' => $databaseRole->converged_at?->toJSON(),
                 ],
             ],
         ])
