@@ -89,8 +89,8 @@ describe('node:show command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('┌  Node: app-1')
             ->and($output)->toContain('├  Role')
-            ->and($output)->toContain('├  Platform')
-            ->and($output)->toContain('└  Serving')
+            ->and($output)->toContain('├  OS')
+            ->and($output)->toContain('└  Consuming')
             ->and($output)->not->toContain('+---');
     });
 

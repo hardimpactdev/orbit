@@ -123,7 +123,7 @@ describe('node:show human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
         expect($output)->toContain('┌  Node: app-1')
-            ->and($output)->toContain('└  Serving')
+            ->and($output)->toContain('└  Consuming')
             ->and($output)->not->toContain('○');
     });
 
@@ -134,9 +134,9 @@ describe('node:show human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toMatch('/├  Role\s+app\n│\n├  Environment/')
-            ->and($output)->toMatch('/├  Consuming\s+—\n│\n└  Serving\s+—/')
-            ->and($output)->not->toMatch('/└  Serving\s+—\n│/');
+        expect($output)->toMatch('/├  Role\s+app\n│\n├  OS/')
+            ->and($output)->toMatch('/├  Serving\s+—\n│\n└  Consuming\s+—/')
+            ->and($output)->not->toMatch('/└  Consuming\s+—\n│/');
     });
 
     it('frames the detail tree with leading and trailing empty lines', function (): void {
@@ -147,10 +147,10 @@ describe('node:show human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
         expect($output)->toMatch('/^\n┌  Node: app-1\n/')
-            ->and($output)->toMatch('/└  Serving\s+—\n\n$/');
+            ->and($output)->toMatch('/└  Consuming\s+—\n\n$/');
     });
 
-    it('renders registry success output with all fields for app node', function (): void {
+    it('renders singular role assignment without legacy role or environment in human output', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
         assignNodeShowHumanRole('app-1', 'app-development', ['tld' => 'test']);
 
@@ -160,20 +160,18 @@ describe('node:show human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: app-1')
             ->and($output)->toContain('Role')
-            ->and($output)->toContain('app')
-            ->and($output)->toContain('Roles')
             ->and($output)->toContain('app-development')
-            ->and($output)->toContain('Environment')
-            ->and($output)->toContain('development')
-            ->and($output)->toContain('Platform')
+            ->and($output)->not->toContain('Roles')
+            ->and($output)->not->toContain('Environment')
+            ->and($output)->toContain('OS')
             ->and($output)->toContain('ubuntu_24-04')
-            ->and($output)->toContain('WireGuard')
+            ->and($output)->toContain('Peer IP')
             ->and($output)->toContain('10.6.0.7')
-            ->and($output)->toContain('Consuming')
-            ->and($output)->toContain('Serving');
+            ->and($output)->toContain('Serving')
+            ->and($output)->toContain('Consuming');
     });
 
-    it('omits environment line for non-app roles', function (): void {
+    it('omits environment line and falls back to legacy role when assignments are absent', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow([
             'name' => 'gateway-2',
             'role' => 'gateway',
@@ -187,11 +185,10 @@ describe('node:show human renderer contract', function (): void {
         expect($output)->toContain('Node: gateway-2')
             ->and($output)->toContain('Role')
             ->and($output)->toContain('gateway')
-            ->and($output)->toContain('Environment')
-            ->and($output)->toContain('—')
-            ->and($output)->toContain('Platform')
+            ->and($output)->not->toContain('Environment')
+            ->and($output)->toContain('OS')
             ->and($output)->toContain('ubuntu_24-04')
-            ->and($output)->toContain('WireGuard')
+            ->and($output)->toContain('Peer IP')
             ->and($output)->toContain('10.6.0.7');
     });
 
@@ -207,7 +204,7 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->toContain('—');
     });
 
-    it('renders real grant data from gateway registry', function (): void {
+    it('renders human grant labels from the target node perspective', function (): void {
         DB::table('nodes')->insert([
             nodeShowHumanRow([
                 'name' => 'app-1',
@@ -239,10 +236,8 @@ describe('node:show human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('Consuming')
-            ->and($output)->toContain('control-1: *')
-            ->and($output)->toContain('control-2: *')
-            ->and($output)->toContain('Serving');
+        expect($output)->toMatch('/Serving\s+control-1: \*, control-2: \*/')
+            ->and($output)->toMatch('/Consuming\s+control-1: \*/');
     });
 
     it('renders missing node prose error', function (): void {

@@ -62,7 +62,13 @@ Run `node:show` to inspect a single node's registry record without triggering an
 
 ## Output
 
-Human output is a registry detail view.
+Human output is a registry detail view. It shows role assignments as the
+primary role view (`Roles` when multiple assignments exist, `Role` when one
+assignment exists), omits the legacy environment column, and renders grants from
+the target node's perspective:
+
+- `Serving`: nodes that are allowed to consume this node.
+- `Consuming`: nodes this node is allowed to consume.
 
 JSON output returns the node record under a machine-readable output. See the
 [JSON renderer contract](technical/6.2_node-show_output-render_json.md) for the

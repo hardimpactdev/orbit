@@ -252,26 +252,37 @@ class NodeShowCommand extends Command
      */
     private function renderHuman(array $node): void
     {
-        $rolesLabel = $this->humanRolesLabel($node['roles']);
-
         $properties = [
-            'Role' => $node['role'],
-            'Environment' => $node['environment'],
-            'Platform' => $node['platform'],
-            'WireGuard' => $node['addresses']['wireguard'],
-            'Consuming' => $this->humanGrantLabels($node['grants']['consuming_nodes']),
-            'Serving' => $this->humanGrantLabels($node['grants']['serving_nodes']),
+            ...$this->humanRoleProperties($node['role'], $node['roles']),
+            'OS' => $node['platform'],
+            'Peer IP' => $node['addresses']['wireguard'],
+            'Serving' => $this->humanGrantLabels($node['grants']['consuming_nodes']),
+            'Consuming' => $this->humanGrantLabels($node['grants']['serving_nodes']),
         ];
 
-        if ($rolesLabel !== null) {
-            $properties = [
-                'Role' => $node['role'],
-                'Roles' => $rolesLabel,
-                ...array_slice($properties, 1, preserve_keys: true),
-            ];
+        $this->renderShowDetails("Node: {$node['name']}", $properties);
+    }
+
+    /**
+     * @return array{Role: string}|array{Roles: string}
+     */
+    private function humanRoleProperties(string $legacyRole, mixed $roles): array
+    {
+        if (! is_array($roles) || $roles === []) {
+            return ['Role' => $legacyRole];
         }
 
-        $this->renderShowDetails("Node: {$node['name']}", $properties);
+        $labels = $this->humanRoleLabels($roles);
+
+        if ($labels === []) {
+            return ['Role' => $legacyRole];
+        }
+
+        if (count($labels) === 1) {
+            return ['Role' => $labels[0]];
+        }
+
+        return ['Roles' => implode(', ', $labels)];
     }
 
     /**
@@ -307,12 +318,11 @@ class NodeShowCommand extends Command
         ];
     }
 
-    private function humanRolesLabel(mixed $roles): ?string
+    /**
+     * @return list<string>
+     */
+    private function humanRoleLabels(array $roles): array
     {
-        if (! is_array($roles) || $roles === []) {
-            return null;
-        }
-
         $labels = [];
 
         foreach ($roles as $role) {
@@ -327,7 +337,7 @@ class NodeShowCommand extends Command
                 : "{$role['role']} ({$status})";
         }
 
-        return $labels === [] ? null : implode(', ', $labels);
+        return $labels;
     }
 
     /**
