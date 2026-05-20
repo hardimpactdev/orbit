@@ -145,14 +145,18 @@ final readonly class DoctorReportRunner
         }
 
         $actions = $mode === 'adopt'
-            ? $this->adoptSelectedFamilies($node, $probe['scope']['families'] ?? [])
+            ? ($key === 'node.updates' ? [] : $this->adoptSelectedFamilies($node, $probe['scope']['families'] ?? []))
             : $this->apply($node, $mode, $probe['issues'] ?? []);
 
-        if ($mode !== 'adopt') {
+        if ($mode !== 'adopt' || $key === 'node.updates') {
             $actions = [
                 ...$actions,
                 ...$this->actionsForUnsupportedMode($mode, $probe['issues'] ?? [], $actions),
             ];
+        }
+
+        if ($mode === 'restore' && $key === 'node.updates') {
+            return $this->finalize($this->probe($node, $families, $key), $mode, $actions);
         }
 
         return $this->finalize($probe, $mode, $actions);
@@ -174,7 +178,7 @@ final readonly class DoctorReportRunner
                 ...$issues,
                 ...array_map(
                     fn (DriftEntry $entry): array => $this->issuePayload($entry, $node),
-                    $this->nodesProbe->diff($node, $snapshot),
+                    $this->nodesProbe->diff($node, $snapshot, $key),
                 ),
             ];
         }
@@ -432,13 +436,17 @@ final readonly class DoctorReportRunner
      */
     private function issuePayload(DriftEntry $entry, Node $node): array
     {
+        $detail = $entry->detail ?? [];
+        $code = is_string($detail['code'] ?? null) ? $detail['code'] : $entry->key;
+
         return $this->annotateIssue([
             'family' => 'node',
             'node' => $node->name,
             'key' => $entry->key,
+            'code' => $code,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
+            'detail' => $detail,
         ]);
     }
 
@@ -698,6 +706,7 @@ final readonly class DoctorReportRunner
     {
         $targetNode = $this->nodeFromIssue($issue) ?? $node;
         $entry = $this->driftEntryFromStoredParts('node', $key, $detail, $issue);
+        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
 
         try {
             $this->nodesProbe->reconcile($targetNode, $entry);
@@ -705,11 +714,11 @@ final readonly class DoctorReportRunner
             return [
                 'family' => 'node',
                 'node' => $targetNode->name,
-                'code' => $key,
+                'code' => $code,
                 'key' => $key,
                 'mode' => 'restore',
                 'status' => 'failed',
-                'summary' => "Failed to fix {$key}.",
+                'summary' => "Failed to fix {$code}.",
                 'details' => [
                     'error' => $e->getMessage(),
                 ],
@@ -719,11 +728,11 @@ final readonly class DoctorReportRunner
         return [
             'family' => 'node',
             'node' => $targetNode->name,
-            'code' => $key,
+            'code' => $code,
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$key}.",
+            'summary' => is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$code}.",
             'details' => $detail,
         ];
     }
@@ -982,6 +991,7 @@ final readonly class DoctorReportRunner
     {
         $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
         $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
+        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
         $kind = is_string($issue['kind'] ?? null) ? $issue['kind'] : '';
         $restorableKeys = [
             'proxy.route_missing',
@@ -1017,8 +1027,12 @@ final readonly class DoctorReportRunner
             'node.security.sshd_config',
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',
-            'node.security.unattended_upgrades',
             'node.security.sysctl',
+            'node.updates_config_missing',
+            'node.updates_config_mismatch',
+            'node.updates_dry_run_failed',
+            'node.updates_last_run_failed',
+            'node.updates_unverifiable',
             'database_connection.env_missing',
             'database_connection.env_mismatch',
             'database_connection.target_missing',
@@ -1027,7 +1041,8 @@ final readonly class DoctorReportRunner
 
         return [
             ...$issue,
-            'restorable' => $isNodeHostKey || in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
+            'code' => $code,
+            'restorable' => $isNodeHostKey || in_array($code, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
             'adoptable' => $isNodeHostKey
                 || (($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value)
                 || ($family === 'database_connection' && in_array($key, [
@@ -1074,9 +1089,9 @@ final readonly class DoctorReportRunner
      */
     private function remainingIssues(array $issues, array $actions): array
     {
-        $resolvedKeys = array_filter(array_map(
-            fn (array $action): ?string => in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true) && is_string($action['key'] ?? null)
-                ? $action['key']
+        $resolvedIssueIds = array_filter(array_map(
+            fn (array $action): ?string => in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true)
+                ? $this->issueResolutionId($action)
                 : null,
             $actions,
         ));
@@ -1087,9 +1102,26 @@ final readonly class DoctorReportRunner
 
         return array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ! in_array($issue['key'] ?? null, $resolvedKeys, true)
+            fn (array $issue): bool => ! in_array($this->issueResolutionId($issue), $resolvedIssueIds, true)
                 && ! $this->databaseConnectionIssueResolved($issue, $resolvedDatabaseTargets),
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function issueResolutionId(array $item): ?string
+    {
+        $family = is_string($item['family'] ?? null) ? $item['family'] : null;
+        $key = is_string($item['key'] ?? null) ? $item['key'] : null;
+
+        if ($family === null || $key === null) {
+            return null;
+        }
+
+        $code = is_string($item['code'] ?? null) ? $item['code'] : $key;
+
+        return "{$family}:{$key}:{$code}";
     }
 
     /**
@@ -1470,8 +1502,8 @@ final readonly class DoctorReportRunner
             return [];
         }
 
-        $actionKeys = array_filter(array_map(
-            fn (array $action): ?string => is_string($action['key'] ?? null) ? $action['key'] : null,
+        $actionIds = array_filter(array_map(
+            fn (array $action): ?string => $this->issueResolutionId($action),
             $existingActions,
         ));
 
@@ -1479,7 +1511,7 @@ final readonly class DoctorReportRunner
             fn (array $issue): array => $this->unsupportedAction($mode, $issue),
             array_filter(
                 $issues,
-                fn (array $issue): bool => ! in_array($issue['key'] ?? null, $actionKeys, true),
+                fn (array $issue): bool => ! in_array($this->issueResolutionId($issue), $actionIds, true),
             ),
         ));
     }
@@ -1490,14 +1522,17 @@ final readonly class DoctorReportRunner
      */
     private function unsupportedAction(string $mode, array $issue): array
     {
+        $key = is_string($issue['key'] ?? null) ? $issue['key'] : null;
+        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
+
         return [
             'family' => $issue['family'] ?? null,
             'node' => $issue['node'] ?? null,
-            'code' => $issue['key'] ?? null,
-            'key' => $issue['key'] ?? null,
+            'code' => $code,
+            'key' => $key,
             'mode' => $mode,
             'status' => 'skipped',
-            'summary' => "No {$mode} action is registered for ".(string) ($issue['key'] ?? 'this issue').'.',
+            'summary' => "No {$mode} action is registered for ".(string) ($code ?? 'this issue').'.',
             'details' => [
                 'reason' => 'mode_not_supported',
             ],
@@ -1541,15 +1576,16 @@ final readonly class DoctorReportRunner
     private function plannedAction(string $mode, array $issue): array
     {
         $key = (string) ($issue['key'] ?? 'this issue');
+        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
 
         return [
             'family' => $issue['family'] ?? null,
             'node' => $issue['node'] ?? null,
-            'code' => $issue['key'] ?? null,
+            'code' => $code,
             'key' => $issue['key'] ?? null,
             'mode' => $mode,
             'status' => 'planned',
-            'summary' => "Would {$mode} {$key}.",
+            'summary' => "Would {$mode} {$code}.",
             'details' => [
                 'dry_run' => true,
             ],

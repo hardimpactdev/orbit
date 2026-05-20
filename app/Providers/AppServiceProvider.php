@@ -35,6 +35,8 @@ use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
+use App\Services\Updates\UnattendedUpgradesDriver;
+use App\Services\Updates\UpdateDriverRegistry;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
@@ -103,6 +105,9 @@ class AppServiceProvider extends ServiceProvider
             $app->make(OpenCodeServerTool::class),
             $app->make(OpenClawTool::class),
             $app->make(HermesTool::class),
+        ]));
+        $this->app->singleton(UpdateDriverRegistry::class, fn ($app): UpdateDriverRegistry => new UpdateDriverRegistry([
+            $app->make(UnattendedUpgradesDriver::class),
         ]));
 
         $this->app->singleton(WgEasyServiceInstaller::class, fn (): WgEasyServiceInstaller => new WgEasyServiceInstaller(

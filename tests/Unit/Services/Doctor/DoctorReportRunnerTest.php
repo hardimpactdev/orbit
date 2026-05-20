@@ -83,6 +83,55 @@ function markDoctorRunnerNodeSecurityBaselineClean(Node $node): void
     }
 }
 
+function createDoctorRunnerUpdateGateway(array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'updates-gateway',
+        'role' => 'gateway',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '10.6.0.1',
+        'wireguard_address' => null,
+        'user' => 'orbit',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    markDoctorRunnerNodeSecurityBaselineClean($node);
+
+    return $node;
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function doctorRunnerUpdateProbeResult(array $overrides = []): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'installed' => true,
+            'auto_exists' => true,
+            'unattended_exists' => true,
+            'auto_hash_ok' => true,
+            'unattended_hash_ok' => true,
+            'dry_run_exit' => 0,
+            'last_run_status' => 'completed',
+            'reboot_required' => false,
+            'reboot_required_packages' => [],
+            ...$overrides,
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 1,
+    );
+}
+
 describe('DoctorReportRunner', function (): void {
     it('restores workspace PHP-FPM pool mismatches from gateway intent', function (): void {
         $node = createDoctorRunnerAppHostNode();
@@ -613,6 +662,53 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'failed',
             ])
             ->and($failedAction['details']['error'] ?? null)->toContain('permission denied');
+    });
+
+    it('reports updates with the shared node updates key and specific issue code', function (): void {
+        $node = createDoctorRunnerUpdateGateway();
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            doctorRunnerUpdateProbeResult(['auto_hash_ok' => false]),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, ['node'], 'node.updates');
+
+        expect($report['healthy'])->toBeFalse()
+            ->and($report['issues'][0])->toMatchArray([
+                'family' => 'node',
+                'node' => 'updates-gateway',
+                'key' => 'node.updates',
+                'code' => 'node.updates_config_mismatch',
+                'restorable' => true,
+            ]);
+    });
+
+    it('keeps updates reboot drift after restore re-probes a completed config action', function (): void {
+        $node = createDoctorRunnerUpdateGateway();
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            doctorRunnerUpdateProbeResult(['auto_hash_ok' => false]),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'completed', stderr: '', durationMs: 1),
+            doctorRunnerUpdateProbeResult(['reboot_required' => true]),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node'], key: 'node.updates');
+
+        expect($report['healthy'])->toBeFalse()
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'node',
+                'node' => 'updates-gateway',
+                'key' => 'node.updates',
+                'code' => 'node.updates_config_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($report['issues'][0])->toMatchArray([
+                'family' => 'node',
+                'node' => 'updates-gateway',
+                'key' => 'node.updates',
+                'code' => 'node.updates_reboot_required',
+                'restorable' => false,
+            ]);
     });
 });
 

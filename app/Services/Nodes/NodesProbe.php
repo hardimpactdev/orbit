@@ -27,6 +27,9 @@ use App\Services\Nodes\Roles\NodeRoleDefinition;
 use App\Services\Nodes\Roles\NodeRoleRegistry;
 use App\Services\Platform\PlatformDetector;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\Updates\UpdateDriverRegistry;
+use App\Services\Updates\UpdatePostureIssue;
+use App\Services\Updates\UpdateTargetFactory;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use InvalidArgumentException;
 use RuntimeException;
@@ -45,6 +48,8 @@ final readonly class NodesProbe
         private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
+        private ?UpdateDriverRegistry $updateDriverRegistry = null,
+        private ?UpdateTargetFactory $updateTargetFactory = null,
     ) {}
 
     public function key(): string
@@ -65,7 +70,7 @@ final readonly class NodesProbe
     /**
      * @return list<DriftEntry>
      */
-    public function diff(Node $node, ProbeSnapshot $snapshot): array
+    public function diff(Node $node, ProbeSnapshot $snapshot, ?string $key = null): array
     {
         $drift = [];
 
@@ -82,6 +87,10 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkDevelopmentTld($node));
         $drift = array_merge($drift, $this->checkCliPhpDefault($node));
         $drift = array_merge($drift, $this->nodeSecurityPostureProbe()->diff($node));
+
+        if ($key === 'node.updates') {
+            $drift = array_merge($drift, $this->checkUpdates($node));
+        }
 
         return $drift;
     }
@@ -1000,6 +1009,16 @@ final readonly class NodesProbe
 
     public function reconcile(Node $node, DriftEntry $entry): void
     {
+        if ($entry->key === 'node.updates') {
+            if ($this->updateIssueCode($entry) === 'node.updates_reboot_required') {
+                throw new RuntimeException('Node update reboot-required drift is not restorable.');
+            }
+
+            $this->reconcileUpdates($node);
+
+            return;
+        }
+
         $fixableKeys = [
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
@@ -1011,7 +1030,6 @@ final readonly class NodesProbe
             'node.security.sshd_config',
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',
-            'node.security.unattended_upgrades',
             'node.security.sysctl',
         ];
 
@@ -1035,6 +1053,69 @@ final readonly class NodesProbe
             'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node, $entry),
             default => throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'."),
         };
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkUpdates(Node $node): array
+    {
+        $target = $this->updateTargetFactory()->forNode($node);
+        $drivers = $this->updateDriverRegistry()->driversFor($target);
+
+        if ($drivers === []) {
+            return [];
+        }
+
+        $drift = [];
+
+        foreach ($drivers as $driver) {
+            $snapshot = $driver->probe($target);
+
+            foreach ($snapshot->issues as $issue) {
+                $drift[] = $this->updateIssueDriftEntry($snapshot->driver, $issue);
+            }
+        }
+
+        return $drift;
+    }
+
+    private function updateIssueDriftEntry(string $driver, UpdatePostureIssue $issue): DriftEntry
+    {
+        return new DriftEntry(
+            family: $this->key(),
+            key: 'node.updates',
+            kind: $issue->kind,
+            summary: $issue->summary,
+            detail: [
+                'driver' => $driver,
+                ...$issue->detail,
+                'code' => $issue->code,
+            ],
+        );
+    }
+
+    private function reconcileUpdates(Node $node): void
+    {
+        $target = $this->updateTargetFactory()->forNode($node);
+        $drivers = $this->updateDriverRegistry()->driversFor($target);
+
+        if ($drivers === []) {
+            throw new RuntimeException("No update driver supports node '{$node->name}'.");
+        }
+
+        foreach ($drivers as $driver) {
+            $result = $driver->apply($target);
+
+            if ($result->status !== 'completed') {
+                throw new RuntimeException($result->summary);
+            }
+        }
+    }
+
+    private function updateIssueCode(DriftEntry $entry): string
+    {
+        return is_string($entry->detail['code'] ?? null) ? $entry->detail['code'] : $entry->key;
     }
 
     private function reconcileWireguardPeerMissing(Node $node): void
@@ -1503,5 +1584,15 @@ final readonly class NodesProbe
     private function nodeSecurityPostureProbe(): NodeSecurityPostureProbe
     {
         return $this->nodeSecurityPostureProbe ?? new NodeSecurityPostureProbe($this->remoteShell);
+    }
+
+    private function updateDriverRegistry(): UpdateDriverRegistry
+    {
+        return $this->updateDriverRegistry ?? app(UpdateDriverRegistry::class);
+    }
+
+    private function updateTargetFactory(): UpdateTargetFactory
+    {
+        return $this->updateTargetFactory ?? app(UpdateTargetFactory::class);
     }
 }

@@ -16,7 +16,6 @@ use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SshdHardenedInstaller;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Security\SysctlBaselineInstaller;
-use App\Services\Security\UnattendedUpgradesInstaller;
 use RuntimeException;
 use Throwable;
 
@@ -114,7 +113,6 @@ final readonly class NodeSecurityPostureProbe
             'node.security.sshd_config',
             'node.security.sshd_listen' => app(SshdHardenedInstaller::class)->installFor($node, $shell),
             'node.security.public_ssh_deny' => app(PublicSshDenyInstaller::class)->installFor($node, $shell),
-            'node.security.unattended_upgrades' => app(UnattendedUpgradesInstaller::class)->installFor($node, $shell),
             'node.security.sysctl' => app(SysctlBaselineInstaller::class)->installFor($node, $shell),
             'node.security.runtime_user' => throw new RuntimeException('Runtime user drift is report-only; re-bake or migrate the node.'),
             'node.security.home_perms' => throw new RuntimeException('Home permission drift is report-only; re-bake the node.'),
@@ -227,7 +225,6 @@ final readonly class NodeSecurityPostureProbe
             'runtime_user' => 'node.security.runtime_user',
             'sshd_config' => 'node.security.sshd_config',
             'sshd_listen' => 'node.security.sshd_listen',
-            'unattended_upgrades' => 'node.security.unattended_upgrades',
             'sysctl' => 'node.security.sysctl',
             'home_perms' => 'node.security.home_perms',
         ];
@@ -264,7 +261,6 @@ $checks = [
         && str_contains(file_get_contents("/etc/ssh/sshd_config.d/99-orbit-hardening.conf") ?: "", "PasswordAuthentication no")
         && str_contains(file_get_contents("/etc/ssh/sshd_config.d/99-orbit-hardening.conf") ?: "", "AllowUsers orbit"),
     "sshd_listen" => true,
-    "unattended_upgrades" => is_file("/etc/apt/apt.conf.d/20auto-upgrades") && is_file("/etc/apt/apt.conf.d/50unattended-upgrades"),
     "sysctl" => is_file("/etc/sysctl.d/60-orbit.conf"),
     "home_perms" => substr(sprintf("%o", fileperms("/home/orbit") ?: 0), -4) === "0700",
 ];

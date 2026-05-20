@@ -98,7 +98,6 @@ it('reports remote node security drift from the posture script', function (): vo
     expect(array_map(fn (DriftEntry $entry): string => $entry->key, $drift))
         ->toBe([
             'node.security.sshd_config',
-            'node.security.unattended_upgrades',
             'node.security.home_perms',
         ]);
 });
