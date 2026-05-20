@@ -23,7 +23,7 @@ class IncusHost
 
         return Process::timeout($timeoutSeconds ?? $this->config->timeoutSeconds)
             ->run(sprintf(
-                'ssh -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 %s %s',
+                'ssh -o BatchMode=yes -o ConnectTimeout=10 %s %s',
                 escapeshellarg($this->config->host),
                 escapeshellarg($remoteCommand),
             ));
@@ -76,7 +76,7 @@ class IncusHost
         }
 
         $scp = Process::timeout(600)->run(sprintf(
-            'scp -r -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',
+            'scp -r -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',
             escapeshellarg(rtrim($localBundleDir, '/').'/.'),
             escapeshellarg($this->config->host),
             escapeshellarg($bundleDir),

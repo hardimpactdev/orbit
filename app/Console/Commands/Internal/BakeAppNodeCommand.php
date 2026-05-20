@@ -6,6 +6,7 @@ namespace App\Console\Commands\Internal;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeRegistryWriter;
 use Illuminate\Console\Attributes\Description;
@@ -55,6 +56,7 @@ class BakeAppNodeCommand extends Command
             gatewayEndpoint: $gatewayEndpoint,
             sshUser: $user,
             user: $user,
+            status: Node::STATUS_ACTIVE,
         );
 
         $this->upsertRoleAssignment($node->id, $environment, $tld);

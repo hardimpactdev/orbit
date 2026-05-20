@@ -32,6 +32,7 @@ final class DoctorRunController implements Loggable
         }
 
         $families = $this->families($request);
+        $key = $this->key($request);
         $target = $this->resolveTarget($request, $caller);
 
         if ($target === null) {
@@ -56,7 +57,7 @@ final class DoctorRunController implements Loggable
             ], 422);
         }
 
-        $doctor = $runner->probe($target, families: $families);
+        $doctor = $runner->probe($target, families: $families, key: $key);
 
         return response()->json([
             'success' => [
@@ -92,6 +93,13 @@ final class DoctorRunController implements Loggable
         }
 
         return $caller;
+    }
+
+    private function key(Request $request): ?string
+    {
+        $key = $request->input('key');
+
+        return is_string($key) && trim($key) !== '' ? trim($key) : null;
     }
 
     public function effect(): ActivityLogType

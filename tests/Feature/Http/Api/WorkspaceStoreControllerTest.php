@@ -113,6 +113,32 @@ it('rejects duplicate workspace names per app', function (): void {
     $response->assertJsonPath('error.code', 'workspace.already_exists');
 });
 
+it('rejects workspace creation for production app nodes', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'prod-1',
+        'host' => 'prod-1',
+        'wireguard_address' => '10.6.0.8',
+    ], role: 'app-production');
+    App::factory()
+        ->for($node, 'node')
+        ->create([
+            'name' => 'prod',
+            'domain' => 'prod.test',
+            'path' => '/home/orbit/apps/prod',
+            'php_version' => '8.5',
+            'environment' => 'production',
+        ]);
+
+    $response = $this->call('POST', '/api/workspaces', [
+        'name' => 'feature-a',
+        'app' => 'prod',
+    ], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+
+    $response->assertStatus(422);
+    $response->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+    expect(Workspace::query()->where('app_id', App::query()->where('name', 'prod')->value('id'))->exists())->toBeFalse();
+});
+
 it('creates workspace with supported custom php version', function (): void {
     $response = $this->call('POST', '/api/workspaces', [
         'name' => 'feature-php',

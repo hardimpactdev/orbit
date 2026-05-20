@@ -12,12 +12,15 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Php\PhpFpmSystemdHardening;
 
 final readonly class WorkspacesProbe
 {
     public function __construct(
         private ?RemoteShell $remoteShell = null,
         private ?WorkspaceFpmPoolRenderer $fpmPoolRenderer = null,
+        private ?PhpFpmSystemdHardening $fpmSystemdHardening = null,
+        private ?NodeRoleAssignments $nodeRoleAssignments = null,
     ) {}
 
     public function key(): string
@@ -42,23 +45,28 @@ final readonly class WorkspacesProbe
             'name' => $workspace->name,
             'path' => $workspace->path,
             'php_version' => $workspace->effectivePhpVersion(),
+            'runtime_user' => $this->fpmPoolRenderer()->runtimeUser($workspace),
             'fpm_pool_path' => $this->fpmPoolRenderer()->path($workspace),
             'fpm_pool_hash' => hash('sha256', $this->fpmPoolRenderer()->content($workspace)),
+            'fpm_hardening_path' => $this->fpmSystemdHardening()->path((string) $workspace->effectivePhpVersion()),
+            'fpm_hardening_hash' => hash('sha256', $this->fpmSystemdHardening()->contentForNode($workspace->app->node, (string) $workspace->effectivePhpVersion())),
         ];
 
-        $script = <<<'BASH'
-set -euo pipefail
-php <<'PHP'
-<?php
-$spec = json_decode(base64_decode((string) getenv('ORBIT_WORKSPACE_SPEC')), true);
+        $php = <<<'PHP'
+$spec = json_decode(stream_get_contents(STDIN), true);
 $name = (string) ($spec['name'] ?? '');
 $path = (string) ($spec['path'] ?? '');
+$runtimeUser = (string) ($spec['runtime_user'] ?? '');
 $phpVersion = (string) ($spec['php_version'] ?? '');
 $fpmPoolPath = (string) ($spec['fpm_pool_path'] ?? '');
 $fpmPoolHash = (string) ($spec['fpm_pool_hash'] ?? '');
+$fpmHardeningPath = (string) ($spec['fpm_hardening_path'] ?? '');
+$fpmHardeningHash = (string) ($spec['fpm_hardening_hash'] ?? '');
 
 $pathExists = is_dir($path) ? '1' : '0';
 $pathUsable = is_dir($path) && is_readable($path) && is_executable($path) ? '1' : '0';
+$systemUserExists = $runtimeUser !== '' && command_succeeds('id -u '.escapeshellarg($runtimeUser)) ? '1' : '0';
+$fsPermissionsOk = $pathExists === '1' && path_owned_by($path, $runtimeUser) && ! group_or_other_writable($path) ? '1' : '0';
 $phpFpmAvailable = (
     is_executable("/usr/sbin/php-fpm{$phpVersion}")
     || command_exists("php-fpm{$phpVersion}")
@@ -69,8 +77,22 @@ $phpFpmAvailable = (
         : '0';
 $fpmConfigExists = is_file($fpmPoolPath) ? '1' : '0';
 $fpmConfigMatches = $fpmConfigExists === '1' && hash_file('sha256', $fpmPoolPath) === $fpmPoolHash ? '1' : '0';
+$fpmHardeningExists = is_file($fpmHardeningPath) ? '1' : '0';
+$fpmHardeningMatches = $fpmHardeningExists === '1' && hash_file('sha256', $fpmHardeningPath) === $fpmHardeningHash ? '1' : '0';
 
-printf("%s\t%s\t%s\t%s\t%s\t%s\n", $name, $pathExists, $pathUsable, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches);
+printf(
+    "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+    $name,
+    $pathExists,
+    $pathUsable,
+    $phpFpmAvailable,
+    $fpmConfigExists,
+    $fpmConfigMatches,
+    $systemUserExists,
+    $fsPermissionsOk,
+    $fpmHardeningExists,
+    $fpmHardeningMatches
+);
 
 function command_exists(string $command): bool
 {
@@ -80,12 +102,40 @@ function command_exists(string $command): bool
 
     return $exitCode === 0;
 }
-PHP
-BASH;
+
+function command_succeeds(string $command): bool
+{
+    exec($command.' >/dev/null 2>&1', $output, $exitCode);
+
+    return $exitCode === 0;
+}
+
+function path_owned_by(string $path, string $user): bool
+{
+    if ($user === '' || ! file_exists($path) || ! function_exists('posix_getpwuid')) {
+        return false;
+    }
+
+    $owner = posix_getpwuid(fileowner($path));
+
+    return is_array($owner) && ($owner['name'] ?? null) === $user;
+}
+
+function group_or_other_writable(string $path): bool
+{
+    if (! file_exists($path)) {
+        return true;
+    }
+
+    return (fileperms($path) & 0022) !== 0;
+}
+PHP;
+
+        $script = 'set -euo pipefail'.PHP_EOL.'php -r '.escapeshellarg($php);
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app->node, $script, [
             'throw' => true,
-            'env' => ['ORBIT_WORKSPACE_SPEC' => base64_encode((string) json_encode($spec))],
+            'input' => (string) json_encode($spec, JSON_THROW_ON_ERROR),
         ]);
 
         $items = [];
@@ -95,13 +145,13 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 6);
+            $parts = explode("\t", $line);
 
-            if (count($parts) !== 6) {
+            if (count($parts) !== 6 && count($parts) !== 10) {
                 continue;
             }
 
-            [$name, $pathExists, $pathUsable, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches] = $parts;
+            [$name, $pathExists, $pathUsable, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches] = array_slice($parts, 0, 6);
 
             $items[$name] = [
                 'path_exists' => $pathExists === '1',
@@ -110,6 +160,16 @@ BASH;
                 'fpm_config_exists' => $fpmConfigExists === '1',
                 'fpm_config_matches' => $fpmConfigMatches === '1',
             ];
+
+            if (count($parts) === 10) {
+                $items[$name] = [
+                    ...$items[$name],
+                    'system_user_exists' => $parts[6] === '1',
+                    'fs_permissions_ok' => $parts[7] === '1',
+                    'fpm_hardening_exists' => $parts[8] === '1',
+                    'fpm_hardening_matches' => $parts[9] === '1',
+                ];
+            }
         }
 
         return new ProbeSnapshot($items);
@@ -127,6 +187,7 @@ BASH;
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkFpmConfig($workspace, $snapshot));
+        $drift = array_merge($drift, $this->checkDevelopmentSecurity($workspace, $snapshot));
 
         return $drift;
     }
@@ -237,6 +298,117 @@ BASH;
     /**
      * @return list<DriftEntry>
      */
+    private function checkDevelopmentSecurity(Workspace $workspace, ProbeSnapshot $snapshot): array
+    {
+        $workspace->loadMissing('app.node');
+
+        if (! $workspace->app instanceof App || ! $workspace->app->node instanceof Node) {
+            return [];
+        }
+
+        if ($this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-production')) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.unsupported_for_production',
+                    kind: DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} belongs to a production app role where workspaces are disabled.",
+                    detail: [
+                        'workspace' => $workspace->name,
+                        'app' => $workspace->app->name,
+                        'node' => $workspace->app->node->name,
+                    ],
+                ),
+            ];
+        }
+
+        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-development')) {
+            return [];
+        }
+
+        $observed = $snapshot->get($workspace->name);
+
+        if ($observed === null || ($observed['path_exists'] ?? null) === false) {
+            return [];
+        }
+
+        if (! array_key_exists('system_user_exists', $observed)) {
+            return [];
+        }
+
+        $drift = [];
+
+        if (($observed['system_user_exists'] ?? null) === false) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'workspace.security.system_user',
+                kind: DriftKind::Missing,
+                summary: "Workspace {$workspace->name} is missing its expected runtime user.",
+                detail: [
+                    'workspace' => $workspace->name,
+                    'runtime_user' => $this->fpmPoolRenderer()->runtimeUser($workspace),
+                ],
+            );
+        }
+
+        if (($observed['fs_permissions_ok'] ?? null) === false) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'workspace.security.fs_permissions',
+                kind: DriftKind::Divergent,
+                summary: "Workspace {$workspace->name} filesystem permissions do not match runtime policy.",
+                detail: [
+                    'workspace' => $workspace->name,
+                    'path' => $workspace->path,
+                    'runtime_user' => $this->fpmPoolRenderer()->runtimeUser($workspace),
+                ],
+            );
+        }
+
+        if (
+            ($observed['php_fpm_available'] ?? null) === true
+            && (
+                ($observed['fpm_config_exists'] ?? null) === false
+                || ($observed['fpm_config_matches'] ?? null) === false
+            )
+        ) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'workspace.security.fpm_pool_isolation',
+                kind: $observed['fpm_config_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
+                summary: "Workspace {$workspace->name} PHP-FPM pool isolation does not match security policy.",
+                detail: [
+                    'workspace' => $workspace->name,
+                    'expected' => $this->fpmPoolRenderer()->path($workspace),
+                ],
+            );
+        }
+
+        if (
+            ($observed['php_fpm_available'] ?? null) === true
+            && (
+                ($observed['fpm_hardening_exists'] ?? null) === false
+                || ($observed['fpm_hardening_matches'] ?? null) === false
+            )
+        ) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'workspace.security.fpm_systemd_hardening',
+                kind: $observed['fpm_hardening_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
+                summary: "Workspace {$workspace->name} PHP-FPM service hardening is missing or divergent.",
+                detail: [
+                    'workspace' => $workspace->name,
+                    'expected' => $this->fpmSystemdHardening()->path((string) $workspace->effectivePhpVersion()),
+                ],
+            );
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkParentApp(Workspace $workspace): array
     {
         $workspace->loadMissing('app.node');
@@ -255,7 +427,7 @@ BASH;
         if (
             ! $workspace->app->node instanceof Node
             || $workspace->app->node->status !== 'active'
-            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($workspace->app->node)
+            || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($workspace->app->node)
         ) {
             return [
                 new DriftEntry(
@@ -373,5 +545,15 @@ BASH;
     private function fpmPoolRenderer(): WorkspaceFpmPoolRenderer
     {
         return $this->fpmPoolRenderer ?? app(WorkspaceFpmPoolRenderer::class);
+    }
+
+    private function fpmSystemdHardening(): PhpFpmSystemdHardening
+    {
+        return $this->fpmSystemdHardening ?? app(PhpFpmSystemdHardening::class);
+    }
+
+    private function nodeRoleAssignments(): NodeRoleAssignments
+    {
+        return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 }

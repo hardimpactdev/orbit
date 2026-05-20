@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
+use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -13,6 +15,7 @@ use App\Models\WireGuardPeer;
 use App\Services\OrbitHostInstaller;
 use App\Services\OrbitHostInstallResult;
 use App\Services\Platform\PlatformDetector;
+use App\Services\Security\SshHostKeyPinner;
 use App\Services\Trust\TrustStoreInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -21,6 +24,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -43,6 +47,27 @@ beforeEach(function (): void {
     };
 
     app()->instance(OrbitHostInstaller::class, $this->fakeInstaller);
+
+    $this->fakeHostKeyPinner = new class
+    {
+        /** @var list<array{host: string, expected: ?string}> */
+        public array $calls = [];
+
+        public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
+        {
+            $this->calls[] = ['host' => $host, 'expected' => $expectedFingerprint];
+
+            return new PinnedHostKey(
+                host: $host,
+                type: 'ssh-ed25519',
+                publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+                fingerprint: $expectedFingerprint ?? 'SHA256:hosted-role-test',
+                pinMode: $expectedFingerprint === null ? 'tofu' : 'verified',
+            );
+        }
+    };
+
+    app()->instance(SshHostKeyPinner::class, $this->fakeHostKeyPinner);
 
     app()->instance(PlatformDetector::class, new class extends PlatformDetector
     {
@@ -102,8 +127,11 @@ beforeEach(function (): void {
         ]),
     ]);
 
+    $this->processCommands = [];
+
     Process::fake(function ($process) {
         $command = (string) $process->command;
+        $this->processCommands[] = $command;
 
         if ($command === 'ssh-keygen -y -f ~/.ssh/id_ed25519') {
             return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
@@ -114,13 +142,13 @@ beforeEach(function (): void {
         }
 
         if ($command === 'wg genkey') {
-            static $privateKeys = ['gateway-private-key', 'control-private-key'];
+            static $privateKeys = ['node-private-key-1', 'node-private-key-2', 'node-private-key-3'];
 
             return Process::result(output: array_shift($privateKeys)."\n");
         }
 
         if ($command === 'wg pubkey') {
-            static $publicKeys = ['gateway-public-key', 'control-public-key'];
+            static $publicKeys = ['node-public-key-1', 'node-public-key-2', 'node-public-key-3'];
 
             return Process::result(output: array_shift($publicKeys)."\n");
         }
@@ -134,6 +162,10 @@ beforeEach(function (): void {
 
         if (str_contains($command, 'orbit:internal:detect-platform')) {
             return Process::result(output: "ubuntu_24-04\n");
+        }
+
+        if ($command === 'docker exec wg-easy wg show wg0 public-key') {
+            return Process::result(output: "wg-easy-public-key\n");
         }
 
         return Process::result();
@@ -175,12 +207,79 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->and($node->roleAssignments)->toHaveCount(1)
         ->and($node->roleAssignments->first()?->role)->toBe('app-development')
         ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value)
-        ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test']);
+        ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test'])
+        ->and(WireGuardPeer::query()->where('node_id', $node->id)->where('public_key', 'node-public-key-1')->exists())->toBeTrue()
+        ->and(FirewallRule::query()->where('node_id', $node->id)->where('owner', 'node-security')->count())->toBe(3);
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'orbit'@'192.0.2.20'")
-        && str_contains((string) $process->command, '99-orbit-hardening.conf')
-        && str_contains((string) $process->command, 'PermitRootLogin no')
-        && str_contains((string) $process->command, 'AllowUsers ${RUNTIME_USER}'));
+    $commands = implode("\n", $this->processCommands);
+
+    expect($commands)->toContain('99-orbit-hardening.conf')
+        ->toContain('clients_table')
+        ->toContain('wg set wg0 peer')
+        ->toContain('/etc/wireguard/wg-orbit.conf')
+        ->toContain('ping -c 1 -W 2')
+        ->toContain('PermitRootLogin no')
+        ->toContain('AllowUsers');
+});
+
+it('pins the host key before provisioning and persists the canonical steady-state user', function (): void {
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'dev-pinned-1',
+        '--role' => ['app-development'],
+        '--host' => '192.0.2.50',
+        '--tld' => 'pinned',
+        '--user' => 'ubuntu',
+        '--host-key-fingerprint' => 'SHA256:expected',
+        '--json' => true,
+    ]);
+
+    $node = Node::query()->where('name', 'dev-pinned-1')->firstOrFail();
+
+    expect($exitCode)->toBe(0)
+        ->and($this->fakeHostKeyPinner->calls)->toBe([
+            ['host' => '192.0.2.50', 'expected' => 'SHA256:expected'],
+        ])
+        ->and($node->user)->toBe('orbit')
+        ->and($node->status)->toBe(Node::STATUS_ACTIVE)
+        ->and($node->host_key_type)->toBe('ssh-ed25519')
+        ->and($node->host_key_fingerprint)->toBe('SHA256:expected')
+        ->and($node->host_key_pin_mode)->toBe('verified');
+
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '-o StrictHostKeyChecking=yes')
+        && str_contains((string) $process->command, "'ubuntu'@'192.0.2.50'"));
+});
+
+it('rolls back the provisional node row when host provisioning fails', function (): void {
+    $this->fakeInstaller = new class extends OrbitHostInstaller
+    {
+        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
+        {
+            return new OrbitHostInstallResult(
+                successful: false,
+                errorOutput: 'installer failed',
+            );
+        }
+    };
+
+    app()->instance(OrbitHostInstaller::class, $this->fakeInstaller);
+
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'rollback-1',
+        '--role' => ['app-production'],
+        '--host' => '192.0.2.51',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(1)
+        ->and(Node::query()->where('name', 'rollback-1')->exists())->toBeFalse();
+
+    $entry = Activity::query()
+        ->where('event', 'node.provisioning.failed')
+        ->first();
+
+    expect($entry)->not->toBeNull()
+        ->and($entry->properties->get('node'))->toBe('rollback-1')
+        ->and($entry->properties->get('reason'))->toBe('host_installer_failed');
 });
 
 it('rejects existing gateway development dns mappings before provisioning side effects', function (): void {

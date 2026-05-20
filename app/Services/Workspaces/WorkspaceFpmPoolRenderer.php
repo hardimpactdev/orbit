@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Models\Workspace;
+use Illuminate\Support\Str;
 
 final readonly class WorkspaceFpmPoolRenderer
 {
@@ -39,12 +40,13 @@ final readonly class WorkspaceFpmPoolRenderer
 
     public function content(Workspace $workspace): string
     {
-        $user = $this->user($workspace);
+        $user = $this->runtimeUser($workspace);
         $home = $this->home($workspace);
         $socketPath = $this->socketPath($workspace);
         $logPath = $this->logPath($workspace);
         $poolName = $this->poolName($workspace);
         $envPath = "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin";
+        $path = rtrim((string) $workspace->path, '/');
 
         return <<<CONF
 ; Orbit Per-Workspace PHP-FPM Pool Configuration
@@ -68,11 +70,15 @@ php_admin_value[error_log] = {$logPath}
 php_admin_flag[log_errors] = on
 catch_workers_output = yes
 decorate_workers_output = no
+chdir = {$path}
+clear_env = yes
 
 php_admin_value[memory_limit] = 512M
 php_admin_value[upload_max_filesize] = 64M
 php_admin_value[post_max_size] = 64M
 php_admin_value[max_execution_time] = 60
+php_admin_value[open_basedir] = {$this->openBasedir($workspace)}
+php_admin_value[disable_functions] = {$this->disabledFunctions()}
 
 php_admin_flag[display_errors] = off
 php_admin_flag[display_startup_errors] = off
@@ -89,6 +95,54 @@ env[USER] = {$user}
 CONF;
     }
 
+    public function runtimeUser(Workspace $workspace): string
+    {
+        $workspace->loadMissing('app');
+
+        $appName = $workspace->app?->name ?: 'app';
+        $slug = Str::of("{$appName}-{$workspace->name}")->slug('-')->lower()->toString();
+        $slug = $slug !== '' ? $slug : 'workspace';
+        $suffix = substr(hash('sha1', $slug), 0, 6);
+        $base = substr($slug, 0, 16);
+
+        return "orbit-ws-{$base}-{$suffix}";
+    }
+
+    public function openBasedir(Workspace $workspace): string
+    {
+        $path = rtrim((string) $workspace->path, '/');
+
+        return implode(':', array_values(array_unique([
+            $path,
+            "{$path}/storage",
+            "{$path}/bootstrap/cache",
+            "{$path}/public/uploads",
+            "{$path}/vendor",
+            '/tmp',
+        ])));
+    }
+
+    public function disabledFunctions(): string
+    {
+        return 'exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function readWritePaths(Workspace $workspace): array
+    {
+        $path = rtrim((string) $workspace->path, '/');
+
+        return [
+            $path,
+            "{$path}/storage",
+            "{$path}/bootstrap/cache",
+            "{$path}/public/uploads",
+            $this->dataPath($workspace),
+        ];
+    }
+
     private function dataPath(Workspace $workspace): string
     {
         return $this->home($workspace).'/.config/orbit';
@@ -96,15 +150,8 @@ CONF;
 
     private function home(Workspace $workspace): string
     {
-        $user = $this->user($workspace);
+        $user = $this->runtimeUser($workspace);
 
         return $user === 'root' ? '/root' : "/home/{$user}";
-    }
-
-    private function user(Workspace $workspace): string
-    {
-        $workspace->loadMissing('app.node');
-
-        return $workspace->app?->node?->user ?: 'orbit';
     }
 }

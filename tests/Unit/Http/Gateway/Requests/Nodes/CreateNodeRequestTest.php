@@ -70,6 +70,30 @@ it('resolves legacy app forwarding to POST /api/nodes with legacy environment', 
     ]);
 });
 
+it('includes an expected host key fingerprint when supplied', function (): void {
+    $request = new CreateNodeRequest(
+        name: 'app-1',
+        role: 'app-production',
+        roles: ['app-production'],
+        host: '192.0.2.20',
+        environment: null,
+        tld: null,
+        user: 'ubuntu',
+        hostKeyFingerprint: 'SHA256:expected',
+    );
+
+    expect($request->body()->all())->toBe([
+        'name' => 'app-1',
+        'role' => 'app-production',
+        'roles' => ['app-production'],
+        'host' => '192.0.2.20',
+        'environment' => null,
+        'tld' => null,
+        'user' => 'ubuntu',
+        'host_key_fingerprint' => 'SHA256:expected',
+    ]);
+});
+
 it('returns a NodeCreateResponse DTO with gateway data', function (): void {
     $mock = new MockClient([
         CreateNodeRequest::class => MockResponse::make([

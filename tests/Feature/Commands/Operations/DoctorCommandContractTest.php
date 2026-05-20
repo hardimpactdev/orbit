@@ -99,6 +99,13 @@ function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = [
 }
 
 describe('doctor command contract', function (): void {
+    it('registers key and dry-run options', function (): void {
+        $definition = Artisan::all()['doctor']->getDefinition();
+
+        expect($definition->hasOption('key'))->toBeTrue()
+            ->and($definition->hasOption('dry-run'))->toBeTrue();
+    });
+
     it('runs the node family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway');
 
@@ -121,6 +128,29 @@ describe('doctor command contract', function (): void {
             ->and($payload['error']['code'])->toBe('drift_detected')
             ->and($payload['error']['data']['doctor']['healthy'])->toBeFalse()
             ->and($payload['error']['data']['doctor']['issues'][0]['family'])->toBe('node');
+    });
+
+    it('filters reported drift by exact issue key', function (): void {
+        createDoctorLocalNode('gateway');
+        Node::factory()->create([
+            'name' => 'legacy-app',
+            'role' => 'app',
+            'status' => 'active',
+            'platform' => null,
+            'wireguard_address' => null,
+        ]);
+
+        $exitCode = Artisan::call('doctor', [
+            '--node' => 'legacy-app',
+            '--family' => ['node'],
+            '--key' => 'node.record_incomplete',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $issues = $payload['error']['data']['doctor']['issues'];
+
+        expect($exitCode)->toBe(1)
+            ->and(array_column($issues, 'key'))->toBe(['node.record_incomplete']);
     });
 
     it('renders the healthy human doctor report with the result divider and clean banner', function (): void {
@@ -180,6 +210,40 @@ describe('doctor command contract', function (): void {
             ->and($output)->toContain('completed');
     });
 
+    it('dry-runs restore mode without applying fixers', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = createDoctorHostedAppNode('app-1');
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
+
+        $exitCode = Artisan::call('doctor', [
+            '--node' => 'app-1',
+            '--family' => ['proxy'],
+            '--restore' => true,
+            '--dry-run' => true,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $doctor = $payload['success']['data']['doctor'];
+
+        expect($exitCode)->toBe(0)
+            ->and($doctor['dry_run'])->toBeTrue()
+            ->and($doctor['summary']['issues'])->toBe(1)
+            ->and($doctor['summary']['fixed'])->toBe(0)
+            ->and($doctor['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'key' => 'proxy.route_missing',
+                'mode' => 'restore',
+                'status' => 'planned',
+            ]);
+    });
+
     it('rejects mutually exclusive resolution flags before probes', function (): void {
         createDoctorLocalNode('gateway');
 
@@ -191,6 +255,17 @@ describe('doctor command contract', function (): void {
             ->and($payload['error']['meta']['fields'])->toBe(['fix', 'restore']);
     });
 
+    it('rejects dry-run without a non-interactive resolution mode', function (): void {
+        createDoctorLocalNode('gateway');
+
+        $exitCode = Artisan::call('doctor', ['--dry-run' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe('--dry-run requires --restore or --adopt.');
+    });
+
     it('rejects unsupported families before probes', function (): void {
         createDoctorLocalNode('gateway');
 
@@ -200,6 +275,17 @@ describe('doctor command contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('scope_not_found')
             ->and($payload['error']['meta']['family'])->toBe('cloudflare');
+    });
+
+    it('keeps security rejected as a family', function (): void {
+        createDoctorLocalNode('gateway');
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['security'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('scope_not_found')
+            ->and($payload['error']['meta']['family'])->toBe('security');
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
@@ -874,7 +960,7 @@ describe('doctor command contract', function (): void {
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'firewall_rule',
                 'node' => 'app-1',
-                'key' => 'incoming:allow:10.6.0.0/24:any:5173:tcp',
+                'key' => 'incoming:allow:10.6.0.0/24:any:5173:tcp:v4:any',
                 'mode' => 'adopt',
                 'status' => 'created',
             ]);

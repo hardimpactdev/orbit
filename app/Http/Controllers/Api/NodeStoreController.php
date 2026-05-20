@@ -46,6 +46,7 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--environment', $request, 'environment');
         $this->addStringOption($arguments, '--tld', $request, 'tld');
         $this->addStringOption($arguments, '--user', $request, 'user');
+        $this->addStringOption($arguments, '--host-key-fingerprint', $request, 'host_key_fingerprint');
         $this->addStringOption($arguments, '--self-grant', $request, 'self_grant');
         $this->addStringOption($arguments, '--self-grant-permissions', $request, 'self_grant_permissions');
         $this->addArrayOption($arguments, '--grant-to', $request, 'grant_to');

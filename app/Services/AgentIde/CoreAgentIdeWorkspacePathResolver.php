@@ -34,7 +34,7 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         }
 
         $result = $this->remoteShell->run($app->node, $this->openCodeScript(), [
-            'env' => [
+            'metadata' => [
                 'ORBIT_WORKSPACE_PATH' => $absolutePath,
                 'ORBIT_APP_PATH' => $app->path,
             ],
@@ -68,7 +68,7 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         }
 
         $result = $this->remoteShell->run($app->node, $this->polyscopeScript(), [
-            'env' => [
+            'metadata' => [
                 'ORBIT_WORKSPACE_PATH' => $absolutePath,
                 'ORBIT_APP_PATH' => $app->path,
             ],

@@ -33,6 +33,7 @@ owning family concept document.
 - **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager that keeps Supervisor alive. systemd on Ubuntu. Not Orbit's process manager.
 - **RemoteShell** — gateway-to-node execution primitive. See [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
+- **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
@@ -53,6 +54,9 @@ Permanent state-family keys are singular product names:
 - `tool`
 - `firewall_rule`
 - `database_connection`
+
+`security` is intentionally absent from this list. Security appears as an
+owning-family section, not as a product family.
 
 See [Architecture: State Families](architecture.md#state-families).
 

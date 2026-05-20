@@ -385,6 +385,7 @@ describe('NodeListController', function (): void {
             ]),
         ]);
         assignApiNodeRole('incomplete-app', 'app-development', ['tld' => 'test']);
+        markNodeSecurityBaselineClean(Node::query()->where('name', 'incomplete-app')->firstOrFail());
 
         $response = getApiNodesJson('/api/nodes?doctor=1&role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
 

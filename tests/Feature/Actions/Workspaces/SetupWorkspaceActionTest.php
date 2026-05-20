@@ -92,11 +92,14 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
     $fpmPool = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $runtimeUser = app(WorkspaceFpmPoolRenderer::class)->runtimeUser($workspace);
 
     expect($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')
-        ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/php')
-        ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/logs')
+        ->and($shell->scripts[1])->toContain("/home/{$runtimeUser}/.config/orbit/php")
+        ->and($shell->scripts[1])->toContain("/home/{$runtimeUser}/.config/orbit/logs")
         ->and($fpmPool)->toBe(app(WorkspaceFpmPoolRenderer::class)->content($workspace))
+        ->and($fpmPool)->toContain('clear_env = yes')
+        ->and($fpmPool)->toContain('php_admin_value[open_basedir]')
         ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
         ->and($shell->scripts[1])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
         ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
@@ -121,10 +124,11 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
 
     $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
     $route = $workspace->proxyRoutes()->first();
+    $socket = app(WorkspaceFpmPoolRenderer::class)->socketPath($workspace);
 
     expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
-        ->and($caddySite)->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
-        ->and($route?->config['php_socket'])->toBe('/home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
+        ->and($caddySite)->toContain("php_fastcgi unix/{$socket}")
+        ->and($route?->config['php_socket'])->toBe($socket)
         ->and($route?->config['tls'])->toBe([
             'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
             'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',

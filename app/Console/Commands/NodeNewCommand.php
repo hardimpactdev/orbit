@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Contracts\RemoteShell;
 use App\Data\Nodes\NodeIdentityArtifact;
 use App\Data\Nodes\RoleSettings\VpnRoleSettings;
 use App\Enums\AdoptAction;
@@ -29,12 +30,20 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
+use App\Services\RemoteShell\Exceptions\HostKeyMismatch;
+use App\Services\RemoteShell\Exceptions\HostKeyPinningFailed;
+use App\Services\RemoteShell\SshCommandBuilder;
+use App\Services\Security\PublicSshDenyInstaller;
+use App\Services\Security\SecurityInstaller;
+use App\Services\Security\SshdHardenedInstaller;
+use App\Services\Security\SshHostKeyPinner;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
@@ -45,6 +54,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
@@ -61,7 +71,8 @@ use function Laravel\Prompts\text;
         {--control-name= : Initiating operator-node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
     {--tld= : Development app-node TLD}
-    {--user=root : SSH user for provisioning}
+    {--user=root : Bootstrap SSH user for provisioning}
+    {--host-key-fingerprint= : Expected SSH host key SHA256 fingerprint captured out of band}
     {--self-grant= : Self-grant mode: default or custom (agent nodes only)}
     {--self-grant-permissions= : Custom self-grant permissions (comma-separated)}
     {--grant-to=* : Grant this node access to another node. Repeatable. Use "all" for all eligible nodes.}
@@ -145,12 +156,14 @@ class NodeNewCommand extends Command
                     registryWriter: $registryWriter,
                     nodesProbe: $nodesProbe,
                     roleAssignmentService: $nodeRoleAssignmentService,
+                    wireGuardKeyGenerator: $wireGuardKeyGenerator,
                     name: $name,
                     inputs: [
                         'host' => $inputs['host'],
                         'environment' => $inputs['environment'] ?? 'production',
                         'tld' => $inputs['tld'],
                         'sshUser' => $inputs['sshUser'] ?? 'root',
+                        'hostKeyFingerprint' => $inputs['hostKeyFingerprint'],
                     ],
                     initialHostedRoles: $requestedRoles['hosted'],
                 );
@@ -207,6 +220,7 @@ class NodeNewCommand extends Command
                 registryWriter: $registryWriter,
                 nodesProbe: $nodesProbe,
                 roleAssignmentService: $nodeRoleAssignmentService,
+                wireGuardKeyGenerator: $wireGuardKeyGenerator,
                 name: $name,
                 inputs: $inputs,
                 initialHostedRoles: $requestedRoles['legacy_app'] ? $legacyHostedRoles : $requestedRoles['hosted'],
@@ -401,7 +415,7 @@ class NodeNewCommand extends Command
     }
 
     /**
-     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string}  $inputs
+     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}  $inputs
      */
     private function forwardHostedRoleNodeCreation(string $name, array $roles, array $inputs): int
     {
@@ -416,6 +430,7 @@ class NodeNewCommand extends Command
                     environment: null,
                     tld: $inputs['tld'],
                     user: $inputs['sshUser'],
+                    hostKeyFingerprint: $inputs['hostKeyFingerprint'],
                     selfGrant: $this->stringOption('self-grant'),
                     selfGrantPermissions: $this->stringOption('self-grant-permissions'),
                     grantTo: $this->arrayOption('grant-to'),
@@ -457,7 +472,7 @@ class NodeNewCommand extends Command
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string}  $inputs
+     * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}  $inputs
      */
     private function provisionHostedRoleNode(
         OrbitHostInstaller $installer,
@@ -507,59 +522,124 @@ class NodeNewCommand extends Command
         $host = $requiresHostProvisioning ? $inputs['host'] : '';
         $user = $requiresHostProvisioning ? $runtimeUser : self::DEFAULT_RUNTIME_USER;
         $orbitPath = $requiresHostProvisioning ? "/home/{$runtimeUser}/orbit" : "/home/{$runtimeUser}/orbit";
+        $legacyRole = in_array(NodeRoleName::AppDevelopment->value, $roles, true) || in_array(NodeRoleName::AppProduction->value, $roles, true)
+            ? 'app'
+            : 'control';
+        $node = null;
 
         if ($requiresHostProvisioning) {
             $sshUser = $inputs['sshUser'] ?? 'root';
 
+            try {
+                $pinnedHostKey = app(SshHostKeyPinner::class)->pin($inputs['host'], $inputs['hostKeyFingerprint']);
+            } catch (HostKeyMismatch $exception) {
+                return $this->failCommand(
+                    code: 'node.host_key_mismatch',
+                    message: $exception->getMessage(),
+                    meta: ['host' => $inputs['host']],
+                );
+            } catch (HostKeyPinningFailed $exception) {
+                return $this->failCommand(
+                    code: 'node.host_key_pin_failed',
+                    message: $exception->getMessage(),
+                    meta: ['host' => $inputs['host']],
+                );
+            }
+
+            $node = $registryWriter->writeNodeIdentity(
+                name: $name,
+                legacyRole: $legacyRole,
+                environment: $this->legacyEnvironmentForRoles($roles),
+                tld: $inputs['tld'],
+                platform: $platform,
+                host: $host,
+                wireguardAddress: $wireguardAddress,
+                gatewayEndpoint: $gatewayEndpoint,
+                user: $user,
+                orbitPath: $orbitPath,
+                status: Node::STATUS_PROVISIONING,
+                hostKey: $pinnedHostKey,
+            );
+
+            $installer->usePinnedNode($node);
             $installation = $installer->install($inputs['host'], $sshUser, $runtimeUser);
 
             if (! $installation->successful) {
-                return $this->installerFailure(
+                $failure = $this->installerFailure(
                     role: 'app',
                     host: $inputs['host'],
                     sshUser: $sshUser,
                     errorOutput: $installation->errorOutput,
                 );
+
+                $this->rollbackProvisioningNode($node, 'host_installer_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'host_install',
+                    'error' => trim($installation->errorOutput) ?: null,
+                ]);
+
+                return $failure;
             }
 
-            $sshAuthorization = $this->authorizeRuntimeSshUser(
-                host: $inputs['host'],
-                sshUser: $sshUser,
-                runtimeUser: $runtimeUser,
-            );
+            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $sshUser, $runtimeUser);
 
             if (is_int($sshAuthorization)) {
+                $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'steady_state_ssh_authorization',
+                ]);
+
                 return $sshAuthorization;
             }
 
-            $sshHardening = $this->hardenRuntimeSshAccess(
-                host: $inputs['host'],
-                runtimeUser: $runtimeUser,
-            );
+            $sshHardening = $this->hardenRuntimeSshAccess($node, $runtimeUser);
 
             if (is_int($sshHardening)) {
+                $this->rollbackProvisioningNode($node, 'ssh_hardening_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'ssh_hardening',
+                ]);
+
                 return $sshHardening;
+            }
+
+            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard($node, $wireGuardKeyGenerator);
+
+            if (is_int($wireGuardProvisioning)) {
+                $this->rollbackProvisioningNode($node, 'wireguard_install_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'node_wireguard_install',
+                ]);
+
+                return $wireGuardProvisioning;
             }
         }
 
-        $node = $registryWriter->writeNodeIdentity(
-            name: $name,
-            legacyRole: in_array(NodeRoleName::AppDevelopment->value, $roles, true) || in_array(NodeRoleName::AppProduction->value, $roles, true)
-                ? 'app'
-                : 'control',
-            environment: $this->legacyEnvironmentForRoles($roles),
-            tld: $inputs['tld'],
-            platform: $platform,
-            host: $host,
-            wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $gatewayEndpoint,
-            user: $user,
-            orbitPath: $orbitPath,
-        );
+        if (! $node instanceof Node) {
+            $node = $registryWriter->writeNodeIdentity(
+                name: $name,
+                legacyRole: $legacyRole,
+                environment: $this->legacyEnvironmentForRoles($roles),
+                tld: $inputs['tld'],
+                platform: $platform,
+                host: $host,
+                wireguardAddress: $wireguardAddress,
+                gatewayEndpoint: $gatewayEndpoint,
+                user: $user,
+                orbitPath: $orbitPath,
+            );
+        }
 
         $wireGuardPeerFailure = $this->ensureAgentWireGuardPeer($node, $roles, $wireGuardKeyGenerator);
 
         if (is_int($wireGuardPeerFailure)) {
+            if ($requiresHostProvisioning) {
+                $this->rollbackProvisioningNode($node, 'wireguard_peer_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'wireguard_identity',
+                ]);
+            }
+
             return $wireGuardPeerFailure;
         }
 
@@ -576,7 +656,7 @@ class NodeNewCommand extends Command
         }
 
         if ($failedAssignment instanceof NodeRoleAssignment) {
-            return $this->failCommand(
+            $failure = $this->failCommand(
                 code: 'node.provisioning_incomplete',
                 message: "Node '{$name}' created but hosted role '{$failedAssignment->role}' failed to converge.",
                 meta: [
@@ -587,6 +667,17 @@ class NodeNewCommand extends Command
                     'last_error' => $failedAssignment->last_error,
                 ],
             );
+
+            if ($requiresHostProvisioning) {
+                $this->rollbackProvisioningNode($node, 'role_assignment_failed', [
+                    'host' => $inputs['host'],
+                    'role' => $failedAssignment->role,
+                    'step' => 'role_assignment',
+                    'error' => $failedAssignment->last_error,
+                ]);
+            }
+
+            return $failure;
         }
 
         $warnings = [];
@@ -594,23 +685,59 @@ class NodeNewCommand extends Command
         if (in_array(NodeRoleName::Agent->value, $roles, true)) {
             $selfGrantResult = $this->setupAgentSelfGrant($node);
             if (is_int($selfGrantResult)) {
+                $this->rollbackProvisioningNode($node, 'agent_self_grant_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'agent_self_grant',
+                ]);
+
                 return $selfGrantResult;
             }
 
             $grantToResult = $this->setupGrantTo($node);
             if (is_int($grantToResult)) {
+                $this->rollbackProvisioningNode($node, 'agent_grant_to_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'agent_grant_to',
+                ]);
+
                 return $grantToResult;
             }
 
             $grantFromResult = $this->setupGrantFrom($node);
             if (is_int($grantFromResult)) {
+                $this->rollbackProvisioningNode($node, 'agent_grant_from_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'agent_grant_from',
+                ]);
+
                 return $grantFromResult;
             }
 
             $agentToolResult = $this->setupAgentTools($node, $warnings);
             if (is_int($agentToolResult)) {
+                $this->rollbackProvisioningNode($node, 'agent_tool_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'agent_tool',
+                ]);
+
                 return $agentToolResult;
             }
+        }
+
+        if ($requiresHostProvisioning) {
+            $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
+
+            if (is_int($securityBaseline)) {
+                $this->rollbackProvisioningNode($node, 'security_baseline_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'security_baseline',
+                ]);
+
+                return $securityBaseline;
+            }
+
+            $registryWriter->markActive($node);
+            $node->refresh();
         }
 
         $payload = [
@@ -716,8 +843,259 @@ class NodeNewCommand extends Command
         return null;
     }
 
+    private function configureProvisionedNodeWireGuard(Node $node, WireGuardKeyGenerator $wireGuardKeyGenerator): ?int
+    {
+        $wireguardAddress = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
+
+        if ($wireguardAddress === '') {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Node '{$node->name}' created but WireGuard could not be configured.",
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'wireguard_identity',
+                    'error' => 'Node WireGuard address is missing.',
+                ],
+            );
+        }
+
+        $gateway = $this->gatewayQuery()->first();
+
+        if (! $gateway instanceof Node) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway identity is missing locally.',
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'gateway_identity',
+                    'error' => 'No active gateway node record exists.',
+                ],
+            );
+        }
+
+        $gatewayEndpoint = $this->gatewayPublicEndpoint($gateway);
+
+        if ($gatewayEndpoint === null) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway public WireGuard endpoint is missing locally.',
+                meta: [
+                    'node' => $gateway->name,
+                    'step' => 'gateway_wireguard_endpoint',
+                ],
+            );
+        }
+
+        $peer = $this->ensureProvisionedNodeWireGuardPeer($node, $wireGuardKeyGenerator, $wireguardAddress);
+
+        if (is_int($peer)) {
+            return $peer;
+        }
+
+        $wireguardServerPublicKey = $this->configureGatewayWireGuardServerPeer($node, $peer, $wireguardAddress);
+
+        if (is_int($wireguardServerPublicKey)) {
+            return $wireguardServerPublicKey;
+        }
+
+        $wireguardConfig = $this->controlWireGuardConfig(
+            controlPrivateKey: $peer->private_key,
+            controlWireguardAddress: $wireguardAddress,
+            gatewayPublicKey: $wireguardServerPublicKey,
+            gatewayWireguardAddress: (string) $gateway->wireguard_address,
+            gatewayEndpoint: $gatewayEndpoint,
+            preSharedKey: $peer->pre_shared_key,
+            allowedIps: '10.6.0.0/24',
+        );
+
+        $nodeWireGuardInstall = $this->installProvisionedNodeWireGuard($node, $wireguardConfig);
+
+        if (is_int($nodeWireGuardInstall)) {
+            return $nodeWireGuardInstall;
+        }
+
+        return $this->waitForProvisionedNodeWireGuard($node, $wireguardAddress);
+    }
+
+    private function ensureProvisionedNodeWireGuardPeer(Node $node, WireGuardKeyGenerator $wireGuardKeyGenerator, string $wireguardAddress): WireGuardPeer|int
+    {
+        $peer = WireGuardPeer::query()->where('node_id', $node->id)->first();
+
+        if ($peer instanceof WireGuardPeer && $peer->private_key !== '') {
+            if (! is_string($peer->pre_shared_key) || $peer->pre_shared_key === '') {
+                $peer->pre_shared_key = $this->generatePreSharedKey();
+            }
+
+            $peer->allowed_ips = "{$wireguardAddress}/32";
+            $peer->save();
+
+            return $peer;
+        }
+
+        try {
+            $keys = $wireGuardKeyGenerator->generateKeyPair();
+            $preSharedKey = $this->generatePreSharedKey();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to generate WireGuard identity material.',
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'wireguard_identity',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        return WireGuardPeer::query()->updateOrCreate(
+            ['node_id' => $node->id],
+            [
+                'public_key' => $keys['public_key'],
+                'private_key' => $keys['private_key'],
+                'pre_shared_key' => $preSharedKey,
+                'allowed_ips' => "{$wireguardAddress}/32",
+            ],
+        );
+    }
+
+    private function configureGatewayWireGuardServerPeer(Node $node, WireGuardPeer $peer, string $wireguardAddress): string|int
+    {
+        if ($peer->public_key === '' || $peer->pre_shared_key === null || $peer->pre_shared_key === '') {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Node '{$node->name}' created but WireGuard peer material is incomplete.",
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'wireguard_identity',
+                ],
+            );
+        }
+
+        try {
+            $installer = app(WgEasyServiceInstaller::class);
+            $installer->configurePeers([
+                [
+                    'name' => $node->name,
+                    'private_key' => $peer->private_key,
+                    'public_key' => $peer->public_key,
+                    'pre_shared_key' => $peer->pre_shared_key,
+                    'address' => $wireguardAddress,
+                ],
+            ]);
+
+            return $installer->publicKey();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway could not install WireGuard peer for node '{$node->name}'.",
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'gateway_wireguard_peer',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+    }
+
+    private function installProvisionedNodeWireGuard(Node $node, string $wireguardConfig): ?int
+    {
+        $runtimeUser = $node->user ?: self::DEFAULT_RUNTIME_USER;
+        $host = (string) $node->host;
+        $script = <<<'SH'
+set -euo pipefail
+CONFIG_FILE="$(mktemp)"
+trap 'rm -f "$CONFIG_FILE"' EXIT
+cat > "$CONFIG_FILE"
+if ! command -v wg >/dev/null 2>&1 || ! command -v wg-quick >/dev/null 2>&1; then
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq wireguard wireguard-tools
+fi
+sudo install -d -m 0700 /etc/wireguard
+sudo install -m 0600 -o root -g root "$CONFIG_FILE" /etc/wireguard/wg-orbit.conf
+sudo systemctl enable wg-quick@wg-orbit >/dev/null
+sudo systemctl restart wg-quick@wg-orbit
+SH;
+
+        $result = Process::timeout(240)
+            ->input($wireguardConfig)
+            ->run($this->ssh(
+                user: $runtimeUser,
+                host: $host,
+                command: $script,
+                node: $node,
+            ));
+
+        if ($result->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Host '{$host}' could not install WireGuard.",
+            meta: [
+                'host' => $host,
+                'step' => 'node_wireguard_install',
+                'error' => trim($result->errorOutput()."\n".$result->output()) ?: null,
+            ],
+        );
+    }
+
+    private function waitForProvisionedNodeWireGuard(Node $node, string $wireguardAddress): ?int
+    {
+        $lastOutput = null;
+
+        for ($attempt = 0; $attempt < 12; $attempt++) {
+            $probe = Process::timeout(5)->run(sprintf('ping -c 1 -W 2 %s', escapeshellarg($wireguardAddress)));
+
+            if ($probe->successful()) {
+                return null;
+            }
+
+            $lastOutput = trim($probe->errorOutput()."\n".$probe->output()) ?: null;
+
+            $e2e = getenv('ORBIT_E2E');
+
+            if (! app()->runningUnitTests() || (is_string($e2e) && $e2e !== '' && $e2e !== '0')) {
+                sleep(2);
+            }
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Gateway could not reach node '{$node->name}' over WireGuard.",
+            meta: [
+                'node' => $node->name,
+                'step' => 'node_wireguard_reachability',
+                'wireguard_address' => $wireguardAddress,
+                'error' => $lastOutput,
+            ],
+        );
+    }
+
+    private function gatewayPublicEndpoint(Node $gateway): ?string
+    {
+        $vpnRole = $gateway->roleAssignments()
+            ->where('role', NodeRoleName::Vpn->value)
+            ->first();
+
+        $settings = $vpnRole?->settings;
+        $publicEndpoint = is_array($settings) ? ($settings['public_endpoint'] ?? null) : null;
+
+        if (is_string($publicEndpoint) && $publicEndpoint !== '') {
+            return $publicEndpoint;
+        }
+
+        foreach ([$gateway->gateway_endpoint, $gateway->host] as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
     /**
-     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
      */
     private function forwardAppNodeCreation(string $name, array $inputs): int
     {
@@ -732,6 +1110,7 @@ class NodeNewCommand extends Command
                     environment: $inputs['environment'],
                     tld: $inputs['tld'],
                     user: $inputs['sshUser'],
+                    hostKeyFingerprint: $inputs['hostKeyFingerprint'],
                 ))
                 ->dto();
         } catch (GatewayApiException $exception) {
@@ -1061,7 +1440,7 @@ class NodeNewCommand extends Command
     }
 
     /**
-     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
      * @param  list<string>  $initialHostedRoles
      */
     private function provisionAppNode(
@@ -1069,6 +1448,7 @@ class NodeNewCommand extends Command
         NodeRegistryWriter $registryWriter,
         NodesProbe $nodesProbe,
         NodeRoleAssignmentService $roleAssignmentService,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
         string $name,
         array $inputs,
         array $initialHostedRoles = [],
@@ -1121,37 +1501,23 @@ class NodeNewCommand extends Command
         }
 
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
-        $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
+        $gatewayEndpoint = $this->gatewayEndpoint();
 
-        if (! $installation->successful) {
-            return $this->installerFailure(
-                role: 'app',
-                host: $inputs['host'],
-                sshUser: $inputs['sshUser'],
-                errorOutput: $installation->errorOutput,
+        try {
+            $pinnedHostKey = app(SshHostKeyPinner::class)->pin($inputs['host'], $inputs['hostKeyFingerprint']);
+        } catch (HostKeyMismatch $exception) {
+            return $this->failCommand(
+                code: 'node.host_key_mismatch',
+                message: $exception->getMessage(),
+                meta: ['host' => $inputs['host']],
+            );
+        } catch (HostKeyPinningFailed $exception) {
+            return $this->failCommand(
+                code: 'node.host_key_pin_failed',
+                message: $exception->getMessage(),
+                meta: ['host' => $inputs['host']],
             );
         }
-
-        $sshAuthorization = $this->authorizeRuntimeSshUser(
-            host: $inputs['host'],
-            sshUser: $inputs['sshUser'],
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($sshAuthorization)) {
-            return $sshAuthorization;
-        }
-
-        $sshHardening = $this->hardenRuntimeSshAccess(
-            host: $inputs['host'],
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($sshHardening)) {
-            return $sshHardening;
-        }
-
-        $gatewayEndpoint = $this->gatewayEndpoint();
 
         $node = $registryWriter->writeAppNode(
             name: $name,
@@ -1162,15 +1528,98 @@ class NodeNewCommand extends Command
             gatewayEndpoint: $gatewayEndpoint,
             sshUser: $inputs['sshUser'],
             user: $runtimeUser,
+            status: Node::STATUS_PROVISIONING,
+            hostKey: $pinnedHostKey,
         );
 
-        $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+        try {
+            $installer->usePinnedNode($node);
+            $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
 
-        if (is_int($roleAssignmentFailure)) {
-            return $roleAssignmentFailure;
+            if (! $installation->successful) {
+                $failure = $this->installerFailure(
+                    role: 'app',
+                    host: $inputs['host'],
+                    sshUser: $inputs['sshUser'],
+                    errorOutput: $installation->errorOutput,
+                );
+
+                $this->rollbackProvisioningNode($node, 'host_installer_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'host_install',
+                    'error' => trim($installation->errorOutput) ?: null,
+                ]);
+
+                return $failure;
+            }
+
+            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $inputs['sshUser'], $runtimeUser);
+
+            if (is_int($sshAuthorization)) {
+                $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'steady_state_ssh_authorization',
+                ]);
+
+                return $sshAuthorization;
+            }
+
+            $sshHardening = $this->hardenRuntimeSshAccess($node, $runtimeUser);
+
+            if (is_int($sshHardening)) {
+                $this->rollbackProvisioningNode($node, 'ssh_hardening_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'ssh_hardening',
+                ]);
+
+                return $sshHardening;
+            }
+
+            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard($node, $wireGuardKeyGenerator);
+
+            if (is_int($wireGuardProvisioning)) {
+                $this->rollbackProvisioningNode($node, 'wireguard_install_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'node_wireguard_install',
+                ]);
+
+                return $wireGuardProvisioning;
+            }
+
+            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+
+            if (is_int($roleAssignmentFailure)) {
+                $this->rollbackProvisioningNode($node, 'role_assignment_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'role_assignment',
+                ]);
+
+                return $roleAssignmentFailure;
+            }
+
+            $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
+
+            if (is_int($securityBaseline)) {
+                $this->rollbackProvisioningNode($node, 'security_baseline_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'security_baseline',
+                ]);
+
+                return $securityBaseline;
+            }
+
+            $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
+
+            $registryWriter->markActive($node);
+            $node->refresh();
+        } catch (Throwable $exception) {
+            $this->rollbackProvisioningNode($node, 'exception', [
+                'host' => $inputs['host'],
+                'error' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
         }
-
-        $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
         if ($initialHostedRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
             $developmentDns['status'] = 'configured';
@@ -1221,7 +1670,7 @@ class NodeNewCommand extends Command
     }
 
     /**
-     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
      * @param  list<string>  $initialHostedRoles
      */
     private function materializeUnknownAppNode(
@@ -1316,6 +1765,7 @@ class NodeNewCommand extends Command
             gatewayEndpoint: $this->gatewayEndpoint(),
             sshUser: $inputs['sshUser'],
             user: self::DEFAULT_RUNTIME_USER,
+            status: Node::STATUS_ACTIVE,
         );
 
         $node->update([
@@ -1336,7 +1786,7 @@ class NodeNewCommand extends Command
     }
 
     /**
-     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
      * @param  list<string>  $initialHostedRoles
      */
     private function adoptExistingAppNode(
@@ -1474,7 +1924,7 @@ class NodeNewCommand extends Command
         return self::SUCCESS;
     }
 
-    private function authorizeRuntimeSshUser(string $host, string $sshUser, string $runtimeUser): ?int
+    private function authorizeRuntimeSshUser(Node $node, string $sshUser, string $runtimeUser): ?int
     {
         $publicKey = $this->gatewaySshPublicKey();
 
@@ -1492,11 +1942,50 @@ class NodeNewCommand extends Command
             escapeshellarg($publicKey),
         );
 
-        $authorization = Process::timeout(30)->run(sprintf(
-            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-            escapeshellarg($sshUser),
-            escapeshellarg($host),
-            escapeshellarg($script),
+        $authorization = Process::timeout(30)->run($this->ssh(
+            user: $sshUser,
+            host: $node->host,
+            command: $script,
+            node: $node,
+        ));
+
+        if ($authorization->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Host '{$node->host}' could not authorize the steady-state SSH user.",
+            meta: [
+                'host' => $node->host,
+                'step' => 'steady_state_ssh_authorization',
+                'error' => trim($authorization->errorOutput()) ?: trim($authorization->output()) ?: null,
+            ],
+        );
+    }
+
+    private function authorizeRuntimeSshUserOnHost(string $host, string $sshUser, string $runtimeUser): ?int
+    {
+        $publicKey = $this->gatewaySshPublicKey();
+
+        if (is_int($publicKey)) {
+            return $publicKey;
+        }
+
+        $home = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
+        $authorizedKeys = "{$home}/.ssh/authorized_keys";
+        $script = sprintf(
+            'sudo install -d -m 700 -o %1$s -g %1$s %2$s && sudo touch %3$s && sudo chown %1$s:%1$s %3$s && sudo chmod 600 %3$s && (sudo grep -qxF %4$s %3$s || printf "%%s\n" %4$s | sudo tee -a %3$s >/dev/null)',
+            escapeshellarg($runtimeUser),
+            escapeshellarg("{$home}/.ssh"),
+            escapeshellarg($authorizedKeys),
+            escapeshellarg($publicKey),
+        );
+
+        $authorization = Process::timeout(30)->run($this->ssh(
+            user: $sshUser,
+            host: $host,
+            command: $script,
         ));
 
         if ($authorization->successful()) {
@@ -1514,7 +2003,7 @@ class NodeNewCommand extends Command
         );
     }
 
-    private function hardenRuntimeSshAccess(string $host, string $runtimeUser): ?int
+    private function hardenRuntimeSshAccess(Node $node, string $runtimeUser): ?int
     {
         $script = sprintf(
             <<<'SCRIPT'
@@ -1540,11 +2029,58 @@ SCRIPT,
             escapeshellarg($runtimeUser),
         );
 
-        $hardening = Process::timeout(60)->run(sprintf(
-            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
+        $hardening = Process::timeout(60)->run($this->ssh(
+            user: $runtimeUser,
+            host: $node->host,
+            command: $script,
+            node: $node,
+        ));
+
+        if ($hardening->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Host '{$node->host}' could not harden steady-state SSH access.",
+            meta: [
+                'host' => $node->host,
+                'step' => 'ssh_hardening',
+                'error' => trim($hardening->errorOutput()."\n".$hardening->output()) ?: null,
+            ],
+        );
+    }
+
+    private function hardenRuntimeSshAccessOnHost(string $host, string $runtimeUser): ?int
+    {
+        $script = sprintf(
+            <<<'SCRIPT'
+set -e
+RUNTIME_USER=%s
+sudo install -d -m 0755 /etc/ssh/sshd_config.d
+sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
+# Managed by Orbit.
+# Provisioned nodes accept operator SSH only through the orbit runtime user.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+AllowUsers ${RUNTIME_USER}
+EOF
+sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
+sudo sshd -t
+sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+sudo passwd -l root > /dev/null 2>&1 || true
+sudo rm -f /root/.ssh/authorized_keys
+SCRIPT,
             escapeshellarg($runtimeUser),
-            escapeshellarg($host),
-            escapeshellarg($script),
+        );
+
+        $hardening = Process::timeout(60)->run($this->ssh(
+            user: $runtimeUser,
+            host: $host,
+            command: $script,
         ));
 
         if ($hardening->successful()) {
@@ -1560,6 +2096,37 @@ SCRIPT,
                 'error' => trim($hardening->errorOutput()."\n".$hardening->output()) ?: null,
             ],
         );
+    }
+
+    private function finalizeNodeSecurityBaseline(Node $node): ?int
+    {
+        $shell = app(RemoteShell::class);
+
+        /** @var array<string, SecurityInstaller> $installers */
+        $installers = [
+            'sshd' => app(SshdHardenedInstaller::class),
+            'public_ssh_deny' => app(PublicSshDenyInstaller::class),
+        ];
+
+        foreach ($installers as $step => $installer) {
+            $report = $installer->installFor($node, $shell);
+
+            if ($report->successful) {
+                continue;
+            }
+
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Host '{$node->host}' could not finalize the node security baseline.",
+                meta: [
+                    'host' => $node->host,
+                    'step' => $step,
+                    'exit_code' => $report->details['exit_code'] ?? null,
+                ],
+            );
+        }
+
+        return null;
     }
 
     private function ensureGatewayRuntimeDependencies(string $host, string $sshUser, string $runtimeUser): ?int
@@ -1587,11 +2154,10 @@ SCRIPT,
             escapeshellarg($runtimeUser),
         );
 
-        $dependencies = Process::timeout(900)->run(sprintf(
-            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-            escapeshellarg($sshUser),
-            escapeshellarg($host),
-            escapeshellarg($script),
+        $dependencies = Process::timeout(900)->run($this->ssh(
+            user: $sshUser,
+            host: $host,
+            command: $script,
         ));
 
         if ($dependencies->successful()) {
@@ -1702,7 +2268,7 @@ SCRIPT,
             );
         }
 
-        $sshAuthorization = $this->authorizeRuntimeSshUser(
+        $sshAuthorization = $this->authorizeRuntimeSshUserOnHost(
             host: $host,
             sshUser: $sshUser,
             runtimeUser: $runtimeUser,
@@ -1737,11 +2303,10 @@ SCRIPT,
             ? $bootstrapCommand
             : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($bootstrapCommand));
 
-        $bootstrap = Process::timeout(120)->input($identityJson)->run(sprintf(
-            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-            escapeshellarg($sshUser),
-            escapeshellarg($host),
-            escapeshellarg($command),
+        $bootstrap = Process::timeout(120)->input($identityJson)->run($this->ssh(
+            user: $sshUser,
+            host: $host,
+            command: $command,
         ));
 
         if (! $bootstrap->successful()) {
@@ -1775,7 +2340,7 @@ SCRIPT,
             return $gatewayPlatform;
         }
 
-        $sshHardening = $this->hardenRuntimeSshAccess(
+        $sshHardening = $this->hardenRuntimeSshAccessOnHost(
             host: $host,
             runtimeUser: $runtimeUser,
         );
@@ -2248,11 +2813,10 @@ SCRIPT,
             ? $detectCommand
             : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($detectCommand));
 
-        $detection = Process::timeout(30)->run(sprintf(
-            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-            escapeshellarg($sshUser),
-            escapeshellarg($host),
-            escapeshellarg($command),
+        $detection = Process::timeout(30)->run($this->ssh(
+            user: $sshUser,
+            host: $host,
+            command: $command,
         ));
 
         if (! $detection->successful()) {
@@ -2664,6 +3228,10 @@ SCRIPT,
             return 'user';
         }
 
+        if ($this->stringOption('host-key-fingerprint') !== null) {
+            return 'host-key-fingerprint';
+        }
+
         return null;
     }
 
@@ -2712,7 +3280,7 @@ SCRIPT,
     }
 
     /**
-     * @return array{host: string, environment: string, tld: ?string, sshUser: string}|int
+     * @return array{host: string, environment: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}|int
      */
     private function resolveAppInputs(): array|int
     {
@@ -2775,12 +3343,13 @@ SCRIPT,
             'environment' => $environment,
             'tld' => $tld,
             'sshUser' => $this->resolveSshUser(),
+            'hostKeyFingerprint' => $this->stringOption('host-key-fingerprint'),
         ];
     }
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, environment: ?string, tld: ?string, sshUser: ?string}|int
+     * @return array{host: string, environment: ?string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}|int
      */
     private function resolveHostedRoleInputs(array $roles): array|int
     {
@@ -2796,6 +3365,10 @@ SCRIPT,
 
         if (! $needsHost && $this->stringOption('host') !== null) {
             return $this->validationFailed('host', 'Only app-development, app-production, agent, and gateway use host provisioning.');
+        }
+
+        if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
+            return $this->validationFailed('host_key_fingerprint', 'Only app-development, app-production, agent, and gateway use host-key fingerprint pinning.');
         }
 
         $host = $needsHost ? $this->resolveHost($this->containsAppHostingRole($roles) ? 'app' : 'agent') : null;
@@ -2831,6 +3404,7 @@ SCRIPT,
             'environment' => $this->legacyEnvironmentForRoles($roles),
             'tld' => $tld,
             'sshUser' => $needsHost ? $this->resolveSshUser() : null,
+            'hostKeyFingerprint' => $needsHost ? $this->stringOption('host-key-fingerprint') : null,
         ];
     }
 
@@ -3422,6 +3996,41 @@ SCRIPT,
         );
     }
 
+    /**
+     * @param  array<string, mixed>  $properties
+     */
+    private function rollbackProvisioningNode(Node $node, string $reason, array $properties = []): void
+    {
+        $name = $node->name;
+
+        DB::transaction(function () use ($node): void {
+            $node->firewallRules()->delete();
+            $node->roleAssignments()->delete();
+            $node->nodeTools()->delete();
+            WireGuardPeer::query()->where('node_id', $node->id)->delete();
+            NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->orWhere('serving_node_id', $node->id)
+                ->delete();
+
+            $node->delete();
+        });
+
+        if (! Schema::hasTable('activity_log')) {
+            return;
+        }
+
+        activity('node')
+            ->event('node.provisioning.failed')
+            ->withProperties([
+                'type' => 'write',
+                'node' => $name,
+                'reason' => $reason,
+                ...$properties,
+            ])
+            ->log('node.provisioning.failed');
+    }
+
     private function guardDevelopmentDnsMappingAvailable(?string $tld, string $target): ?int
     {
         if ($tld === null) {
@@ -3507,5 +4116,27 @@ SCRIPT,
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function ssh(string $user, string $host, string $command, ?Node $node = null): string
+    {
+        if ($node instanceof Node) {
+            return app(SshCommandBuilder::class)->enforceForNode(
+                node: $node,
+                remoteCommand: $command,
+                loginUser: $user,
+                options: [
+                    'batch_mode' => true,
+                    'prefer_public_host' => true,
+                ],
+            );
+        }
+
+        return app(SshCommandBuilder::class)->ssh(
+            user: $user,
+            host: $host,
+            remoteCommand: $command,
+            options: ['batch_mode' => true],
+        );
     }
 }

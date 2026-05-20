@@ -60,10 +60,12 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 - `--tld`: required for `app-development`. Used by `agent` as the agent
   TLD (default `agent`). Must be a single lowercase DNS label without a
   leading dot.
-- `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
-  steady-state `nodes.user` after the gateway-managed SSH user is set up.
-  After provisioning, operator SSH access is through that gateway-managed user;
-  root SSH login and password login are disabled.
+- `--user`: Bootstrap SSH user for provisioning. Defaults to `root`, but
+  users from cloud images, such as `ubuntu`, remain valid. This value is only
+  used for the first SSH path that creates or verifies Orbit's managed user.
+  After provisioning, `nodes.user` is `orbit`, and operator SSH access is
+  through that gateway-managed user; root SSH login and password login are
+  disabled.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
@@ -197,10 +199,19 @@ and requires a future explicit reset contract.
 role assignment. Development app bootstrap includes the node TLD and the
 gateway development DNS mapping for that TLD.
 
+For provisioned Linux nodes, `node:new` configures node-owned security policy
+by default. That policy belongs to the `node` family and may surface as
+`node.security.*` doctor findings. `node:new` does not configure tools,
+user-facing firewall rules, apps, or workspaces.
+
 If initial hosted-role validation fails, the command stops before provisioning
 or writing the node identity. If an initial role is persisted but its
 first convergence fails, the command fails and leaves that role assignment in
 `error` for later doctor recovery.
+
+During hosted-node provisioning, `provisioning` is a transient node status for a
+row that is being baked. A failed bake deletes the provisional node row instead
+of leaving a permanent failed node identity.
 
 `node:new` does not detect, infer, or store public IPv4/IPv6 metadata. The
 provided `--host` is treated as the operator-supplied SSH/bootstrap endpoint;

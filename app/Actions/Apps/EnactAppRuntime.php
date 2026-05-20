@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Services\Apps\AppFpmPoolRenderer;
 use App\Services\Php\PhpFpmServiceReloader;
+use App\Services\Php\PhpFpmSystemdHardening;
 use RuntimeException;
 
 final readonly class EnactAppRuntime
@@ -18,6 +19,7 @@ final readonly class EnactAppRuntime
         private EnsureAppProcessRuntimeUnits $ensureAppProcessRuntimeUnits,
         private AppFpmPoolRenderer $fpmPoolRenderer,
         private PhpFpmServiceReloader $fpmServiceReloader,
+        private PhpFpmSystemdHardening $fpmSystemdHardening,
     ) {}
 
     /**
@@ -66,19 +68,39 @@ final readonly class EnactAppRuntime
         $poolPath = $this->fpmPoolRenderer->path($app);
         $service = $this->fpmPoolRenderer->service($app);
         $content = $this->fpmPoolRenderer->content($app);
+        $user = $this->fpmPoolRenderer->runtimeUser($app);
+        $home = $user === 'root' ? '/root' : "/home/{$user}";
+        $hardening = $this->fpmSystemdHardening->contentForNode($node, $app->php_version);
 
         return sprintf(
             <<<'SH'
 set -e
+if ! id -u %s >/dev/null 2>&1; then
+    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
+fi
+sudo install -d -m 0750 -o %s -g %s %s
 sudo mkdir -p %s %s %s
+if [ -d %s ]; then sudo chown -R %s:%s %s; fi
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
+%s
 SH,
+            escapeshellarg($user),
+            escapeshellarg($home),
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg($home),
             escapeshellarg(dirname($poolPath)),
             escapeshellarg(dirname($this->fpmPoolRenderer->socketPath($app))),
             escapeshellarg(dirname($this->fpmPoolRenderer->logPath($app))),
+            escapeshellarg($app->path),
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg($app->path),
             escapeshellarg(base64_encode($content)),
             escapeshellarg($poolPath),
+            $this->fpmSystemdHardening->installScript($app->php_version, $hardening),
             $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
     }

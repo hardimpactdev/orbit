@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Data\Security\PinnedHostKey;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -18,6 +20,20 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     bindDevelopmentDnsMappingTestDoubles('node-store-controller-dns');
+
+    app()->instance(SshHostKeyPinner::class, new class
+    {
+        public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
+        {
+            return new PinnedHostKey(
+                host: $host,
+                type: 'ssh-ed25519',
+                publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+                fingerprint: $expectedFingerprint ?? 'SHA256:node-store-test',
+                pinMode: $expectedFingerprint === null ? 'tofu' : 'verified',
+            );
+        }
+    });
 });
 
 afterEach(function (): void {
@@ -188,9 +204,35 @@ describe('NodeStoreController', function (): void {
             ]),
         ]);
 
-        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
-            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
-            : Process::result());
+        WireGuardPeer::query()->create([
+            'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
+            'public_key' => 'gateway-public-key',
+            'private_key' => 'gateway-private-key',
+            'pre_shared_key' => 'gateway-psk',
+            'allowed_ips' => '10.6.0.2/32',
+        ]);
+
+        Process::fake(function ($process) {
+            $command = (string) $process->command;
+
+            if ($command === 'wg genkey') {
+                return Process::result(output: "app-private-key\n");
+            }
+
+            if ($command === 'wg pubkey') {
+                return Process::result(output: "app-public-key\n");
+            }
+
+            if (str_contains($command, 'ssh-keygen -y')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+            }
+
+            if ($command === 'docker exec wg-easy wg show wg0 public-key') {
+                return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            return Process::result();
+        });
         Process::preventStrayProcesses();
 
         $response = $this

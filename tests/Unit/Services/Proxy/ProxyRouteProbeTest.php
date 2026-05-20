@@ -222,7 +222,7 @@ describe('proxy backend and TLS reality', function (): void {
             'key_exists' => true,
         ])
             ->and($shell->nodes[0]->is($node))->toBeTrue()
-            ->and($shell->options[0]['env']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test');
+            ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test');
     });
 
     it('detects missing backend route reality', function (): void {

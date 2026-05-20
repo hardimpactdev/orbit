@@ -169,6 +169,11 @@ warning codes use singular product prefixes, such as `node.wireguard_peer_missin
 `proxy.route_extra`, `schedule.unit_extra`, and
 `database_connection.env_missing`.
 
+Security is a cross-family section pattern, not a command domain or state
+family. Do not add a `security` command domain or `doctor --family=security`.
+Security issue codes live under the family that owns the state being checked,
+such as `node.security.*`, `app.security.*`, or `workspace.security.*`.
+
 Warning `family` is `null` only for command-owned warnings that are not doctor
 issue codes and do not point at `doctor` as the recovery command. Warning codes
 that a command owns still use the singular product prefix for the command's domain.

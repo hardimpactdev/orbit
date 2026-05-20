@@ -25,7 +25,7 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
 
     expect($shell->runs)->toHaveCount(1)
         ->and($shell->runs[0]['node'])->toBe('beast')
-        ->and($shell->runs[0]['options']['env'])->toMatchArray([
+        ->and($shell->runs[0]['options']['metadata'])->toMatchArray([
             'ORBIT_POLYSCOPE_WORKSPACE_ID' => 'eda4dbca',
             'ORBIT_POLYSCOPE_WORKSPACE_PATH' => '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
             'ORBIT_WORKSPACE_NAME' => 'cta',

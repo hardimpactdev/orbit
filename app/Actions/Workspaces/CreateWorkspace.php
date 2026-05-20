@@ -9,9 +9,11 @@ use App\Contracts\WorkspaceSourceDrivers;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceCreateFailed;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 
 final readonly class CreateWorkspace
@@ -22,6 +24,7 @@ final readonly class CreateWorkspace
         private RemoteShell $remoteShell,
         private SetupWorkspace $setupWorkspace,
         private WorkspaceSourceDrivers $sourceDrivers,
+        private WorkspaceRoleGuard $roleGuard,
     ) {}
 
     /**
@@ -76,6 +79,16 @@ final readonly class CreateWorkspace
                 'workspace.parent_app_invalid',
                 "App '{$app->name}' does not have an owning app node.",
                 ['field' => 'app', 'app' => $app->name],
+            );
+        }
+
+        try {
+            $this->roleGuard->ensureAppSupportsWorkspaces($app);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            throw new WorkspaceCreateFailed(
+                $exception->errorCode(),
+                $exception->getMessage(),
+                $exception->meta,
             );
         }
 

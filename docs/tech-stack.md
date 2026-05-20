@@ -127,11 +127,15 @@ The gateway-to-node primitive is the `RemoteShell` contract:
 - `upload` — write a file atomically
 - `download` — read a file
 
-`RemoteShell` connects as the steady-state SSH user stored on the node record (`nodes.user`). The `node:new --user=<user>` argument is a one-time bootstrap credential; once Orbit creates or verifies the managed SSH user (normally `orbit`), it stores that user on the node record and uses it for all later work.
+`RemoteShell` connects as the steady-state SSH user stored on the node record (`nodes.user`). The canonical steady-state user for provisioned Linux nodes is `orbit`. The `node:new --user=<user>` argument is a one-time bootstrap credential for the first SSH connection, such as `root` or a cloud image default user; after bootstrap, Orbit stores and uses `orbit`.
+
+SSH command construction is centralized in `SshCommandBuilder`. During the Phase 0 security baseline it preserves the existing `StrictHostKeyChecking=accept-new` behavior; later host-key pinning work switches managed node calls to pinned known-host enforcement through the same builder.
 
 Scripts are composed on the gateway. Remote shell work is non-interactive — prompts happen on the CLI caller or the gateway API layer, before any side effects begin.
 
 `upload` writes managed files atomically: temp file, chmod, then move into place. Writes under managed system paths (`/etc`, `/usr`, `/opt`, `/var`, `/root`, `/boot`, `/srv`) use the target node's SSH user's passwordless sudo contract. User-owned paths are written as the SSH user.
+
+The current sudo model intentionally grants the `orbit` maintenance user broad passwordless sudo on managed nodes. Least-privilege sudo wrappers are not part of the current security baseline.
 
 ### Proxy
 

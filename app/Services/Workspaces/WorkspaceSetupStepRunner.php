@@ -41,7 +41,7 @@ final readonly class WorkspaceSetupStepRunner
             $result = $this->remoteShell->run($node, $step->command, [
                 'cwd' => $path,
                 'timeout' => $step->timeoutSeconds(),
-                'env' => $env,
+                'metadata' => $env,
             ]);
 
             $runStep->update([

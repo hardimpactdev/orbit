@@ -91,7 +91,7 @@ UFW);
 
         $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
 
-        expect($snapshot->get('incoming:allow:10.6.0.0/24:any:5173:tcp'))->toMatchArray([
+        expect($snapshot->get('incoming:allow:10.6.0.0/24:any:5173:tcp:v4:any'))->toMatchArray([
             'direction' => 'incoming',
             'action' => 'allow',
             'source' => '10.6.0.0/24',

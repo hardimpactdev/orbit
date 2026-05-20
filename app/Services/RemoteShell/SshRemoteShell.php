@@ -12,7 +12,6 @@ use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
-use InvalidArgumentException;
 
 final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellProcesses
 {
@@ -24,7 +23,7 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
-     *     env?: array<string, string>,
+     *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
      */
@@ -53,6 +52,8 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
             durationMs: $durationMs,
         );
 
+        app(RemoteShellAuditLogger::class)->log('remote_shell.run', $node, $script, $options, $result);
+
         if ((bool) ($options['throw'] ?? false) && ! $result->successful()) {
             throw new RemoteShellFailed($node, $composedScript, $result);
         }
@@ -66,7 +67,7 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
-     *     env?: array<string, string>,
+     *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
      */
@@ -78,13 +79,17 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
             $pendingProcess = $pendingProcess->input((string) $options['input']);
         }
 
-        return $pendingProcess->start(
+        $process = $pendingProcess->start(
             $this->command($node, $this->composeScript($script, $options)),
         );
+
+        app(RemoteShellAuditLogger::class)->log('remote_shell.start', $node, $script, $options);
+
+        return $process;
     }
 
     /**
-     * @param  array{cwd?: string, env?: array<string, string>, strict?: bool}  $options
+     * @param  array{cwd?: string, metadata?: array<string, string>, strict?: bool}  $options
      */
     private function composeScript(string $script, array $options): string
     {
@@ -94,16 +99,8 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
 
         $prefix = '';
 
-        if (isset($options['env']) && is_array($options['env'])) {
-            $assignments = [];
-
-            foreach ($options['env'] as $key => $value) {
-                $assignments[] = $this->envAssignment((string) $key, (string) $value);
-            }
-
-            if ($assignments !== []) {
-                $prefix .= 'export '.implode(' ', $assignments).' && ';
-            }
+        if (isset($options['metadata']) && is_array($options['metadata'])) {
+            $prefix .= app(RemoteShellMetadata::class)->prologue($this->stringMap($options['metadata']));
         }
 
         if (isset($options['cwd']) && $options['cwd'] !== '') {
@@ -114,15 +111,17 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
     }
 
     /**
-     * @param  array{cwd?: string, env?: array<string, string>}  $options
+     * @param  array{cwd?: string, metadata?: array<string, string>}  $options
      */
     private function composeStrictScript(string $script, array $options): string
     {
         $lines = ['set -e'];
 
-        if (isset($options['env']) && is_array($options['env'])) {
-            foreach ($options['env'] as $key => $value) {
-                $lines[] = 'export '.$this->envAssignment((string) $key, (string) $value);
+        if (isset($options['metadata']) && is_array($options['metadata'])) {
+            $prologue = app(RemoteShellMetadata::class)->prologue($this->stringMap($options['metadata']));
+
+            foreach (array_filter(explode('; ', trim($prologue))) as $line) {
+                $lines[] = rtrim($line, ';');
             }
         }
 
@@ -135,13 +134,19 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
         return implode(PHP_EOL, $lines);
     }
 
-    private function envAssignment(string $key, string $value): string
+    /**
+     * @param  array<mixed>  $metadata
+     * @return array<string, string>
+     */
+    private function stringMap(array $metadata): array
     {
-        if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/', $key) !== 1) {
-            throw new InvalidArgumentException("Invalid remote shell environment variable name [{$key}].");
+        $resolved = [];
+
+        foreach ($metadata as $key => $value) {
+            $resolved[(string) $key] = (string) $value;
         }
 
-        return sprintf('%s=%s', $key, escapeshellarg($value));
+        return $resolved;
     }
 
     private function command(Node $node, string $script): string
@@ -150,42 +155,14 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
             return 'bash -c '.escapeshellarg($script);
         }
 
-        $host = $this->host($node);
-        $user = $node->user ?: 'orbit';
-
-        return sprintf(
-            'ssh -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 %s@%s %s',
-            escapeshellarg($user),
-            escapeshellarg($host),
-            escapeshellarg('bash -lc '.escapeshellarg($script)),
+        return app(SshCommandBuilder::class)->enforceForNode(
+            node: $node,
+            remoteCommand: 'bash -lc '.escapeshellarg($script),
+            options: [
+                'log_level' => 'ERROR',
+                'server_alive_interval' => 30,
+                'server_alive_count_max' => 10,
+            ],
         );
-    }
-
-    private function host(Node $node): string
-    {
-        if ($this->dockerTopologyMode() === 'dns-alias' && filled($node->host)) {
-            return $node->host;
-        }
-
-        return $node->wireguard_address ?: $node->host;
-    }
-
-    private function dockerTopologyMode(): ?string
-    {
-        $processValue = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-
-        if (is_string($processValue) && $processValue !== '') {
-            return $processValue;
-        }
-
-        $serverValue = $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
-
-        if (is_string($serverValue) && $serverValue !== '') {
-            return $serverValue;
-        }
-
-        $envValue = $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
-
-        return is_string($envValue) && $envValue !== '' ? $envValue : null;
     }
 }

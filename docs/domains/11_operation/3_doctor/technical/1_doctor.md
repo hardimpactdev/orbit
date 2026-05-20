@@ -4,7 +4,7 @@
 
 **Owner:** `operation`.
 
-**Effects:** `read`, `stream`; `write` when `--fix`, `--restore`, or `--adopt` is used.
+**Effects:** `read`, `stream`; `write` when `--fix`, `--restore`, or `--adopt` is used. `--dry-run` keeps bulk restore/adopt in `read` effect because it returns the action plan without applying fixers.
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--restore|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<issue-key>] [--fix|--restore|--adopt] [--dry-run] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,8 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. Must intersect with the target's role-assignment category set. |
+| `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's role-assignment category set. |
+| `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Exact doctor issue key. Filters reported drift after probes and before action planning. Does not imply or select a family. |
 | `node` | `--node` | Never. | `--self` is present. | The calling peer's node as identified by the gateway (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
 | `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
@@ -33,6 +34,7 @@ This command follows the shared
 | `fix` | `--fix` | Never. | `--restore` or `--adopt` is present. | `false`. | Selects interactive resolution mode. Every attempted action must be declared safe by its family doctor contract. |
 | `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
+| `dry_run` | `--dry-run` | Never. | No `--restore` or `--adopt` flag is present. | `false`. | Returns planned bulk actions without invoking family fixers or adopters. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Target Roles and Category Set
@@ -48,7 +50,8 @@ identity and output, but workload-family doctor eligibility comes from
 | active `gateway` role | `Node`, `Scheduling` |
 | active `database` role only | `Node`, `Tools` |
 | active `agent` role | `Node`, `Tools` |
-| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `app-development` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `app-production` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 
 Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
@@ -57,7 +60,7 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
 ## Input Resolution
 
 1. Select the output renderer.
-2. Resolve mode: `verify` (no flag), `interactive` (`--fix`), `restore` (`--restore`), or `adopt` (`--adopt`). `--fix`, `--restore`, and `--adopt` are mutually exclusive.
+2. Resolve mode: `verify` (no flag), `interactive` (`--fix`), `restore` (`--restore`), or `adopt` (`--adopt`). `--fix`, `--restore`, and `--adopt` are mutually exclusive. `--dry-run` is valid only with `--restore` or `--adopt`.
 3. Resolve the single-node target.
    - `--self` is forwarded to the gateway; the gateway resolves it to the calling peer's identified node.
    - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
@@ -67,6 +70,7 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
    - In resolution modes, the gateway also attempts actions.
    - Family filters intersect with the target-role category set.
    - Families outside the set are rejected by the gateway.
+   - `--key` filters the resulting issue list to the exact key before action planning.
 5. Render the gateway's diagnostic.
 
 Input-mode-specific contracts are required for resolution modes:
@@ -79,6 +83,7 @@ Input-mode-specific contracts are required for resolution modes:
 ### Family Dispatch Rules
 
 - Run only product-family doctor probes. Backend-shaped implementation probes are folded into product families before they become public scope keys.
+- Security is a cross-family issue-code section, not a product family. `node.security.*`, `app.security.*`, `workspace.security.*`, and future firewall-owned `firewall_rule.security.*` findings dispatch through their owning families.
 - Dispatch each selected family through its family doctor contract.
 - Do not duplicate family issue codes, probe facts, restore actions, or adopt actions in the global command.
 - Preserve family-owned diagnostic details for the selected output renderer.
@@ -114,6 +119,7 @@ Peer-specific authorization remains in the on-node companion contracts:
 - After the mode completes with remaining issues, return a drift failure.
 - In verify mode, do not change gateway configuration or node reality.
 - In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
+- In dry-run mode, record planned actions with `status=planned`, leave issues unresolved, and return command success because no mutation was attempted.
 - A family probe error prevents a healthy result.
 - Exception: a family contract may define more specific recoverable behavior for that family's probe errors.
 
@@ -155,6 +161,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Mode not supported | A selected family or issue does not support the requested `--restore` or `--adopt` action. | Failure with diagnostic payload when available |
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
+| Dry-run mode invalid | `--dry-run` is supplied without `--restore` or `--adopt`. | Failure before probes |
 
 The shared exit status policy applies: `0` for healthy success, `1` for
 Orbit-handled command failures, and `2` only for console-runtime invalid usage
@@ -189,8 +196,8 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-role write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
-| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-role write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-development/app-production workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
 | `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 
@@ -212,7 +219,7 @@ doctor orchestration requests.
 | Field | Value |
 | --- | --- |
 | Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API verify transport |
-| Effect | `read` for verify-mode runs; `write` for `--fix`, `--restore`, and `--adopt` mode orchestration |
+| Effect | `read` for verify-mode and `--dry-run` runs; `write` for `--fix`, `--restore`, and `--adopt` mode orchestration that actually applies changes |
 | Subject | `none` |
-| Properties | `mode`, selected `families`, `healthy`, and `issues` when available. Action counts and status when in resolution modes. API transport context is added by middleware. |
+| Properties | `mode`, selected `families`, optional `key`, `dry_run`, `healthy`, and `issues` when available. Action counts and status when in resolution modes. API transport context is added by middleware. |
 | Description | `Doctor verification run` for local CLI verify mode; `Doctor resolution run` for local CLI resolution modes; derived for gateway API |

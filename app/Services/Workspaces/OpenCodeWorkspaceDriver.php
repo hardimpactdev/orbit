@@ -110,7 +110,7 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
             $node,
             $this->alignBranchScript(),
             [
-                'env' => [
+                'metadata' => [
                     'ORBIT_WORKSPACE_PATH' => $path,
                     'ORBIT_WORKSPACE_NAME' => $name,
                     'ORBIT_WORKSPACE_BASE' => $base,

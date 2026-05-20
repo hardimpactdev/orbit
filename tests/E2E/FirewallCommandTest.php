@@ -31,7 +31,8 @@ it('writes lists and removes firewall intent on a prepared app node', function (
                 'port' => '49281',
                 'status' => 'expected',
             ])
-            ->and($allowPayload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
+            ->and($allowPayload['success']['meta']['backend_enacted'])->toBeTrue()
+            ->and($allowPayload['success']['meta']['warnings'])->toBe([]);
 
         $deny = $topology->ssh(
             'gateway',
@@ -49,7 +50,8 @@ it('writes lists and removes firewall intent on a prepared app node', function (
                 'port' => '49282',
                 'status' => 'expected',
             ])
-            ->and($denyPayload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
+            ->and($denyPayload['success']['meta']['backend_enacted'])->toBeTrue()
+            ->and($denyPayload['success']['meta']['warnings'])->toBe([]);
 
         $list = $topology->ssh(
             'gateway',
@@ -70,6 +72,21 @@ it('writes lists and removes firewall intent on a prepared app node', function (
 
         expect($missingConsentPayload['error']['code'])->toBe('destructive_consent_required');
 
+        $topology->ssh(
+            'gateway',
+            "cd {$checkout} && php artisan tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); \App\Models\FirewallRule::updateOrCreate(["node_id" => $node->id, "name" => "orbit-public-ssh-deny-v4"], ["direction" => "incoming", "action" => "deny", "source" => "any", "destination" => null, "port" => "22", "protocol" => "tcp", "reason" => "Protected public SSH deny rule.", "source_hash" => hash("sha256", "e2e-protected-public-ssh-deny-v4"), "address_family" => "v4", "interface" => "public", "owner" => "node-security", "protected" => true]); echo "protected";'),
+            timeoutSeconds: 120,
+        );
+
+        $protectedRemove = $topology->ssh(
+            'gateway',
+            "cd {$checkout} && php artisan firewall:remove orbit-public-ssh-deny-v4 --node=app-dev-1 --force --json || true",
+            timeoutSeconds: 120,
+        );
+        $protectedRemovePayload = firewallCommandPayload($protectedRemove->output());
+
+        expect($protectedRemovePayload['error']['code'])->toBe('firewall_rule.protected');
+
         $remove = $topology->ssh(
             'gateway',
             "cd {$checkout} && php artisan firewall:remove ".escapeshellarg($rule).' --node=app-dev-1 --force --json',
@@ -83,7 +100,8 @@ it('writes lists and removes firewall intent on a prepared app node', function (
                 'node' => 'app-dev-1',
                 'status' => 'removed_with_drift',
             ])
-            ->and($removePayload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.cleanup_deferred');
+            ->and($removePayload['success']['meta']['backend_removed'])->toBeTrue()
+            ->and($removePayload['success']['meta']['warnings'])->toBe([]);
 
         $after = $topology->ssh(
             'gateway',
@@ -102,6 +120,11 @@ it('writes lists and removes firewall intent on a prepared app node', function (
         $topology->ssh(
             'gateway',
             "cd {$checkout} && php artisan firewall:remove ".escapeshellarg($denyRule).' --node=app-dev-1 --force --json >/dev/null 2>&1 || true',
+            timeoutSeconds: 120,
+        );
+        $topology->ssh(
+            'gateway',
+            "cd {$checkout} && php artisan tinker --execute=".escapeshellarg('\App\Models\FirewallRule::query()->where("name", "orbit-public-ssh-deny-v4")->delete(); echo "cleaned";').' >/dev/null 2>&1 || true',
             timeoutSeconds: 120,
         );
         $topology->cleanup();

@@ -66,12 +66,10 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot($items);
         }
 
-        $script = <<<'BASH'
-set -euo pipefail
-php <<'PHP'
-<?php
-$units = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_UNITS')), true);
-$notifier = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_EVENT_NOTIFIER')), true);
+        $php = <<<'PHP'
+$payload = json_decode(stream_get_contents(STDIN), true);
+$units = is_array($payload['units'] ?? null) ? $payload['units'] : [];
+$notifier = is_array($payload['event_notifier'] ?? null) ? $payload['event_notifier'] : [];
 $expectedNames = [];
 
 foreach ($units as $unit) {
@@ -108,17 +106,18 @@ foreach (glob('/etc/supervisor/conf.d/orbit_*.conf') ?: [] as $path) {
         printf("__extra\t%s\n", $name);
     }
 }
-PHP
-BASH;
+PHP;
+
+        $script = 'set -euo pipefail'.PHP_EOL.'php -r '.escapeshellarg($php);
 
         $result = $this->runtimeBackendProbe()
             ->remoteShell()
             ->run($process->app->node, $script, [
                 'throw' => true,
-                'env' => [
-                    'ORBIT_PROCESS_UNITS' => base64_encode((string) json_encode($spec)),
-                    'ORBIT_PROCESS_EVENT_NOTIFIER' => base64_encode((string) json_encode($notifier)),
-                ],
+                'input' => (string) json_encode([
+                    'units' => $spec,
+                    'event_notifier' => $notifier,
+                ], JSON_THROW_ON_ERROR),
             ]);
 
         foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {

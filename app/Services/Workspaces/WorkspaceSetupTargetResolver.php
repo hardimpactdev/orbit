@@ -8,6 +8,7 @@ use App\Contracts\AgentIdeWorkspacePathResolver;
 use App\Data\AgentIde\WorkspacePathResolution;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -20,6 +21,7 @@ final readonly class WorkspaceSetupTargetResolver
     public function __construct(
         private AppAgentIdeDefaults $appAgentIdeDefaults,
         private AgentIdeWorkspacePathResolver $pathResolver,
+        private WorkspaceRoleGuard $roleGuard,
     ) {}
 
     /**
@@ -376,6 +378,12 @@ final readonly class WorkspaceSetupTargetResolver
 
         if (! $node instanceof Node) {
             throw new WorkspaceSetupResolutionFailed('validation_failed', "Node not found for workspace '{$workspace->name}'.", ['field' => 'app']);
+        }
+
+        try {
+            $this->roleGuard->ensureAppSupportsWorkspaces($app);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            throw new WorkspaceSetupResolutionFailed($exception->errorCode(), $exception->getMessage(), $exception->meta);
         }
 
         return [$workspace, $app, $node, $isAdoption];

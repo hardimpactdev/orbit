@@ -96,11 +96,11 @@ describe('WorkspaceListController', function (): void {
         Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $docs->id]);
         Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $site->id]);
 
-        $response = $this->call('GET', '/api/workspaces?app=site&node=prod-1', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/workspaces?app=docs&node=dev-1', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.workspaces')
-            ->assertJsonPath('success.data.workspaces.0.name', 'site-feature');
+            ->assertJsonPath('success.data.workspaces.0.name', 'docs-feature');
     });
 
     it('omits hidden workspaces from the result', function (): void {

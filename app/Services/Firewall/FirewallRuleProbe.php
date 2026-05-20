@@ -135,6 +135,10 @@ final readonly class FirewallRuleProbe
                     'shape' => $shape,
                     'reason' => $observed['comment'] ?? null,
                 ], JSON_THROW_ON_ERROR)),
+                'address_family' => $observed['address_family'] ?? 'both',
+                'interface' => $observed['interface'] ?? null,
+                'owner' => 'user',
+                'protected' => false,
             ]);
 
             $results[] = new AdoptResult(
@@ -174,6 +178,8 @@ final readonly class FirewallRuleProbe
             || $rule->source === ''
             || $rule->port === ''
             || ! in_array($rule->protocol, self::Protocols, true)
+            || ! in_array($rule->address_family, ['v4', 'v6', 'both'], true)
+            || ($rule->interface !== null && ! in_array($rule->interface, ['public', 'wireguard'], true))
             || $rule->source_hash === ''
         ) {
             return [
@@ -302,7 +308,7 @@ final readonly class FirewallRuleProbe
     }
 
     /**
-     * @return array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string}
+     * @return array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family: string, interface: ?string}
      */
     private function expectedShape(FirewallRule $rule): array
     {
@@ -313,11 +319,13 @@ final readonly class FirewallRuleProbe
             'destination' => $rule->destination,
             'port' => $rule->port,
             'protocol' => $rule->protocol,
+            'address_family' => $rule->address_family,
+            'interface' => $rule->interface,
         ];
     }
 
     /**
-     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string}  $expected
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family?: string, interface?: ?string}  $expected
      * @return array<string, mixed>|null
      */
     private function findPartialShapeMatch(ProbeSnapshot $snapshot, array $expected): ?array
@@ -332,6 +340,7 @@ final readonly class FirewallRuleProbe
                 && ($observed['action'] ?? null) === $expected['action']
                 && ($observed['port'] ?? null) === $expected['port']
                 && ($observed['protocol'] ?? null) === $expected['protocol']
+                && (($expected['address_family'] ?? 'both') === 'both' || ($observed['address_family'] ?? 'both') === ($expected['address_family'] ?? 'both'))
             ) {
                 return $observed;
             }
@@ -341,7 +350,7 @@ final readonly class FirewallRuleProbe
     }
 
     /**
-     * @return array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string}|null
+     * @return array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family: string, interface: ?string, comment: string}|null
      */
     private function parseUfwLine(string $line): ?array
     {
@@ -351,14 +360,18 @@ final readonly class FirewallRuleProbe
             return null;
         }
 
-        if (str_contains($matches[1], '(v6)') || str_contains($matches[4], '(v6)')) {
-            return null;
-        }
-
         $target = trim($matches[1]);
-        $source = $this->normalizeEndpoint(trim($matches[4]));
+        $addressFamily = str_contains($target, '(v6)') || str_contains($matches[4], '(v6)') ? 'v6' : 'v4';
+        $target = trim(str_replace('(v6)', '', $target));
+        $source = $this->normalizeEndpoint(trim(str_replace('(v6)', '', $matches[4])));
         $port = '*';
         $protocol = '*';
+        $interface = null;
+
+        if (preg_match('/^(.+?)\s+on\s+([a-zA-Z0-9_.:-]+)$/', $target, $interfaceMatches)) {
+            $target = trim($interfaceMatches[1]);
+            $interface = $interfaceMatches[2] === 'wg0' ? 'wireguard' : null;
+        }
 
         if (preg_match('/^(\d{1,5}(?::\d{1,5})?)(?:\/(tcp|udp))?$/', $target, $targetMatches)) {
             $port = $targetMatches[1];
@@ -372,6 +385,8 @@ final readonly class FirewallRuleProbe
             'destination' => null,
             'port' => $port,
             'protocol' => $protocol,
+            'address_family' => $addressFamily,
+            'interface' => $interface,
             'comment' => $matches[5] ?? '',
         ];
     }
@@ -385,7 +400,7 @@ final readonly class FirewallRuleProbe
     }
 
     /**
-     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string}  $shape
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family?: string, interface?: ?string}  $shape
      */
     private function identityKey(array $shape): string
     {
@@ -396,11 +411,13 @@ final readonly class FirewallRuleProbe
             $shape['destination'] ?? 'any',
             $shape['port'],
             $shape['protocol'],
+            $shape['address_family'] ?? 'both',
+            $shape['interface'] ?? 'any',
         ]);
     }
 
     /**
-     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string}  $observed
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family?: string, interface?: ?string}  $observed
      */
     private function isBaselineRule(array $observed): bool
     {
@@ -413,7 +430,7 @@ final readonly class FirewallRuleProbe
     }
 
     /**
-     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, comment?: string}  $observed
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, comment?: string, address_family?: string, interface?: ?string}  $observed
      */
     private function deriveName(array $observed): string
     {

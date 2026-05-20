@@ -210,6 +210,13 @@ Orbit has nine state families:
 | `firewall_rule` | What network traffic each node allows | [Firewall Concepts](domains/4_firewall/firewall-concepts.md) |
 | `database_connection` | Reusable database connection intent mapped into app and workspace `.env` files | [Database Concepts](domains/18_database/database-concepts.md) |
 
+Security is not a tenth state family. Security findings are sections inside the
+family that owns the protected state: host security under `node.security.*`,
+production runtime hardening under `app.security.*`, development workspace
+isolation under `workspace.security.*`, and firewall-owned representation drift
+under `firewall_rule.security.*` when needed. `doctor --family=security` is not
+accepted.
+
 These names are how Orbit thinks about each thing. The tools behind them — Caddy for proxy routes, UFW for firewall rules, Supervisor for processes — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
 ### Keeping nodes in sync

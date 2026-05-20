@@ -61,8 +61,8 @@ describe('runtime backend availability', function (): void {
             'runtime_backend_output' => 'supervisor OK',
         ]);
         expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1');
-        expect($shell->scripts[1])->toContain('ORBIT_PROCESS_UNITS');
-        expect($shell->scripts[1])->toContain('ORBIT_PROCESS_EVENT_NOTIFIER');
+        expect($shell->scripts[1])->toContain('php -r');
+        expect(json_decode((string) ($shell->options[1]['input'] ?? ''), true))->toHaveKeys(['units', 'event_notifier']);
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
         expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
             'config_exists' => true,
@@ -548,6 +548,11 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
+    /**
      * @param  list<RemoteShellResult>  $results
      */
     public function __construct(private array $results) {}
@@ -556,6 +561,7 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell
     {
         $this->nodes[] = $node;
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,

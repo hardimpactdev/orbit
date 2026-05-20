@@ -38,6 +38,7 @@ it('serializes doctor filters into the body', function (): void {
         self: true,
         app: 'docs',
         workspace: 'main',
+        key: 'node.security.host_key.app-1',
     );
 
     expect($request->body()->all())->toBe([
@@ -46,6 +47,7 @@ it('serializes doctor filters into the body', function (): void {
         'self' => true,
         'app' => 'docs',
         'workspace' => 'main',
+        'key' => 'node.security.host_key.app-1',
     ]);
 });
 

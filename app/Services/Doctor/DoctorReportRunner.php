@@ -17,6 +17,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
@@ -47,6 +48,8 @@ final readonly class DoctorReportRunner
 
     private const array APP_CATEGORIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
+    private const array APP_PRODUCTION_CATEGORIES = ['node', 'app', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
+
     private const array DATABASE_CATEGORIES = ['node', 'tool'];
 
     private const array AGENT_CATEGORIES = ['node', 'tool'];
@@ -54,6 +57,7 @@ final readonly class DoctorReportRunner
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
+        private AppsFixer $appsFixer,
         private DatabaseConnectionProbe $databaseConnectionProbe,
         private DatabaseConnectionRestorer $databaseConnectionRestorer,
         private DatabaseConnectionAdopter $databaseConnectionAdopter,
@@ -88,7 +92,8 @@ final readonly class DoctorReportRunner
         return match ($role) {
             'control' => self::CONTROL_CATEGORIES,
             'gateway' => self::GATEWAY_CATEGORIES,
-            'app', NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value => self::APP_CATEGORIES,
+            'app', NodeRoleName::AppDevelopment->value => self::APP_CATEGORIES,
+            NodeRoleName::AppProduction->value => self::APP_PRODUCTION_CATEGORIES,
             NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
             NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
             default => [],
@@ -104,8 +109,12 @@ final readonly class DoctorReportRunner
             return self::GATEWAY_CATEGORIES;
         }
 
-        if ($this->nodeRoleAssignments->nodeHasActiveAppHostRole($node)) {
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
             return self::APP_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppProduction->value)) {
+            return self::APP_PRODUCTION_CATEGORIES;
         }
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
@@ -123,12 +132,16 @@ final readonly class DoctorReportRunner
      * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    public function run(Node $node, string $mode = 'verify', array $families = []): array
+    public function run(Node $node, string $mode = 'verify', array $families = [], ?string $key = null, bool $dryRun = false): array
     {
-        $probe = $this->probe($node, $families);
+        $probe = $this->probe($node, $families, $key);
 
         if ($mode === 'verify') {
             return $probe;
+        }
+
+        if ($dryRun) {
+            return $this->finalize($probe, $mode, $this->plannedActions($mode, $probe['issues'] ?? []), dryRun: true);
         }
 
         $actions = $mode === 'adopt'
@@ -149,7 +162,7 @@ final readonly class DoctorReportRunner
      * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    public function probe(Node $node, array $families = []): array
+    public function probe(Node $node, array $families = [], ?string $key = null): array
     {
         $roleCategories = $this->categoriesForNode($node);
         $selectedFamilies = $families === [] ? $roleCategories : array_values(array_intersect($families, $roleCategories));
@@ -284,6 +297,7 @@ final readonly class DoctorReportRunner
             }
         }
 
+        $issues = $this->filterIssuesByKey($issues, $key);
         $summary = $this->summary('verify', $issues, []);
 
         return [
@@ -296,6 +310,7 @@ final readonly class DoctorReportRunner
                 'self' => false,
                 'app' => null,
                 'workspace' => null,
+                'key' => $key,
             ],
             'summary' => $summary,
             'issues' => $issues,
@@ -331,14 +346,14 @@ final readonly class DoctorReportRunner
      * @param  list<array<string, mixed>>  $actions
      * @return array<string, mixed>
      */
-    public function finalize(array $probe, string $mode, array $actions): array
+    public function finalize(array $probe, string $mode, array $actions, bool $dryRun = false): array
     {
         $issues = $probe['issues'] ?? [];
         $issues = is_array($issues) ? array_values(array_filter($issues, is_array(...))) : [];
         $remainingIssues = $this->remainingIssues($issues, $actions);
         $summary = $this->summary($mode, $remainingIssues, $actions);
 
-        return [
+        $result = [
             ...$probe,
             'healthy' => $summary['issues'] === 0 && $summary['failed'] === 0 && $summary['conflicts'] === 0 && $summary['skipped'] === 0,
             'mode' => $mode,
@@ -346,6 +361,12 @@ final readonly class DoctorReportRunner
             'issues' => $remainingIssues,
             'actions' => $actions,
         ];
+
+        if ($dryRun) {
+            $result['dry_run'] = true;
+        }
+
+        return $result;
     }
 
     /**
@@ -361,7 +382,10 @@ final readonly class DoctorReportRunner
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
+            'detail' => [
+                ...($entry->detail ?? []),
+                'app' => $app->name,
+            ],
         ]);
     }
 
@@ -444,6 +468,23 @@ final readonly class DoctorReportRunner
     {
         $actions = [];
 
+        if (in_array('node', $families, true)) {
+            $snapshot = $this->nodesProbe->snapshotForAdopt($node);
+
+            foreach ($this->nodesProbe->adopt($node, $snapshot) as $result) {
+                $actions[] = [
+                    'family' => $result->family,
+                    'node' => $node->name,
+                    'code' => $result->key,
+                    'key' => $result->key,
+                    'mode' => 'adopt',
+                    'status' => $result->action->value,
+                    'summary' => $result->summary,
+                    'details' => $result->detail,
+                ];
+            }
+        }
+
         if (in_array('proxy', $families, true) && $node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
             $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
 
@@ -517,6 +558,7 @@ final readonly class DoctorReportRunner
 
         return match ($family) {
             'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
+            'app' => $this->applyAppIssue($node, $key, $detail),
             'database_connection' => $this->applyDatabaseConnectionIssue($key, $detail),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
@@ -716,6 +758,31 @@ final readonly class DoctorReportRunner
         }
 
         return $this->handleWorkspaceAction($workspace, $this->driftEntryFromStoredParts('workspace', $key, $detail));
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyAppIssue(Node $node, string $key, array $detail): ?array
+    {
+        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
+
+        if ($appName === null) {
+            return null;
+        }
+
+        $app = App::query()
+            ->with('node')
+            ->where('node_id', $node->id)
+            ->where('name', $appName)
+            ->first();
+
+        if (! $app instanceof App) {
+            return null;
+        }
+
+        return $this->handleAppAction($app, $this->driftEntryFromStoredParts('app', $key, $detail));
     }
 
     /**
@@ -923,6 +990,16 @@ final readonly class DoctorReportRunner
             'proxy.tls_mismatch',
             'workspace.fpm_config_missing',
             'workspace.fpm_config_mismatch',
+            'workspace.security.system_user',
+            'workspace.security.fs_permissions',
+            'workspace.security.fpm_pool_isolation',
+            'workspace.security.fpm_systemd_hardening',
+            'app.fpm_config_missing',
+            'app.fpm_config_mismatch',
+            'app.security.system_user',
+            'app.security.fs_permissions',
+            'app.security.fpm_pool_isolation',
+            'app.security.fpm_systemd_hardening',
             'firewall_rule.rule_missing',
             'firewall_rule.rule_mismatch',
             'tool.capability_missing',
@@ -937,15 +1014,22 @@ final readonly class DoctorReportRunner
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'node.security.sshd_config',
+            'node.security.sshd_listen',
+            'node.security.public_ssh_deny',
+            'node.security.unattended_upgrades',
+            'node.security.sysctl',
             'database_connection.env_missing',
             'database_connection.env_mismatch',
             'database_connection.target_missing',
         ];
+        $isNodeHostKey = str_starts_with($key, 'node.security.host_key.');
 
         return [
             ...$issue,
-            'restorable' => in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
-            'adoptable' => (($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value)
+            'restorable' => $isNodeHostKey || in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
+            'adoptable' => $isNodeHostKey
+                || (($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value)
                 || ($family === 'database_connection' && in_array($key, [
                     'database_connection.env_extra',
                     'database_connection.target_extra',
@@ -1203,6 +1287,31 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>|null
      */
+    private function handleAppAction(App $app, DriftEntry $entry): ?array
+    {
+        try {
+            return $this->appsFixer->fix($app, $entry);
+        } catch (\Throwable $e) {
+            $app->loadMissing('node');
+
+            return [
+                'family' => $entry->family,
+                'node' => $app->node?->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
     private function handleFirewallAction(string $mode, FirewallRule $rule, DriftEntry $entry): ?array
     {
         if ($mode === 'verify') {
@@ -1397,8 +1506,60 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<array<string, mixed>>  $issues
+     * @return list<array<string, mixed>>
+     */
+    private function filterIssuesByKey(array $issues, ?string $key): array
+    {
+        if ($key === null) {
+            return $issues;
+        }
+
+        return array_values(array_filter(
+            $issues,
+            fn (array $issue): bool => ($issue['key'] ?? null) === $key,
+        ));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @return list<array<string, mixed>>
+     */
+    private function plannedActions(string $mode, array $issues): array
+    {
+        return array_values(array_map(
+            fn (array $issue): array => $this->issueSupportsMode($issue, $mode)
+                ? $this->plannedAction($mode, $issue)
+                : $this->unsupportedAction($mode, $issue),
+            $issues,
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>
+     */
+    private function plannedAction(string $mode, array $issue): array
+    {
+        $key = (string) ($issue['key'] ?? 'this issue');
+
+        return [
+            'family' => $issue['family'] ?? null,
+            'node' => $issue['node'] ?? null,
+            'code' => $issue['key'] ?? null,
+            'key' => $issue['key'] ?? null,
+            'mode' => $mode,
+            'status' => 'planned',
+            'summary' => "Would {$mode} {$key}.",
+            'details' => [
+                'dry_run' => true,
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
      * @param  list<array<string, mixed>>  $actions
-     * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int}
+     * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int, planned: int}
      */
     private function summary(string $mode, array $issues, array $actions): array
     {
@@ -1409,6 +1570,7 @@ final readonly class DoctorReportRunner
             'skipped' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'skipped')),
             'conflicts' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'conflict')),
             'failed' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'failed')),
+            'planned' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'planned')),
         ];
     }
 }

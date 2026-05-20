@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -208,6 +209,43 @@ function createTestGatewayNode(array $attributes = []): Node
     ]);
 
     return $node;
+}
+
+function markNodeSecurityBaselineClean(Node $node): Node
+{
+    $node->forceFill([
+        'user' => 'orbit',
+        'host_key_type' => 'ssh-ed25519',
+        'host_key_public' => 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+        'host_key_fingerprint' => 'SHA256:test',
+        'host_key_pin_mode' => 'verified',
+        'host_key_pinned_at' => now(),
+    ])->save();
+
+    foreach (['v4', 'v6'] as $addressFamily) {
+        FirewallRule::query()->updateOrCreate(
+            [
+                'node_id' => $node->id,
+                'name' => "orbit-public-ssh-deny-{$addressFamily}",
+            ],
+            [
+                'direction' => 'incoming',
+                'action' => 'deny',
+                'source' => $addressFamily === 'v4' ? '0.0.0.0/0' : '::/0',
+                'destination' => null,
+                'port' => '22',
+                'protocol' => 'tcp',
+                'reason' => 'Orbit node security baseline denies public SSH after bootstrap.',
+                'source_hash' => hash('sha256', "{$node->id}:public-ssh-deny:{$addressFamily}"),
+                'address_family' => $addressFamily,
+                'interface' => 'public',
+                'owner' => 'node-security',
+                'protected' => true,
+            ],
+        );
+    }
+
+    return $node->refresh();
 }
 
 function createPhpLocalNode(string $role = 'gateway'): Node

@@ -475,12 +475,13 @@ describe('node:list JSON renderer contract', function (): void {
     });
 
     it('attaches doctor meta when --doctor is present and issues are found', function (): void {
-        createTestAppHostNode(nodeListJsonRow([
+        $node = createTestAppHostNode(nodeListJsonRow([
             'name' => 'incomplete-app',
             'environment' => 'production',
             'tld' => null,
             'wireguard_address' => null,
         ]), 'app-production');
+        markNodeSecurityBaselineClean($node);
 
         $exitCode = Artisan::call('node:list', [
             '--json' => true,
@@ -506,6 +507,7 @@ describe('node:list JSON renderer contract', function (): void {
 
     it('attaches healthy doctor meta without failures when --doctor finds no issues', function (): void {
         $node = createTestAppHostNode(nodeListJsonRow(['name' => 'healthy-app']));
+        markNodeSecurityBaselineClean($node);
         DB::table('wireguard_peers')->insert([
             'node_id' => $node->id,
             'public_key' => 'healthy-public-key',

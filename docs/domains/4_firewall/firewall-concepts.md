@@ -19,6 +19,14 @@ Each firewall rule is defined by the following fields.
 - **Destination:** Destination CIDR when the backend supports it, otherwise `null`.
 - **Port:** Destination port or documented port range.
 - **Protocol:** Traffic protocol. One of `tcp` or `udp`.
+- **Address family:** `v4`, `v6`, or `both`. Existing rows default to `both`.
+- **Interface scope:** Optional symbolic interface scope. `public` and
+  `wireguard` are resolved to live interfaces by the apply path.
+- **Owner:** Rule owner. `user` means editable through firewall commands;
+  `node-bootstrap` and `node-security` are managed by node-owned baseline
+  flows.
+- **Protected:** Boolean derived from owner. User-owned rules are not
+  protected; non-user owners are protected.
 - **Reason:** Optional operator note attached to the rule.
 
 ## Targets
@@ -37,4 +45,6 @@ These terms define what firewall commands may and may not change.
 - **Firewall-family boundaries:** Firewall commands own editable rule configuration on eligible nodes.
   - They do not edit bootstrap policy.
   - They do not create public SSH exceptions for nodes.
+  - They do not mutate protected rows with `owner != 'user'`; those are
+    repaired through the owning family doctor path.
   - They do not import observed node reality outside explicit `doctor --fix --family=firewall_rule --adopt` semantics.

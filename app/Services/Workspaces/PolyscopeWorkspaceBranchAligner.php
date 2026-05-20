@@ -17,7 +17,7 @@ final readonly class PolyscopeWorkspaceBranchAligner
     public function align(Node $node, string $workspaceId, string $path, string $name): void
     {
         $result = $this->remoteShell->run($node, $this->script(), [
-            'env' => [
+            'metadata' => [
                 'ORBIT_POLYSCOPE_WORKSPACE_ID' => $workspaceId,
                 'ORBIT_POLYSCOPE_WORKSPACE_PATH' => $path,
                 'ORBIT_WORKSPACE_NAME' => $name,

@@ -228,7 +228,7 @@ class DevelopmentDnsMappingEnactor
      */
     public function mappingForDevelopmentRole(Node $node, string $tld): ?array
     {
-        if ($node->status !== 'active') {
+        if (! in_array($node->status, [Node::STATUS_ACTIVE, Node::STATUS_PROVISIONING], true)) {
             return null;
         }
 

@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -51,6 +52,35 @@ function createDoctorRunnerAppHostNode(array $attributes = []): Node
     ]);
 
     return $node;
+}
+
+function markDoctorRunnerNodeSecurityBaselineClean(Node $node): void
+{
+    $node->forceFill([
+        'user' => 'orbit',
+        'host_key_type' => 'ed25519',
+        'host_key_public' => 'ssh-ed25519 AAAATEST',
+        'host_key_fingerprint' => 'SHA256:test',
+        'host_key_pin_mode' => 'verified',
+        'host_key_pinned_at' => now(),
+    ])->save();
+
+    foreach (['v4', 'v6'] as $addressFamily) {
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => "orbit-public-ssh-deny-{$addressFamily}",
+            'direction' => 'incoming',
+            'action' => 'deny',
+            'source' => 'any',
+            'port' => '22',
+            'protocol' => 'tcp',
+            'source_hash' => hash('sha256', "orbit-public-ssh-deny-{$node->id}-{$addressFamily}"),
+            'address_family' => $addressFamily,
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+    }
 }
 
 describe('DoctorReportRunner', function (): void {
@@ -244,6 +274,7 @@ describe('DoctorReportRunner', function (): void {
             'node_id' => $node->id,
             'allowed_ips' => '10.6.0.5/32',
         ]);
+        markDoctorRunnerNodeSecurityBaselineClean($node);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -287,6 +318,7 @@ describe('DoctorReportRunner', function (): void {
             'node_id' => $node->id,
             'allowed_ips' => '10.6.0.5/32',
         ]);
+        markDoctorRunnerNodeSecurityBaselineClean($node);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,

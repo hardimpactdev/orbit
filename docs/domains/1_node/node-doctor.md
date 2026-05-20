@@ -19,6 +19,9 @@ The node family owns these facts:
 - node bootstrap artifacts: gateway runtime readiness, node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
+- node-owned security baseline: host-key pinning metadata, canonical
+  steady-state SSH user, SSH management exposure policy, unattended upgrades,
+  sysctl baseline, and permissions for home directories set during bake;
 - node-related defaults: `app-development` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
   safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`, and PHP CLI and
@@ -70,7 +73,13 @@ The node probe reads gateway node records and checks these layers:
     traffic is not publicly exposed after bootstrap and instead uses the
     Orbit/WireGuard path. Editable operator firewall rules belong to
     `firewall_rule`.
-11. **Role assignment readiness:** active role assignments have the settings
+11. **Node security posture:** provisioned Linux nodes satisfy node-owned
+   security checks. These issue keys use the `node.security.*` prefix and remain
+   inside the `node` family; `security` is not a doctor family. Persisted
+   `nodes.user` values other than `orbit` are reported as legacy drift. The
+   `node:new --user` option remains valid as a bootstrap-only SSH user and is
+   not itself drift.
+12. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
    drift.
 
@@ -92,7 +101,7 @@ The node probe reads gateway node records and checks these layers:
 
    `app-production`, `database`, and `gateway` assignments have no role
    settings in v1.
-12. **Node-related defaults:** local `node:default` preferences point at
+13. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` nodes when `--self` inspects the CLI's
    local configuration, PHP CLI defaults at the node level point at installed
    supported PHP runtimes, and agent IDE defaults at the node level point at
@@ -165,6 +174,12 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
+| `node.security.host_key.<node>` | A managed Linux node has no pinned host key, a mismatched host key, or host-key metadata that cannot be verified. First pin is adoptable only with explicit operator consent. |
+| `node.security.ssh_user` | A persisted managed node record uses a steady-state SSH user other than `orbit`. |
+| `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
+| `node.security.unattended_upgrades` | A provisioned Linux node is missing the expected unattended-upgrades package or configuration. |
+| `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
+| `node.security.home_perms` | `/home/orbit` or `/home/orbit/.ssh` permissions are weaker than the bake-time baseline. Report-only; restore requires operator re-bake. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` node. |
 | `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway configuration is absent on the selected node or the target node's default `php` binary differs from gateway configuration. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
@@ -190,6 +205,9 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
+| `node.security.public_ssh_deny` | Reapply the node-owned public SSH deny policy through the node family while preserving user-owned firewall rules. |
+| `node.security.unattended_upgrades` | Restore the unattended-upgrades package and managed apt auto-upgrade configuration. |
+| `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
 
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
@@ -197,7 +215,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.app_ssh_unreachable`,
-`node.local_default_invalid`, or
+`node.security.host_key.<node>`, `node.security.ssh_user`,
+`node.security.home_perms`, `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
 
 `node.vpn_runtime_missing` reports that the active gateway-coupled `vpn`
@@ -227,6 +246,7 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
 | `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
+| `node.security.host_key.<node>` | Pin the currently observed host key only when the operator selected this exact key and explicitly chose adopt. |
 
 Conditions for `node.wireguard_peer_missing` adoption: the selected active
 node has a non-secret identity artifact that matches gateway
@@ -239,9 +259,9 @@ public key is present in live WireGuard reality, and that live peer has
 exactly one unambiguous allowed address.
 
 `doctor --family=node --adopt` does not handle unselected hosts, unresolved caller identities,
-unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
-tools, firewall rules, apps, workspaces, processes, proxy routes, schedules, or
-deployments.
+unknown WireGuard peers, public IPv4/IPv6 metadata, non-host-key security
+settings, or artifacts that belong to tools, firewall rules, apps, workspaces,
+processes, proxy routes, schedules, or deployments.
 
 Adoption of a missing peer on an active node requires proof of non-secret node identity
 from the target host. That proof must bind the selected node name, role,
@@ -272,6 +292,6 @@ assignment compatibility and status, access grant integrity, WireGuard
 identity, and presented caller identity resolving to a unique active node
 record. It also covers platform reality, SSH reachability, public IP metadata
 exclusion from probe/restore/adopt behavior, gateway runtime readiness,
-node bootstrap readiness, and development TLD mapping readiness. The
+node bootstrap readiness, node security posture, and development TLD mapping readiness. The
 probe additionally covers `node.local_default_invalid`,
 `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`.

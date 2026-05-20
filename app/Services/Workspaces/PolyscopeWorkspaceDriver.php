@@ -141,7 +141,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     private function readRemoteConfig(App $app, Node $node): array
     {
         $result = $this->remoteShell->run($node, $this->remoteConfigScript(), [
-            'env' => ['ORBIT_APP_PATH' => $app->path],
+            'metadata' => ['ORBIT_APP_PATH' => $app->path],
             'timeout' => 30,
         ]);
 

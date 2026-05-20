@@ -720,10 +720,12 @@ describe('external service stubs', function (): void {
         $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
 
         expect($ssh)->toHaveCount(0);
-        expect($remoteShell->scripts)->toBe([
+        expect(array_slice($remoteShell->scripts, 0, 2))->toBe([
             'true',
             'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
         ]);
+        expect($remoteShell->scripts)->toHaveCount(3);
+        expect($remoteShell->scripts[2])->toContain('"runtime_user"');
         expect($remoteShell->options[0]['timeout'])->toBe(10);
     });
 
@@ -777,7 +779,8 @@ describe('external service stubs', function (): void {
         $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
 
         expect($ssh)->toHaveCount(0);
-        expect($remoteShell->scripts)->toBe([]);
+        expect($remoteShell->scripts)->toHaveCount(1);
+        expect($remoteShell->scripts[0])->toContain('"runtime_user"');
     });
 
     it('returns empty for gateway runtime checks', function (): void {
@@ -822,10 +825,12 @@ describe('external service stubs', function (): void {
         $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing');
 
         expect($runtime)->toHaveCount(0);
-        expect($remoteShell->scripts)->toBe([
+        expect(array_slice($remoteShell->scripts, 0, 2))->toBe([
             'true',
             'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
         ]);
+        expect($remoteShell->scripts)->toHaveCount(3);
+        expect($remoteShell->scripts[2])->toContain('"runtime_user"');
     });
 
     it('detects missing app runtime backend', function (): void {
@@ -879,7 +884,8 @@ describe('external service stubs', function (): void {
         $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing');
 
         expect($runtime)->toHaveCount(0);
-        expect($remoteShell->scripts)->toBe([]);
+        expect($remoteShell->scripts)->toHaveCount(1);
+        expect($remoteShell->scripts[0])->toContain('"runtime_user"');
     });
 
     it('detects missing development TLD for development app nodes', function (): void {
@@ -1816,6 +1822,7 @@ describe('public IP metadata exclusion', function (): void {
             'public_ipv4' => '1.2.3.4',
             'public_ipv6' => null,
         ]);
+        markNodeSecurityBaselineClean($node);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $ipIssues = array_filter($drift, fn (DriftEntry $e): bool => str_contains($e->key, 'public'));

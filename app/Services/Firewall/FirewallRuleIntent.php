@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Firewall;
 
+use App\Data\Doctor\DriftEntry;
+use App\Enums\DriftKind;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -15,6 +17,7 @@ class FirewallRuleIntent
 {
     public function __construct(
         private readonly FirewallRuleQuery $query,
+        private readonly FirewallRuleFixer $fixer,
     ) {}
 
     /**
@@ -54,8 +57,25 @@ class FirewallRuleIntent
                 ...$shape,
                 'reason' => $reason,
                 'source_hash' => $this->sourceHash($node->name, $name, $shape, $reason),
+                'owner' => 'user',
+                'protected' => false,
             ],
         );
+
+        try {
+            $this->fixer->fix($rule->refresh(), new DriftEntry(
+                family: 'firewall_rule',
+                key: 'firewall_rule.rule_missing',
+                kind: DriftKind::Missing,
+                summary: "Apply firewall rule {$rule->name}.",
+            ));
+        } catch (\Throwable $e) {
+            throw new GatewayApiException('Firewall rule intent was saved, but backend enactment failed.', 'firewall_rule.enactment_failed', [
+                'node' => $node->name,
+                'rule' => $name,
+                'reason' => $e->getMessage(),
+            ]);
+        }
 
         return [
             'data' => [
@@ -63,8 +83,8 @@ class FirewallRuleIntent
             ],
             'meta' => [
                 'action' => $existing instanceof FirewallRule ? 'converged' : 'created',
-                'backend_enacted' => false,
-                'warnings' => [$this->runtimeWarning($node->name)],
+                'backend_enacted' => true,
+                'warnings' => [],
             ],
         ];
     }
@@ -105,16 +125,34 @@ class FirewallRuleIntent
             ];
         }
 
+        if ($rule->protected) {
+            throw new GatewayApiException('Protected firewall rules cannot be removed through firewall commands.', 'firewall_rule.protected', [
+                'name' => $rule->name,
+                'node' => $node->name,
+                'owner' => $rule->owner,
+            ]);
+        }
+
         $entity = $this->query->toRuleEntity($rule, 'removed_with_drift');
         $rule->delete();
+
+        try {
+            $this->fixer->remove($rule);
+        } catch (\Throwable $e) {
+            throw new GatewayApiException('Firewall rule intent was removed, but backend cleanup failed.', 'firewall_rule.cleanup_failed', [
+                'node' => $node->name,
+                'rule' => $name,
+                'reason' => $e->getMessage(),
+            ]);
+        }
 
         return [
             'data' => [
                 'rule' => $entity,
             ],
             'meta' => [
-                'backend_removed' => false,
-                'warnings' => [$this->cleanupWarning($node->name)],
+                'backend_removed' => true,
+                'warnings' => [],
             ],
         ];
     }
@@ -225,31 +263,5 @@ class FirewallRuleIntent
             'shape' => $shape,
             'reason' => $reason,
         ], JSON_THROW_ON_ERROR));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function runtimeWarning(string $node): array
-    {
-        return [
-            'code' => 'firewall_rule.enactment_deferred',
-            'family' => 'firewall_rule',
-            'message' => 'Firewall rule intent was saved, but backend enactment is deferred until the firewall doctor enactor is ported.',
-            'next_command' => "doctor --fix --family=firewall_rule --restore --node={$node}",
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function cleanupWarning(string $node): array
-    {
-        return [
-            'code' => 'firewall_rule.cleanup_deferred',
-            'family' => 'firewall_rule',
-            'message' => 'Firewall rule intent was removed, but backend cleanup is deferred until the firewall doctor enactor is ported.',
-            'next_command' => "doctor --fix --family=firewall_rule --restore --node={$node}",
-        ];
     }
 }

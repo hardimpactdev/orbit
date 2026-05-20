@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -24,6 +25,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $public_ipv4
  * @property string|null $public_ipv6
  * @property array<string, mixed>|null $agent_ide_config
+ * @property string|null $host_key_type
+ * @property string|null $host_key_fingerprint
+ * @property string|null $host_key_public
+ * @property Carbon|null $host_key_pinned_at
+ * @property string|null $host_key_pin_mode
  * @property string|null $user
  * @property string $orbit_path
  * @property string $status
@@ -37,6 +43,10 @@ class Node extends Model
 {
     use HasFactory;
 
+    public const string STATUS_PROVISIONING = 'provisioning';
+
+    public const string STATUS_ACTIVE = 'active';
+
     protected $fillable = [
         'name',
         'role',
@@ -49,6 +59,11 @@ class Node extends Model
         'public_ipv4',
         'public_ipv6',
         'agent_ide_config',
+        'host_key_type',
+        'host_key_fingerprint',
+        'host_key_public',
+        'host_key_pinned_at',
+        'host_key_pin_mode',
         'user',
         'orbit_path',
         'status',
@@ -59,6 +74,7 @@ class Node extends Model
     {
         return [
             'agent_ide_config' => 'array',
+            'host_key_pinned_at' => 'datetime',
         ];
     }
 

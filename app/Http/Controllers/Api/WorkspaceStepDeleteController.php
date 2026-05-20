@@ -7,11 +7,13 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\WorkspaceLifecyclePhase;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +26,7 @@ final class WorkspaceStepDeleteController implements Loggable
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
+        private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(string $phase, int $step, Request $request, WorkspaceStepListPayload $payload): JsonResponse
@@ -64,6 +67,12 @@ final class WorkspaceStepDeleteController implements Loggable
 
         if (! $app instanceof App) {
             return $this->appNotFound($appSlug ?? (string) $path);
+        }
+
+        try {
+            $this->workspaceRoleGuard->ensureAppSupportsWorkspaces($app);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
         }
 
         if (! $this->canManageApp($caller, $app)) {
@@ -155,10 +164,7 @@ final class WorkspaceStepDeleteController implements Loggable
      */
     private function hostedAppNodeIds(): array
     {
-        return array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
-        ]));
+        return $this->nodeRoleAssignments->activeNodeIdsForRole('app-development');
     }
 
     private function stringValue(Request $request, string $key): ?string
@@ -223,6 +229,17 @@ final class WorkspaceStepDeleteController implements Loggable
                 ],
             ],
         ], 403);
+    }
+
+    private function workspaceUnsupportedForProduction(WorkspaceUnsupportedForProduction $exception): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     /**

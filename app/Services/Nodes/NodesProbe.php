@@ -41,6 +41,7 @@ final readonly class NodesProbe
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
         private ?DevelopmentDnsMappingProbe $developmentDnsMappingProbe = null,
+        private ?NodeSecurityPostureProbe $nodeSecurityPostureProbe = null,
         private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
@@ -80,6 +81,7 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkAppRuntime($node));
         $drift = array_merge($drift, $this->checkDevelopmentTld($node));
         $drift = array_merge($drift, $this->checkCliPhpDefault($node));
+        $drift = array_merge($drift, $this->nodeSecurityPostureProbe()->diff($node));
 
         return $drift;
     }
@@ -1006,10 +1008,21 @@ final readonly class NodesProbe
             'node.access_grant_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'node.security.sshd_config',
+            'node.security.sshd_listen',
+            'node.security.public_ssh_deny',
+            'node.security.unattended_upgrades',
+            'node.security.sysctl',
         ];
 
-        if (! in_array($entry->key, $fixableKeys, true)) {
+        if (! in_array($entry->key, $fixableKeys, true) && ! str_starts_with($entry->key, 'node.security.host_key.')) {
             throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'.");
+        }
+
+        if (str_starts_with($entry->key, 'node.security.')) {
+            $this->nodeSecurityPostureProbe()->restore($node, $entry);
+
+            return;
         }
 
         match ($entry->key) {
@@ -1020,6 +1033,7 @@ final readonly class NodesProbe
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
             'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
             'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node, $entry),
+            default => throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'."),
         };
     }
 
@@ -1261,6 +1275,10 @@ final readonly class NodesProbe
             }
         }
 
+        foreach ($this->nodeSecurityPostureProbe()->snapshotForAdopt($node)->items as $key => $item) {
+            $items[$key] = $item;
+        }
+
         return new ProbeSnapshot($items);
     }
 
@@ -1435,6 +1453,10 @@ final readonly class NodesProbe
             );
         }
 
+        foreach ($this->nodeSecurityPostureProbe()->adopt($node, $snapshot) as $result) {
+            $results[] = $result;
+        }
+
         $platformRecordMismatch = $snapshot->get('node.platform_record_mismatch');
 
         if ($platformRecordMismatch === null) {
@@ -1476,5 +1498,10 @@ final readonly class NodesProbe
         );
 
         return $results;
+    }
+
+    private function nodeSecurityPostureProbe(): NodeSecurityPostureProbe
+    {
+        return $this->nodeSecurityPostureProbe ?? new NodeSecurityPostureProbe($this->remoteShell);
     }
 }

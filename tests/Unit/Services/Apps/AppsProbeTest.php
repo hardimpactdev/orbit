@@ -59,7 +59,12 @@ describe('source path and document root reality', function (): void {
             'fpm_config_exists' => true,
             'fpm_config_matches' => true,
         ]);
-        expect($shell->scripts[0])->toContain('ORBIT_APP_SPEC');
+        expect($shell->scripts[0])->toContain('php -r')
+            ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))->toMatchArray([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => 'public',
+            ]);
         expect($shell->nodes[0]->is($node))->toBeTrue();
     });
 
@@ -207,6 +212,61 @@ describe('PHP-FPM configuration reality', function (): void {
     });
 });
 
+describe('production security reality', function (): void {
+    it('detects production app runtime isolation drift', function (): void {
+        $node = appNode([], role: 'app-production');
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'environment' => 'production',
+                'path' => '/home/orbit/apps/docs',
+            ]);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => convergedRuntimeSnapshot([
+                'fpm_config_exists' => false,
+                'fpm_config_matches' => false,
+                'system_user_exists' => false,
+                'fs_permissions_ok' => false,
+                'fpm_hardening_exists' => false,
+                'fpm_hardening_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.security.system_user')?->kind)->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'app.security.fs_permissions')?->kind)->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'app.security.fpm_pool_isolation')?->kind)->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'app.security.fpm_systemd_hardening')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('does not apply production app security drift to development apps', function (): void {
+        $node = appNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'environment' => 'development',
+            ]);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => convergedRuntimeSnapshot([
+                'system_user_exists' => false,
+                'fs_permissions_ok' => false,
+                'fpm_hardening_exists' => false,
+                'fpm_hardening_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(collect($drift)->pluck('key')->filter(fn (string $key): bool => str_starts_with($key, 'app.security.'))->all())
+            ->toBe([]);
+    });
+});
+
 describe('registry intent', function (): void {
     it('passes complete app records on active app nodes', function (): void {
         $node = appNode();
@@ -331,11 +391,11 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function appNode(array $overrides = []): Node
+function appNode(array $overrides = [], string $role = 'app-development'): Node
 {
     return createTestAppHostNode([
         ...$overrides,
-    ]);
+    ], role: $role);
 }
 
 final class AppsProbeRecordingRemoteShell implements RemoteShell
@@ -350,12 +410,18 @@ final class AppsProbeRecordingRemoteShell implements RemoteShell
      */
     public array $scripts = [];
 
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
     public function __construct(private readonly string $stdout) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->nodes[] = $node;
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         return new RemoteShellResult(
             exitCode: 0,

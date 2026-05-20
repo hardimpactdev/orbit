@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
@@ -12,6 +13,7 @@ use App\Models\WireGuardPeer;
 use App\Services\OrbitHostInstaller;
 use App\Services\OrbitHostInstallResult;
 use App\Services\Platform\PlatformDetector;
+use App\Services\Security\SshHostKeyPinner;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Trust\TrustStoreInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,6 +44,20 @@ beforeEach(function (): void {
     };
 
     app()->instance(OrbitHostInstaller::class, $this->fakeInstaller);
+
+    app()->instance(SshHostKeyPinner::class, new class
+    {
+        public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
+        {
+            return new PinnedHostKey(
+                host: $host,
+                type: 'ssh-ed25519',
+                publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+                fingerprint: $expectedFingerprint ?? 'SHA256:agent-node-test',
+                pinMode: $expectedFingerprint === null ? 'tofu' : 'verified',
+            );
+        }
+    });
 
     $this->fakeToolInstaller = new class
     {
@@ -106,13 +122,13 @@ beforeEach(function (): void {
         }
 
         if ($command === 'wg genkey') {
-            static $privateKeys = ['gateway-private-key', 'control-private-key'];
+            static $privateKeys = ['node-private-key-1', 'node-private-key-2', 'node-private-key-3'];
 
             return Process::result(output: array_shift($privateKeys)."\n");
         }
 
         if ($command === 'wg pubkey') {
-            static $publicKeys = ['gateway-public-key', 'control-public-key'];
+            static $publicKeys = ['node-public-key-1', 'node-public-key-2', 'node-public-key-3'];
 
             return Process::result(output: array_shift($publicKeys)."\n");
         }
@@ -126,6 +142,10 @@ beforeEach(function (): void {
 
         if (str_contains($command, 'orbit:internal:detect-platform')) {
             return Process::result(output: "ubuntu_24-04\n");
+        }
+
+        if ($command === 'docker exec wg-easy wg show wg0 public-key') {
+            return Process::result(output: "wg-easy-public-key\n");
         }
 
         return Process::result();

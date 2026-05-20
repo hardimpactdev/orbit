@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Firewall\RemoveFirewallRuleRequest;
 use App\Http\Gateway\Requests\Firewall\StoreFirewallRuleRequest;
 use App\Models\FirewallRule;
@@ -14,6 +16,10 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteShell::class, new FirewallMutationCommandShell);
+});
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
@@ -52,7 +58,8 @@ describe('firewall mutation commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['rule']['action'])->toBe($action)
-            ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred')
+            ->and($payload['success']['meta']['backend_enacted'])->toBeTrue()
+            ->and($payload['success']['meta']['warnings'])->toBe([])
             ->and(FirewallRule::query()->where('name', "rule-{$action}")->exists())->toBeTrue();
     })->with([
         'allow' => ['firewall:allow', 'allow'],
@@ -144,6 +151,8 @@ describe('firewall mutation commands', function (): void {
             ->and($error['error']['code'])->toBe('destructive_consent_required')
             ->and($removed)->toBe(0)
             ->and($payload['success']['data']['rule']['status'])->toBe('removed_with_drift')
+            ->and($payload['success']['meta']['backend_removed'])->toBeTrue()
+            ->and($payload['success']['meta']['warnings'])->toBe([])
             ->and(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeFalse();
     });
 
@@ -177,3 +186,11 @@ describe('firewall mutation commands', function (): void {
             ->and($payload['success']['data']['rule']['status'])->toBe('removed_with_drift');
     });
 });
+
+final class FirewallMutationCommandShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

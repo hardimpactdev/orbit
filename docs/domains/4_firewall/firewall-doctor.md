@@ -11,7 +11,10 @@ The firewall family owns these facts:
 - drift between gateway configuration and the node firewall backend;
 - adoption facts for explicitly selected observed rules that can safely become Orbit-owned firewall configuration.
 
-Each gateway firewall rule row records the node, name, direction, action, source, destination, protocol, port, reason, and the backend metadata needed to identify the applied rule.
+Each gateway firewall rule row records the node, name, direction, action,
+source, destination, protocol, port, address family, interface scope, owner,
+protected flag, reason, and the backend metadata needed to identify the applied
+rule.
 
 Node reachability belongs to `node`. Proxy routes, apps, workspaces, processes, schedules, and tools remain outside the firewall family even when their capabilities depend on firewall policy.
 
@@ -22,9 +25,13 @@ The firewall probe reads gateway firewall rules and checks these layers:
 1. **Registry configuration:** every selected rule has a valid node reference, rule name, direction, action, source, protocol, and port.
 2. **Node eligibility:** the node reference resolves to a visible active Ubuntu node with role `gateway` or `app`.
 3. **Baseline policy boundary:** the rule does not attempt to mutate node bootstrap policy owned by the node family.
-4. **Backend presence:** the expected backend rule exists when gateway configuration says it should exist.
-5. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, and protocol.
-6. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend rules may be inspected for compatible firewall-rule facts.
+4. **Ownership boundary:** protected rows are reported read-only in the
+   firewall family unless the firewall family owns the representation drift.
+   Public SSH policy owned by the node family remains
+   `node.security.public_ssh_deny`.
+5. **Backend presence:** the expected backend rule exists when gateway configuration says it should exist.
+6. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, protocol, address family, and interface scope.
+7. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend rules may be inspected for compatible firewall-rule facts.
 
 Observed backend firewall rules without gateway firewall configuration are unmanaged node reality by default. They are not reported as drift unless the operator requested an explicit adoption scope.
 

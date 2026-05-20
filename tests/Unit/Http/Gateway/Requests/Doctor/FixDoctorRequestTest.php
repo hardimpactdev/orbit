@@ -41,6 +41,8 @@ it('serializes doctor fix filters into the body', function (): void {
         self: true,
         app: 'docs',
         workspace: 'main',
+        key: 'proxy.route_missing',
+        dryRun: true,
     );
 
     expect($request->body()->all())->toBe([
@@ -51,6 +53,8 @@ it('serializes doctor fix filters into the body', function (): void {
         'self' => true,
         'app' => 'docs',
         'workspace' => 'main',
+        'key' => 'proxy.route_missing',
+        'dry_run' => true,
     ]);
 });
 

@@ -121,6 +121,9 @@ class FirewallListCommand extends Command
                 $rule['destination'] ?? '-',
                 $rule['port'] ?? '',
                 $rule['protocol'] ?? '',
+                $rule['address_family'] ?? '',
+                $rule['interface'] ?? '-',
+                ($rule['protected'] ?? false) === true ? 'protected' : (string) ($rule['owner'] ?? 'user'),
                 $rule['reason'] ?? '-',
                 $rule['status'] ?? '',
             ];
@@ -135,7 +138,7 @@ class FirewallListCommand extends Command
     private function renderNodeTable(string $node, array $rows): void
     {
         $this->line("Node: {$node}");
-        table(['Name', 'Direction', 'Action', 'Source', 'Destination', 'Port', 'Protocol', 'Reason', 'Status'], $rows);
+        table(['Name', 'Direction', 'Action', 'Source', 'Destination', 'Port', 'Protocol', 'Family', 'Interface', 'Owner', 'Reason', 'Status'], $rows);
     }
 
     /**

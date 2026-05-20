@@ -18,6 +18,9 @@ The workspace family owns these facts:
 - workspace runtime artifacts: workspace PHP-FPM configuration, effective PHP
   version, managed runtime configuration, and filesystem ownership required for
   the workspace environment;
+- development workspace security: per-workspace runtime user, filesystem
+  permissions, PHP-FPM pool isolation, and systemd hardening for nodes with the
+  `app-development` role, reported as `workspace.security.*` issue keys;
 - workspace-owned adoption facts: selected existing workspace paths that can be
   tied to an explicit app and workspace name during `doctor --adopt`.
 - stale workspace artifacts owned by Orbit whose identity no longer maps to an
@@ -51,11 +54,14 @@ The workspaces probe reads gateway workspace records and checks these layers:
    gateway workspace configuration.
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
-6. **Adoption hints:** during `doctor --adopt`, an explicitly selected existing
+6. **Development workspace security:** workspace runtime isolation is checked
+   only for workspaces on `app-development` nodes. Production app-role targets
+   do not select the workspace family.
+7. **Adoption hints:** during `doctor --adopt`, an explicitly selected existing
    workspace path may be inspected for compatible workspace facts. `composer.json`
    is the only project file that may provide a PHP version hint, and only for a
    PHP project.
-7. **Stale workspace artifacts:** Orbit-owned worktrees, PHP-FPM artifacts, or
+8. **Stale workspace artifacts:** Orbit-owned worktrees, PHP-FPM artifacts, or
    runtime artifacts whose encoded workspace identity no longer maps to an
    active workspace record are reported as orphaned workspace drift.
 
@@ -79,6 +85,10 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.fpm_config_mismatch` | The workspace PHP-FPM configuration or endpoint differs from gateway workspace configuration. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |
+| `workspace.security.system_user` | A development workspace is missing its expected runtime user or group. |
+| `workspace.security.fs_permissions` | Workspace filesystem ownership or permissions are weaker than workspace runtime policy. |
+| `workspace.security.fpm_pool_isolation` | The workspace PHP-FPM pool lacks required isolation settings. |
+| `workspace.security.fpm_systemd_hardening` | The PHP-FPM service hardening expected for development workspace workloads is missing or divergent. |
 | `workspace.artifact_extra` | An Orbit-owned workspace worktree, PHP-FPM artifact, or runtime artifact exists on a node with an app role without matching active workspace configuration. |
 | `workspace.unregistered_path` | During an explicit adoption scope, a selected workspace path exists without a matching gateway workspace record. |
 | `workspace.php_hint_unsupported` | During adoption, `composer.json` provides a PHP version hint that Orbit does not support. |
@@ -94,6 +104,10 @@ The table below shows what `doctor --restore` does for each fixable code.
 | `workspace.fpm_config_mismatch` | Rewrite the workspace PHP-FPM configuration to match gateway workspace configuration. |
 | `workspace.runtime_config_missing` | Reinstall managed workspace runtime configuration from gateway workspace configuration. |
 | `workspace.runtime_config_mismatch` | Rewrite managed workspace runtime configuration to match gateway workspace configuration. |
+| `workspace.security.system_user` | Restore the development workspace runtime user and group when workspace configuration is complete. |
+| `workspace.security.fs_permissions` | Reapply development workspace ownership and permission policy. |
+| `workspace.security.fpm_pool_isolation` | Re-render and reload the workspace PHP-FPM pool with required isolation settings. |
+| `workspace.security.fpm_systemd_hardening` | Reapply supported PHP-FPM service hardening for development workspace workloads. |
 | `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity no longer maps to active workspace configuration. |
 
 `doctor --restore` does not handle `workspace.record_incomplete`,
@@ -108,6 +122,10 @@ reality instead of rewriting historical runs. Workspace doctor never creates
 parent apps, changes workspace names, moves a workspace to another app, edits
 setup or teardown step definitions, edits workspace-owned proxy routes,
 edits inherited runtime units, or changes node reachability.
+
+Workspace doctor is a development app-role surface. `app-production` targets
+reject `doctor --family=workspace` before probes with
+`family_not_in_role_scope`.
 
 ## Workspace Adopt Map
 

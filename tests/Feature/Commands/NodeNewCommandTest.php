@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Data\Security\PinnedHostKey;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Security\SshHostKeyPinner;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
@@ -107,6 +109,20 @@ describe('node:new', function (): void {
         };
 
         app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
+
+        app()->instance(SshHostKeyPinner::class, new class
+        {
+            public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
+            {
+                return new PinnedHostKey(
+                    host: $host,
+                    type: 'ssh-ed25519',
+                    publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+                    fingerprint: $expectedFingerprint ?? 'SHA256:node-new-test',
+                    pinMode: $expectedFingerprint === null ? 'tofu' : 'verified',
+                );
+            }
+        });
 
         $this->fakeGatewayApiVerification = fn (int $status = 200, ?array $payload = null): MockClient => fakeGatewayIdentity(
             $payload ?? gatewayIdentityEnvelope(
@@ -788,9 +804,37 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
-            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
-            : Process::result());
+        DB::table('wireguard_peers')->insert([
+            'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
+            'public_key' => 'gateway-public-key',
+            'private_key' => 'gateway-private-key',
+            'pre_shared_key' => 'gateway-psk',
+            'allowed_ips' => '10.6.0.2/32',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake(function ($process): ProcessResult {
+            $command = (string) $process->command;
+
+            if ($command === 'wg genkey') {
+                return Process::result(output: "app-private-key\n");
+            }
+
+            if ($command === 'wg pubkey') {
+                return Process::result(output: "app-public-key\n");
+            }
+
+            if (str_contains($command, 'ssh-keygen -y')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+            }
+
+            if ($command === 'docker exec wg-easy wg show wg0 public-key') {
+                return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            return Process::result();
+        });
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
@@ -834,6 +878,12 @@ describe('node:new', function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit');
 
+        $peer = DB::table('wireguard_peers')->where('node_id', $node->id)->first();
+
+        expect($peer)->not->toBeNull()
+            ->and($peer->public_key)->toBe('app-public-key')
+            ->and($peer->allowed_ips)->toBe('10.6.0.3/32');
+
         expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
             ->toContain('orbit-managed=node-development-dns')
             ->toContain('node=app-dev-1')
@@ -865,9 +915,37 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
-            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
-            : Process::result());
+        DB::table('wireguard_peers')->insert([
+            'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
+            'public_key' => 'gateway-public-key',
+            'private_key' => 'gateway-private-key',
+            'pre_shared_key' => 'gateway-psk',
+            'allowed_ips' => '10.6.0.2/32',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake(function ($process): ProcessResult {
+            $command = (string) $process->command;
+
+            if ($command === 'wg genkey') {
+                return Process::result(output: "app-private-key\n");
+            }
+
+            if ($command === 'wg pubkey') {
+                return Process::result(output: "app-public-key\n");
+            }
+
+            if (str_contains($command, 'ssh-keygen -y')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+            }
+
+            if ($command === 'docker exec wg-easy wg show wg0 public-key') {
+                return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            return Process::result();
+        });
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [

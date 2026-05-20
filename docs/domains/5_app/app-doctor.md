@@ -20,6 +20,9 @@ The app family owns these facts:
 - app runtime artifacts: app PHP-FPM configuration, production app user and
   ownership policy for production apps, managed app runtime configuration,
   and runtime readiness for the configured PHP version;
+- production app runtime security: app user isolation that applies only in
+  production, filesystem permissions, PHP-FPM pool isolation, and systemd hardening,
+  reported as `app.security.*` issue keys inside the app family;
 - production app health: production app health checks, deployment pipeline
   validity, and latest deployment status recorded as app-owned gateway history;
 - app-owned adoption facts: selected existing app paths that can be tied to an
@@ -59,8 +62,11 @@ The apps probe reads gateway app records and checks these layers:
    policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
    run.
-8. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
-9. **Stale app artifacts:** App PHP-FPM or runtime artifacts owned by Orbit whose
+8. **Production runtime security:** apps on nodes with the `app-production`
+   role satisfy the app-owned security posture. These findings use
+   `app.security.*` keys and do not depend on workspaces.
+9. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
+10. **Stale app artifacts:** App PHP-FPM or runtime artifacts owned by Orbit whose
    encoded app identity no longer maps to an active app record are reported as
    orphaned app drift.
 
@@ -89,6 +95,10 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
 | `app.production_user_missing` | A production app that requires app-user isolation has no matching app user or ownership policy. |
 | `app.production_user_mismatch` | Production app user, ownership, or PHP-FPM pool identity differs from gateway app configuration. |
+| `app.security.system_user` | A production app is missing its expected runtime user or group. |
+| `app.security.fs_permissions` | Production app filesystem ownership or permissions are weaker than app runtime policy. |
+| `app.security.fpm_pool_isolation` | The production app PHP-FPM pool lacks required isolation settings. |
+| `app.security.fpm_systemd_hardening` | The PHP-FPM service hardening expected for production app workloads is missing or divergent. |
 | `app.production_health_unhealthy` | A configured production app health check fails after app runtime is reachable. |
 | `app.deployment_pipeline_invalid` | Production deployment pipeline configuration is incomplete or references unsupported deployment behavior. |
 | `app.latest_deployment_failed` | The latest deployment run for a production app finished as `failed` or `cancelled` and no newer successful deployment exists. |
@@ -110,6 +120,10 @@ The table below shows what `doctor --restore` does for each fixable code.
 | `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity no longer maps to active app configuration. |
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |
 | `app.production_user_mismatch` | Re-apply production app user, ownership, and PHP-FPM pool identity from gateway app configuration. |
+| `app.security.system_user` | Restore the production app runtime user and group when the app configuration is complete. |
+| `app.security.fs_permissions` | Reapply production app ownership and permission policy. |
+| `app.security.fpm_pool_isolation` | Re-render and reload the production app PHP-FPM pool with required isolation settings. |
+| `app.security.fpm_systemd_hardening` | Reapply supported PHP-FPM service hardening for production app workloads. |
 
 `doctor --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
 `app.path_missing`, `app.path_unusable`, `app.root_missing`,

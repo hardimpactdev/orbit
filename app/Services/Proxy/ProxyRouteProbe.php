@@ -67,7 +67,7 @@ BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($route->node, $script, [
             'throw' => true,
-            'env' => [
+            'metadata' => [
                 'ORBIT_PROXY_DOMAIN' => $route->domain,
             ],
         ]);

@@ -253,6 +253,7 @@ describe('node:list human renderer contract', function (): void {
 
     it('renders healthy doctor summary when --doctor finds no issues', function (): void {
         $node = createTestAppHostNode(nodeListHumanRow(['name' => 'healthy-app']));
+        markNodeSecurityBaselineClean($node);
         DB::table('wireguard_peers')->insert([
             'node_id' => $node->id,
             'public_key' => 'healthy-public-key',
@@ -275,12 +276,13 @@ describe('node:list human renderer contract', function (): void {
     });
 
     it('renders doctor issue summary without failing the list command', function (): void {
-        createTestAppHostNode(nodeListHumanRow([
+        $node = createTestAppHostNode(nodeListHumanRow([
             'name' => 'incomplete-app',
             'environment' => 'production',
             'tld' => null,
             'wireguard_address' => null,
         ]), 'app-production');
+        markNodeSecurityBaselineClean($node);
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,

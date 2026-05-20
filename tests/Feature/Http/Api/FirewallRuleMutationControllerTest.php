@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -10,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 uses(RefreshDatabase::class);
 
 const FIREWALL_RULE_MUTATION_CALLER_WG_IP = '10.6.0.99';
+
+beforeEach(function (): void {
+    app()->instance(RemoteShell::class, new FirewallRuleMutationControllerShell);
+});
 
 function createFirewallRuleMutationCallerNode(array $overrides = []): Node
 {
@@ -55,7 +61,8 @@ describe('FirewallRule mutation controllers', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.rule.name', 'local-vite')
-            ->assertJsonPath('success.meta.warnings.0.code', 'firewall_rule.enactment_deferred');
+            ->assertJsonPath('success.meta.backend_enacted', true)
+            ->assertJsonPath('success.meta.warnings', []);
 
         expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeTrue();
     });
@@ -90,7 +97,7 @@ describe('FirewallRule mutation controllers', function (): void {
         expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeTrue();
     });
 
-    it('removes firewall rule intent with deferred cleanup warnings', function (): void {
+    it('removes firewall rule intent and cleans the backend synchronously', function (): void {
         createFirewallRuleMutationCallerNode(['role' => 'gateway']);
         $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
@@ -99,8 +106,39 @@ describe('FirewallRule mutation controllers', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.rule.status', 'removed_with_drift')
-            ->assertJsonPath('success.meta.warnings.0.code', 'firewall_rule.cleanup_deferred');
+            ->assertJsonPath('success.meta.backend_removed', true)
+            ->assertJsonPath('success.meta.warnings', []);
 
         expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeFalse();
     });
+
+    it('rejects protected firewall rule deletion through the API', function (): void {
+        createFirewallRuleMutationCallerNode(['role' => 'gateway']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-public-ssh-deny-v4',
+            'action' => 'deny',
+            'port' => '22',
+            'address_family' => 'v4',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+
+        $response = $this->call('DELETE', '/api/firewall-rules/orbit-public-ssh-deny-v4?node=app-1&destructive_consent=1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'firewall_rule.protected');
+
+        expect(FirewallRule::query()->where('name', 'orbit-public-ssh-deny-v4')->exists())->toBeTrue();
+    });
 });
+
+final class FirewallRuleMutationControllerShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

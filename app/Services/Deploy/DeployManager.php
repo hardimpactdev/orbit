@@ -164,7 +164,7 @@ final readonly class DeployManager
                 'cwd' => $model->path,
                 'timeout' => $step->timeout_seconds,
                 'strict' => true,
-                'env' => $this->environment($context),
+                'metadata' => $this->environment($context),
             ]);
             $stepFinishedAt = now();
             $stepStatus = $result->successful() ? 'completed' : 'failed';

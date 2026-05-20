@@ -18,6 +18,10 @@ final class DoctorFixController implements Loggable
 {
     private string $activityMode = 'restore';
 
+    private ?string $activityKey = null;
+
+    private bool $activityDryRun = false;
+
     public function __invoke(Request $request, DoctorReportRunner $runner, DoctorScopeValidator $validator): JsonResponse
     {
         /** @var mixed $caller */
@@ -46,6 +50,10 @@ final class DoctorFixController implements Loggable
         }
 
         $this->activityMode = $mode;
+        $key = $this->key($request);
+        $dryRun = $request->boolean('dry_run');
+        $this->activityKey = $key;
+        $this->activityDryRun = $dryRun;
 
         if ($caller->role === 'app') {
             return response()->json([
@@ -87,9 +95,9 @@ final class DoctorFixController implements Loggable
 
         $issues = $this->issues($request);
 
-        $doctor = $issues === null
-            ? $runner->run($target, mode: $mode, families: $families)
-            : $this->applySelectedIssues($runner, $target, $mode, $families, $issues);
+        $doctor = $issues === null || $dryRun
+            ? $runner->run($target, mode: $mode, families: $families, key: $key, dryRun: $dryRun)
+            : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key);
 
         return response()->json([
             'success' => [
@@ -105,9 +113,9 @@ final class DoctorFixController implements Loggable
      * @param  list<array<string, mixed>>  $issues
      * @return array<string, mixed>
      */
-    private function applySelectedIssues(DoctorReportRunner $runner, Node $target, string $mode, array $families, array $issues): array
+    private function applySelectedIssues(DoctorReportRunner $runner, Node $target, string $mode, array $families, array $issues, ?string $key): array
     {
-        $probe = $runner->probe($target, $families);
+        $probe = $runner->probe($target, $families, $key);
         $actions = $runner->apply($target, $mode, $issues);
 
         return $runner->finalize($probe, $mode, $actions);
@@ -147,6 +155,13 @@ final class DoctorFixController implements Loggable
         return is_string($mode) && in_array($mode, ['restore', 'adopt'], true) ? $mode : null;
     }
 
+    private function key(Request $request): ?string
+    {
+        $key = $request->input('key');
+
+        return is_string($key) && trim($key) !== '' ? trim($key) : null;
+    }
+
     /**
      * @return list<array<string, mixed>>|null
      */
@@ -167,6 +182,10 @@ final class DoctorFixController implements Loggable
 
     public function effect(): ActivityLogType
     {
+        if ($this->activityDryRun) {
+            return ActivityLogType::Read;
+        }
+
         return ActivityLogType::Write;
     }
 
@@ -200,7 +219,11 @@ final class DoctorFixController implements Loggable
      */
     public function properties(): array
     {
-        return ['mode' => $this->activityMode];
+        return array_filter([
+            'mode' => $this->activityMode,
+            'key' => $this->activityKey,
+            'dry_run' => $this->activityDryRun ? true : null,
+        ], static fn (mixed $value): bool => $value !== null);
     }
 
     public function activityLogProperties(): array

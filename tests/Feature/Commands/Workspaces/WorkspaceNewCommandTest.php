@@ -314,6 +314,35 @@ it('rejects duplicate workspace names per app', function (): void {
     expect($payload['error']['code'])->toBe('workspace.already_exists');
 });
 
+it('rejects production app nodes before writing workspace intent', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'prod-1',
+        'host' => 'prod-1',
+        'environment' => 'production',
+    ], role: 'app-production');
+    App::factory()
+        ->for($node, 'node')
+        ->create([
+            'name' => 'prod',
+            'domain' => 'prod.test',
+            'path' => '/home/nckrtl/apps/prod',
+            'php_version' => '8.5',
+            'environment' => 'production',
+        ]);
+
+    $exitCode = Artisan::call('workspace:new', [
+        'name' => 'feature-a',
+        '--app' => 'prod',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true);
+
+    expect($exitCode)->toBe(1);
+    expect($payload['error']['code'])->toBe('workspace.unsupported_for_production');
+    expect(Workspace::query()->where('app_id', App::query()->where('name', 'prod')->value('id'))->exists())->toBeFalse();
+});
+
 it('creates workspace with supported custom php version', function (): void {
     $exitCode = Artisan::call('workspace:new', [
         'name' => 'feature-php',

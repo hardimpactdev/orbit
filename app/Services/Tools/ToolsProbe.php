@@ -50,34 +50,59 @@ final readonly class ToolsProbe
         $service = $metadata['service'] ?? null;
         $configPath = $this->managedConfigPath($tool);
         $secretPath = $this->managedSecretPath($tool);
-        $script = 'path=$(command -v "$ORBIT_TOOL_BINARY" 2>/dev/null || true); if [ -z "$path" ]; then exit 1; fi; version=""; state="unknown"; config_exists=""; config_hash=""; secret_exists=""; secret_hash="";';
+        $php = <<<'PHP'
+$payload = json_decode(stream_get_contents(STDIN), true);
+$binary = (string) ($payload['binary'] ?? '');
+$versionCommand = (string) ($payload['version_command'] ?? '');
+$service = (string) ($payload['service'] ?? '');
+$configPath = (string) ($payload['config_path'] ?? '');
+$secretPath = (string) ($payload['secret_path'] ?? '');
+$path = trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
 
-        if (is_string($versionCommand) && $versionCommand !== '') {
-            $script .= ' version=$('.$versionCommand.' 2>/dev/null | head -n 1 || true);';
-        }
+if ($path === '') {
+    exit(1);
+}
 
-        if (is_string($service) && $service !== '') {
-            $script .= ' if systemctl is-active --quiet "$ORBIT_TOOL_SERVICE" 2>/dev/null; then state="running"; else state="stopped"; fi;';
-        }
+$version = '';
+$state = 'unknown';
+$configExists = '';
+$configHash = '';
+$secretExists = '';
+$secretHash = '';
 
-        if ($configPath !== null) {
-            $script .= ' if [ -f "$ORBIT_TOOL_CONFIG_PATH" ]; then config_exists="1"; config_hash=$(sha256sum "$ORBIT_TOOL_CONFIG_PATH" | awk \'{print $1}\'); else config_exists="0"; fi;';
-        }
+if ($versionCommand !== '') {
+    $version = trim((string) shell_exec($versionCommand.' 2>/dev/null | head -n 1'));
+}
 
-        if ($secretPath !== null) {
-            $script .= ' if [ -f "$ORBIT_TOOL_SECRET_PATH" ]; then secret_exists="1"; secret_hash=$(sha256sum "$ORBIT_TOOL_SECRET_PATH" | awk \'{print $1}\'); else secret_exists="0"; fi;';
-        }
+if ($service !== '') {
+    exec('systemctl is-active --quiet '.escapeshellarg($service).' 2>/dev/null', $output, $exitCode);
+    $state = $exitCode === 0 ? 'running' : 'stopped';
+}
 
-        $script .= ' printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash"';
+if ($configPath !== '') {
+    $configExists = is_file($configPath) ? '1' : '0';
+    $configHash = $configExists === '1' ? hash_file('sha256', $configPath) : '';
+}
+
+if ($secretPath !== '') {
+    $secretExists = is_file($secretPath) ? '1' : '0';
+    $secretHash = $secretExists === '1' ? hash_file('sha256', $secretPath) : '';
+}
+
+printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $path, $version, $state, $configExists, $configHash, $secretExists, $secretHash);
+PHP;
+
+        $script = 'php -r '.escapeshellarg($php);
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
-            'env' => [
-                'ORBIT_TOOL_BINARY' => $binary,
-                'ORBIT_TOOL_SERVICE' => is_string($service) ? $service : '',
-                'ORBIT_TOOL_CONFIG_PATH' => $configPath ?? '',
-                'ORBIT_TOOL_SECRET_PATH' => $secretPath ?? '',
-            ],
+            'input' => (string) json_encode([
+                'binary' => $binary,
+                'version_command' => is_string($versionCommand) ? $versionCommand : '',
+                'service' => is_string($service) ? $service : '',
+                'config_path' => $configPath ?? '',
+                'secret_path' => $secretPath ?? '',
+            ], JSON_THROW_ON_ERROR),
         ]);
         $parts = explode("\t", trim($result->stdout), 7);
 

@@ -32,6 +32,10 @@ class FirewallRuleFactory extends Factory
             'protocol' => 'tcp',
             'reason' => 'test firewall rule',
             'source_hash' => hash('sha256', fake()->uuid()),
+            'address_family' => 'v4',
+            'interface' => null,
+            'owner' => 'user',
+            'protected' => false,
         ];
     }
 }

@@ -186,7 +186,7 @@ SH,
         ->and($release)->toMatch('/^\d{8}_\d{6}_\d+$/')
         ->and($shell->runs[0]['script'])->toContain("printf '{$release}'")
         ->and($shell->runs[0]['script'])->toContain("printf '/srv/docs/releases/{$release}'")
-        ->and($shell->runs[0]['options']['env']['ORBIT_DEPLOY_RELEASE'])->toBe($release)
+        ->and($shell->runs[0]['options']['metadata']['ORBIT_DEPLOY_RELEASE'])->toBe($release)
         ->and($step->command)->toBe($shell->runs[0]['script']);
 
     $logExit = Artisan::call('deploy:log', [

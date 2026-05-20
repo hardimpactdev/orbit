@@ -13,7 +13,7 @@ interface RemoteShellStream
      * @param  array{
      *      cwd?: string,
      *      timeout?: int|null,
-     *      env?: array<string, string>,
+     *      metadata?: array<string, string>,
      *  }  $options
      */
     public function stream(Node $node, string $script, callable $onOutput, array $options = []): int;

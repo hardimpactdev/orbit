@@ -25,6 +25,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $environment,
         public readonly ?string $tld,
         public readonly ?string $user,
+        public readonly ?string $hostKeyFingerprint = null,
         public readonly ?string $selfGrant = null,
         public readonly ?string $selfGrantPermissions = null,
         public readonly array $grantTo = [],
@@ -55,6 +56,10 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
             'tld' => $this->tld,
             'user' => $this->user,
         ];
+
+        if ($this->hostKeyFingerprint !== null) {
+            $body['host_key_fingerprint'] = $this->hostKeyFingerprint;
+        }
 
         if ($this->selfGrant !== null) {
             $body['self_grant'] = $this->selfGrant;

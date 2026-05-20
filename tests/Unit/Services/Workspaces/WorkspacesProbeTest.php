@@ -59,7 +59,11 @@ describe('source path reality', function (): void {
             'fpm_config_exists' => true,
             'fpm_config_matches' => true,
         ]);
-        expect($shell->scripts[0])->toContain('ORBIT_WORKSPACE_SPEC');
+        expect($shell->scripts[0])->toContain('php -r')
+            ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))->toMatchArray([
+                'name' => 'feature',
+                'path' => "{$app->path}/.worktrees/feature",
+            ]);
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
     });
 
@@ -230,6 +234,40 @@ describe('PHP-FPM configuration reality', function (): void {
     });
 });
 
+describe('workspace security reality', function (): void {
+    it('detects development workspace runtime isolation drift', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'fpm_config_exists' => false,
+                'fpm_config_matches' => false,
+                'system_user_exists' => false,
+                'fs_permissions_ok' => false,
+                'fpm_hardening_exists' => false,
+                'fpm_hardening_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.security.system_user')?->kind)->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'workspace.security.fs_permissions')?->kind)->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'workspace.security.fpm_pool_isolation')?->kind)->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'workspace.security.fpm_systemd_hardening')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('flags workspaces that belong to production app nodes', function (): void {
+        $app = workspaceableApp(['environment' => 'production'], role: 'app-production');
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.unsupported_for_production')?->kind)->toBe(DriftKind::Divergent);
+    });
+});
+
 describe('registry intent', function (): void {
     it('passes complete workspace records with eligible parent apps', function (): void {
         $app = workspaceableApp();
@@ -317,9 +355,9 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function workspaceableApp(array $overrides = []): App
+function workspaceableApp(array $overrides = [], string $role = 'app-development'): App
 {
-    $node = createTestAppHostNode();
+    $node = createTestAppHostNode(role: $role);
 
     return App::factory()
         ->for($node, 'node')
@@ -351,12 +389,18 @@ final class WorkspacesProbeRecordingRemoteShell implements RemoteShell
      */
     public array $scripts = [];
 
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
     public function __construct(private readonly string $stdout) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->nodes[] = $node;
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         return new RemoteShellResult(
             exitCode: 0,

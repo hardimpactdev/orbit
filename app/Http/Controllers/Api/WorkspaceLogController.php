@@ -91,10 +91,7 @@ final readonly class WorkspaceLogController implements Loggable
      */
     private function hostedAppNodeIds(): array
     {
-        return array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
-        ]));
+        return $this->nodeRoleAssignments->activeNodeIdsForRole('app-development');
     }
 
     private function validationFailed(string $value): JsonResponse

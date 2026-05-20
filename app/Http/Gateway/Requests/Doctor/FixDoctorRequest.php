@@ -29,6 +29,8 @@ final class FixDoctorRequest extends GatewayRequest implements HasBody
         public readonly bool $self = false,
         public readonly ?string $app = null,
         public readonly ?string $workspace = null,
+        public readonly ?string $key = null,
+        public readonly bool $dryRun = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -49,6 +51,8 @@ final class FixDoctorRequest extends GatewayRequest implements HasBody
             'self' => $this->self,
             'app' => $this->app,
             'workspace' => $this->workspace,
+            'key' => $this->key,
+            'dry_run' => $this->dryRun,
         ], static fn (mixed $value): bool => $value !== null && $value !== [] && $value !== false);
     }
 

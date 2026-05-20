@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -15,11 +16,13 @@ use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Php\PhpFpmServiceReloader;
+use App\Services\Php\PhpFpmSystemdHardening;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use RuntimeException;
 use Throwable;
@@ -31,11 +34,13 @@ final readonly class SetupWorkspace
         private EnsureWorkspaceProxyRoute $proxyRoute,
         private WorkspaceFpmPoolRenderer $fpmRenderer,
         private PhpFpmServiceReloader $fpmServiceReloader,
+        private PhpFpmSystemdHardening $fpmSystemdHardening,
         private WorkspaceSetupStepRunner $stepRunner,
         private WorkspaceReadinessProbe $readinessProbe,
         private RuntimeBackendProbe $runtimeBackendProbe,
         private SupervisorProgramRenderer $supervisorRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
+        private WorkspaceRoleGuard $roleGuard,
     ) {}
 
     /**
@@ -55,6 +60,11 @@ final readonly class SetupWorkspace
     {
         $workspace->loadMissing('app');
         $app->loadMissing('node');
+        try {
+            $this->roleGuard->ensureAppSupportsWorkspaces($app);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            throw new RuntimeException($exception->getMessage(), previous: $exception);
+        }
 
         $wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
 
@@ -152,19 +162,40 @@ final readonly class SetupWorkspace
         $content = $this->fpmRenderer->content($workspace);
         $path = $this->fpmRenderer->path($workspace);
         $service = $this->fpmRenderer->service($workspace);
+        $user = $this->fpmRenderer->runtimeUser($workspace);
+        $home = $user === 'root' ? '/root' : "/home/{$user}";
+        $phpVersion = (string) $workspace->effectivePhpVersion();
+        $hardening = $this->fpmSystemdHardening->contentForNode($node, $phpVersion);
 
         $script = sprintf(
             <<<'SH'
 set -e
+if ! id -u %s >/dev/null 2>&1; then
+    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
+fi
+sudo install -d -m 0750 -o %s -g %s %s
 sudo install -d -m 0755 %s %s %s
+if [ -d %s ]; then sudo chown -R %s:%s %s; fi
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
+%s
 SH,
+            escapeshellarg($user),
+            escapeshellarg($home),
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg($home),
             escapeshellarg(dirname($path)),
             escapeshellarg(dirname($this->fpmRenderer->socketPath($workspace))),
             escapeshellarg(dirname($this->fpmRenderer->logPath($workspace))),
+            escapeshellarg($workspace->path),
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg($workspace->path),
             escapeshellarg(base64_encode($content)),
             escapeshellarg($path),
+            $this->fpmSystemdHardening->installScript($phpVersion, $hardening),
             $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
 

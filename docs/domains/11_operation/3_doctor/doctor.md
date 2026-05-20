@@ -14,7 +14,9 @@ and does not by itself-grant workload-family probes:
 - `gateway` target: `Node`, `Scheduling`.
 - `database` target: `Node`, `Tools`.
 - `agent` target: `Node`, `Tools`.
-- `app-development` or `app-production` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
+- `app-development` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
+  `Firewall`, `Tools`, `Scheduling`, `Databases`.
+- `app-production` target: `Node`, `Apps`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
 
 `Scheduling` on a `gateway` target surfaces the scheduler daemon's health
@@ -30,7 +32,7 @@ diagnostic source exists; until then, findings related to DNS stay inside the
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--restore|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<issue-key>] [--fix|--restore|--adopt] [--dry-run] [--json]
 ```
 
 ## Examples
@@ -41,6 +43,7 @@ orbit doctor --family=node --self
 orbit doctor --fix --family=app --app=docs
 orbit doctor --restore --family=app --app=docs
 orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --json
+orbit doctor --restore --family=node --key=node.security.host_key.app-1 --dry-run --json
 ```
 
 ## Arguments and options
@@ -48,6 +51,10 @@ orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --jso
 **Scope filters:**
 
 - `--family`: Limit the run to one product state family. Repeatable.
+  `security` is not a family. Security issue keys are reported inside their
+  owning families, such as `node.security.*`, `app.security.*`, and
+  `workspace.security.*`.
+- `--key`: Limit reported drift to one exact issue key inside the selected family/families.
 - `--node`: Limit the run to one gateway-known node.
 - `--self`: Limit the run to the caller's gateway-known node identity.
 - `--app`: Limit the run to one app and the family facts owned by that app.
@@ -58,6 +65,7 @@ orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --jso
 - `--fix`: Enter interactive resolution mode. Walks each finding and prompts for restore, adopt, skip, or details. Mutually exclusive with `--restore` and `--adopt`.
 - `--restore`: Non-interactively restore all supported findings (gateway configuration to node reality). Mutually exclusive with `--fix` and `--adopt`.
 - `--adopt`: Non-interactively adopt all supported findings (node reality into gateway configuration). Mutually exclusive with `--fix` and `--restore`.
+- `--dry-run`: Valid with `--restore` or `--adopt`; returns planned actions without applying fixers or adopters.
 - `--json`: Output JSON.
 
 ## What Happens

@@ -101,7 +101,7 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
         ->and($remoteShell->scripts[1])->toBe('php artisan migrate:rollback --force')
         ->and($remoteShell->options[1]['cwd'])->toBe('/home/orbit/apps/docs/.worktrees/feature-api')
         ->and($remoteShell->options[1]['timeout'])->toBe(123)
-        ->and($remoteShell->options[1]['env'])->toMatchArray([
+        ->and($remoteShell->options[1]['metadata'])->toMatchArray([
             'ORBIT_APP' => 'docs',
             'ORBIT_APP_PATH' => '/home/orbit/apps/docs',
             'ORBIT_WORKSPACE_NAME' => 'feature-api',

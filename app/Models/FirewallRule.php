@@ -22,6 +22,10 @@ use Illuminate\Support\Carbon;
  * @property string $protocol
  * @property string|null $reason
  * @property string $source_hash
+ * @property string $address_family
+ * @property string|null $interface
+ * @property string $owner
+ * @property bool $protected
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Node $node
@@ -42,7 +46,28 @@ class FirewallRule extends Model
         'protocol',
         'reason',
         'source_hash',
+        'address_family',
+        'interface',
+        'owner',
+        'protected',
     ];
+
+    #[\Override]
+    protected function casts(): array
+    {
+        return [
+            'protected' => 'bool',
+        ];
+    }
+
+    #[\Override]
+    protected static function booted(): void
+    {
+        static::saving(function (FirewallRule $rule): void {
+            $rule->owner = $rule->owner ?: 'user';
+            $rule->protected = $rule->owner !== 'user';
+        });
+    }
 
     /**
      * @return BelongsTo<Node, $this>

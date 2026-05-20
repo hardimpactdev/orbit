@@ -15,7 +15,7 @@ interface StartsRemoteShellProcesses
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
-     *     env?: array<string, string>,
+     *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
      */

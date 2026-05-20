@@ -76,6 +76,27 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['proxy']);
     });
 
+    it('filters API verify results by exact issue key', function (): void {
+        createDoctorRunCallerNode(['platform' => 'linux']);
+        Node::factory()->create([
+            'name' => 'legacy-app',
+            'role' => 'app',
+            'status' => 'active',
+            'platform' => null,
+            'wireguard_address' => null,
+        ]);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'families' => ['node'],
+            'node' => 'legacy-app',
+            'key' => 'node.record_incomplete',
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.key', 'node.record_incomplete')
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'node.record_incomplete');
+    });
+
     it('rejects unauthenticated requests', function (): void {
         $response = $this->postJson('/api/doctor/run', ['families' => ['node']]);
 
@@ -123,6 +144,31 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.mode', 'restore')
             ->assertJsonPath('success.data.doctor.summary.fixed', 1)
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
+    });
+
+    it('dry-runs API restore without applying fixers', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
+
+        $response = $this->call('POST', '/api/doctor/fix', [
+            'mode' => 'restore',
+            'families' => ['proxy'],
+            'node' => 'app-1',
+            'dry_run' => true,
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.dry_run', true)
+            ->assertJsonPath('success.data.doctor.summary.fixed', 0)
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'planned');
     });
 
     it('accepts the tool family scope and returns tool drift', function (): void {

@@ -4,12 +4,25 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\Node;
+use App\Services\RemoteShell\SshCommandBuilder;
+use App\Services\Security\HomeDirectoryLockdownInstaller;
+use App\Services\Security\SshdHardenedInstaller;
+use App\Services\Security\SysctlBaselineInstaller;
+use App\Services\Security\UnattendedUpgradesInstaller;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 
 class OrbitHostInstaller
 {
+    private ?Node $pinnedNode = null;
+
+    public function usePinnedNode(?Node $node): void
+    {
+        $this->pinnedNode = $node;
+    }
+
     public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
     {
         $localArchive = $this->buildSourceArchive();
@@ -28,7 +41,9 @@ class OrbitHostInstaller
                 );
             }
 
-            $scriptUpload = $this->scp(base_path('bin/install-orbit'), $sshUser, $host, $remoteInstaller);
+            $executionUser = $this->pinnedNode instanceof Node ? $runtimeUser : $sshUser;
+
+            $scriptUpload = $this->scp(base_path('bin/install-orbit'), $executionUser, $host, $remoteInstaller);
 
             if (! $scriptUpload->successful()) {
                 return new OrbitHostInstallResult(
@@ -38,7 +53,7 @@ class OrbitHostInstaller
                 );
             }
 
-            $archiveUpload = $this->scp($localArchive, $sshUser, $host, $remoteArchive);
+            $archiveUpload = $this->scp($localArchive, $executionUser, $host, $remoteArchive);
 
             if (! $archiveUpload->successful()) {
                 return new OrbitHostInstallResult(
@@ -48,12 +63,11 @@ class OrbitHostInstaller
                 );
             }
 
-            if ($sshUser !== $runtimeUser) {
-                $chown = Process::timeout(30)->run(sprintf(
-                    'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-                    escapeshellarg($sshUser),
-                    escapeshellarg($host),
-                    escapeshellarg("sudo chown {$runtimeUser}:{$runtimeUser} {$remoteInstaller} {$remoteArchive}"),
+            if (! $this->pinnedNode instanceof Node && $sshUser !== $runtimeUser) {
+                $chown = Process::timeout(30)->run($this->ssh(
+                    user: $sshUser,
+                    host: $host,
+                    command: "sudo chown {$runtimeUser}:{$runtimeUser} {$remoteInstaller} {$remoteArchive}",
                 ));
 
                 if (! $chown->successful()) {
@@ -75,23 +89,37 @@ class OrbitHostInstaller
                 escapeshellarg($remoteArchive),
             );
 
-            $command = $sshUser === $runtimeUser
+            $command = $executionUser === $runtimeUser
                 ? $installCommand
                 : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($installCommand));
 
-            $installation = Process::timeout(900)->run(sprintf(
-                'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-                escapeshellarg($sshUser),
-                escapeshellarg($host),
-                escapeshellarg($command),
+            $installation = Process::timeout(900)->run($this->ssh(
+                user: $executionUser,
+                host: $host,
+                command: $command,
             ));
 
+            if (! $installation->successful()) {
+                return new OrbitHostInstallResult(
+                    successful: false,
+                    output: $installation->output(),
+                    errorOutput: $installation->errorOutput(),
+                );
+            }
+
+            $securityBaseline = $this->installSecurityBaseline($host, $runtimeUser);
+
+            if ($securityBaseline instanceof OrbitHostInstallResult && ! $securityBaseline->successful) {
+                return $securityBaseline;
+            }
+
             return new OrbitHostInstallResult(
-                successful: $installation->successful(),
+                successful: true,
                 output: $installation->output(),
                 errorOutput: $installation->errorOutput(),
             );
         } finally {
+            $this->pinnedNode = null;
             @unlink($localArchive);
         }
     }
@@ -139,11 +167,10 @@ SCRIPT,
             escapeshellarg($runtimeUser),
         );
 
-        return Process::timeout(60)->run(sprintf(
-            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
-            escapeshellarg($sshUser),
-            escapeshellarg($host),
-            escapeshellarg($script),
+        return Process::timeout(60)->run($this->ssh(
+            user: $sshUser,
+            host: $host,
+            command: $script,
         ));
     }
 
@@ -166,14 +193,90 @@ SCRIPT,
         return $archive;
     }
 
+    private function installSecurityBaseline(string $host, string $runtimeUser): ?OrbitHostInstallResult
+    {
+        if (! $this->pinnedNode instanceof Node) {
+            return null;
+        }
+
+        foreach ($this->securityBaselineScripts($this->pinnedNode) as $name => $script) {
+            $result = Process::timeout(900)->run($this->ssh(
+                user: $runtimeUser,
+                host: $host,
+                command: $script,
+            ));
+
+            if ($result->successful()) {
+                continue;
+            }
+
+            return new OrbitHostInstallResult(
+                successful: false,
+                output: $result->output(),
+                errorOutput: trim("Security baseline [{$name}] failed.\n".$result->errorOutput()),
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function securityBaselineScripts(Node $node): array
+    {
+        return [
+            'home' => app(HomeDirectoryLockdownInstaller::class)->script(),
+            'sysctl' => app(SysctlBaselineInstaller::class)->script(),
+            'sshd' => app(SshdHardenedInstaller::class)->script($node),
+            'unattended_upgrades' => app(UnattendedUpgradesInstaller::class)->script(),
+        ];
+    }
+
     private function scp(string $source, string $sshUser, string $host, string $destination): ProcessResult
     {
-        return Process::timeout(120)->run(sprintf(
-            'scp -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s %s@%s:%s',
-            escapeshellarg($source),
-            escapeshellarg($sshUser),
-            escapeshellarg($host),
-            escapeshellarg($destination),
+        if ($this->pinnedNode instanceof Node) {
+            return Process::timeout(120)->run(app(SshCommandBuilder::class)->scpToNode(
+                node: $this->pinnedNode,
+                source: $source,
+                destination: $destination,
+                loginUser: $sshUser,
+                options: [
+                    'batch_mode' => true,
+                    'strict_host_key_checking' => 'yes',
+                    'prefer_public_host' => true,
+                ],
+            ));
+        }
+
+        return Process::timeout(120)->run(app(SshCommandBuilder::class)->scpTo(
+            source: $source,
+            user: $sshUser,
+            host: $host,
+            destination: $destination,
+            options: ['batch_mode' => true],
         ));
+    }
+
+    private function ssh(string $user, string $host, string $command): string
+    {
+        if ($this->pinnedNode instanceof Node) {
+            return app(SshCommandBuilder::class)->enforceForNode(
+                node: $this->pinnedNode,
+                remoteCommand: $command,
+                loginUser: $user,
+                options: [
+                    'batch_mode' => true,
+                    'prefer_public_host' => true,
+                ],
+            );
+        }
+
+        return app(SshCommandBuilder::class)->ssh(
+            user: $user,
+            host: $host,
+            remoteCommand: $command,
+            options: ['batch_mode' => true],
+        );
     }
 }

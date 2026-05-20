@@ -25,7 +25,7 @@ it('passes app path context to opencode workspace resolution', function (): void
         ->resolve('opencode', $app, '/tmp/opencode/docs-worktree');
 
     expect($resolution?->appSlug)->toBe('docs')
-        ->and($remoteShell->options['env'])->toMatchArray([
+        ->and($remoteShell->options['metadata'])->toMatchArray([
             'ORBIT_WORKSPACE_PATH' => '/tmp/opencode/docs-worktree',
             'ORBIT_APP_PATH' => '/srv/docs',
         ]);

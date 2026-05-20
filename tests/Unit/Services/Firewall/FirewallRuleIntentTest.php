@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -13,6 +15,10 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteShell::class, new FirewallRuleIntentRecordingRemoteShell);
+});
 
 /**
  * @param  list<string>  $permissions
@@ -48,7 +54,7 @@ function createFirewallRuleIntentAppHostNode(array $attributes = []): Node
 }
 
 describe('FirewallRuleIntent', function (): void {
-    it('creates idempotent firewall intent and returns a deferred enactment warning', function (): void {
+    it('creates idempotent firewall intent and enacts it immediately', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
 
         $result = app(FirewallRuleIntent::class)->store(
@@ -67,7 +73,8 @@ describe('FirewallRuleIntent', function (): void {
             ->and($result['data']['rule']['name'])->toBe('local-vite')
             ->and($result['data']['rule']['node'])->toBe($node->name)
             ->and($result['meta']['action'])->toBe('created')
-            ->and($result['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
+            ->and($result['meta']['backend_enacted'])->toBeTrue()
+            ->and($result['meta']['warnings'])->toBe([]);
 
         $again = app(FirewallRuleIntent::class)->store('allow', 'local-vite', 'app-1', 'incoming', '10.6.0.0/24', null, '5173', 'tcp', 'local development');
 
@@ -100,7 +107,7 @@ describe('FirewallRuleIntent', function (): void {
         app(FirewallRuleIntent::class)->store('deny', 'block-redis', 'app-1', 'incoming', 'any', null, '6379', 'tcp', null, $caller);
     })->throws(GatewayApiException::class, 'This node is not authorized to manage firewall rules for the selected node.');
 
-    it('removes intent idempotently and reports deferred cleanup', function (): void {
+    it('removes intent idempotently and cleans up the backend immediately', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
@@ -108,9 +115,22 @@ describe('FirewallRuleIntent', function (): void {
         $again = app(FirewallRuleIntent::class)->remove('local-vite', 'app-1');
 
         expect(FirewallRule::query()->count())->toBe(0)
-            ->and($removed['meta']['warnings'][0]['code'])->toBe('firewall_rule.cleanup_deferred')
+            ->and($removed['meta']['backend_removed'])->toBeTrue()
+            ->and($removed['meta']['warnings'])->toBe([])
             ->and($again['data']['rule']['status'])->toBe('already_absent');
     });
+
+    it('rejects protected firewall rules from user-facing removal', function (): void {
+        $node = createFirewallRuleIntentAppHostNode();
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-public-ssh-deny-v4',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+
+        app(FirewallRuleIntent::class)->remove('orbit-public-ssh-deny-v4', 'app-1');
+    })->throws(GatewayApiException::class, 'Protected firewall rules cannot be removed through firewall commands.');
 
     it('blocks bootstrap policy mutations', function (): void {
         createFirewallRuleIntentAppHostNode();
@@ -118,3 +138,16 @@ describe('FirewallRuleIntent', function (): void {
         app(FirewallRuleIntent::class)->store('allow', 'ssh-public', 'app-1', 'incoming', 'any', null, '22', 'tcp', null);
     })->throws(GatewayApiException::class, 'The requested rule would mutate node bootstrap policy.');
 });
+
+final class FirewallRuleIntentRecordingRemoteShell implements RemoteShell
+{
+    /** @var list<string> */
+    public array $scripts = [];
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

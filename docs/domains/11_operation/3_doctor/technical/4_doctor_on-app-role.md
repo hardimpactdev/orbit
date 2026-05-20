@@ -35,13 +35,16 @@ the calling peer's role.
 
 | Target role assignment state | Categories |
 | --- | --- |
-| active `app-development` or `app-production` role (default or `--self`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| active `app-development` role (default or `--self`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `app-production` role (default or `--self`) | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 | active `database` role only | `Node`, `Tools` |
 | active `gateway` role (via `--node=<gateway>`) | `Node` |
 | client with no active role | `Node` |
 
 A narrow `--family` filter intersects with the target active-role set; families
-outside the set are rejected before probes.
+outside the set are rejected before probes. Production app-role targets do not
+include the `workspace` family because production apps do not have a workspace
+workflow.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
 slice for operator/app targets and a `DNS` slice for gateway targets is
@@ -90,4 +93,4 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | App-peer `--fix`/`--restore`/`--adopt` denial before side effects, gateway-forwarded verify path, and shared scope/output assertions used across peer roles. |
-| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Role-aware category set for app target, full backend-family probe set when scope is the node itself, and per-node scoping for app/workspace/proxy probes. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Role-aware category set for app target, development/production workspace split, full backend-family probe set when scope is the node itself, and per-node scoping for app/workspace/proxy probes. |

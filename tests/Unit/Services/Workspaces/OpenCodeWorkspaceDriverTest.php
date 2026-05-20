@@ -37,7 +37,7 @@ it('creates an OpenCode workspace and aligns it to the requested branch', functi
         ->and($result->agentIde)->toBe('opencode')
         ->and($result->agentIdeWorkspaceId)->toBe('sess_feature_a')
         ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->options[0]['env'])->toMatchArray([
+        ->and($shell->options[0]['metadata'])->toMatchArray([
             'ORBIT_WORKSPACE_PATH' => '/srv/demo/.worktrees/feature-a',
             'ORBIT_WORKSPACE_NAME' => 'feature-a',
             'ORBIT_WORKSPACE_BASE' => 'main',

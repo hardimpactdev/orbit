@@ -29,9 +29,11 @@ use Throwable;
     {--node= : Target node name}
     {--self : Limit to the calling node identity}
     {--family=* : Scope to one or more state families}
+    {--key= : Limit reported drift to one exact doctor issue key}
     {--fix : Enter resolution mode}
     {--restore : Bulk restore gateway configuration to nodes}
     {--adopt : Bulk adopt node reality into gateway configuration}
+    {--dry-run : Preview bulk restore or adopt actions without applying changes}
     {--json : Output JSON}')]
 #[Description('Check Orbit health and diagnose drift')]
 class DoctorCommand extends Command implements Loggable
@@ -49,6 +51,10 @@ class DoctorCommand extends Command implements Loggable
 
     private ?int $activityIssues = null;
 
+    private ?string $activityKey = null;
+
+    private ?bool $activityDryRun = null;
+
     public function handle(DoctorReportRunner $runner, DoctorScopeValidator $validator): int
     {
         $this->bootActivityLog();
@@ -64,7 +70,11 @@ class DoctorCommand extends Command implements Loggable
     {
         $mode = $this->mode();
         $families = $this->families();
+        $key = $this->stringOption('key');
+        $dryRun = (bool) $this->option('dry-run');
         $this->activityMode = $mode;
+        $this->activityKey = $key;
+        $this->activityDryRun = $dryRun ? true : null;
 
         $resolutionFlags = array_values(array_filter([
             (bool) $this->option('fix') ? 'fix' : null,
@@ -77,6 +87,14 @@ class DoctorCommand extends Command implements Loggable
                 code: 'validation_failed',
                 message: '--fix, --restore, and --adopt are mutually exclusive.',
                 meta: ['fields' => $resolutionFlags],
+            );
+        }
+
+        if ($dryRun && ! in_array($mode, ['restore', 'adopt'], true)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: '--dry-run requires --restore or --adopt.',
+                meta: ['fields' => ['dry-run']],
             );
         }
 
@@ -124,8 +142,8 @@ class DoctorCommand extends Command implements Loggable
         }
 
         $result = $isGatewayCaller && $target instanceof Node
-            ? $this->runLocalDoctor($runner, $target, $mode, $families)
-            : $this->runGatewayDoctor($runner, $target, $mode, $families);
+            ? $this->runLocalDoctor($runner, $target, $mode, $families, $key, $dryRun)
+            : $this->runGatewayDoctor($runner, $target, $mode, $families, $key, $dryRun);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(
@@ -137,7 +155,7 @@ class DoctorCommand extends Command implements Loggable
             );
         }
 
-        if (($result['healthy'] ?? false) === true) {
+        if (($result['healthy'] ?? false) === true || $dryRun) {
             $this->recordActivityResult($result);
 
             if ($this->wantsJson()) {
@@ -167,6 +185,10 @@ class DoctorCommand extends Command implements Loggable
 
     public function effect(): ActivityLogType
     {
+        if ($this->activityDryRun === true) {
+            return ActivityLogType::Read;
+        }
+
         if (in_array($this->activityMode, ['interactive', 'restore', 'adopt'], true)) {
             return ActivityLogType::Write;
         }
@@ -182,6 +204,8 @@ class DoctorCommand extends Command implements Loggable
         return array_filter([
             'mode' => $this->activityMode,
             'families' => $this->activityFamilies,
+            'key' => $this->activityKey,
+            'dry_run' => $this->activityDryRun,
             'healthy' => $this->activityHealthy,
             'issues' => $this->activityIssues,
         ], static fn (mixed $value): bool => $value !== null && $value !== []);
@@ -196,17 +220,17 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    private function runLocalDoctor(DoctorReportRunner $runner, Node $target, string $mode, array $families): array
+    private function runLocalDoctor(DoctorReportRunner $runner, Node $target, string $mode, array $families, ?string $key, bool $dryRun): array
     {
         if ($mode === 'verify') {
-            return $runner->probe($target, families: $families);
+            return $runner->probe($target, families: $families, key: $key);
         }
 
         if ($mode !== 'interactive') {
-            return $runner->run($target, mode: $mode, families: $families);
+            return $runner->run($target, mode: $mode, families: $families, key: $key, dryRun: $dryRun);
         }
 
-        $probe = $runner->probe($target, families: $families);
+        $probe = $runner->probe($target, families: $families, key: $key);
         $selected = $this->promptDoctorIssues($probe);
         $actions = [];
 
@@ -230,12 +254,12 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @return array<string, mixed>|GatewayApiException
      */
-    private function runGatewayDoctor(DoctorReportRunner $runner, ?Node $target, string $mode, array $families): array|GatewayApiException
+    private function runGatewayDoctor(DoctorReportRunner $runner, ?Node $target, string $mode, array $families, ?string $key, bool $dryRun): array|GatewayApiException
     {
         try {
             if ($mode === 'verify') {
                 $dto = app(GatewayConnector::class)
-                    ->send($this->gatewayRunRequest($target, $families))
+                    ->send($this->gatewayRunRequest($target, $families, $key))
                     ->dto();
 
                 /** @var DoctorRunResponse $dto */
@@ -244,7 +268,7 @@ class DoctorCommand extends Command implements Loggable
 
             if ($mode !== 'interactive') {
                 $dto = app(GatewayConnector::class)
-                    ->send($this->gatewayFixRequest($target, $mode, $families))
+                    ->send($this->gatewayFixRequest($target, $mode, $families, key: $key, dryRun: $dryRun))
                     ->dto();
 
                 /** @var DoctorRunResponse $dto */
@@ -252,7 +276,7 @@ class DoctorCommand extends Command implements Loggable
             }
 
             $probeDto = app(GatewayConnector::class)
-                ->send($this->gatewayRunRequest($target, $families))
+                ->send($this->gatewayRunRequest($target, $families, $key))
                 ->dto();
 
             /** @var DoctorRunResponse $probeDto */
@@ -268,7 +292,7 @@ class DoctorCommand extends Command implements Loggable
                 }
 
                 $fixDto = app(GatewayConnector::class)
-                    ->send($this->gatewayFixRequest($target, $resolutionMode, $families, $issues))
+                    ->send($this->gatewayFixRequest($target, $resolutionMode, $families, $issues, $key))
                     ->dto();
 
                 /** @var DoctorRunResponse $fixDto */
@@ -292,7 +316,7 @@ class DoctorCommand extends Command implements Loggable
     /**
      * @param  list<string>  $families
      */
-    private function gatewayRunRequest(?Node $target, array $families): RunDoctorRequest
+    private function gatewayRunRequest(?Node $target, array $families, ?string $key): RunDoctorRequest
     {
         return new RunDoctorRequest(
             families: $families,
@@ -300,6 +324,7 @@ class DoctorCommand extends Command implements Loggable
             self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
+            key: $key,
         );
     }
 
@@ -307,7 +332,7 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @param  list<array<string, mixed>>|null  $issues
      */
-    private function gatewayFixRequest(?Node $target, string $mode, array $families, ?array $issues = null): FixDoctorRequest
+    private function gatewayFixRequest(?Node $target, string $mode, array $families, ?array $issues = null, ?string $key = null, bool $dryRun = false): FixDoctorRequest
     {
         return new FixDoctorRequest(
             mode: $mode,
@@ -317,6 +342,8 @@ class DoctorCommand extends Command implements Loggable
             self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
+            key: $key,
+            dryRun: $dryRun,
         );
     }
 
@@ -943,6 +970,12 @@ class DoctorCommand extends Command implements Loggable
         }
 
         if ($actions !== []) {
+            $planned = count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'planned'));
+
+            if ($planned === count($actions)) {
+                return $planned === 1 ? '1 action planned' : "{$planned} actions planned";
+            }
+
             return count($actions) === 1 ? '1 action completed' : count($actions).' actions completed';
         }
 

@@ -24,6 +24,7 @@
 /public/hot
 /public/storage
 /storage/framework/e2e/
+/storage/framework/ssh-known-hosts/
 /storage/*.key
 /storage/pail
 /tests/E2E/.docker-feature-tests/
