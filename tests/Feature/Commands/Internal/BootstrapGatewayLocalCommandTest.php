@@ -54,7 +54,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         $this->wgEasyServiceInstaller = new class extends WgEasyServiceInstaller
         {
-            /** @var list<array{publicHost: string, username: string, password: string}> */
+            /** @var list<array{publicHost: string, username: string, password: string, wireguardCidr: string, wireguardPort: int, dnsIp: string}> */
             public array $invocations = [];
 
             /** @var list<array{name: string, private_key: string, public_key: string, pre_shared_key: string, address: string}> */
@@ -62,9 +62,22 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
             public function __construct() {}
 
-            public function install(string $publicHost, string $username, string $password): void
-            {
-                $this->invocations[] = ['publicHost' => $publicHost, 'username' => $username, 'password' => $password];
+            public function install(
+                string $publicHost,
+                string $username,
+                string $password,
+                string $wireguardCidr = '10.6.0.0/24',
+                int $wireguardPort = 51820,
+                string $dnsIp = '10.6.0.1',
+            ): void {
+                $this->invocations[] = [
+                    'publicHost' => $publicHost,
+                    'username' => $username,
+                    'password' => $password,
+                    'wireguardCidr' => $wireguardCidr,
+                    'wireguardPort' => $wireguardPort,
+                    'dnsIp' => $dnsIp,
+                ];
             }
 
             public function publicKey(): string

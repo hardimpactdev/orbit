@@ -15,8 +15,14 @@ class WgEasyServiceInstaller
         private readonly ?string $statePath = null,
     ) {}
 
-    public function install(string $publicHost, string $username, string $password): void
-    {
+    public function install(
+        string $publicHost,
+        string $username,
+        string $password,
+        string $wireguardCidr = '10.6.0.0/24',
+        int $wireguardPort = 51820,
+        string $dnsIp = '10.6.0.1',
+    ): void {
         if ($publicHost === '') {
             throw new RuntimeException('INIT_HOST is required to install wg-easy.');
         }
@@ -34,7 +40,7 @@ class WgEasyServiceInstaller
         File::ensureDirectoryExists($this->statePath());
         $composePath = $directory.'/docker-compose.yaml';
 
-        $compose = $this->renderCompose($publicHost, $username, $password);
+        $compose = $this->renderCompose($publicHost, $username, $password, $wireguardCidr, $wireguardPort, $dnsIp);
         $existing = File::exists($composePath) ? File::get($composePath) : null;
 
         if ($existing !== $compose) {
@@ -53,7 +59,7 @@ class WgEasyServiceInstaller
         }
 
         $this->waitUntilReady();
-        $this->convergeServerAddress($publicHost);
+        $this->convergeServerAddress($publicHost, $wireguardCidr, $dnsIp);
     }
 
     public function publicKey(): string
@@ -195,16 +201,23 @@ SH,
         );
     }
 
-    private function convergeServerAddress(string $publicHost): void
+    private function convergeServerAddress(string $publicHost, string $wireguardCidr, string $dnsIp): void
     {
+        $prefix = $this->cidrPrefix($wireguardCidr);
+        $serverAddress = "{$dnsIp}/{$prefix}";
+
         $result = Process::timeout(30)->run(sprintf(
             <<<'SH'
-docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
-docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
-sqlite3 %s/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = '10.6.0.0/24' WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = '[\"10.6.0.1\"]', default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
+docker exec wg-easy ip addr replace %s dev wg0
+docker exec wg-easy ip route replace %s dev wg0
+sqlite3 %s/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = %s WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = %s, default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
 SH,
+            escapeshellarg($serverAddress),
+            escapeshellarg($wireguardCidr),
             $this->statePathForShell(),
+            $this->sqliteString($wireguardCidr),
             $this->sqliteString($publicHost),
+            $this->sqliteString('["'.$dnsIp.'"]'),
         ));
 
         if ($result->successful()) {
@@ -240,8 +253,14 @@ SH,
         );
     }
 
-    private function renderCompose(string $publicHost, string $username, string $password): string
-    {
+    private function renderCompose(
+        string $publicHost,
+        string $username,
+        string $password,
+        string $wireguardCidr,
+        int $wireguardPort,
+        string $dnsIp,
+    ): string {
         return <<<YAML
 services:
   wg-easy:
@@ -253,15 +272,15 @@ services:
 {$this->composeEnvironmentLine('INIT_USERNAME', $username)}
 {$this->composeEnvironmentLine('INIT_PASSWORD', $password)}
 {$this->composeEnvironmentLine('INIT_HOST', $publicHost)}
-{$this->composeEnvironmentLine('INIT_PORT', '51820')}
-{$this->composeEnvironmentLine('INIT_DNS', '10.6.0.1')}
-{$this->composeEnvironmentLine('INIT_ALLOWED_IPS', '10.6.0.0/24')}
+{$this->composeEnvironmentLine('INIT_PORT', (string) $wireguardPort)}
+{$this->composeEnvironmentLine('INIT_DNS', $dnsIp)}
+{$this->composeEnvironmentLine('INIT_ALLOWED_IPS', $wireguardCidr)}
 {$this->composeEnvironmentLine('INSECURE', 'true')}
 {$this->composeEnvironmentLine('PORT', '51821')}
 {$this->composeEnvironmentLine('HOST', '0.0.0.0')}
 {$this->composeEnvironmentLine('DISABLE_IPV6', 'true')}
     ports:
-      - "51820:51820/udp"
+      - "{$wireguardPort}:{$wireguardPort}/udp"
       - "127.0.0.1:51821:51821/tcp"
     cap_add:
       - NET_ADMIN
@@ -274,6 +293,13 @@ services:
       - /lib/modules:/lib/modules:ro
 
 YAML;
+    }
+
+    private function cidrPrefix(string $wireguardCidr): int
+    {
+        [, $prefix] = explode('/', $wireguardCidr, 2);
+
+        return (int) $prefix;
     }
 
     private function composeEnvironmentLine(string $key, string $value): string

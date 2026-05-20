@@ -18,12 +18,19 @@ afterEach(function (): void {
     }
 });
 
-it('renders the wg-easy compose file with the gateway public host and required envs', function (): void {
+it('renders the wg-easy compose file with the configured runtime envs', function (): void {
     Process::fake();
 
     $installer = new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath);
 
-    $installer->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
+    $installer->install(
+        publicHost: '203.0.113.10',
+        username: 'orbit',
+        password: 'secret-password',
+        wireguardCidr: '10.7.0.0/24',
+        wireguardPort: 51830,
+        dnsIp: '10.7.0.1',
+    );
 
     $composePath = $this->workdir.'/wg-easy/docker-compose.yaml';
     $compose = File::get($composePath);
@@ -32,15 +39,30 @@ it('renders the wg-easy compose file with the gateway public host and required e
         ->and($compose)->toContain('INIT_USERNAME=orbit')
         ->and($compose)->toContain('INIT_PASSWORD=secret-password')
         ->and($compose)->toContain('INIT_HOST=203.0.113.10')
-        ->and($compose)->toContain('INIT_PORT=51820')
-        ->and($compose)->toContain('INIT_DNS=10.6.0.1')
-        ->and($compose)->toContain('INIT_ALLOWED_IPS=10.6.0.0/24')
+        ->and($compose)->toContain('INIT_PORT=51830')
+        ->and($compose)->toContain('INIT_DNS=10.7.0.1')
+        ->and($compose)->toContain('INIT_ALLOWED_IPS=10.7.0.0/24')
         ->and($compose)->toContain('INSECURE=true')
         ->and($compose)->toContain('DISABLE_IPV6=true')
-        ->and($compose)->toContain('51820:51820/udp')
+        ->and($compose)->toContain('51830:51830/udp')
         ->and($compose)->toContain('127.0.0.1:51821:51821/tcp')
         ->and($compose)->toContain('NET_ADMIN')
         ->and($compose)->toContain('SYS_MODULE');
+});
+
+it('uses the default runtime values when install inputs are omitted', function (): void {
+    Process::fake();
+
+    $installer = new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath);
+
+    $installer->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
+
+    $compose = File::get($this->workdir.'/wg-easy/docker-compose.yaml');
+
+    expect($compose)->toContain('INIT_PORT=51820')
+        ->and($compose)->toContain('INIT_DNS=10.6.0.1')
+        ->and($compose)->toContain('INIT_ALLOWED_IPS=10.6.0.0/24')
+        ->and($compose)->toContain('51820:51820/udp');
 });
 
 it('invokes docker compose up to start the wg-easy container', function (): void {
@@ -105,6 +127,33 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         ->and($peerScript)->toContain('10.6.0.3/32')
         ->and($peerScript)->toContain('wg set wg0 peer')
         ->and($peerScript)->toContain('preshared-key');
+});
+
+it('converges the runtime server address using the configured cidr dns ip and port', function (): void {
+    $serverAddressScript = null;
+
+    Process::fake(function ($process) use (&$serverAddressScript) {
+        if (str_contains((string) $process->command, 'UPDATE interfaces_table')) {
+            $serverAddressScript = (string) $process->command;
+        }
+
+        return Process::result();
+    });
+
+    (new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath))->install(
+        publicHost: 'vpn.example.com',
+        username: 'orbit',
+        password: 'secret-password',
+        wireguardCidr: '10.7.0.0/24',
+        wireguardPort: 51830,
+        dnsIp: '10.7.0.1',
+    );
+
+    expect($serverAddressScript)->toContain("ip addr replace '10.7.0.1/24' dev wg0")
+        ->and($serverAddressScript)->toContain("ip route replace '10.7.0.0/24' dev wg0")
+        ->and($serverAddressScript)->toContain("ipv4_cidr = '10.7.0.0/24'")
+        ->and($serverAddressScript)->toContain('default_dns = \'["10.7.0.1"]\'')
+        ->and($serverAddressScript)->toContain("host = 'vpn.example.com'");
 });
 
 it('is idempotent: rerunning with same inputs does not recreate compose file unnecessarily', function (): void {

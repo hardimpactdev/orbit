@@ -96,3 +96,28 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
 
     expect(File::get($this->confPath))->toContain('address=/app-1.test/10.6.0.3');
 });
+
+it('does not rewrite the compose topology while reconciling dns state', function (): void {
+    Process::fake();
+
+    File::put($this->workdir.'/docker-compose.yaml', <<<'YAML'
+services:
+  orbit-dns:
+    network_mode: "container:wg-easy"
+
+YAML);
+
+    Node::factory()->create([
+        'name' => 'gateway',
+        'role' => 'gateway',
+        'tld' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    (new DnsmasqReconciler(
+        configBuilder: new DnsmasqConfigBuilder,
+        rootPath: $this->workdir,
+    ))->reconcile();
+
+    expect(File::get($this->workdir.'/docker-compose.yaml'))->toContain('network_mode: "container:wg-easy"');
+});

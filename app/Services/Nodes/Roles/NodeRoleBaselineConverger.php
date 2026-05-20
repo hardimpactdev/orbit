@@ -13,6 +13,7 @@ use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\VpnRoleBaseline;
 use InvalidArgumentException;
 
 class NodeRoleBaselineConverger
@@ -23,6 +24,7 @@ class NodeRoleBaselineConverger
         private readonly AppProductionRoleBaseline $appProductionRoleBaseline,
         private readonly DatabaseRoleBaseline $databaseRoleBaseline,
         private readonly AgentRoleBaseline $agentRoleBaseline,
+        private readonly ?VpnRoleBaseline $vpnRoleBaseline = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -39,11 +41,17 @@ class NodeRoleBaselineConverger
     {
         return match ($role) {
             NodeRoleName::Gateway->value => $this->gatewayRoleBaseline,
+            NodeRoleName::Vpn->value => $this->vpnRoleBaseline(),
             NodeRoleName::AppDevelopment->value => $this->appDevelopmentRoleBaseline,
             NodeRoleName::AppProduction->value => $this->appProductionRoleBaseline,
             NodeRoleName::Database->value => $this->databaseRoleBaseline,
             NodeRoleName::Agent->value => $this->agentRoleBaseline,
             default => throw new InvalidArgumentException("Unsupported node role baseline [{$role}]."),
         };
+    }
+
+    protected function vpnRoleBaseline(): VpnRoleBaseline
+    {
+        return $this->vpnRoleBaseline ?? app(VpnRoleBaseline::class);
     }
 }

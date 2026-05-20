@@ -44,6 +44,25 @@ it('writes a compose file with network_mode container:wg-easy and no ports', fun
         ->and($compose)->not->toContain('ports:');
 });
 
+it('keeps orbit-dns coupled to the wg-easy container runtime', function (): void {
+    Process::fake([
+        'docker ps*' => Process::result('wg-easy'),
+        '*' => Process::result(),
+    ]);
+
+    (new OrbitDnsServiceInstaller(
+        configBuilder: new DnsmasqConfigBuilder,
+        rootPath: $this->workdir,
+    ))->install();
+
+    $compose = File::get($this->workdir.'/docker-compose.yaml');
+
+    expect($compose)->toContain('container_name: orbit-dns')
+        ->and($compose)->toContain('network_mode: "container:wg-easy"')
+        ->and($compose)->not->toContain('53:53')
+        ->and($compose)->not->toContain('host:');
+});
+
 it('writes the initial dnsmasq.conf before starting the container', function (): void {
     Process::fake([
         'docker ps*' => Process::result('wg-easy'),
