@@ -119,11 +119,23 @@ describe('node:list filters', function (): void {
                 'role' => 'control',
                 'environment' => null,
             ]),
+            nodeListRow([
+                'name' => 'gateway-vpn-1',
+                'role' => 'gateway',
+                'environment' => null,
+            ]),
         ]);
         assignNodeListRole('gateway-1', 'gateway');
         assignNodeListRole('dev-app', 'app-development', ['tld' => 'test']);
         assignNodeListRole('prod-app', 'app-production');
         assignNodeListRole('db-1', 'database');
+        assignNodeListRole('gateway-vpn-1', 'gateway');
+        assignNodeListRole('gateway-vpn-1', 'vpn', [
+            'public_endpoint' => 'vpn.example.test',
+            'wireguard_cidr' => '10.44.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.44.0.1',
+        ]);
     });
 
     it('filters by --role gateway', function (): void {
@@ -132,8 +144,18 @@ describe('node:list filters', function (): void {
 
         $nodes = $payload['success']['data']['nodes'];
 
+        expect($nodes)->toHaveCount(2)
+            ->and(array_column($nodes, 'name'))->toBe(['gateway-1', 'gateway-vpn-1']);
+    });
+
+    it('filters by --role vpn', function (): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'vpn']);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $nodes = $payload['success']['data']['nodes'];
+
         expect($nodes)->toHaveCount(1)
-            ->and($nodes[0]['name'])->toBe('gateway-1');
+            ->and($nodes[0]['name'])->toBe('gateway-vpn-1');
     });
 
     it('filters by --role app', function (): void {
@@ -229,12 +251,12 @@ describe('node:list validation', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('role')
             ->and($payload['error']['meta']['value'])->toBe('bogus')
-            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'app', 'app-development', 'app-production', 'database', 'control']);
+            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control']);
     });
 
     it('rejects invalid --role with human error message', function (): void {
         $this->artisan('node:list', ['--role' => 'bogus'])
-            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, app, app-development, app-production, database, control.")
+            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, vpn, app, app-development, app-production, database, control.")
             ->assertFailed();
     });
 

@@ -20,20 +20,19 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use stdClass;
 use Throwable;
 
 use function Laravel\Prompts\table;
 
 #[Signature('node:list
-    {--role= : Filter by role (gateway|app|app-development|app-production|database|control)}
+    {--role= : Filter by role (gateway|vpn|app|app-development|app-production|database|control)}
     {--environment= : Filter by environment (development|production)}
     {--doctor : Include node doctor checks and summaries}
     {--json : Output as JSON}')]
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
 {
-    private const array VALID_ROLES = ['gateway', 'app', 'app-development', 'app-production', 'database', 'control'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
@@ -201,12 +200,7 @@ class NodeListCommand extends Command
         }
 
         if ($role === 'control') {
-            $assignedNodeIds = $assignments->activeNodeIdsForRoles([
-                NodeRoleName::Gateway->value,
-                NodeRoleName::AppDevelopment->value,
-                NodeRoleName::AppProduction->value,
-                NodeRoleName::Database->value,
-            ]);
+            $assignedNodeIds = $assignments->activeAssignedNodeIds();
 
             if ($assignedNodeIds !== []) {
                 $query->whereNotIn('id', $assignedNodeIds);
@@ -229,11 +223,9 @@ class NodeListCommand extends Command
             'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
-            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
-                'role' => $assignment->role,
-                'status' => $assignment->status,
-                'settings' => $this->normalizeRoleSettings($assignment->settings),
-            ])->all(),
+            'roles' => $node->roleAssignments
+                ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
+                ->all(),
         ];
     }
 
@@ -402,23 +394,11 @@ class NodeListCommand extends Command
                     return null;
                 }
 
-                return [
-                    'role' => $name,
-                    'status' => $status,
-                    'settings' => $this->normalizeRoleSettings($role['settings'] ?? null),
-                ];
+                return NodeRoleAssignmentPayload::fromArray($role);
             }, $roles)));
 
             return $node;
         }, $nodes);
-    }
-
-    /**
-     * @return array<string, mixed>|stdClass
-     */
-    private function normalizeRoleSettings(mixed $settings): array|stdClass
-    {
-        return NodeRoleAssignmentPayload::settings($settings);
     }
 
     /**

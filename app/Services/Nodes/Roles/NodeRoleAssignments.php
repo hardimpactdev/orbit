@@ -209,6 +209,20 @@ class NodeRoleAssignments
     /**
      * @return list<int>
      */
+    public function activeAssignedNodeIds(): array
+    {
+        return NodeRoleAssignment::query()
+            ->where('status', NodeRoleStatus::Active->value)
+            ->distinct()
+            ->orderBy('node_id')
+            ->pluck('node_id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
     public function activeGatewayOrAppHostNodeIds(): array
     {
         return $this->activeNodeIdsForRoles($this->gatewayOrAppHostRoles());

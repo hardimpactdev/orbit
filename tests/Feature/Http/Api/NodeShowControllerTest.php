@@ -118,6 +118,7 @@ describe('NodeShowController', function (): void {
                                     'role' => 'app-development',
                                     'status' => 'active',
                                     'settings' => ['tld' => 'test'],
+                                    'last_error' => null,
                                 ],
                             ],
                             'addresses' => [
@@ -135,6 +136,36 @@ describe('NodeShowController', function (): void {
                     ],
                 ],
             ]);
+    });
+
+    it('returns gateway-coupled vpn role assignments with full payload fields', function (): void {
+        DB::table('nodes')->insert([
+            apiShowNodeRow([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+                'host' => '10.6.0.2',
+                'wireguard_address' => '10.6.0.2',
+            ]),
+        ]);
+        assignApiShowNodeRole('gateway-1', 'gateway');
+        assignApiShowNodeRole('gateway-1', 'vpn', [
+            'public_endpoint' => 'vpn.example.test',
+            'wireguard_cidr' => '10.44.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.44.0.1',
+        ]);
+
+        $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.node.role', 'gateway')
+            ->assertJsonPath('success.data.node.roles.1.role', 'vpn')
+            ->assertJsonPath('success.data.node.roles.1.settings.public_endpoint', 'vpn.example.test')
+            ->assertJsonPath('success.data.node.roles.1.settings.wireguard_cidr', '10.44.0.0/24')
+            ->assertJsonPath('success.data.node.roles.1.settings.wireguard_port', 51820)
+            ->assertJsonPath('success.data.node.roles.1.settings.dns_ip', '10.44.0.1')
+            ->assertJsonPath('success.data.node.roles.1.last_error', null);
     });
 
     it('logs activity for a successful node registry read', function (): void {

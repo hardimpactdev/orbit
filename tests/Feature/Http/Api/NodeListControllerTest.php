@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -147,20 +148,35 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'db-1', 'role' => 'control', 'environment' => null]),
             apiNodeRow(['name' => 'legacy-gateway', 'role' => 'gateway', 'environment' => null]),
             apiNodeRow(['name' => 'assigned-gateway', 'role' => 'control', 'environment' => null]),
+            apiNodeRow(['name' => 'gateway-vpn', 'role' => 'gateway', 'environment' => null]),
         ]);
         assignApiNodeRole('db-1', 'database');
         assignApiNodeRole('assigned-gateway', 'gateway');
+        assignApiNodeRole('gateway-vpn', 'gateway');
+        assignApiNodeRole('gateway-vpn', 'vpn', [
+            'public_endpoint' => 'vpn.example.test',
+            'wireguard_cidr' => '10.44.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.44.0.1',
+        ]);
 
         $databaseResponse = getApiNodesJson('/api/nodes?role=database', ['REMOTE_ADDR' => CALLER_WG_IP]);
         $gatewayResponse = getApiNodesJson('/api/nodes?role=gateway', ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $vpnResponse = getApiNodesJson('/api/nodes?role=vpn', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $databaseResponse->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'db-1');
 
         $gatewayResponse->assertOk()
+            ->assertJsonCount(2, 'success.data.nodes');
+
+        expect(array_column($gatewayResponse->json('success.data.nodes'), 'name'))
+            ->toBe(['assigned-gateway', 'gateway-vpn']);
+
+        $vpnResponse->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
-            ->assertJsonPath('success.data.nodes.0.name', 'assigned-gateway');
+            ->assertJsonPath('success.data.nodes.0.name', 'gateway-vpn');
     });
 
     it('filters nodes by environment', function (): void {
@@ -185,11 +201,11 @@ describe('NodeListController', function (): void {
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, app, app-development, app-production, database, control.",
+                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, app, app-development, app-production, database, control.",
                     'meta' => [
                         'field' => 'role',
                         'value' => 'invalid',
-                        'allowed' => ['gateway', 'app', 'app-development', 'app-production', 'database', 'control'],
+                        'allowed' => ['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control'],
                     ],
                 ],
             ]);
@@ -275,9 +291,55 @@ describe('NodeListController', function (): void {
                     'role' => 'app-development',
                     'status' => 'active',
                     'settings' => ['tld' => 'test'],
+                    'last_error' => null,
+                    'converged_at' => NodeRoleAssignment::query()
+                        ->where('role', 'app-development')
+                        ->where('node_id', DB::table('nodes')->where('name', 'app-1')->value('id'))
+                        ->first()
+                        ?->converged_at
+                        ?->toJSON(),
                 ],
             ],
         ]);
+    });
+
+    it('returns gateway-coupled vpn role assignments in list output', function (): void {
+        DB::table('nodes')->insert([
+            apiNodeRow([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+                'host' => '10.6.0.2',
+                'wireguard_address' => '10.6.0.2',
+            ]),
+        ]);
+
+        assignApiNodeRole('gateway-1', 'gateway');
+        assignApiNodeRole('gateway-1', 'vpn', [
+            'public_endpoint' => 'vpn.example.test',
+            'wireguard_cidr' => '10.44.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.44.0.1',
+        ]);
+
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
+
+        $gatewayNode = collect($response->json('success.data.nodes'))
+            ->first(fn (array $node): bool => $node['name'] === 'gateway-1');
+
+        expect($gatewayNode['role'])->toBe('gateway')
+            ->and($gatewayNode['roles'])->toHaveCount(2)
+            ->and($gatewayNode['roles'][1])->toMatchArray([
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => [
+                    'public_endpoint' => 'vpn.example.test',
+                    'wireguard_cidr' => '10.44.0.0/24',
+                    'wireguard_port' => 51820,
+                    'dns_ip' => '10.44.0.1',
+                ],
+                'last_error' => null,
+            ]);
     });
 
     it('derives serialized environment from active app role assignments', function (): void {

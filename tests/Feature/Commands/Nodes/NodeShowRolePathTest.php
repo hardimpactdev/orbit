@@ -92,6 +92,8 @@ describe('node:show role paths', function (): void {
                                     'role' => 'gateway',
                                     'status' => 'active',
                                     'settings' => [],
+                                    'last_error' => null,
+                                    'converged_at' => null,
                                 ],
                             ],
                             'wireguard_address' => '10.6.0.2',
@@ -115,6 +117,8 @@ describe('node:show role paths', function (): void {
                     'role' => 'gateway',
                     'status' => 'active',
                     'settings' => [],
+                    'last_error' => null,
+                    'converged_at' => null,
                 ],
             ])
             ->and($rawOutput)->toContain('"settings":{}');

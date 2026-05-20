@@ -220,11 +220,9 @@ class NodeShowCommand extends Command
             'status' => $node->status,
             'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
-            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
-                'role' => $assignment->role,
-                'status' => $assignment->status,
-                'settings' => $this->normalizeRoleSettings($assignment->settings),
-            ])->all(),
+            'roles' => $node->roleAssignments
+                ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
+                ->all(),
             'addresses' => [
                 'wireguard' => $node->wireguard_address ?? $node->host,
             ],
@@ -355,11 +353,7 @@ class NodeShowCommand extends Command
                 continue;
             }
 
-            $normalized[] = [
-                'role' => $name,
-                'status' => $status,
-                'settings' => $this->normalizeRoleSettings($role['settings'] ?? null),
-            ];
+            $normalized[] = NodeRoleAssignmentPayload::fromArray($role);
         }
 
         return $normalized;

@@ -57,6 +57,31 @@ function assignNodeListJsonRole(string $nodeName, string $role, array $settings 
     ]);
 }
 
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function createNodeListJsonRoleAssignment(
+    string $nodeName,
+    string $role,
+    string $status = 'active',
+    array $settings = [],
+    ?string $lastError = null,
+    mixed $convergedAt = null,
+): void {
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => $status,
+        'settings' => $settings,
+        'last_error' => $lastError,
+        'converged_at' => $convergedAt,
+    ]);
+}
+
 describe('node:list JSON renderer contract', function (): void {
     beforeEach(function (): void {
         config(['orbit.is_gateway' => true]);
@@ -160,6 +185,13 @@ describe('node:list JSON renderer contract', function (): void {
                     'role' => 'app-development',
                     'status' => 'active',
                     'settings' => ['tld' => 'test'],
+                    'last_error' => null,
+                    'converged_at' => NodeRoleAssignment::query()
+                        ->where('node_id', DB::table('nodes')->where('name', 'app-1')->value('id'))
+                        ->where('role', 'app-development')
+                        ->first()
+                        ?->converged_at
+                        ?->toJSON(),
                 ],
             ],
         ])
@@ -171,6 +203,85 @@ describe('node:list JSON renderer contract', function (): void {
                 'status' => 'active',
                 'roles' => [],
             ]);
+    });
+
+    it('includes gateway-coupled vpn assignments with full payload fields', function (): void {
+        DB::table('nodes')->insert([
+            nodeListJsonRow([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+                'wireguard_address' => '10.6.0.2',
+            ]),
+        ]);
+
+        $gatewayConvergedAt = now()->subMinute();
+        $vpnConvergedAt = now();
+
+        createNodeListJsonRoleAssignment(
+            nodeName: 'gateway-1',
+            role: 'gateway',
+            convergedAt: $gatewayConvergedAt,
+        );
+        createNodeListJsonRoleAssignment(
+            nodeName: 'gateway-1',
+            role: 'vpn',
+            settings: [
+                'public_endpoint' => 'vpn.example.test',
+                'wireguard_cidr' => '10.44.0.0/24',
+                'wireguard_port' => 51820,
+                'dns_ip' => '10.44.0.1',
+            ],
+            convergedAt: $vpnConvergedAt,
+        );
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $gatewayNode = collect($payload['success']['data']['nodes'])->firstWhere('name', 'gateway-1');
+        $roleAssignments = collect($gatewayNode['roles'])->keyBy('role');
+
+        expect($exitCode)->toBe(0)
+            ->and($gatewayNode)
+            ->toMatchArray([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+                'platform' => 'ubuntu_24-04',
+                'status' => 'active',
+            ]);
+
+        expect($roleAssignments['gateway'])->toMatchArray([
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+            'last_error' => null,
+        ])->and($roleAssignments['gateway']['converged_at'])->toBe(
+            NodeRoleAssignment::query()
+                ->where('node_id', DB::table('nodes')->where('name', 'gateway-1')->value('id'))
+                ->where('role', 'gateway')
+                ->first()
+                ?->converged_at
+                ?->toJSON(),
+        );
+
+        expect($roleAssignments['vpn'])->toMatchArray([
+            'role' => 'vpn',
+            'status' => 'active',
+            'settings' => [
+                'public_endpoint' => 'vpn.example.test',
+                'wireguard_cidr' => '10.44.0.0/24',
+                'wireguard_port' => 51820,
+                'dns_ip' => '10.44.0.1',
+            ],
+            'last_error' => null,
+        ])->and($roleAssignments['vpn']['converged_at'])->toBe(
+            NodeRoleAssignment::query()
+                ->where('node_id', DB::table('nodes')->where('name', 'gateway-1')->value('id'))
+                ->where('role', 'vpn')
+                ->first()
+                ?->converged_at
+                ?->toJSON(),
+        );
     });
 
     it('does not include wg_ip or internal fields in JSON output', function (): void {

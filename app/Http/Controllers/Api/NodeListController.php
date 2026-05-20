@@ -18,11 +18,10 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use stdClass;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'app', 'app-development', 'app-production', 'database', 'control'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
@@ -134,12 +133,7 @@ final readonly class NodeListController implements Loggable
         }
 
         if ($role === 'control') {
-            $assignedNodeIds = $assignments->activeNodeIdsForRoles([
-                NodeRoleName::Gateway->value,
-                NodeRoleName::AppDevelopment->value,
-                NodeRoleName::AppProduction->value,
-                NodeRoleName::Database->value,
-            ]);
+            $assignedNodeIds = $assignments->activeAssignedNodeIds();
 
             if ($assignedNodeIds !== []) {
                 $query->whereNotIn('id', $assignedNodeIds);
@@ -164,20 +158,10 @@ final readonly class NodeListController implements Loggable
             'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
-            'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
-                'role' => $assignment->role,
-                'status' => $assignment->status,
-                'settings' => $this->normalizeRoleSettings($assignment->settings),
-            ])->all(),
+            'roles' => $node->roleAssignments
+                ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
+                ->all(),
         ])->all();
-    }
-
-    /**
-     * @return array<string, mixed>|stdClass
-     */
-    private function normalizeRoleSettings(mixed $settings): array|stdClass
-    {
-        return NodeRoleAssignmentPayload::settings($settings);
     }
 
     public function effect(): ActivityLogType
