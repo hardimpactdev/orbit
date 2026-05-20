@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
@@ -130,6 +131,20 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
             ->and(Node::query()->where('name', 'gateway-1')->value('role'))->toBe('gateway')
+            ->and(NodeRoleAssignment::query()
+                ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
+                ->orderBy('role')
+                ->pluck('role')
+                ->all())->toBe(['gateway', 'vpn'])
+            ->and(NodeRoleAssignment::query()
+                ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
+                ->where('role', 'vpn')
+                ->first()?->settings)->toBe([
+                    'public_endpoint' => '203.0.113.10',
+                    'wireguard_cidr' => '10.6.0.0/24',
+                    'wireguard_port' => 51820,
+                    'dns_ip' => '10.6.0.1',
+                ])
             ->and($output)->toContain('-----BEGIN CERTIFICATE-----')
             ->and($output)->toContain('-----END CERTIFICATE-----')
             ->and(File::get(app()->environmentFilePath()))->toContain('ORBIT_IS_GATEWAY=true')

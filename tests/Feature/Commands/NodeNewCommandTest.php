@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
@@ -275,6 +276,25 @@ describe('node:new', function (): void {
                 ],
                 'status' => 'active',
             ])
+            ->and($payload['success']['data']['roles'])->toBe([
+                [
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'settings' => [],
+                    'last_error' => null,
+                ],
+                [
+                    'role' => 'vpn',
+                    'status' => 'active',
+                    'settings' => [
+                        'public_endpoint' => '192.0.2.10',
+                        'wireguard_cidr' => '10.6.0.0/24',
+                        'wireguard_port' => 51820,
+                        'dns_ip' => '10.6.0.1',
+                    ],
+                    'last_error' => null,
+                ],
+            ])
             ->and($payload['success']['data']['provisioning'])->toBe([
                 'transport' => 'ssh',
                 'host' => '192.0.2.10',
@@ -319,6 +339,11 @@ describe('node:new', function (): void {
             ->and($gateway->gateway_endpoint)->toBe('192.0.2.10')
             ->and($gateway->user)->toBe('orbit')
             ->and($gateway->orbit_path)->toBe('/home/orbit/orbit')
+            ->and(NodeRoleAssignment::query()
+                ->where('node_id', $gateway->id)
+                ->orderBy('role')
+                ->pluck('role')
+                ->all())->toBe(['gateway', 'vpn'])
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
             ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform());

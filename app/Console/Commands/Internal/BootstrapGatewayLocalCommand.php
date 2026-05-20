@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
+use App\Data\Nodes\RoleSettings\VpnRoleSettings;
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
@@ -49,7 +52,7 @@ class BootstrapGatewayLocalCommand extends Command
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
-        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld): ?array {
+        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost): ?array {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -69,11 +72,24 @@ class BootstrapGatewayLocalCommand extends Command
             NodeRoleAssignment::query()->updateOrCreate(
                 [
                     'node_id' => $gateway->id,
-                    'role' => 'gateway',
+                    'role' => NodeRoleName::Gateway->value,
                 ],
                 [
-                    'status' => 'active',
+                    'status' => NodeRoleStatus::Active->value,
                     'settings' => [],
+                ],
+            );
+
+            NodeRoleAssignment::query()->updateOrCreate(
+                [
+                    'node_id' => $gateway->id,
+                    'role' => NodeRoleName::Vpn->value,
+                ],
+                [
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => $this->vpnRoleSettings($publicHost),
+                    'last_error' => null,
+                    'converged_at' => now(),
                 ],
             );
 
@@ -221,6 +237,19 @@ class BootstrapGatewayLocalCommand extends Command
         config(['services.wg_easy.password' => $password]);
 
         return $password;
+    }
+
+    /**
+     * @return array{public_endpoint: ?string, wireguard_cidr: string, wireguard_port: int, dns_ip: string}
+     */
+    private function vpnRoleSettings(?string $publicHost): array
+    {
+        return VpnRoleSettings::fromArray([
+            'public_endpoint' => $publicHost,
+            'wireguard_cidr' => '10.6.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.6.0.1',
+        ])->toArray();
     }
 
     private function readEnvVar(string $key): ?string

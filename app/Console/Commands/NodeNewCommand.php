@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Data\Nodes\NodeIdentityArtifact;
+use App\Data\Nodes\RoleSettings\VpnRoleSettings;
 use App\Enums\AdoptAction;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
@@ -1881,6 +1882,16 @@ SCRIPT,
                 ],
             );
 
+            $gateway->roleAssignments()->updateOrCreate(
+                ['role' => NodeRoleName::Vpn->value],
+                [
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => $this->vpnRoleSettings($host),
+                    'last_error' => null,
+                    'converged_at' => now(),
+                ],
+            );
+
             $control = Node::query()->updateOrCreate(
                 ['name' => $controlName],
                 [
@@ -2097,6 +2108,7 @@ SCRIPT,
      * @return array{
      *     result: array{action: string},
      *     node: array<string, mixed>,
+     *     roles: list<array{role: string, status: string, settings: array<string, mixed>, last_error: null}>,
      *     provisioning: array{transport: string, host: string, status: string},
      *     local_control_node: array<string, mixed>,
      *     local_onboarding: array<string, string>,
@@ -2134,6 +2146,20 @@ SCRIPT,
                 ],
                 'status' => 'active',
             ],
+            'roles' => [
+                [
+                    'role' => NodeRoleName::Gateway->value,
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => [],
+                    'last_error' => null,
+                ],
+                [
+                    'role' => NodeRoleName::Vpn->value,
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => $this->vpnRoleSettings($host),
+                    'last_error' => null,
+                ],
+            ],
             'provisioning' => [
                 'transport' => $provisioningTransport,
                 'host' => $host,
@@ -2154,6 +2180,19 @@ SCRIPT,
             'gateway_trust' => $gatewayTrust,
             'next_steps' => [],
         ];
+    }
+
+    /**
+     * @return array{public_endpoint: ?string, wireguard_cidr: string, wireguard_port: int, dns_ip: string}
+     */
+    private function vpnRoleSettings(?string $publicEndpoint): array
+    {
+        return VpnRoleSettings::fromArray([
+            'public_endpoint' => $publicEndpoint,
+            'wireguard_cidr' => '10.6.0.0/24',
+            'wireguard_port' => 51820,
+            'dns_ip' => '10.6.0.1',
+        ])->toArray();
     }
 
     private function ensureGatewayCaTrusted(string $host, string $trustPath, string $caSha256): string|int
