@@ -77,10 +77,11 @@ that are directly affected by the changed metadata.
   gateway targets, control targets, and production-effective app targets are
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
-- Reconciles the gateway's `dnsmasq.conf` and SIGHUPs `orbit-dns` when `tld`
-  or `wireguard_address` actually change for a node. This keeps the DNS layer
-  served over WireGuard aligned with the registry without restarting the
-  container. The contract for the DNS substrate is
+- Reconciles the active `vpn` role DNS runtime when `tld` or
+  `wireguard_address` actually change for a node. In v1 this materializes the
+  gateway-owned desired DNS mappings and policy onto the gateway-coupled `vpn`
+  role runtime without restarting the container. The contract for the DNS
+  substrate is
   [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
   Other field changes do not touch DNS.
 - Does not change node role after creation. Role change is an identity

@@ -22,6 +22,10 @@ owning family concept document.
 - **Permission preset** — code-defined named bundle of node access permissions. The defined presets are `agent-self`, `operator`, `read-only`, `developer`, `admin`, and `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-admin grant** — a consumer-to-gateway grant whose permissions include `*` (the `gateway-admin` preset); confers fleet-wide super-admin authority including authority over future nodes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent role** — exclusive workload role for autonomous agent runtimes; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
+- **VPN role** — gateway-coupled infrastructure role that owns the WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns both together and normal `node role:*` commands cannot manage either independently. See [Node Concepts](domains/1_node/node-concepts.md).
+- **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
+- **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 - **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on every node that runs processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](domains/7_process/process-concepts.md).
@@ -60,10 +64,13 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Client**
 - **Node role**
 - **Gateway role**
+- **VPN role**
 - **Agent role**
+- **Gateway-coupled infrastructure role**
 - **Role assignability**
 - **Role assignment**
 - **Role settings**
+- **VPN role settings**
 - **Agent role TLD setting**
 - **Agent role baseline**
 - **Agent runtime user**
@@ -348,9 +355,9 @@ Source: [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 
 <!-- concept-index:domains/13_vpn/vpn-concepts.md -->
 - **VPN command domain**
-- **Gateway-local VPN administration**
-- **Gateway-local execution path**
-- **Gateway VPN backend**
+- **VPN-role runtime administration**
+- **VPN-role execution path**
+- **VPN runtime backend**
 - **Backend TOTP code**
 - **VPN client**
 - **VPN client name**
@@ -363,7 +370,7 @@ Source: [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 - **VPN client removal**
 - **VPN web UI password**
 - **Backend admin credential**
-- **Gateway-local credential storage**
+- **VPN-role credential storage**
 - **VPN-domain boundaries**
 <!-- /concept-index -->
 

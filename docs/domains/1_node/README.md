@@ -25,14 +25,18 @@ live in [tech-stack.md](../../tech-stack.md#platform-and-roles) and
 Orbit distinguishes three concepts:
 
 - **Gateway role:** the singleton authority role. It owns durable Orbit state,
-  the typed API, WireGuard coordination, certificate authority material,
-  development DNS coordination, grants, and doctor convergence. A gateway role
-  assignment is stored in the role assignment model but cannot be added through
-  normal role commands and conflicts with every role.
+  the typed API, certificate authority material, grants, and doctor
+  convergence. A gateway role assignment is stored in the role assignment model
+  but normal role commands cannot add, update, or remove it independently.
+- **VPN role:** the gateway-coupled infrastructure role. It owns the WireGuard
+  server runtime, public WireGuard endpoint settings, VPN peer defaults, and
+  the VPN-facing DNS runtime. In v1, first gateway bootstrap assigns `gateway`
+  and `vpn` together, and normal role commands cannot add, update, or remove
+  either role independently.
 - **Node roles:** composable roles that prepare a node to serve a kind of
-  workload. The initial roles are `app-development`, `app-production`,
-  `database`, and `agent`. `agent` is exclusive and selectable only during
-  `node:new`; `node role:add` rejects it.
+  workload. The initial workload roles are `app-development`,
+  `app-production`, `database`, and `agent`. `agent` is exclusive and
+  selectable only during `node:new`; `node role:add` rejects it.
 - **Client identity:** a CLI installation that has gateway configuration
   and a gateway-issued WireGuard identity. A client may have no hosted
   roles. It can request self-scoped actions and can operate other nodes only
@@ -61,11 +65,17 @@ Active role assignments must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | none | `app-development`, `app-production`, `database`, `agent` |
-| `app-development` | `database` | `gateway`, `app-production`, `agent` |
-| `app-production` | `database` | `gateway`, `app-development`, `agent` |
-| `database` | `app-development`, `app-production` | `gateway`, `agent` |
-| `agent` | none | `gateway`, `app-development`, `app-production`, `database` |
+| `gateway` | `vpn` | `app-development`, `app-production`, `database`, `agent` |
+| `vpn` | `gateway` | `app-development`, `app-production`, `database`, `agent` |
+| `app-development` | `database` | `gateway`, `vpn`, `app-production`, `agent` |
+| `app-production` | `database` | `gateway`, `vpn`, `app-development`, `agent` |
+| `database` | `app-development`, `app-production` | `gateway`, `vpn`, `agent` |
+| `agent` | none | `gateway`, `vpn`, `app-development`, `app-production`, `database` |
+
+In this version, `gateway` and `vpn` are gateway-coupled infrastructure roles.
+They are stored as separate role assignments and shown separately in role
+output, but first gateway bootstrap assigns them together and normal
+`node role:*` commands cannot add, update, or remove them independently.
 
 ### Role baselines
 
@@ -73,6 +83,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 
 | Role | Baseline intent |
 | --- | --- |
+| `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
 | `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
 | `database` | Docker running as the substrate for managed database service tools |
@@ -192,7 +203,8 @@ These rules apply to all node commands and define the invariants the family enfo
   `node:permissions` and `--remove` require an existing grant and fail with
   `node.grant_not_found` otherwise.
 - Role settings live on the role assignment. In v1, `app-development` and
-  `agent` each store a `tld` (the `agent` default is `agent`);
+  `agent` each store a `tld` (the `agent` default is `agent`); `vpn` stores
+  `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip`;
   `app-production`, `database`, and `gateway` have no assignment settings.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
@@ -226,9 +238,10 @@ Node transport has different rules before and after bootstrap:
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
   local gateway configuration. This lets clients and CLI clients on nodes
   operate without owning fleet state.
-- Gateway VPN administration is the exception: `vpn-client:*` and
-  `vpn-web-ui:*` commands run on the gateway host, so a client initiating
-  them needs SSH access to the gateway over Orbit/WireGuard.
+- VPN-role runtime administration is the exception: `vpn-client:*` and
+  `vpn-web-ui:*` commands run against the active `vpn` role runtime, so in v1 a
+  client initiating them needs SSH access to the gateway-coupled host over
+  Orbit/WireGuard.
 - The gateway uses SSH to communicate with nodes. On-node work such as file
   writes, service control, log access, package installation, and shell execution
   is simpler and more explicit over SSH than through an HTTP operator capability layer on the node.

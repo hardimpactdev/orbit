@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
-| `role` | `[role]` | Always. | Never. | None. | `gateway` is rejected. |
+| `role` | `[role]` | Always. | Never. | None. | `gateway` and `vpn` are rejected. |
 | `tld` | `--tld` | Required for `app-development`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
@@ -33,6 +33,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Role Validation Rules
 
 - `gateway` role is rejected before side effects.
+- `vpn` role is rejected before side effects with `validation_failed`. The
+  failure message explains that `vpn` is a gateway-coupled infrastructure role
+  in v1 and cannot be updated independently through `node role:update`.
 - `app-development` requires `--tld`.
 - Unsupported role-local options are rejected.
 
@@ -57,7 +60,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRoleUpdateCommandTest.php` | Update success and gateway-role rejection. |
+| `tests/Feature/Commands/Nodes/NodeRoleUpdateCommandTest.php` | Update success and gateway-coupled infrastructure role rejection for `gateway` and `vpn`. |
 
 ## Failure Semantics
 

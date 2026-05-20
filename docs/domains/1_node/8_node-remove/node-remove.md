@@ -60,8 +60,9 @@ over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 4. Removes the node's WireGuard peer identity that the gateway manages.
 5. Removes development DNS mappings that the gateway owns for development nodes.
 6. Removes the node record from the gateway registry.
-7. Reconciles the gateway-side `dnsmasq.conf` and SIGHUPs `orbit-dns` so the
-   removed node's TLD no longer resolves over WG. Contract:
+7. Reconciles the active `vpn` role DNS runtime so the removed node's TLD no
+   longer resolves over WG. In v1 this materializes the gateway-owned desired
+   DNS mappings and policy on the gateway-coupled `vpn` role runtime. Contract:
    [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
 8. Reports partial WireGuard detach or development DNS cleanup failures as
    structured warnings and remaining node-family drift.

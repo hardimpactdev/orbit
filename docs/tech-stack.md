@@ -55,7 +55,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Process logs | Supervisor-managed stdout/stderr log files |
 | Service containers | Docker Compose for databases, caches, mail, and utilities on nodes that need them |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
-| Network | WireGuard |
+| Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
 
 Cloudflare is the current first-party DNS/CDN provider integration. Agent IDE adapters and workspace source adapters may be first-party or extension-provided, but the gateway always owns the stored configuration and command behavior.
@@ -111,7 +111,14 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 
 See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
 
-VPN administration is the one gateway-local exception. Commands that administer VPN clients (`vpn-client:*`) or the VPN web UI (`vpn-web-ui:*`) execute on the gateway host. When initiated from a client, Orbit reaches the gateway over SSH on the Orbit/WireGuard path and runs the gateway-local command there. This exception is for gateway infrastructure administration only.
+VPN-role runtime administration is the one runtime exception to the normal
+gateway-to-node flow. Commands that administer VPN clients (`vpn-client:*`) or
+the VPN web UI (`vpn-web-ui:*`) execute against the active `vpn` role runtime.
+In this version the active `vpn` role is gateway-coupled, so those commands
+still run on the gateway host. When initiated from a client, Orbit resolves the
+active `vpn` role host, reaches it over SSH on the Orbit/WireGuard path, and
+runs the VPN-role runtime command there. This exception is for VPN-role
+infrastructure administration only.
 
 The gateway-to-node primitive is the `RemoteShell` contract:
 
@@ -184,7 +191,7 @@ Periodic execution comes from the daemon's internal sleep loop, not from Supervi
 
 The daemon's per-tick logic is shared with the `orbit schedule:run` command. The daemon is the steady-state path; `schedule:run` is the on-demand path used for testing, troubleshooting, and recovery.
 
-This centralizes observability: every scheduled run's result lands in the gateway database, including dispatch failures (SSH unreachable, target down, command non-zero exit). The trade-off is that the gateway is a single point of failure for scheduling — but the gateway is already the VPN hub, so the network is unusable when the gateway is down regardless.
+This centralizes observability: every scheduled run's result lands in the gateway database, including dispatch failures (SSH unreachable, target down, command non-zero exit). The trade-off is that the gateway is a single point of failure for scheduling — but in v1 the active gateway-coupled `vpn` role is co-located on the same node, so the network is unusable when that node is down regardless.
 
 ### Service containers
 
@@ -198,7 +205,12 @@ Each agent tool is an ordinary entry in the `tool` catalog with category `agent`
 
 ### Network
 
-WireGuard is the VPN. The gateway is the WireGuard hub: every other node joins as a peer with its own identity, and that identity is what the gateway uses to authenticate API calls. There is no separate auth token; the WireGuard handshake is the credential.
+WireGuard is the VPN. The active `vpn` role owns the WireGuard server runtime:
+every other node joins it as a peer with its own identity, and that identity is
+what the gateway uses to authenticate API calls. In v1 the active `vpn` role is
+gateway-coupled, so the WireGuard server still runs on the same node as the
+gateway. There is no separate auth token; the WireGuard handshake is the
+credential.
 
 The gateway also acts as the Orbit root certificate authority. It issues TLS certificates for the gateway API and for app/workspace proxy routes, so HTTPS works across the fleet without an external CA.
 

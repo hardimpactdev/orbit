@@ -70,8 +70,9 @@ side effects that the gateway owns begin.
 
 - The gateway is the source of truth for node records, node roles, WireGuard
   identity, and node access policy.
-- The gateway VPN server is `wg-easy`; the gateway host `wg-orbit` interface is
-  a peer/client of that server and must not bind UDP `51820`.
+- The active gateway-coupled `vpn` role WireGuard runtime is `wg-easy`; the
+  gateway host `wg-orbit` interface is a peer/client of that runtime and must
+  not bind UDP `51820`.
 - Gateway execution may write durable node state directly.
 - Gateway execution may use SSH to provision app-hosting nodes.
 - Gateway execution must not SSH to joined/client identities for omitted
@@ -155,9 +156,10 @@ repeated app-role sets that also include `database`, and legacy `--role=app`:
 
 The development DNS configuration model that the gateway owns is derived from the
 active development app-role row, not from a public DNS command record. The
-applier must write only resolver artifacts that Orbit manages on the gateway, bind
-them to the Orbit/WireGuard-reachable resolver surface, and avoid public
-open-resolver exposure. If the node row is written but development DNS
+applier must write only resolver artifacts that Orbit manages on the active
+`vpn` role runtime, bind them to the Orbit/WireGuard-reachable resolver
+surface, and avoid public open-resolver exposure. In v1 that runtime is
+gateway-coupled. If the node row is written but development DNS
 convergence fails, `node:new` reports partial provisioning with a node-family
 drift handoff to `doctor --family=node --restore`.
 

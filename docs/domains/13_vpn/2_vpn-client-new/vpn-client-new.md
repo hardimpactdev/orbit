@@ -1,6 +1,7 @@
 # `orbit vpn-client:new <name>`
 
-Create a VPN client on the gateway for human or operator access; the client is not an Orbit node.
+Create a VPN client on the active `vpn` role runtime for human or operator
+access; the client is not an Orbit node.
 
 ## Usage
 
@@ -20,17 +21,19 @@ orbit vpn-client:new laptop --totp=123456 --json
 
 - `name`: VPN client name.
 - `--config`: Include the generated WireGuard client configuration in output.
-- `--totp=<code>`: One-time code for the gateway VPN backend when required.
+- `--totp=<code>`: One-time code for the active `vpn` role runtime backend when required.
 - `--json`: Return the created client in the JSON output.
 
 ## What Happens
 
-Run this command to provision a new admin VPN peer on the gateway backend.
+Run this command to provision a new admin VPN peer on the active `vpn` role
+runtime backend.
 
-`vpn-client:new` runs on the gateway host and creates a gateway VPN backend
-peer for the requested client name. From a client, Orbit connects to the
-gateway over the Orbit/WireGuard SSH path and runs the gateway-local operation
-there.
+`vpn-client:new` resolves the active `vpn` role and creates a runtime backend
+peer for the requested client name. In this version the active `vpn` role is
+gateway-coupled, so Orbit still executes on the gateway host. From a client,
+Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
+and runs the VPN-role runtime operation there.
 
 The created peer is an admin VPN client. It is not an Orbit node identity, does
 not create a node record, and does not grant Orbit node access. Active Orbit
@@ -53,8 +56,8 @@ machine-readable output.
 ## Requirements
 
 - The caller is a gateway or authorized client.
-- Operator callers can SSH to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
+- Operator callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
 
 ## Related Commands

@@ -113,8 +113,11 @@ Creates an active role assignment for database responsibilities. It may
 be combined with `app-development` or `app-production` on the same provisioned
 host.
 
-`app-development` and `app-production` are mutually exclusive. Gateway and
-`agent` each conflict with every other role and with each other.
+`app-development` and `app-production` are mutually exclusive. In v1,
+`gateway` is gateway-coupled with `vpn` and conflicts with
+`app-development`, `app-production`, `database`, and `agent`. The `agent`
+role conflicts with `gateway`, `vpn`, `app-development`, `app-production`,
+and `database`.
 `gateway` is not command-assignable through the public role flow.
 
 **`agent`**
@@ -150,17 +153,19 @@ WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
 local gateway endpoint, and verifies gateway API access. After that successful
 flow, the initiating client does not run `gateway:add`.
 
-Gateway bootstrap also installs the gateway-side DNS substrate:
+Gateway bootstrap also installs the gateway-coupled `vpn` role runtime
+substrate:
 
-- `wg-easy` (the WireGuard VPN server) is installed under
+- `wg-easy` (the active `vpn` role WireGuard server runtime) is installed under
   `~/.config/orbit/wg-easy/`. The admin password is generated and persisted as
   `WG_EASY_PASSWORD` in the gateway's `.env` so that wg-easy v15 can run
   unattended setup.
 - `wg-easy` owns UDP `51820`. The gateway host's `wg-orbit` interface is
   configured as a peer/client of `wg-easy`, not as a second WireGuard server.
 - `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
-  sharing wg-easy's network namespace, so it answers DNS for fleet TLDs on
-  the wg-easy WG IP. The initial `dnsmasq.conf` reflects the current
+  sharing wg-easy's network namespace, so the gateway-coupled `vpn` role DNS
+  runtime answers DNS for fleet TLDs on the wg-easy WG IP. The initial
+  `dnsmasq.conf` reflects the current
   `node.tld` + `node.wireguard_address` state and is kept in sync by later
   `node:new`, `node:update`, and `node:remove` calls.
 
@@ -175,8 +180,9 @@ gateway endpoint used in generated WireGuard peer configs. It is also passed to
 wg-easy as `INIT_HOST`. As a result, it must be an IP address or dotted DNS
 name reachable by the nodes that will join the fleet.
 
-Gateway bootstrap internally creates exactly one `gateway` hosted-role
-assignment. Public hosted-role assignment does not accept `gateway`.
+Gateway bootstrap internally creates coupled `gateway` and `vpn` hosted-role
+assignments on the same node. Public hosted-role assignment does not accept
+`gateway` or `vpn`.
 
 If the requested gateway is already provisioned and active, and the supplied host is
 compatible with that gateway identity, Orbit converges idempotently without
@@ -269,8 +275,8 @@ For first-gateway bootstrap:
 - Requires a resolved initiating client name. Defaults to the
   normalized local short hostname.
 - Installs Docker Engine and Docker Compose on Ubuntu gateway hosts when they
-  are missing, because the gateway DNS substrate runs `wg-easy` and
-  `orbit-dns` as containers.
+  are missing, because the gateway-coupled `vpn` role runs the WireGuard
+  server runtime and VPN-served DNS runtime as containers.
 
 For app-role creation:
 

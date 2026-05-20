@@ -119,8 +119,9 @@ Input mode behavior is split out of the canonical command contract:
 - First-gateway bootstrap mints and installs the initiating client
   identity using `node_new.control_name`. This is a separate node identity from
   the gateway node named by `node_new.name`.
-- First-gateway bootstrap also creates exactly one internal `gateway`
-  assignment. It must not duplicate that assignment during later convergence.
+- First-gateway bootstrap also creates or materializes exactly one internal
+  `gateway` assignment and one internal `vpn` assignment on the same node. It
+  must not duplicate either assignment during later convergence.
 - Gateway `--host` is required during first bootstrap and later convergence
   checks. If the requested gateway is already provisioned and active, and the
   supplied host is compatible with that gateway identity, converge idempotently

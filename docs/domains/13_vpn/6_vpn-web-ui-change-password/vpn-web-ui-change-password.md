@@ -1,6 +1,6 @@
 # `orbit vpn-web-ui:change-password [password]`
 
-Change the gateway VPN backend web UI password.
+Change the active `vpn` role runtime backend web UI password.
 
 ## Usage
 
@@ -18,23 +18,25 @@ orbit vpn-web-ui:change-password 'new-long-password' --force --json
 
 ## Arguments and options
 
-- `password`: New gateway VPN backend web UI password. Interactive input mode
+- `password`: New active `vpn` role runtime backend web UI password. Interactive input mode
   prompts when omitted.
 - `--force`: Confirm the destructive credential rotation without an interactive
   confirmation prompt.
-- `--totp=<code>`: One-time code for the gateway VPN backend when required.
+- `--totp=<code>`: One-time code for the active `vpn` role runtime backend when required.
 - `--json`: Return the password rotation result in the shared JSON command
   envelope.
 
 ## What Happens
 
-Run this command to rotate the admin password for the gateway VPN backend web UI.
+Run this command to rotate the admin password for the active `vpn` role runtime
+backend web UI.
 
-`vpn-web-ui:change-password` runs on the gateway host and rotates the password
-used to administer the gateway VPN backend. It verifies backend authentication,
-updates the backend credential, invalidates existing backend admin sessions when
-the backend supports it, and updates the Orbit-managed credential storage on the
-gateway.
+`vpn-web-ui:change-password` resolves the active `vpn` role and rotates the
+password used to administer that runtime backend. In this version the active
+`vpn` role is gateway-coupled, so Orbit still executes on the gateway host. It
+verifies backend authentication, updates the backend credential, invalidates
+existing backend admin sessions when the backend supports it, and updates the
+Orbit-managed credential storage on the active `vpn` role host.
 
 The command does not rotate WireGuard client keys, node identities, gateway CA
 material, or Orbit node access grants.
@@ -51,10 +53,10 @@ machine-readable output.
 All of the following must be true before the command runs.
 
 - The caller is a gateway or authorized client.
-- Operator callers can SSH to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
+- Operator callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
-- The new password satisfies the gateway VPN backend password policy.
+- The new password satisfies the active `vpn` role runtime backend password policy.
 - Destructive consent is supplied interactively or with `--force`.
 
 ## Related Commands

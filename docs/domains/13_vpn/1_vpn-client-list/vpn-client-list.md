@@ -1,6 +1,6 @@
 # `orbit vpn-client:list`
 
-List WireGuard clients known to the gateway VPN backend.
+List WireGuard clients known to the active `vpn` role runtime backend.
 
 ## Usage
 
@@ -18,16 +18,19 @@ orbit vpn-client:list --json
 
 ## Arguments and options
 
-- `--totp=<code>`: One-time code for the gateway VPN backend when required.
+- `--totp=<code>`: One-time code for the active `vpn` role runtime backend when required.
 - `--json`: Return the client list in the JSON output.
 
 ## What Happens
 
-Run this command to inspect the gateway VPN backend's current client inventory.
+Run this command to inspect the active `vpn` role runtime backend's current
+client inventory.
 
-`vpn-client:list` runs on the gateway host and reads the gateway VPN backend's
-client inventory. From a client, Orbit connects to the gateway over the
-Orbit/WireGuard SSH path and runs the gateway-local operation there.
+`vpn-client:list` resolves the active `vpn` role and reads that runtime
+backend's client inventory. In this version the active `vpn` role is
+gateway-coupled, so Orbit still executes on the gateway host. From a client,
+Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
+and runs the VPN-role runtime operation there.
 
 The command may show backend peers that correspond to active Orbit node
 identities, but it does not verify node reachability or repair node drift.
@@ -43,8 +46,8 @@ machine-readable output.
 ## Requirements
 
 - The caller is a gateway or authorized client.
-- Operator callers can SSH to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
+- Operator callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
 
 ## Related Commands

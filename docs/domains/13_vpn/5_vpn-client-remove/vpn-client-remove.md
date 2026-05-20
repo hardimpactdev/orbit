@@ -1,6 +1,7 @@
 # `orbit vpn-client:remove <name>`
 
-Remove a gateway VPN client that is not an Orbit node.
+Remove a VPN client from the active `vpn` role runtime that is not an Orbit
+node.
 
 ## Usage
 
@@ -20,17 +21,19 @@ orbit vpn-client:remove laptop --force --json
 
 - `name`: VPN client name.
 - `--force`: Skip the destructive confirmation prompt.
-- `--totp=<code>`: One-time code for the gateway VPN backend when required.
+- `--totp=<code>`: One-time code for the active `vpn` role runtime backend when required.
 - `--json`: Return the removal result in the JSON output.
 
 ## What Happens
 
-Run this command to permanently delete an admin VPN client from the gateway backend.
+Run this command to permanently delete an admin VPN client from the active
+`vpn` role runtime backend.
 
-`vpn-client:remove` runs on the gateway host and deletes the named VPN backend
-client after destructive consent. From a client, Orbit connects to the
-gateway over the Orbit/WireGuard SSH path and runs the gateway-local operation
-there.
+`vpn-client:remove` resolves the active `vpn` role and deletes the named
+runtime backend client after destructive consent. In this version the active
+`vpn` role is gateway-coupled, so Orbit still executes on the gateway host.
+From a client, Orbit connects to the active `vpn` role host over the
+Orbit/WireGuard SSH path and runs the VPN-role runtime operation there.
 
 The command is limited to non-node VPN clients. Removing Orbit node peers
 belongs to [`node:remove`](../../1_node/8_node-remove/node-remove.md).
@@ -45,8 +48,8 @@ output.
 ## Requirements
 
 - The caller is a gateway or authorized client.
-- Operator callers can SSH to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
+- Operator callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The named client exists and is not an active Orbit node peer.
 - Destructive consent is supplied interactively or with `--force`.
 

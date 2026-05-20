@@ -4,7 +4,7 @@ This document describes Orbit's architecture at a high level.
 
 ## Components
 
-Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singleton authority role, owns fleet configuration, serves a typed API, coordinates the VPN, and applies changes on other nodes. Clients and nodes carrying workload roles are spokes. They join the gateway-managed private network for secure communication.
+Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singleton authority role, owns fleet configuration, serves a typed API, and applies changes on other nodes. Clients and nodes carrying workload roles are spokes. They join the gateway-managed private network for secure communication.
 
 ```text
               ┌─────────────────────┐
@@ -46,27 +46,50 @@ A client is where you drive Orbit from, usually your Mac or Ubuntu workstation. 
 
 ### Gateway node
 
-The gateway is the central store of everything Orbit knows: apps, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
+The `gateway` role is Orbit's singleton authority. It owns durable Orbit
+state, the typed API, root CA material, access policy, and convergence
+decisions.
 
-It runs the VPN server every Orbit node joins and acts as Orbit's certificate authority. Steady-state traffic stays on a private network, and HTTPS works without an external CA.
+The gateway is the central store of everything Orbit knows: apps, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
 
 The gateway exposes the typed API that the CLI talks to. It holds SSH access to other nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new node can be provisioned from the same configuration that built the previous one.
 
 ### Node roles
 
-A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `app-development`, `app-production`, `database`, and `agent`. The `gateway` role is the singleton authority role described above. The other four are workload roles applied to nodes in the fleet.
+A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `app-development`, `app-production`, `database`, and `agent`. The `gateway` role is the singleton authority role described above.
+
+The `vpn` role is a gateway-coupled infrastructure role in this version. It
+owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
+peer defaults, and the VPN-facing DNS runtime. First gateway bootstrap assigns
+`gateway` and `vpn` to the same node, and normal role commands cannot manage
+either role independently.
+
+The other four are workload roles applied to nodes in the fleet.
 
 `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate role.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no public ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no public ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
-Roles compose when compatible. `app-development` and `app-production` may each combine with `database` on the same node, so a single node can serve apps and host their database tools together. `gateway` and `agent` are exclusive: they never share a node with another role. The full compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
+Roles compose when compatible. In v1, `gateway` and `vpn` appear together and
+combine only with each other. `app-development` and `app-production` may each
+combine with `database` on the same node, so a single node can serve apps and
+host their database tools together. The `agent` role remains exclusive. The
+full compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
 Nodes other than the gateway do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on any node, but only as a client that calls the gateway like any other caller.
 
 ### VPN
 
-The VPN is the secure network every Orbit node joins. Steady-state traffic flows over it: CLI calls to the gateway, changes the gateway pushes to other nodes, and events those nodes send back. Nodes with only `app-development` or `database` roles do not need a public face. Nodes with the `app-production` role expose only ports 80 and 443 to the open internet; SSH and the Orbit API stay reachable only over the VPN. The current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
+The VPN is the secure network every Orbit node joins. Steady-state traffic
+flows over it: CLI calls to the gateway, changes the gateway pushes to other
+nodes, and events those nodes send back. The `vpn` role owns the WireGuard
+server runtime, the public endpoint settings peers use to reach it, peer
+defaults, and the VPN-facing DNS runtime. In v1 that role is gateway-coupled,
+so the active `vpn` role runs on the same node as the active `gateway` role.
+Nodes with only `app-development` or `database` roles do not need a public
+face. Nodes with the `app-production` role expose only ports 80 and 443 to the
+open internet; SSH and the Orbit API stay reachable only over the VPN. The
+current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
 
 ### CLI
 

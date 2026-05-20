@@ -21,7 +21,7 @@ The node family owns these facts:
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
 - node-related defaults: `app-development` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
-  safety, local `node:default` preferences for `--self`, and PHP CLI and
+  safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`, and PHP CLI and
   agent IDE defaults at the node level.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
@@ -79,7 +79,11 @@ The node probe reads gateway node records and checks these layers:
    resolver. For `agent`, assignments have a `tld` value, the gateway maps
    `*.{tld}` to the node's WireGuard address through the same DNS
    configuration model, and the node baseline includes Caddy,
-   Supervisor, and the shared unprivileged `agent` runtime user.
+   Supervisor, and the shared unprivileged `agent` runtime user. For `vpn`,
+   assignments have valid `public_endpoint`, `wireguard_cidr`,
+   `wireguard_port`, and `dns_ip` settings, the node baseline includes the
+   WireGuard server runtime and VPN-facing DNS runtime, and the DNS runtime
+   served through the `vpn` role matches gateway-owned desired DNS mappings.
    `app-production`, `database`, and `gateway` assignments have no role
    settings in v1.
 12. **Node-related defaults:** local `node:default` preferences point at
@@ -151,6 +155,8 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.app_ssh_unreachable` | The gateway cannot SSH to a node. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway runtime. |
 | `node.app_runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
+| `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
+| `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` node. |
@@ -174,6 +180,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |
 | `node.app_runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
+| `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
+| `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
@@ -185,6 +193,12 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.platform_record_mismatch`, `node.app_ssh_unreachable`,
 `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
+
+`node.vpn_runtime_missing` reports that the active gateway-coupled `vpn`
+assignment is missing WireGuard server or VPN-facing DNS runtime artifacts.
+
+`node.vpn_dns_mapping_mismatch` reports that the DNS runtime served through
+the `vpn` role does not match gateway-owned desired DNS mappings.
 
 `node.local_default_invalid` and `node.agent_ide_default_invalid` are
 reported only. `node:default` and `node:agent-ide` are explicit user actions;

@@ -14,16 +14,25 @@ Each term below has a precise meaning in the node command family.
   configuration and WireGuard identity material. Any node can act as a client
   when it runs the Orbit CLI; the term emphasizes the CLI-caller perspective.
 - **Node role:** A fixed code-defined bundle attached through a role
-  assignment. The five roles are `gateway` (singleton authority),
-  `app-development`, `app-production`, `database`, and `agent`. The latter four
-  are workload roles.
+  assignment. The six roles are `gateway` (singleton authority), `vpn`
+  (gateway-coupled infrastructure), `app-development`, `app-production`,
+  `database`, and `agent`. The latter four are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
-  durable Orbit state, the typed API, WireGuard coordination, root CA material,
-  DNS coordination, node access policy, and doctor convergence. It is stored as
-  a role assignment, but normal role-mutation commands do not add it.
+  durable Orbit state, the typed API, root CA material, node access policy, and
+  doctor convergence. It is stored as a role assignment, but normal
+  role-mutation commands do not add it independently.
+- **VPN role:** Gateway-coupled infrastructure role. The `vpn` role owns the
+  WireGuard server runtime, public WireGuard endpoint settings, VPN peer
+  defaults, and the VPN-facing DNS runtime. In v1 it is stored as a separate
+  role assignment, shown separately in role output, assigned together with
+  `gateway` during first gateway bootstrap, and not independently mutable
+  through normal role commands.
+- **Gateway-coupled infrastructure role:** Separate role assignment that is
+  coupled to the `gateway` role in v1, so bootstrap assigns it together with
+  `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
-  workloads. Conflicts with `gateway`, `app-development`, `app-production`, and
-  `database`. Selectable only during `node:new`.
+  workloads. Conflicts with `gateway`, `vpn`, `app-development`,
+  `app-production`, and `database`. Selectable only during `node:new`.
 - **Role assignability:** Flag on a role that decides whether it may be
   selected by `node:new`, by `node role:add`, or by both. `agent` is
   assignable through `node:new` only; `node role:add` rejects it.
@@ -65,14 +74,20 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | none | `app-development`, `app-production`, `database`, `agent` |
-| `app-development` | `database` | `gateway`, `app-production`, `agent` |
-| `app-production` | `database` | `gateway`, `app-development`, `agent` |
-| `database` | `app-development`, `app-production` | `gateway`, `agent` |
-| `agent` | none | `gateway`, `app-development`, `app-production`, `database` |
+| `gateway` | `vpn` | `app-development`, `app-production`, `database`, `agent` |
+| `vpn` | `gateway` | `app-development`, `app-production`, `database`, `agent` |
+| `app-development` | `database` | `gateway`, `vpn`, `app-production`, `agent` |
+| `app-production` | `database` | `gateway`, `vpn`, `app-development`, `agent` |
+| `database` | `app-development`, `app-production` | `gateway`, `vpn`, `agent` |
+| `agent` | none | `gateway`, `vpn`, `app-development`, `app-production`, `database` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
+
+In this version, `gateway` and `vpn` are gateway-coupled infrastructure roles.
+They are stored as separate role assignments and shown separately in role
+output, but first gateway bootstrap assigns them together and normal
+`node role:*` commands cannot add, update, or remove them independently.
 
 ## Role Settings
 
@@ -81,6 +96,7 @@ generic node record. Each role assignment has typed settings:
 
 | Role | Settings |
 | --- | --- |
+| `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` |
 | `app-development` | `tld` |
 | `app-production` | none in v1 |
 | `database` | none in v1 |
@@ -92,12 +108,19 @@ convergence path as adding the role. The `agent` role's `tld` follows the same
 single-lowercase-DNS-label rule as `app-development` and must be unique among
 active TLD-backed role assignments in the fleet.
 
+`public_endpoint` is the host or IP WireGuard peers use to reach the VPN.
+`wireguard_cidr` defaults to `10.6.0.0/24`.
+`wireguard_port` defaults to `51820`.
+`dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into peer
+configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
+
 ## Role Baselines
 
 Role baselines are code-defined desired state, not editable package lists.
 
 | Role | Baseline intent |
 | --- | --- |
+| `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `app-development` | Development DNS mapping and `sqlite3` as an installed local utility |
 | `app-production` | `caddy`, `php`, and `supervisor` running, plus `sqlite3` as an installed local utility |
 | `database` | Docker running as the substrate for managed database service tools |
@@ -129,6 +152,7 @@ Each role is supported on a specific set of host platforms.
 | Role | Supported platforms |
 | --- | --- |
 | `gateway` | Ubuntu |
+| `vpn` | Ubuntu |
 | client (no role assignments) | macOS, Ubuntu |
 | `app-development` | Ubuntu |
 | `app-production` | Ubuntu |
@@ -171,6 +195,8 @@ These terms describe how nodes communicate and how authority is enforced.
   lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
   WireGuard, SSH, reachability, and gateway runtime readiness for a node.
+- **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,
+  `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
 
 ## Access Policy
 
@@ -265,9 +291,10 @@ These terms describe how the gateway maintains DNS resolution for nodes with
 the `app-development` role.
 
 - **Development DNS mapping owned by the gateway:** Node-family gateway configuration
-  and gateway-local resolver reality that maps `*.{tld}` for an active
-  `app-development` role assignment to that node's WireGuard address. The
-  gateway owns this mapping.
+  and gateway-owned desired DNS mappings and policy that map `*.{tld}` for an
+  active `app-development` role assignment to that node's WireGuard address.
+  Runtime reality for that mapping is served and probed on the active
+  gateway-coupled `vpn` role in v1.
 - **Agent DNS mapping owned by the gateway:** Same node-family gateway
   configuration and resolver reality as the mapping that `app-development`
   uses, but derived from an active `agent` role assignment's `tld` setting
@@ -280,14 +307,16 @@ the `app-development` role.
   The canonical domain is `*.{tld}` and the canonical target is the
   node's WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that
-  converges or removes resolver artifacts on the gateway from
-  the derived configuration model. It is used by node provisioning,
-  node adoption and materialization, node removal, and
+  uses gateway-owned desired DNS mappings and policy to converge or remove
+  resolver artifacts on the active `vpn` role runtime. In v1 that runtime is
+  gateway-coupled. It is used by node provisioning, node adoption and
+  materialization, node removal, and
   `doctor --family=node --restore`.
 - **Development DNS probe:** Internal node-family gateway service that reads
-  gateway-local resolver reality for derived development DNS configuration and
-  reports node-family drift when the mapping is absent, points at another
-  target, or is publicly exposed.
+  resolver reality from the active `vpn` role runtime for derived development
+  DNS configuration and reports node-family drift when the mapping is absent,
+  points at another target, or is publicly exposed. In v1 that runtime is
+  gateway-coupled.
 
 Development DNS mappings are not a public `dns:*` command surface and do not
 create a `dns` state family. The `dns:*` commands own only the resolver overrides
@@ -304,6 +333,8 @@ The node family owns:
 - the node access grant edge and the scoped permissions stored on each grant,
   plus the permission registry, presets, and normalization;
 - the development and agent DNS mappings the gateway maintains;
+- the `vpn` role's WireGuard server runtime, public endpoint settings, peer
+  defaults, and VPN-facing DNS runtime baseline;
 - node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process

@@ -8,9 +8,11 @@
 
 **Prerequisites:**
 - The caller is a gateway node, or an authorized client with SSH access
-  to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
-- The operator can authenticate to the gateway VPN backend when TOTP is
+  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
+  gateway-coupled.
+- The active `vpn` role is resolvable.
+- The VPN runtime backend is installed and reachable on the active `vpn` role host.
+- The operator can authenticate to the VPN runtime backend when TOTP is
   required.
 
 ## Signature
@@ -27,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `<name>` | Always. | Never. | None. | Stable VPN client identifier; unique among backend clients and active Orbit node names. |
 | `config` | `--config` | Optional. | Never. | `false` | Includes generated WireGuard config in the command output. |
-| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
+| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the VPN runtime backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
@@ -35,6 +37,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Client Creation Rules
 
 - Create exactly one admin VPN backend client for `name`; the client is not an Orbit node.
+- Resolve the active `vpn` role host before backend writes begin.
 - Refuse duplicate backend client names.
 - Refuse names that match an active Orbit node identity.
 - Return the backend client ID and assigned WireGuard address.
@@ -47,7 +50,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - The generated admin-client config must not use the gateway node peer IP, such
   as `10.6.0.2`, as DNS, and must not include public fallback resolvers such as
   `1.1.1.1`.
-- Gateway dnsmasq owns development TLD routing behind that DNS endpoint.
+- The gateway owns desired DNS mappings and DNS policy behind that endpoint. In
+  v1 the `vpn` role DNS runtime serves and materializes those mappings.
 
 ### Node Identity Boundary
 
@@ -74,21 +78,22 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway SSH unavailable | A operator caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
-| VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
+| Gateway SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH. In v1 this still targets the gateway-coupled host. | `error.code=gateway_ssh_unavailable` |
+| VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
 ## Doctor Relationship
 
-`vpn-client:new` creates gateway VPN backend state for non-node clients. It does
+`vpn-client:new` creates VPN runtime backend state for non-node clients. It does
 not create doctor issues, fix drift, or adopt backend state.
 [`doctor --family=node`](../../../1_node/node-doctor.md) owns Orbit node WireGuard
-identity and node peer drift that the gateway manages.
+identity and node peer drift that the gateway manages through the active `vpn`
+role.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: caller-role denial, gateway-local SSH execution, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
+| `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: caller-role denial, SSH execution to the active `vpn` role node, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
 | `tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php` | Human and JSON renderer output, config rendering, and every documented `error.code` value. |
 | `tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php` | Wg-easy adapter normalization of generated client configs to `DNS = <wireguard-server-ip>`. |

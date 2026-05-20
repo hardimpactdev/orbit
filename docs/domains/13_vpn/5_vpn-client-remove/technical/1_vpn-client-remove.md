@@ -8,9 +8,11 @@
 
 **Prerequisites:**
 - The caller is a gateway node, or an authorized client with SSH access
-  to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
-- The operator can authenticate to the gateway VPN backend when TOTP is
+  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
+  gateway-coupled.
+- The active `vpn` role is resolvable.
+- The VPN runtime backend is installed and reachable on the active `vpn` role host.
+- The operator can authenticate to the VPN runtime backend when TOTP is
   required.
 
 **Post-input path eligibility:**
@@ -32,7 +34,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `<name>` | Always. | Never. | None. | Existing non-node VPN client name. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false` | Destructive consent for deleting the backend peer. |
-| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
+| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the VPN runtime backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode; `--json` never grants destructive consent. |
 
 ## Input Mode Contracts
@@ -44,7 +46,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Client Removal Rules
 
-- Resolve `name` against gateway VPN backend clients.
+- Resolve the active `vpn` role host.
+- Resolve `name` against VPN runtime backend clients.
 - Fail when the client does not exist.
 - Fail when the resolved backend peer matches an active Orbit node identity.
 - Delete the backend peer only after destructive consent.
@@ -67,8 +70,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway SSH unavailable | A operator caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
-| VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
+| Gateway SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH. In v1 this still targets the gateway-coupled host. | `error.code=gateway_ssh_unavailable` |
+| VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
 ## Doctor Relationship
@@ -82,7 +85,7 @@ detection and safe node-peer cleanup.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: caller-role denial, gateway-local SSH execution, TOTP handling, missing client failure, node peer protection, destructive consent, backend deletion. No node records, grants, or local config cleanup. |
+| `tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: caller-role denial, SSH execution to the active `vpn` role node, TOTP handling, missing client failure, node peer protection, destructive consent, backend deletion. No node records, grants, or local config cleanup. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php` | Interactive confirmation prompt, `--force` bypass, declined confirmation failure before side effects, and prompt abort behavior. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php` | Non-interactive missing-`--force` failure, `--json` forcing non-interactive mode, and no prompts. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

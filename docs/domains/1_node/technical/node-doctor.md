@@ -23,7 +23,7 @@ methods:
 | `canReconcile()` | `bool` | Whether this family supports `doctor --family=node --restore`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `doctor --family=node --adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
-| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven active node missing peers, proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
+| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven active node missing peers, proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, VPN runtime readiness, VPN-served DNS mapping drift, and local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
 
 ## Data Structures
@@ -135,10 +135,16 @@ These layers are implemented without external service dependencies:
    - Detects `NodeAccess` rows referencing missing or non-active nodes.
    - Checks both consumer and serving directions.
 
-5. **Role assignment settings and baseline drift** (`node.role_settings_invalid`, `node.role_baseline_mismatch`)
+5. **Role assignment settings and baseline drift** (`node.role_settings_invalid`, `node.role_baseline_mismatch`, `node.vpn_runtime_missing`, `node.vpn_dns_mapping_mismatch`)
    - Detects active `app-development` role assignments without a valid `tld`.
    - Detects missing or mismatched role-owned derived artifacts such as gateway
      development DNS mappings for active `app-development` assignments.
+   - Detects active `vpn` role assignments with invalid `public_endpoint`,
+     `wireguard_cidr`, `wireguard_port`, or `dns_ip` settings.
+   - Detects missing WireGuard server or VPN-facing DNS runtime artifacts owned
+     by the active gateway-coupled `vpn` role.
+   - Detects drift where DNS runtime served through the `vpn` role does not
+     match gateway-owned desired DNS mappings.
 
 6. **WireGuard peer configuration** (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
    - Detects missing `wireguard_peers` rows for active non-gateway node records.
@@ -177,6 +183,15 @@ They do not mutate host state:
   - Reports `Unverifiable` drift when supervisor/runtime readiness is missing or
     cannot be verified.
 
+- VPN runtime readiness (`node.vpn_runtime_missing`, `node.vpn_dns_mapping_mismatch`)
+  - Runs only for active `vpn` role assignments.
+  - Verifies the WireGuard server runtime and VPN-facing DNS runtime owned by
+    the active gateway-coupled `vpn` role.
+  - Reports `node.vpn_runtime_missing` when the baseline runtime artifacts are
+    missing or cannot be verified.
+  - Reports `node.vpn_dns_mapping_mismatch` when the DNS runtime served through
+    the `vpn` role does not match gateway-owned desired DNS mappings.
+
 ### Stubs (External Service Required)
 
 These layers are reserved for future probe implementations that require
@@ -204,17 +219,20 @@ additional external services:
     available.
   - `NodesProbe` consumes this read-only service for adoption of a missing peer on a selected active node. Adoption of an unknown host or a node with the gateway role still requires
     a separate materialization path before the proof can be used safely.
-- Development DNS baseline reality (`node.role_baseline_mismatch`)
-  - `DevelopmentDnsMappingProbe` reads gateway-local Orbit-managed development
-    DNS resolver artifacts for the derived node configuration model:
-    active `app-development` role assignments with non-empty `tld` and
-    non-empty WireGuard addresses.
-  - The canonical mapping is `*.{tld}` to the node's WireGuard
-    address, owned by the node name. Missing artifacts, conflicting
-    ownership, target mismatches, and public exposure all report
-    `node.role_baseline_mismatch`.
-  - `app-production`, `database`, gateway, and client nodes must not have derived
-    development DNS mappings.
+- VPN-served DNS runtime reality (`node.vpn_runtime_missing`, `node.vpn_dns_mapping_mismatch`)
+  - `DevelopmentDnsMappingProbe` reads Orbit-managed development DNS runtime
+    artifacts from the active `vpn` role runtime for the derived node
+    configuration model: active `app-development` role assignments with
+    non-empty `tld` and non-empty WireGuard addresses. In v1 that runtime is
+    gateway-coupled.
+  - The canonical mapping is `*.{tld}` to the node's WireGuard address, owned
+    by the node name. Missing DNS runtime artifacts or unverifiable DNS runtime
+    readiness report `node.vpn_runtime_missing`.
+  - Mismatched ownership, target mismatches, and public exposure in the DNS
+    runtime served through the `vpn` role report
+    `node.vpn_dns_mapping_mismatch`.
+  - `app-production`, `database`, gateway, and client nodes must not have
+    derived development DNS mappings in the active `vpn` role runtime.
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
 - Gateway API reachability (`node.gateway_api_unreachable`)
@@ -271,6 +289,8 @@ private key is left empty.
 | `node.access_grant_invalid` | Removes stale `NodeAccess` rows referencing missing or non-active nodes. |
 | `node.role_convergence_failed` | Retries convergence for selected `error` role assignments and persists `error` again on failure. |
 | `node.role_baseline_mismatch` | Re-applies the baseline artifacts that the selected active role assignments own, including development DNS mappings derived from role settings. |
+| `node.vpn_runtime_missing` | Re-applies the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
+| `node.vpn_dns_mapping_mismatch` | Rewrites the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
 
 ### Unsupported Keys
 
@@ -302,6 +322,8 @@ private key is left empty.
 | `node.wireguard_peer_extra` | Activates the selected non-active node record when existing registry peer material matches a live WireGuard peer by public key and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the process manager is available; returns a conflict when runtime readiness cannot be verified. |
+| `node.vpn_runtime_missing` | Verifies compatible `vpn` runtime readiness when the WireGuard server and VPN-facing DNS runtime can be proven; returns a conflict when runtime readiness cannot be verified. |
+| `node.vpn_dns_mapping_mismatch` | Adopts the observed VPN-served DNS runtime mapping only when it can be proven to belong to the active `vpn` role and match gateway-owned node intent. |
 | `node.platform_record_mismatch` | Updates the node record to the observed platform when local platform detection is supported and unambiguous. |
 
 ## Extensibility

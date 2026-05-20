@@ -1,8 +1,9 @@
 # VPN Commands
 
-VPN commands administer the gateway's WireGuard backend for human/operator
-access clients. They are gateway infrastructure commands, not the normal node
-orchestration path.
+VPN commands administer the active `vpn` role runtime for human/operator access
+clients. In this version the `vpn` role is gateway-coupled, so these remain
+gateway-host infrastructure commands rather than the normal node orchestration
+path.
 
 The VPN command family owns the compound `vpn-client:*` and `vpn-web-ui:*`
 command prefixes.
@@ -10,11 +11,12 @@ command prefixes.
 ## State Ownership
 
 The `vpn` command domain does not own a state family. VPN commands administer
-gateway-local backend clients and the backend admin credential.
+VPN-role runtime clients and the backend admin credential.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns Orbit node WireGuard
-identity, gateway-managed node peers, gateway WireGuard readiness, and stale
-node-peer drift. There is no `doctor --family=vpn` contract.
+identity, gateway-managed node peers, VPN-role WireGuard readiness, VPN-served
+DNS runtime drift, and stale node-peer drift. There is no `doctor --family=vpn`
+contract.
 
 ## Domain Rules
 
@@ -22,12 +24,14 @@ These rules govern all VPN commands and their gateway-execution contract.
 
 - VPN commands must start with a VPN compound command prefix before the colon,
   such as `vpn-client:*` or `vpn-web-ui:*`.
-- VPN commands execute on the gateway host because the VPN backend is
-  gateway-local infrastructure.
+- VPN commands execute against the active `vpn` role runtime. In this version
+  the active `vpn` role is gateway-coupled, so execution remains on the
+  gateway host.
 - Gateway callers execute the backend operation locally.
 - Operator callers may initiate VPN commands only when they can SSH to the
-  gateway over the Orbit/WireGuard path. This is a gateway infrastructure
-  exception and does not create a general public SSH path from control to gateway.
+  active `vpn` role host over the Orbit/WireGuard path. In v1 that is the
+  gateway-coupled host. This is a VPN-role infrastructure exception and does
+  not create a general public SSH path from control to gateway.
 - App-role callers are denied before prompts or side effects.
 - `vpn-client:*` commands manage VPN clients for humans and operators, not Orbit node peers.
 
@@ -36,11 +40,11 @@ Node identity is managed separately.
 - Orbit node identities are issued through [`node:new`](../1_node/1_node-new/node-new.md)
   and removed through [`node:remove`](../1_node/8_node-remove/node-remove.md),
   not through `vpn-client:new` or `vpn-client:remove`.
-- `vpn-client:list` may show gateway backend peers that correspond to active
+- `vpn-client:list` may show active `vpn` role runtime backend peers that correspond to active
   Orbit nodes, but node peers are protected from `vpn-client:enable`,
   `vpn-client:disable`, and `vpn-client:remove`.
 - A VPN client name must not collide with an active Orbit node name.
-- VPN commands may pass a backend TOTP code when the gateway backend requires
+- VPN commands may pass a backend TOTP code when the active `vpn` role runtime backend requires
   second-factor authentication.
 - VPN commands do not create app routes, proxy routes, Cloudflare records,
   gateway development DNS mappings, or caller-local resolver overrides.

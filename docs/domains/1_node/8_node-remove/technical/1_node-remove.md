@@ -91,9 +91,10 @@ This command follows the shared
 
 The development DNS cleanup target is derived from the node row being removed:
 domain `*.{nodes.tld}`, target WireGuard address, and owner node name. Removal
-must delete only the resolver artifacts that Orbit manages on the gateway for that derived
-mapping. It must not call `dns:*`, remove caller-local resolver overrides, or
-edit public/provider DNS.
+must delete only the runtime artifacts that Orbit manages on the active `vpn`
+role for that derived mapping. In v1 that runtime is gateway-coupled. It must
+not call `dns:*`, remove caller-local resolver overrides, or edit
+public/provider DNS.
 
 ### WireGuard Detach Rules
 
@@ -153,7 +154,8 @@ node-family drift. JSON output reports this under `success.meta.warnings` with
 
 Partial development DNS cleanup is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale
-gateway resolver artifact is node-family drift. JSON output reports this under
+VPN-served DNS runtime artifact on the active `vpn` role is node-family drift.
+JSON output reports this under
 `success.meta.warnings` with `code=node.role_baseline_mismatch` and
 `next_command=doctor --fix --family=node --restore`.
 

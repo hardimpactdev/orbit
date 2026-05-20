@@ -18,6 +18,9 @@ orbit node role:update [node] [role] [--tld=] [--json]
 This command rewrites desired role settings and re-runs convergence for the target node.
 
 - `gateway` cannot be updated through this command.
+- `vpn` cannot be updated through this command. In v1 the `vpn` role is a
+  gateway-coupled infrastructure role and normal `node role:*` commands cannot
+  manage it independently.
 - Updating role settings triggers convergence again.
 - Updating settings on the `agent` role (for example changing the role's
   `tld`) requires the `node:update` permission on the caller's grant to

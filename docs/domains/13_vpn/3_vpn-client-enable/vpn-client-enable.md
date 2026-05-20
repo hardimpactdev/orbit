@@ -1,6 +1,7 @@
 # `orbit vpn-client:enable <name>`
 
-Enable an existing gateway VPN client that is not an Orbit node.
+Enable an existing VPN client on the active `vpn` role runtime that is not an
+Orbit node.
 
 ## Usage
 
@@ -19,16 +20,18 @@ orbit vpn-client:enable laptop --json
 ## Arguments and options
 
 - `name`: VPN client name.
-- `--totp=<code>`: One-time code for the gateway VPN backend when required.
+- `--totp=<code>`: One-time code for the active `vpn` role runtime backend when required.
 - `--json`: Return the updated client in the JSON output.
 
 ## What Happens
 
 Run this command to allow a disabled admin VPN client to connect again.
 
-`vpn-client:enable` runs on the gateway host and marks the named VPN backend
-client as enabled. From a client, Orbit connects to the gateway over the
-Orbit/WireGuard SSH path and runs the gateway-local operation there.
+`vpn-client:enable` resolves the active `vpn` role and marks the named runtime
+backend client as enabled. In this version the active `vpn` role is
+gateway-coupled, so Orbit still executes on the gateway host. From a client,
+Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
+and runs the VPN-role runtime operation there.
 
 The command is limited to non-node VPN clients. Active Orbit node peers are
 protected because node WireGuard identity belongs to the node lifecycle.
@@ -43,8 +46,8 @@ output.
 ## Requirements
 
 - The caller is a gateway or authorized client.
-- Operator callers can SSH to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
+- Operator callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The named client exists and is not an active Orbit node peer.
 
 ## Related Commands

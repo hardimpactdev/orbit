@@ -8,9 +8,11 @@
 
 **Prerequisites:**
 - The caller is a gateway node, or an authorized client with SSH access
-  to the gateway over Orbit/WireGuard.
-- The gateway VPN backend is installed and reachable on the gateway host.
-- The operator can authenticate to the gateway VPN backend when TOTP is
+  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
+  gateway-coupled.
+- The active `vpn` role is resolvable.
+- The VPN runtime backend is installed and reachable on the active `vpn` role host.
+- The operator can authenticate to the VPN runtime backend when TOTP is
   required.
 
 ## Signature
@@ -26,14 +28,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `<name>` | Always. | Never. | None. | Existing non-node VPN client name. |
-| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
+| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the VPN runtime backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
 
 ### Client Enablement Rules
 
-- Resolve `name` against gateway VPN backend clients.
+- Resolve the active `vpn` role host.
+- Resolve `name` against VPN runtime backend clients.
 - Fail when the client does not exist.
 - Fail when the resolved backend peer matches an active Orbit node identity.
 - Enable the backend peer when it is disabled.
@@ -55,20 +58,21 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway SSH unavailable | A operator caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
-| VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
+| Gateway SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH. In v1 this still targets the gateway-coupled host. | `error.code=gateway_ssh_unavailable` |
+| VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
 ## Doctor Relationship
 
-`vpn-client:enable` mutates gateway VPN backend state for non-node clients. It
+`vpn-client:enable` mutates VPN runtime backend state for non-node clients. It
 does not create doctor issues, fix drift, or adopt backend state.
 [`doctor --family=node`](../../../1_node/node-doctor.md) owns Orbit node
-WireGuard identity and node peer drift that the gateway manages.
+WireGuard identity and node peer drift that the gateway manages through the
+active `vpn` role.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: caller-role denial, operator-caller gateway-local SSH execution, gateway execution, TOTP handling, existing disabled client enablement, already-enabled success, missing client failure, active node peer protection, and no node configuration writes. |
+| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: caller-role denial, operator-caller SSH execution to the active `vpn` role node, VPN-role runtime backend execution, TOTP handling, existing disabled client enablement, already-enabled success, missing client failure, active node peer protection, and no node configuration writes. |
 | `tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
