@@ -45,6 +45,8 @@ final readonly class E2EConfig
         public array $dockerHostSlots = [],
         public string $incusImageBuildHost = '',
         /** @var list<string> */
+        public array $dockerImageBuildHosts = [],
+        /** @var list<string> */
         public array $exclusiveHosts = [],
         public string $operatorUser = 'control',
     ) {}
@@ -79,12 +81,13 @@ final readonly class E2EConfig
             hcloudLocationSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_LOCATION_SLOTS', ''), backend: 'Hcloud'),
             hcloudResourceSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_RESOURCE_SLOTS', ''), backend: 'Hcloud'),
             dockerHosts: self::parseProviderNames(self::envString('ORBIT_E2E_DOCKER_HOSTS', 'local')),
-            dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 8),
+            dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 16),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
             slotWaitSeconds: self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
             slotStaleSeconds: self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
             dockerHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', ''), backend: 'Docker'),
             incusImageBuildHost: self::envString('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST', $host),
+            dockerImageBuildHosts: self::parseOptionalNames(self::envString('ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS', '')),
             exclusiveHosts: self::parseOptionalNames(self::envString('ORBIT_E2E_EXCLUSIVE_HOSTS', '')),
         );
     }
@@ -249,6 +252,7 @@ final readonly class E2EConfig
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
             incusImageBuildHost: $this->incusImageBuildHost,
+            dockerImageBuildHosts: $this->dockerImageBuildHosts,
             exclusiveHosts: $this->exclusiveHosts,
         );
     }
@@ -287,6 +291,7 @@ final readonly class E2EConfig
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
             incusImageBuildHost: $this->incusImageBuildHost,
+            dockerImageBuildHosts: $this->dockerImageBuildHosts,
             exclusiveHosts: $this->exclusiveHosts,
         );
     }
@@ -331,6 +336,7 @@ final readonly class E2EConfig
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
             incusImageBuildHost: $this->incusImageBuildHost,
+            dockerImageBuildHosts: $this->dockerImageBuildHosts,
             exclusiveHosts: $this->exclusiveHosts,
         );
     }

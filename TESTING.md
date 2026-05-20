@@ -219,6 +219,9 @@ read.
 except `e2e-provider-incus` and topology-contract groups, using Docker, Pest
 parallel mode, and one cached Docker superset topology per worker.
 
+Use `composer test:e2e:docker:canary` to run the representative Docker canary
+subset tagged `e2e-feature-canary`.
+
 `composer test:e2e:incus` selects the Incus lane: only `e2e-provider-incus`
 feature tests, using Incus prepared topology clones. If Incus or the required
 prepared topology is unavailable, those tests mark themselves skipped.
@@ -294,9 +297,11 @@ Pest parallel mode and `ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so each worker
 pays the Docker container startup cost once for a full topology. It also enables
 `ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout once per
 node/user and gives each test an isolated hardlink copy with fresh runtime
-files. Because the current aggregate includes gateway-backed `node:list` tests,
-it also sets `ORBIT_E2E_GATEWAY_API=1` and starts the gateway API once per
-worker.
+files. The checkout archive itself is cached across Pest workers under a
+git-tree hash, so only one worker should pay the local tar/gzip cost for an
+unchanged checkout. Because the current aggregate includes gateway-backed
+`node:list` tests, it also sets `ORBIT_E2E_GATEWAY_API=1` and starts the gateway
+API once per worker.
 
 Topology state is reused by default inside a worker. Tests that intentionally
 mutate shared topology state must either clean up after themselves or call
@@ -395,9 +400,10 @@ composer e2e:prepare-topology -- --force control-gateway-dev-prod
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
-# Prepare Docker feature topology images on every configured Docker host
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3 \
-composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
+# Prepare Docker feature topology images on the build host, then import on Docker hosts
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
+ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias control-gateway-dev-prod
 
 # Reap stale E2E resources
 composer e2e:reap-incus
@@ -436,7 +442,7 @@ intentionally on demand because it exercises real machine setup.
 
 Docker is the default provider for Docker-eligible feature tests. Once
 `.env.e2e` points at the standing Docker host pool and the runtime/topology
-images are prepared on those hosts, the Docker-only lane is:
+images have been imported onto those hosts, the Docker-only lane is:
 
 ```bash
 composer test:e2e:docker
@@ -444,12 +450,13 @@ composer test:e2e:docker
 
 `composer test:e2e:docker` and the Docker lane of `composer test:e2e` do not
 rebuild Docker images. On a fresh host pool, after Dockerfile or system
-dependency changes, or when remote images look stale, first refresh every
-configured Docker host:
+dependency changes, or when remote images look stale, first rebuild on Beast and
+refresh each configured Docker host:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3 \
-composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
+ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias control-gateway-dev-prod
 ```
 
 For single-host local debugging, the lower-level equivalents are:
@@ -524,31 +531,45 @@ mutation, real WireGuard interfaces and peer routing, and host init
 itself.
 
 `composer test:e2e:docker` runs with Pest parallel mode. The script fallback
-process count is `6`; the shared local `.env.e2e` uses
-`ORBIT_E2E_PARALLEL_PROCESSES=6` to match the sidecar1 and sidecar2 slot pool.
+process count is `8`; the shared local `.env.e2e` uses
+`ORBIT_E2E_PARALLEL_PROCESSES=8` to match the sidecar1 and sidecar2 slot pool.
 Keep the value within Docker host capacity: a full topology uses four
 containers, so a host with
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=12` can safely run three full-topology
-workers. Add Beast as Docker overflow only for Docker-only runs or idle-Incus
-windows.
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16` can safely run four full-topology
+workers.
+
+Measured on 2026-05-19 with the tarball-only DNS-alias checkout path: the
+canary passed with `sidecar1:4,sidecar2:4`,
+`ORBIT_E2E_PARALLEL_PROCESSES=8`, and
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16` in `47.55s` real time.
+The full Docker lane passed three consecutive runs with 81 tests / 727
+assertions in `113.45s`, `112.49s`, and `114.88s` real time
+(`113.61s` mean, `1.20s` sample stdev), so the current measured baseline is
+below the original `130s` target. The checkout tarball is built from tracked
+and unignored files only, with ignored worktrees, build output, generated E2E
+test copies, vendor, node_modules, and runtime state excluded from the archive
+and its cache hash.
+
+Earlier measurement at `sidecar1:5,sidecar2:5` with 10 workers regressed, so
+the recommended local sidecar pool stays at 8 workers. The Docker lane rejects
+measured runs where `ORBIT_E2E_PARALLEL_PROCESSES` does not match the total
+Docker host slots or where
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST < max(host slot count) * 4`.
 
 For multi-host parallelism, use host slots and set the Pest worker count to the
 total slot count:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3,beast:2 \
-ORBIT_E2E_EXCLUSIVE_HOSTS=beast \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_PARALLEL_PROCESSES=8 \
 composer test:e2e:docker
 ```
 
-The normal local pool is `sidecar1:3,sidecar2:3` with
-`ORBIT_E2E_PARALLEL_PROCESSES=6`. With the Beast overflow example above, up to
-three workers can lease `sidecar1`, three can lease `sidecar2`, and two can lease
-`beast` when no Incus lease is active on Beast. The mapping is a blocking lease
-pool, not a worker-number map:
-a worker takes the first free Docker slot, waits when all slots are busy or when
-Beast is reserved by Incus, and releases its slot during topology
+The normal local pool is `sidecar1:4,sidecar2:4` with
+`ORBIT_E2E_PARALLEL_PROCESSES=8`. Up to four workers can lease `sidecar1` and
+four can lease `sidecar2`. The mapping is a blocking lease pool, not a
+worker-number map: a worker takes the first free Docker slot, waits when all
+slots are busy, and releases its slot during topology
 cleanup. Stale lease files are reclaimed after `ORBIT_E2E_SLOT_STALE_SECONDS`.
 Lease files are shared across Git worktrees by default: worktree runs resolve
 the lease directory to the main checkout's `storage/framework/e2e/leases`. Set
@@ -583,21 +604,30 @@ composer test:e2e
 ```
 
 The local machine only needs the Docker CLI and SSH access; the prepared Docker
-images must exist on every configured Docker host. The Docker provider checks
-`docker image inspect` against the selected daemon because `DOCKER_HOST=ssh://...`
-forwards every CLI call.
+images must exist on every configured Docker host. The aggregate preparation
+command builds them once on Beast and imports them into the sidecars. The Docker
+provider checks `docker image inspect` against the selected daemon because
+`DOCKER_HOST=ssh://...` forwards every CLI call.
 
 Use the aggregate host preparation command to build fresh runtime and topology
-images across the configured Docker host pool:
+images on `ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS` and import them into the
+configured Docker host pool:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3 \
-composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
+ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appdev-appprod
 ```
 
-When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command prepares each unique slot
-host once. Otherwise it uses `ORBIT_E2E_DOCKER_HOSTS`. Use
-`--runtime-only` or `--topology-only` when only one image layer needs refreshing.
+When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command imports into each unique
+slot host once. Otherwise it uses `ORBIT_E2E_DOCKER_HOSTS`. If
+`ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS` is unset, remote Docker pools default to the
+Incus image build host, which is normally `beast`. Configure exactly one Docker
+image build host, normally `ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast`; sidecars
+belong only in `ORBIT_E2E_DOCKER_HOST_SLOTS` or `ORBIT_E2E_DOCKER_HOSTS`. This
+keeps Docker layer sharing intact: runtime and prepared topology images are
+built on one daemon and imported as one combined image set. Use `--runtime-only`
+or `--topology-only` when only one image layer needs refreshing.
 
 To run Docker feature E2E on temporary Hetzner capacity, use the hidden wrapper:
 
@@ -670,9 +700,11 @@ ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for direct ar
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2  # Recommended Docker daemon pool
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3  # Docker feature-test lease pool
-ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=12  # Docker topology capacity per daemon
-ORBIT_E2E_PARALLEL_PROCESSES=6        # Pest workers for composer test:e2e:docker
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4  # Docker feature-test lease pool
+ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast # Build Docker images here, then import to Docker hosts
+ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias # Use Docker DNS aliases for transport
+ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16  # Docker topology capacity per daemon
+ORBIT_E2E_PARALLEL_PROCESSES=8        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism
 ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Pest workers for composer test:e2e:incus
@@ -689,6 +721,8 @@ ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12   # VM quota per host; 3 max-size 4-node top
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
 ORBIT_E2E_TOPOLOGY_CACHE=process      # Reuse acquired topologies for the current PHP process
 ORBIT_E2E_CHECKOUT_CACHE=process      # Reuse branch checkout installs within one PHP process
+ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR= # Optional shared checkout archive cache directory
+ORBIT_E2E_DOCKER_PARALLEL_STARTS=0    # Optional; requires SSH ControlMaster capacity on sidecars
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
 ORBIT_E2E_TIMINGS=1                   # Print phase timings to STDERR (acquire / reset)
 ORBIT_E2E_CPUS=2                      # vCPUs for image-prep / provisioning VMs
@@ -743,6 +777,65 @@ when no Incus lease is active.
 servers. `ORBIT_E2E_HCLOUD_LOCATION_SLOTS` remains available when every leased
 location should use the same `ORBIT_E2E_HCLOUD_SERVER_TYPE` and
 `ORBIT_E2E_HCLOUD_BLANK_IMAGE`.
+
+## E2E Docker lane - benchmark protocol
+
+Use the timing parser to summarize repeated Docker lane runs by `label` and
+`event`:
+
+```bash
+ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  composer test:e2e:docker:canary \
+  2>&1 | tee /tmp/e2e-canary.log | awk -f bin/e2e-timings.awk
+
+ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  composer test:e2e:docker \
+  2>&1 | tee /tmp/e2e-full.log | awk -f bin/e2e-timings.awk
+```
+
+To record a Docker lane baseline, run **3 consecutive** full-lane passes under
+identical conditions with unique `/tmp` log names and a wall-clock timer:
+
+```bash
+/usr/bin/time -p -o /tmp/e2e-full-run1.time \
+  env ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  composer test:e2e:docker \
+  2>&1 | tee /tmp/e2e-full-run1.log | awk -f bin/e2e-timings.awk
+
+/usr/bin/time -p -o /tmp/e2e-full-run2.time \
+  env ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  composer test:e2e:docker \
+  2>&1 | tee /tmp/e2e-full-run2.log | awk -f bin/e2e-timings.awk
+
+/usr/bin/time -p -o /tmp/e2e-full-run3.time \
+  env ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  composer test:e2e:docker \
+  2>&1 | tee /tmp/e2e-full-run3.log | awk -f bin/e2e-timings.awk
+```
+
+Commit a `## Docker lane baseline (YYYY-MM-DD)` section only when all three
+runs pass with unchanged exit status, test count, and assertion count. Record
+the three wall times, the wall mean plus sample standard deviation, and per-run
+`n / p50 / p95` summaries for `docker.start`, `docker.retarget`,
+`reset.delete.*`, `reset.start`, `reset.retarget`, and `checkout.*` when
+those event groups are present. Downstream phases must beat the recorded wall
+baseline by more than `2 x stdev`.
+
+## Recommended local SSH tuning
+
+Operator-applied only. Orbit does not configure this automatically.
+
+```sshconfig
+Host sidecar1 sidecar2 beast
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p.sock
+    ControlPersist 10m
+    ServerAliveInterval 30
+```
+
+Check the effect locally with `time ssh sidecar1 true`; the second call should
+drop below `10 ms`. Keep `ORBIT_E2E_DOCKER_PARALLEL_STARTS=0` unless this is in
+place and sidecar sshd capacity has been verified under load.
 
 Provisioning and topology clones use independent resource budgets. Image
 preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work

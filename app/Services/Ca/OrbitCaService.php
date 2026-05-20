@@ -50,7 +50,7 @@ readonly class OrbitCaService
     }
 
     /** @return array{cert: string, key: string} */
-    public function issueLeaf(string $host): array
+    public function issueLeaf(string $host, array $additionalSans = []): array
     {
         if (! $this->isLocalNodeGateway()) {
             throw new RuntimeException('Leaf certificates can only be issued on a gateway node.');
@@ -65,11 +65,13 @@ readonly class OrbitCaService
         $certPath = "{$certsDir}/{$filename}.crt";
         $keyPath = "{$certsDir}/{$filename}.key";
 
-        if (File::exists($certPath) && File::exists($keyPath) && $this->isLeafFresh($certPath)) {
+        $sans = array_values(array_unique([$host, ...$additionalSans]));
+
+        if (File::exists($certPath) && File::exists($keyPath) && $this->isLeafFresh($certPath) && $this->leafCoversSans($certPath, $sans)) {
             return ['cert' => $certPath, 'key' => $keyPath];
         }
 
-        $this->signLeaf($host, $certPath, $keyPath);
+        $this->signLeaf($host, $sans, $certPath, $keyPath);
 
         return ['cert' => $certPath, 'key' => $keyPath];
     }
@@ -85,7 +87,10 @@ readonly class OrbitCaService
         return File::get($this->caDir().'/root.crt');
     }
 
-    private function signLeaf(string $host, string $certPath, string $keyPath): void
+    /**
+     * @param  list<string>  $sans
+     */
+    private function signLeaf(string $host, array $sans, string $certPath, string $keyPath): void
     {
         $caDir = $this->caDir();
         $rootCrt = "{$caDir}/root.crt";
@@ -108,9 +113,7 @@ readonly class OrbitCaService
                 escapeshellarg("/CN={$host}"),
             ))->throw();
 
-            $sanLine = filter_var($host, FILTER_VALIDATE_IP) !== false
-                ? "subjectAltName=IP:{$host}"
-                : "subjectAltName=DNS:{$host}";
+            $sanLine = 'subjectAltName='.implode(',', array_map($this->sanFor(...), $sans));
 
             File::put($extPath, implode("\n", [
                 $sanLine,
@@ -143,6 +146,49 @@ readonly class OrbitCaService
             self::RENEW_IF_WITHIN_SECONDS,
             escapeshellarg($certPath),
         ))->successful();
+    }
+
+    /**
+     * @param  list<string>  $sans
+     */
+    private function leafCoversSans(string $certPath, array $sans): bool
+    {
+        $result = Process::run(sprintf(
+            'openssl x509 -in %s -noout -ext subjectAltName',
+            escapeshellarg($certPath),
+        ));
+
+        if (! $result->successful()) {
+            return false;
+        }
+
+        $actualSans = $this->subjectAltNamesFrom($result->output());
+
+        return array_all($sans, fn ($san) => in_array($this->sanTextFor($san), $actualSans, true));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function subjectAltNamesFrom(string $output): array
+    {
+        preg_match_all('/(?:DNS:[^,\s]+|IP Address:[^,\s]+)/', $output, $matches);
+
+        return array_values(array_unique($matches[0]));
+    }
+
+    private function sanFor(string $value): string
+    {
+        return filter_var($value, FILTER_VALIDATE_IP) !== false
+            ? "IP:{$value}"
+            : "DNS:{$value}";
+    }
+
+    private function sanTextFor(string $value): string
+    {
+        return filter_var($value, FILTER_VALIDATE_IP) !== false
+            ? "IP Address:{$value}"
+            : "DNS:{$value}";
     }
 
     private function assertRootExists(): void

@@ -49,12 +49,7 @@ it('registers an existing app path from a control caller through the gateway api
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'app-register',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'app-register');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         appRegisterGrantAccess($topology);

@@ -7,7 +7,7 @@ use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-operator', 'e2e-feature-control');
+pest()->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator', 'e2e-feature-control');
 
 function nodeDefaultSeedLocal(E2ETopologyHarness $topology): void
 {
@@ -290,12 +290,7 @@ it('sets a default node through the gateway api from a control node', function (
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'node-default-set',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'node-default-set');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $result = $topology->ssh(

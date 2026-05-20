@@ -249,6 +249,44 @@ it('--force builds the source archive and forwards the bundle path to the builde
     Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
 });
 
+it('--force excludes persisted orbit certificate material from the source archive', function (): void {
+    $tarCommand = null;
+
+    Process::fake(function ($process) use (&$tarCommand) {
+        $command = (string) $process->command;
+
+        if (str_starts_with($command, 'COPYFILE_DISABLE=1 tar ')) {
+            $tarCommand = $command;
+        }
+
+        if (str_starts_with($command, 'ssh ') && str_contains($command, 'mktemp -d /tmp/orbit-e2e-stage')) {
+            return Process::result(output: "/tmp/orbit-e2e-stage-remote\n");
+        }
+
+        return Process::result();
+    });
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('build')
+        ->with(E2ETopologyKind::Control, true)
+        ->andReturn([]);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => $builder);
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+    ])->assertSuccessful();
+
+    expect($tarCommand)
+        ->toContain("--exclude='./storage/app/orbit/ca/*'")
+        ->toContain("--exclude='./storage/app/orbit/certs/*'")
+        ->toContain("--exclude='./storage/app/orbit/keys/*'");
+});
+
 it('--force records prepare topology phase timings', function (): void {
     fakeBundleProcessing();
 

@@ -174,6 +174,49 @@ describe('OrbitCaService', function () {
             expect($text)->toContain('DNS:demo.beast');
         });
 
+        it('embeds additional SANs when issuing a DNS host leaf', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('gateway', ['10.6.0.2']);
+
+            $factory = new Factory;
+            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+            $paths2 = $service->issueLeaf('gateway', ['10.6.0.2']);
+
+            expect($text)
+                ->toContain('DNS:gateway')
+                ->toContain('IP Address:10.6.0.2')
+                ->and($paths2)->toBe($paths);
+        });
+
+        it('reissues a fresh leaf when the requested SAN set expands', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('gateway');
+
+            $factory = new Factory;
+            $initial = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+
+            $paths2 = $service->issueLeaf('gateway', ['10.6.0.2']);
+            $expanded = $factory->run("openssl x509 -in {$paths2['cert']} -text -noout")->output();
+
+            expect($initial)->not->toContain('IP Address:10.6.0.2')
+                ->and($expanded)->toContain('DNS:gateway')
+                ->and($expanded)->toContain('IP Address:10.6.0.2');
+        });
+
+        it('does not treat SAN prefix matches as existing coverage', function () {
+            $service = new OrbitCaService;
+            $service->issueLeaf('gateway', ['10.6.0.20']);
+
+            $paths = $service->issueLeaf('gateway', ['10.6.0.2']);
+
+            $factory = new Factory;
+            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+
+            expect($text)->toContain('DNS:gateway')
+                ->and($text)->toContain('IP Address:10.6.0.2')
+                ->and($text)->not->toContain('IP Address:10.6.0.20');
+        });
+
         it('refuses path-traversal filenames', function () {
             $service = new OrbitCaService;
 

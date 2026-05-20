@@ -82,12 +82,7 @@ it('reads workspace setup and teardown step policy from a control caller through
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'workspace-step-list',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'workspace-step-list');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceStepListSeed($topology);

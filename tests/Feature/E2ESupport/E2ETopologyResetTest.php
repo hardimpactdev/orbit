@@ -236,7 +236,7 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
         $lease->reset();
 
         expect($lease->control())->toBe($newControl)
-            ->and($teardownCalls)->toBe(1);
+            ->and($teardownCalls)->toBe(0);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -244,6 +244,67 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
             putenv("ORBIT_E2E_TOPOLOGY_RESET={$previous}");
         }
     }
+});
+
+it('defers teardown until final cleanup across fresh-clone resets', function (): void {
+    $oldControl = m::mock(E2EInstance::class);
+    $oldControl->shouldReceive('delete')->once();
+
+    $newControl = m::mock(E2EInstance::class);
+    $newControl->shouldReceive('delete')->once();
+
+    $teardownCalls = 0;
+
+    $lease = new E2ETopologyLease(
+        kind: E2ETopologyKind::Control,
+        control: $oldControl,
+        gateway: null,
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+        rebuild: fn (): array => [
+            'instances' => ['control' => $newControl],
+            'snapshotReset' => null,
+        ],
+        teardown: function () use (&$teardownCalls): void {
+            $teardownCalls++;
+        },
+    );
+
+    $lease->reset();
+
+    expect($teardownCalls)->toBe(0);
+
+    $lease->cleanup();
+
+    expect($teardownCalls)->toBe(1);
+});
+
+it('still runs final teardown after a fresh-clone rebuild failure', function (): void {
+    $oldControl = m::mock(E2EInstance::class);
+    $oldControl->shouldReceive('delete')->once();
+
+    $teardownCalls = 0;
+
+    $lease = new E2ETopologyLease(
+        kind: E2ETopologyKind::Control,
+        control: $oldControl,
+        gateway: null,
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+        rebuild: fn (): array => throw new RuntimeException('start failed'),
+        teardown: function () use (&$teardownCalls): void {
+            $teardownCalls++;
+        },
+    );
+
+    expect(fn () => $lease->reset())->toThrow(RuntimeException::class, 'start failed');
+
+    $lease->cleanup();
+    $lease->cleanup();
+
+    expect($teardownCalls)->toBe(1);
 });
 
 it('fresh-clone reset uses a prepared rebuild state', function (): void {

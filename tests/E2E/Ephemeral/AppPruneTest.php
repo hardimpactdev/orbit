@@ -51,12 +51,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'app-prune',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'app-prune');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),
             $config->controlUser,
@@ -124,12 +119,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'app-prune-force',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'app-prune-force');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),
             $config->controlUser,

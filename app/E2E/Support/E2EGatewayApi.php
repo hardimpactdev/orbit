@@ -110,21 +110,50 @@ PHP;
         );
     }
 
-    public static function restart(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit', string $gatewayIp = '10.6.0.2'): void
-    {
+    /**
+     * @param  array<string, string>  $peerIdentityMap
+     */
+    public static function restart(
+        E2EInstance $gateway,
+        string $label,
+        string $orbitPath = '/home/orbit/orbit',
+        string $gatewayIp = '10.6.0.2',
+        ?string $wireguardIdentity = null,
+        ?string $bindAddress = null,
+        ?string $certKey = null,
+        array $certSans = [],
+        array $peerIdentityMap = [],
+    ): void {
         self::stop($gateway);
-        self::start($gateway, $label, $orbitPath, $gatewayIp);
+        self::start($gateway, $label, $orbitPath, $gatewayIp, $wireguardIdentity, $bindAddress, $certKey, $certSans, $peerIdentityMap);
     }
 
-    public static function start(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit', string $gatewayIp = '10.6.0.2'): void
-    {
+    /**
+     * @param  array<string, string>  $peerIdentityMap
+     */
+    public static function start(
+        E2EInstance $gateway,
+        string $label,
+        string $orbitPath = '/home/orbit/orbit',
+        string $gatewayIp = '10.6.0.2',
+        ?string $wireguardIdentity = null,
+        ?string $bindAddress = null,
+        ?string $certKey = null,
+        array $certSans = [],
+        array $peerIdentityMap = [],
+    ): void {
+        $wireguardIdentity ??= $gatewayIp;
+        $bindAddress ??= $gatewayIp;
+        $certKey ??= $gatewayIp;
         $orbitPathArgument = escapeshellarg($orbitPath);
-        $gatewayIpValue = var_export($gatewayIp, true);
+        $certKeyValue = var_export($certKey, true);
+        $certSansValue = var_export(array_values($certSans), true);
         $viewCompiledPath = escapeshellarg("{$orbitPath}/storage/framework/views");
+        $dockerTopologyModeEnv = self::dockerTopologyModeEnvCommand();
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && (grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction) && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && php artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -133,7 +162,7 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript($orbitPath, $gatewayIp)."\nPHP",
+            "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript($orbitPath, $wireguardIdentity, $bindAddress, $certKey, $peerIdentityMap)."\nPHP",
             'Could not write gateway TLS test server',
         );
 
@@ -153,7 +182,7 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            "cd {$orbitPathArgument} && nohup env VIEW_COMPILED_PATH={$viewCompiledPath} php -d display_errors=0 -S {$gatewayIp}:80 -t public {$httpRouterPath} > /tmp/orbit-gateway-http.log 2>&1 &",
+            "cd {$orbitPathArgument} && nohup env VIEW_COMPILED_PATH={$viewCompiledPath} php -d display_errors=0 -S {$bindAddress}:80 -t public {$httpRouterPath} > /tmp/orbit-gateway-http.log 2>&1 &",
             'Could not start gateway HTTP API',
         );
 
@@ -258,9 +287,14 @@ PHP;
         PHP_WRAP;
     }
 
-    private static function tlsServerScript(string $orbitPath, string $gatewayIp): string
+    /**
+     * @param  array<string, string>  $peerIdentityMap
+     */
+    private static function tlsServerScript(string $orbitPath, string $wireguardIdentity, string $bindAddress, string $certKey, array $peerIdentityMap = []): string
     {
-        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$gatewayIp = ".var_export($gatewayIp, true).";\n\n".<<<'PHP_WRAP'
+        $httpUpstream = $bindAddress === '0.0.0.0' ? '127.0.0.1' : $bindAddress;
+
+        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\n".<<<'PHP_WRAP'
         
         function respond($connection, int $status, string $body, string $contentType = 'application/json'): void
         {
@@ -308,9 +342,16 @@ PHP;
             return is_string($host) && filter_var($host, FILTER_VALIDATE_IP) !== false ? $host : null;
         }
 
+        function canonical_peer_ip(string $peerIp): string
+        {
+            global $peerIdentityMap;
+
+            return is_string($peerIdentityMap[$peerIp] ?? null) ? $peerIdentityMap[$peerIp] : $peerIp;
+        }
+
         function proxy_to_laravel($connection, string $requestLine, array $headers, string $body): void
         {
-            global $gatewayIp;
+            global $httpUpstream, $wireguardIdentity;
 
             $parts = explode(' ', trim($requestLine), 3);
 
@@ -320,7 +361,7 @@ PHP;
                 return;
             }
 
-            $upstream = @stream_socket_client("tcp://{$gatewayIp}:80", $errno, $errstr, 5);
+            $upstream = @stream_socket_client("tcp://{$httpUpstream}:80", $errno, $errstr, 5);
 
             if ($upstream === false) {
                 respond($connection, 502, json_encode([
@@ -336,7 +377,7 @@ PHP;
 
             stream_set_timeout($upstream, 900);
 
-            $headers['host'] = $gatewayIp;
+            $headers['host'] = $wireguardIdentity;
             $headers['connection'] = 'close';
             $headers['accept-encoding'] = 'identity';
             $headers['content-length'] = (string) strlen($body);
@@ -344,7 +385,7 @@ PHP;
             $clientIp = peer_ip($connection);
 
             if ($clientIp !== null) {
-                $headers['x-orbit-e2e-wireguard-ip'] = $clientIp;
+                $headers['x-orbit-e2e-wireguard-ip'] = canonical_peer_ip($clientIp);
             }
 
             fwrite($upstream, "{$parts[0]} {$parts[1]} {$parts[2]}\r\n");
@@ -493,11 +534,29 @@ PHP;
 
         function run_node_grant(array $input): array
         {
-            return run_orbit_command(
-                'php artisan node:grant '
-                    .escapeshellarg((string) ($input['consuming_node'] ?? '')).' '
-                    .escapeshellarg((string) ($input['serving_node'] ?? '')).' --json'
-            );
+            $parts = [
+                'php artisan node:grant',
+                escapeshellarg((string) ($input['consuming_node'] ?? '')),
+                escapeshellarg((string) ($input['serving_node'] ?? '')),
+                '--json',
+            ];
+
+            $preset = $input['preset'] ?? null;
+            if (is_scalar($preset) && (string) $preset !== '') {
+                $parts[] = '--preset='.escapeshellarg((string) $preset);
+            }
+
+            $permissions = $input['permissions'] ?? null;
+            if (is_scalar($permissions) && (string) $permissions !== '') {
+                $parts[] = '--permissions='.escapeshellarg((string) $permissions);
+            }
+
+            $force = $input['force'] ?? false;
+            if ($force === true || $force === 'true' || $force === '1' || $force === 1) {
+                $parts[] = '--force';
+            }
+
+            return run_orbit_command(implode(' ', $parts));
         }
 
         function run_node_revoke(array $input): array
@@ -937,7 +996,7 @@ PHP;
                         'status' => 'active',
                         'platform' => 'unknown',
                         'addresses' => [
-                            'wireguard' => preg_replace('/\.2$/', '.3', $gatewayIp),
+                            'wireguard' => preg_replace('/\.2$/', '.3', $wireguardIdentity),
                         ],
                     ],
                     'gateway' => [
@@ -946,7 +1005,7 @@ PHP;
                         'status' => 'active',
                         'platform' => 'unknown',
                         'addresses' => [
-                            'wireguard' => $gatewayIp,
+                            'wireguard' => $wireguardIdentity,
                         ],
                     ],
                 ],
@@ -955,14 +1014,14 @@ PHP;
         
         $context = stream_context_create([
             'ssl' => [
-                'local_cert' => $orbitPath.'/storage/app/orbit/certs/'.$gatewayIp.'.crt',
-                'local_pk' => $orbitPath.'/storage/app/orbit/certs/'.$gatewayIp.'.key',
+                'local_cert' => $orbitPath.'/storage/app/orbit/certs/'.$certKey.'.crt',
+                'local_pk' => $orbitPath.'/storage/app/orbit/certs/'.$certKey.'.key',
                 'allow_self_signed' => true,
                 'verify_peer' => false,
             ],
         ]);
         
-        $server = stream_socket_server('tls://'.$gatewayIp.':443', $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+        $server = stream_socket_server('tls://'.$bindAddress.':443', $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
         
         if ($server === false) {
             fwrite(STDERR, "Could not start TLS server: {$errstr}\n");
@@ -1578,6 +1637,24 @@ PHP;
             fclose($connection);
         }
         PHP_WRAP;
+    }
+
+    private static function dockerTopologyModeEnvCommand(): string
+    {
+        if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') !== 'dns-alias') {
+            return ':';
+        }
+
+        return "printf '%s\\n' 'ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias' >> .env";
+    }
+
+    private static function appKeyCommand(): string
+    {
+        return implode(' && ', [
+            "(grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env)",
+            "(grep -Eq '^APP_KEY=base64:.+' .env || php artisan key:generate --force --no-interaction)",
+            "grep -Eq '^APP_KEY=base64:.+' .env",
+        ]);
     }
 
     private static function stopServerScript(): string

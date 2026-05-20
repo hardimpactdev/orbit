@@ -84,12 +84,7 @@ it('removes a workspace from a control caller through the gateway api', function
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'workspace-remove',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'workspace-remove');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceRemoveSeed($topology, $workspaceName, $workspacePath);

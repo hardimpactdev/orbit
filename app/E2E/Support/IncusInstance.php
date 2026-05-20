@@ -103,6 +103,10 @@ final class IncusInstance implements E2EInstance
             if (! @copy($sourcePath, $remotePath)) {
                 throw new \RuntimeException("Could not copy {$sourcePath} to {$remotePath}.");
             }
+
+            if (! @chmod($remotePath, 0644)) {
+                throw new \RuntimeException("Could not make {$remotePath} readable.");
+            }
         } else {
             $result = Process::timeout(300)->run(sprintf(
                 'scp -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',

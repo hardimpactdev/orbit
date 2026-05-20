@@ -84,12 +84,7 @@ it('sets up an existing workspace path from a control caller through the gateway
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'workspace-setup',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'workspace-setup');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceLifecycleSeed($topology);
@@ -145,12 +140,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'workspace-setup-opencode',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'workspace-setup-opencode');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceSetupOpencodeSeed($topology, $workspaceName, $workspacePath);

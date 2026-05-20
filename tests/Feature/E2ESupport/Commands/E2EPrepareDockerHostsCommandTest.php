@@ -3,10 +3,16 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareDockerHostsCommand;
+use App\Services\E2E\DockerImageDistributor;
 use Illuminate\Support\Facades\Process;
+use Mockery as m;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+});
+
+afterEach(function (): void {
+    m::close();
 });
 
 it('is hidden', function (): void {
@@ -20,9 +26,11 @@ it('documents host preparation without force using docker host slots', function 
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2,beast:3',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', ['kind' => 'control-gateway-dev-prod'])
             ->expectsOutputToContain('Dry run')
+            ->expectsOutputToContain('builder: beast')
             ->expectsOutputToContain('planned: sidecar1')
             ->expectsOutputToContain('planned: sidecar2')
             ->expectsOutputToContain('planned: beast')
@@ -32,8 +40,9 @@ it('documents host preparation without force using docker host slots', function 
     Process::assertNothingRan();
 });
 
-it('prepares runtime and topology images on every configured docker host', function (): void {
+it('builds docker images once on the build host and distributes them to runner hosts', function (): void {
     $runs = [];
+    $distributions = [];
 
     Process::fake(function ($process) use (&$runs) {
         $runs[] = [
@@ -44,8 +53,23 @@ it('prepares runtime and topology images on every configured docker host', funct
         return Process::result();
     });
 
+    $distributor = m::mock(DockerImageDistributor::class);
+    $distributor->shouldReceive('distribute')
+        ->once()
+        ->andReturnUsing(function (array $images, array $hosts) use (&$distributions): array {
+            $distributions[] = [
+                'images' => $images,
+                'hosts' => $hosts,
+            ];
+
+            return [];
+        });
+
+    app()->bind(DockerImageDistributor::class, fn (): DockerImageDistributor => $distributor);
+
     withE2EConfigEnvironment([
-        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2,beast:3',
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
             'kind' => 'control-gateway-dev-prod',
@@ -53,13 +77,91 @@ it('prepares runtime and topology images on every configured docker host', funct
         ])->assertSuccessful();
     });
 
-    expect($runs)->toHaveCount(6)
-        ->and($runs[0]['environment'])->toMatchArray(['DOCKER_HOST' => 'ssh://sidecar1'])
-        ->and($runs[0]['command'])->toContain('composer e2e:prepare-docker-runtime -- --force')
-        ->and($runs[1]['environment'])->toMatchArray(['DOCKER_HOST' => 'ssh://sidecar1'])
-        ->and($runs[1]['command'])->toContain('composer e2e:prepare-docker-topology -- --force')
-        ->and($runs[2]['environment'])->toMatchArray(['DOCKER_HOST' => 'ssh://sidecar2'])
-        ->and($runs[4]['environment'])->toMatchArray(['DOCKER_HOST' => 'ssh://beast']);
+    $buildRuns = array_values(array_filter($runs, fn (array $run): bool => str_contains($run['command'], 'composer e2e:prepare-docker-')));
+
+    expect($buildRuns)->toHaveCount(2)
+        ->and($buildRuns[0]['environment'])->toMatchArray(['DOCKER_HOST' => 'ssh://beast'])
+        ->and($buildRuns[0]['command'])->toContain('composer e2e:prepare-docker-runtime -- --force')
+        ->and($buildRuns[1]['environment'])->toMatchArray(['DOCKER_HOST' => 'ssh://beast'])
+        ->and($buildRuns[1]['command'])->toContain('composer e2e:prepare-docker-topology -- --force')
+        ->and($distributions)->toHaveCount(1)
+        ->and($distributions[0]['hosts'])->toBe(['sidecar1', 'sidecar2'])
+        ->and($distributions[0]['images'])->toHaveCount(5)
+        ->and($distributions[0]['images'][0])->toBe(['role' => 'runtime', 'image' => 'orbit-e2e-topology-runtime:current']);
+});
+
+it('rejects multiple docker image build hosts to keep topology images combined', function (): void {
+    Process::fake();
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast,sidecar1',
+    ], function (): void {
+        $this->artisan('e2e:prepare-docker-hosts', [
+            'kind' => 'control-gateway-dev-prod',
+            '--force' => true,
+        ])
+            ->expectsOutputToContain('Configure exactly one Docker image build host')
+            ->assertFailed();
+    });
+
+    Process::assertNothingRan();
+});
+
+it('passes topology mode through to topology preparation', function (): void {
+    $runs = [];
+
+    Process::fake(function ($process) use (&$runs) {
+        $runs[] = $process->command;
+
+        return Process::result();
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOSTS' => 'local',
+    ], function (): void {
+        $this->artisan('e2e:prepare-docker-hosts', [
+            'kind' => 'control-gateway',
+            '--force' => true,
+            '--topology-only' => true,
+            '--topology-mode' => 'dns-alias',
+        ])->assertSuccessful();
+    });
+
+    $buildRuns = array_values(array_filter($runs, fn (string $command): bool => str_contains($command, 'composer e2e:prepare-docker-')));
+
+    expect($buildRuns)->toHaveCount(1)
+        ->and($buildRuns[0])->toContain("composer e2e:prepare-docker-topology -- --force --topology-mode='dns-alias' 'operator-gateway'");
+});
+
+it('defaults host preparation to dns alias topology images', function (): void {
+    $runs = [];
+
+    Process::fake(function ($process) use (&$runs) {
+        $runs[] = $process->command;
+
+        return Process::result();
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOSTS' => 'local',
+    ], function (): void {
+        $this->artisan('e2e:prepare-docker-hosts', [
+            'kind' => 'control-gateway',
+            '--force' => true,
+            '--topology-only' => true,
+        ])->assertSuccessful();
+    });
+
+    expect(implode("\n", $runs))->toContain("--topology-mode='dns-alias'");
+});
+
+it('rejects unsupported host preparation topology mode', function (): void {
+    $this->artisan('e2e:prepare-docker-hosts', [
+        '--topology-mode' => 'invalid',
+    ])
+        ->expectsOutputToContain('Invalid topology mode')
+        ->assertFailed();
 });
 
 it('supports preparing only topology images', function (): void {
@@ -85,7 +187,7 @@ it('fails when one host preparation fails and reports the host', function (): vo
     Process::fake(function ($process) {
         $host = $process->environment['DOCKER_HOST'] ?? null;
 
-        if ($host === 'ssh://sidecar2') {
+        if ($host === 'ssh://beast') {
             return Process::result(output: 'build failed', exitCode: 1);
         }
 
@@ -94,12 +196,13 @@ it('fails when one host preparation fails and reports the host', function (): vo
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_HOSTS' => 'sidecar1,sidecar2',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
             'kind' => 'control-gateway-dev-prod',
             '--force' => true,
         ])
-            ->expectsOutputToContain('sidecar2')
+            ->expectsOutputToContain('beast')
             ->assertFailed();
     });
 });

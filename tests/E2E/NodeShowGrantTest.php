@@ -101,12 +101,7 @@ it('shows real grant metadata from a control caller through the gateway api', fu
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'node-show-grant',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'node-show-grant');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         nodeShowGrantSeed($topology);
@@ -118,21 +113,26 @@ it('shows real grant metadata from a control caller through the gateway api', fu
 
         expect($appDevNode['name'])->toBe('app-dev-1')
             ->and($appDevNode['grants'])->toBe([
-                'consuming_nodes' => ['control-1'],
+                'consuming_nodes' => [
+                    ['name' => 'control-1', 'permissions' => ['*']],
+                ],
                 'serving_nodes' => [],
             ])
             ->and($controlNode['name'])->toBe('control-1')
             ->and($controlNode['grants'])->toBe([
                 'consuming_nodes' => [],
-                'serving_nodes' => ['app-dev-1'],
+                'serving_nodes' => [
+                    ['name' => 'app-dev-1', 'permissions' => ['*']],
+                ],
             ])
             ->and($appProdNode['name'])->toBe('app-prod-1')
             ->and($appProdNode['grants'])->toBe([
                 'consuming_nodes' => [],
                 'serving_nodes' => [],
             ])
-            ->and($appProdHuman)->toContain('Consuming: (none)')
-            ->and($appProdHuman)->toContain('Serving: (none)');
+            ->and($appProdHuman)->toContain('Consuming')
+            ->and($appProdHuman)->toContain('Serving')
+            ->and($appProdHuman)->toContain('—');
     } finally {
         $topology->cleanup();
     }

@@ -47,12 +47,7 @@ it('revokes node access from a control caller through the gateway api', function
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'node-revoke',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'node-revoke');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         nodeRevokeSeedGrant($topology);
@@ -74,6 +69,7 @@ it('revokes node access from a control caller through the gateway api', function
             'action' => 'revoked',
             'already_absent' => false,
             'self_lockout' => false,
+            'was_gateway_admin' => true,
         ]);
 
         $showResult = $topology->ssh(

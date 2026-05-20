@@ -10,3 +10,6 @@ parameters:
     tmpDir: build/phpstan
     checkModelProperties: true
     treatPhpDocTypesAsCertain: false
+    parallel:
+        maximumNumberOfProcesses: 10
+        jobSize: 5

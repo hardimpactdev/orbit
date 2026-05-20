@@ -8,12 +8,15 @@ final class E2ETopologyLease
 {
     private bool $cleaned = false;
 
+    private bool $finalized = false;
+
     /**
      * @param  \Closure(E2EPhaseTimer): array{
      *     instances: array<string, E2EInstance>,
      *     snapshotReset: (\Closure(E2EPhaseTimer): void)|null
      * }  $rebuild
      * @param  (\Closure(E2EPhaseTimer): void)|null  $snapshotReset
+     * @param  (\Closure(E2EPhaseTimer): void)|null  $bulkCleanup
      * @param  (\Closure(E2EPhaseTimer): void)|null  $teardown
      */
     public function __construct(
@@ -25,6 +28,7 @@ final class E2ETopologyLease
         private readonly SshKeyPair $sshKeyPair,
         private readonly \Closure $rebuild,
         private ?\Closure $snapshotReset = null,
+        private readonly ?\Closure $bulkCleanup = null,
         private readonly ?\Closure $teardown = null,
         private readonly string $gatewayApiIp = '10.6.0.2',
         private readonly ?E2EResourceLease $resourceLease = null,
@@ -72,30 +76,37 @@ final class E2ETopologyLease
 
     public function cleanup(?E2EPhaseTimer $timer = null, bool $releaseResourceLease = true): void
     {
-        if ($this->cleaned) {
+        if ($this->cleaned && (! $releaseResourceLease || $this->finalized)) {
             return;
         }
-
-        $this->cleaned = true;
 
         $shouldFlush = $timer === null;
         $timer ??= new E2EPhaseTimer;
 
         try {
-            foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod] as $role => $instance) {
-                if ($instance !== null) {
-                    $timer->measure("cleanup.{$role}", fn () => $instance->delete());
+            if (! $this->cleaned) {
+                if ($this->bulkCleanup !== null) {
+                    ($this->bulkCleanup)($timer);
+                } else {
+                    foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod] as $role => $instance) {
+                        if ($instance !== null) {
+                            $timer->measure("cleanup.{$role}", fn () => $instance->delete());
+                        }
+                    }
                 }
+
+                $this->cleaned = true;
             }
 
-            if ($this->teardown !== null) {
-                $timer->measure('cleanup.teardown', fn () => ($this->teardown)($timer));
+            if ($releaseResourceLease && ! $this->finalized) {
+                if ($this->teardown !== null) {
+                    ($this->teardown)($timer);
+                }
+
+                $this->resourceLease?->release();
+                $this->finalized = true;
             }
         } finally {
-            if ($releaseResourceLease) {
-                $this->resourceLease?->release();
-            }
-
             if ($shouldFlush) {
                 $timer->flush('cleanup');
             }
@@ -127,6 +138,7 @@ final class E2ETopologyLease
             $this->prod = $instances['prod'] ?? null;
             $this->snapshotReset = $payload['snapshotReset'];
             $this->cleaned = false;
+            $this->finalized = false;
         } finally {
             $timer->flush('reset');
         }

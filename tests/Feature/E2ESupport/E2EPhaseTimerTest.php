@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EPhaseTimer;
+use Symfony\Component\Process\Process;
 
 it('returns the callback value from measure', function (): void {
     $timer = new E2EPhaseTimer;
@@ -71,6 +72,25 @@ it('streams failed checkpoints before rethrowing', function (): void {
         ->and($lines[1])->toContain('RuntimeException: nope');
 });
 
+it('creates child timers that share stream output with a label prefix', function (): void {
+    $lines = [];
+    $timer = new E2EPhaseTimer(
+        stream: true,
+        writer: function (string $line) use (&$lines): void {
+            $lines[] = $line;
+        },
+    );
+
+    $child = $timer->child('checkout');
+
+    $child->measure('checkout.archive', fn () => null);
+
+    expect($timer->events())->toBeEmpty()
+        ->and($child->events())->toHaveCount(1)
+        ->and($lines[0])->toBe('[orbit-e2e] checkout checkout.archive started')
+        ->and($lines[1])->toStartWith('[orbit-e2e] checkout checkout.archive done ');
+});
+
 it('flush is silent when ORBIT_E2E_TIMINGS is not 1', function (): void {
     $previous = getenv('ORBIT_E2E_TIMINGS');
     putenv('ORBIT_E2E_TIMINGS');
@@ -94,5 +114,63 @@ it('flush is silent when ORBIT_E2E_TIMINGS is not 1', function (): void {
         } else {
             putenv("ORBIT_E2E_TIMINGS={$previous}");
         }
+    }
+});
+
+it('appends flushed timing lines to the configured timings file', function (): void {
+    $previousTimings = getenv('ORBIT_E2E_TIMINGS');
+    $previousFile = getenv('ORBIT_E2E_TIMINGS_FILE');
+    $timingsFile = tempnam(sys_get_temp_dir(), 'orbit-e2e-timer-');
+
+    putenv('ORBIT_E2E_TIMINGS=1');
+    putenv("ORBIT_E2E_TIMINGS_FILE={$timingsFile}");
+
+    try {
+        $timer = new E2EPhaseTimer;
+        $timer->measure('checkout.reset', fn () => null);
+        $timer->flush('checkout.worker');
+
+        $contents = file($timingsFile, FILE_IGNORE_NEW_LINES);
+
+        expect($contents)->toHaveCount(1)
+            ->and($contents[0])->toMatch('/^\[orbit-e2e\] checkout\.worker checkout\.reset \d+\.\d{3}s$/');
+    } finally {
+        @unlink($timingsFile);
+
+        $previousTimings === false
+            ? putenv('ORBIT_E2E_TIMINGS')
+            : putenv("ORBIT_E2E_TIMINGS={$previousTimings}");
+
+        $previousFile === false
+            ? putenv('ORBIT_E2E_TIMINGS_FILE')
+            : putenv("ORBIT_E2E_TIMINGS_FILE={$previousFile}");
+    }
+});
+
+it('does not write flushed timing lines to stderr when a timings file is configured', function (): void {
+    $timingsFile = tempnam(sys_get_temp_dir(), 'orbit-e2e-timer-');
+
+    $script = <<<'PHP'
+require getcwd().'/vendor/autoload.php';
+
+putenv('ORBIT_E2E_TIMINGS=1');
+putenv('ORBIT_E2E_TIMINGS_FILE='.getenv('ORBIT_TEST_TIMINGS_FILE'));
+
+$timer = new App\E2E\Support\E2EPhaseTimer;
+$timer->measure('checkout.reset', fn () => null);
+$timer->flush('checkout.worker');
+PHP;
+
+    try {
+        $process = new Process([PHP_BINARY, '-r', $script], base_path(), [
+            'ORBIT_TEST_TIMINGS_FILE' => $timingsFile,
+        ]);
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue()
+            ->and($process->getErrorOutput())->not->toContain('[orbit-e2e]')
+            ->and(file_get_contents($timingsFile))->toMatch('/^\[orbit-e2e\] checkout\.worker checkout\.reset \d+\.\d{3}s$/');
+    } finally {
+        @unlink($timingsFile);
     }
 });

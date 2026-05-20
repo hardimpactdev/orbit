@@ -26,12 +26,7 @@ it('reads finite managed system service tool logs from an app node through the g
         $config = E2EConfig::fromEnvironment();
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'tool-logs',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'tool-logs');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),
             $config->controlUser,

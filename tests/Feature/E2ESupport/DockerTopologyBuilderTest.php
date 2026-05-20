@@ -43,7 +43,15 @@ it('builds operator-gateway prepared images through transient docker resources',
         ['role' => 'gateway', 'container' => 'orbit-e2e-build-operator-gateway-gateway', 'image' => 'orbit-e2e-topology:operator-gateway-gateway-current'],
     ]);
 
-    Process::assertRan("docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' 'orbit-e2e-build-operator-gateway-control' 'orbit-e2e-topology:operator-gateway-control-current'");
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker commit')
+        && $process->timeout === 600
+        && str_contains($process->command, 'CMD ["/usr/local/bin/orbit-e2e-container"]')
+        && str_contains($process->command, 'org.orbit.e2e.topology-mode=legacy-retarget')
+        && str_contains($process->command, 'org.orbit.e2e.cert-san-set=IP:10.6.0.2')
+        && ! str_contains($process->command, 'org.orbit.e2e.cert-san-set=DNS:gateway,IP:10.6.0.2')
+        && str_contains($process->command, "'orbit-e2e-build-operator-gateway-control'")
+        && str_contains($process->command, "'orbit-e2e-topology:operator-gateway-control-current'"));
     Process::assertRan("docker network rm 'orbit-e2e-build-operator-gateway' >/dev/null 2>&1 || true");
 });
 
@@ -59,7 +67,8 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker exec *nohup*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
         'docker exec --user *gateway:add*' => Process::result(),
-        'docker exec --user *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
+        'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
+        'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
         "docker exec 'orbit-e2e-build-operator-gateway-appdev-gateway' sh -lc 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi'" => Process::result(),
         "docker exec 'orbit-e2e-build-operator-gateway-appdev-dev' sh -lc *authorized_keys*" => Process::result(),
@@ -106,4 +115,47 @@ it('uses the configured instance prefix for transient resources but stable image
             ['role' => 'gateway', 'container' => 'ci-foo-build-operator-gateway-gateway', 'image' => 'orbit-e2e-topology:operator-gateway-gateway-current'],
         ]);
     });
+});
+
+it('bakes dns alias topology registry data and mode-specific image tags', function (): void {
+    Process::fake([
+        "docker image inspect 'orbit-e2e-topology-runtime:current' >/dev/null" => Process::result(),
+        "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-build-operator-gateway-appdev-appprod'" => Process::result(),
+        'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec --user *migrate*' => Process::result(),
+        'docker exec --user *bootstrap-gateway-local*' => Process::result(),
+        'docker exec *tinker*' => Process::result(),
+        'docker exec *systemctl stop caddy*' => Process::result(),
+        'docker exec *nohup*' => Process::result(),
+        'docker exec --user *curl*' => Process::result(),
+        'docker exec --user *gateway:add*' => Process::result(),
+        'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
+        'docker exec *id_ed25519*' => Process::result(),
+        'docker exec *cat*' => Process::result(),
+        'docker exec *authorized_keys*' => Process::result(),
+        'docker exec --user *bake-app-node*' => Process::result(),
+        'docker commit --change *' => Process::result(),
+        'docker rm -f *' => Process::result(),
+        'docker network rm *' => Process::result(),
+    ]);
+
+    $manifest = (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::ControlGatewayDevProd, 'dns-alias');
+
+    expect($manifest[0]['image'])->toBe('orbit-e2e-topology:operator-gateway-appdev-appprod-control-dns-alias-current');
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'orbit:internal:bake-app-node app-dev-1')
+        && str_contains($process->command, '--host=dev')
+        && str_contains($process->command, '--gateway-endpoint=gateway')
+        && ! str_contains($process->command, '--host=10.6.0.4'));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'LocalGatewaySettings::current()')
+        && str_contains($process->command, 'https://gateway'));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker commit')
+        && str_contains($process->command, 'org.orbit.e2e.topology-mode=dns-alias')
+        && str_contains($process->command, 'org.orbit.e2e.cert-san-set=DNS:gateway,IP:10.6.0.2'));
 });

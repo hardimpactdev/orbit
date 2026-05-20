@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 
 final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellProcesses
 {
@@ -97,7 +98,7 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
             $assignments = [];
 
             foreach ($options['env'] as $key => $value) {
-                $assignments[] = sprintf('%s=%s', $key, escapeshellarg($value));
+                $assignments[] = $this->envAssignment((string) $key, (string) $value);
             }
 
             if ($assignments !== []) {
@@ -121,7 +122,7 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
 
         if (isset($options['env']) && is_array($options['env'])) {
             foreach ($options['env'] as $key => $value) {
-                $lines[] = sprintf('export %s=%s', $key, escapeshellarg($value));
+                $lines[] = 'export '.$this->envAssignment((string) $key, (string) $value);
             }
         }
 
@@ -134,13 +135,22 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
         return implode(PHP_EOL, $lines);
     }
 
+    private function envAssignment(string $key, string $value): string
+    {
+        if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/', $key) !== 1) {
+            throw new InvalidArgumentException("Invalid remote shell environment variable name [{$key}].");
+        }
+
+        return sprintf('%s=%s', $key, escapeshellarg($value));
+    }
+
     private function command(Node $node, string $script): string
     {
         if ((bool) config('orbit.is_gateway', false) && app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return 'bash -c '.escapeshellarg($script);
         }
 
-        $host = $node->wireguard_address ?: $node->host;
+        $host = $this->host($node);
         $user = $node->user ?: 'orbit';
 
         return sprintf(
@@ -149,5 +159,33 @@ final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellPro
             escapeshellarg($host),
             escapeshellarg('bash -lc '.escapeshellarg($script)),
         );
+    }
+
+    private function host(Node $node): string
+    {
+        if ($this->dockerTopologyMode() === 'dns-alias' && filled($node->host)) {
+            return $node->host;
+        }
+
+        return $node->wireguard_address ?: $node->host;
+    }
+
+    private function dockerTopologyMode(): ?string
+    {
+        $processValue = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+
+        if (is_string($processValue) && $processValue !== '') {
+            return $processValue;
+        }
+
+        $serverValue = $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
+
+        if (is_string($serverValue) && $serverValue !== '') {
+            return $serverValue;
+        }
+
+        $envValue = $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
+
+        return is_string($envValue) && $envValue !== '' ? $envValue : null;
     }
 }

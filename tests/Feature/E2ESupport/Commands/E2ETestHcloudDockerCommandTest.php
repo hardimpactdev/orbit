@@ -81,6 +81,9 @@ it('can lease the hcloud docker resource shape from configured slots', function 
         && str_contains($process->command, 'fsn1'));
 });
 
+// Real 5s sleep between docker-info retries inside `HcloudDockerE2ERunner`.
+// Tagged `slow` so default `composer test` excludes it; the full CI gate keeps
+// retry coverage via `composer test:slow`.
 it('waits until docker info succeeds on the hcloud host', function (): void {
     $dockerInfoAttempts = 0;
 
@@ -107,7 +110,7 @@ it('waits until docker info succeeds on the hcloud host', function (): void {
     ])->assertSuccessful();
 
     expect($dockerInfoAttempts)->toBe(2);
-});
+})->group('slow');
 
 it('exposes composer script for hcloud docker e2e', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);

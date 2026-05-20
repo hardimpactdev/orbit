@@ -392,7 +392,7 @@ final readonly class UpdateAllControllerTimedRemoteShell implements RemoteShell
 {
     public function __construct(
         private string $logPath,
-        private int $pullDelayMicroseconds = 500_000,
+        private int $pullDelayMicroseconds = 100_000,
     ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult

@@ -66,12 +66,7 @@ it('shows workspace details from a control caller through the gateway api', func
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'workspace-show',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'workspace-show');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceShowE2ESeed($topology);
@@ -89,7 +84,8 @@ it('shows workspace details from a control caller through the gateway api', func
 
         expect($humanResult->successful())->toBeTrue()
             ->and($humanResult->output())->toContain('Workspace: feature-docs')
-            ->and($humanResult->output())->toContain('App:');
+            ->and($humanResult->output())->toContain('App')
+            ->and($humanResult->output())->toContain('docs');
 
         // JSON output happy path
         $jsonResult = $topology->ssh(

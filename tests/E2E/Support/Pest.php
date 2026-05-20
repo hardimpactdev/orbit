@@ -226,6 +226,83 @@ function e2eGatewayApiByDefault(): bool
         && in_array(strtolower($value), ['1', 'true', 'yes'], true);
 }
 
+function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
+{
+    $gatewayApiIp = $topology->lease()->gatewayApiIp();
+
+    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+        E2EGatewayApi::restart(
+            $topology->instance('gateway'),
+            $label,
+            $topology->checkout('gateway'),
+            gatewayIp: '10.6.0.2',
+            wireguardIdentity: '10.6.0.2',
+            bindAddress: '0.0.0.0',
+            certKey: 'gateway',
+            certSans: ['10.6.0.2'],
+            peerIdentityMap: e2eDockerDnsAliasPeerIdentityMap($topology),
+        );
+
+        return;
+    }
+
+    E2EGatewayApi::restart(
+        $topology->instance('gateway'),
+        $label,
+        $topology->checkout('gateway'),
+        gatewayIp: $gatewayApiIp,
+    );
+}
+
+function e2eGatewayApiUrl(E2ETopologyHarness $topology): string
+{
+    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+        return 'https://gateway';
+    }
+
+    return 'https://'.$topology->lease()->gatewayApiIp();
+}
+
+function e2eGatewayWireGuardIp(E2ETopologyHarness $topology): string
+{
+    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+        return '10.6.0.2';
+    }
+
+    return $topology->lease()->gatewayApiIp();
+}
+
+/**
+ * @return array<string, string>
+ */
+function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
+{
+    $canonical = [
+        'gateway' => '10.6.0.2',
+        'control' => '10.6.0.3',
+        'dev' => '10.6.0.4',
+        'prod' => '10.6.0.5',
+    ];
+
+    $lease = $topology->lease();
+    $instances = [
+        'gateway' => $lease->gateway(),
+        'control' => $lease->control(),
+        'dev' => $lease->devApp(),
+        'prod' => $lease->prodApp(),
+    ];
+
+    $map = [];
+
+    foreach ($instances as $role => $instance) {
+        if ($instance !== null) {
+            $map[$instance->waitForIpv4()] = $canonical[$role];
+        }
+    }
+
+    return $map;
+}
+
 /**
  * Install the current checkout into selected topology roles and return their
  * remote checkout paths.

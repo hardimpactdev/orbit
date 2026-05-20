@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-operator', 'e2e-feature-control');
+pest()->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator', 'e2e-feature-control');
 
 it('lists Orbit-managed resolver overrides on a Linux control node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)

@@ -59,12 +59,7 @@ it('profiles an observable registered app target from a control caller', functio
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'profile',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'profile');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         profileSeed($topology, $gatewayApiIp);
@@ -91,4 +86,4 @@ it('profiles an observable registered app target from a control caller', functio
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

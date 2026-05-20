@@ -14,18 +14,13 @@ it('grants node access from a control caller through the gateway api', function 
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'node-grant',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'node-grant');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $grantResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:grant control-1 app-prod-1 --json',
+                'cd %s && php artisan node:grant --preset=operator --json control-1 app-prod-1',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -38,6 +33,15 @@ it('grants node access from a control caller through the gateway api', function 
             'serving_node' => 'app-prod-1',
             'action' => 'granted',
             'already_granted' => false,
+            'permissions' => [
+                'app:read',
+                'database:read',
+                'doctor:verify',
+                'firewall_rule:read',
+                'node:read',
+                'tool:read',
+                'tool:restart',
+            ],
         ]);
 
         $showResult = $topology->ssh(
@@ -51,7 +55,18 @@ it('grants node access from a control caller through the gateway api', function 
 
         $showPayload = json_decode(trim($showResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($showPayload['success']['data']['node']['grants']['consuming_nodes'])->toContain('control-1');
+        expect($showPayload['success']['data']['node']['grants']['consuming_nodes'])->toContain([
+            'name' => 'control-1',
+            'permissions' => [
+                'app:read',
+                'database:read',
+                'doctor:verify',
+                'firewall_rule:read',
+                'node:read',
+                'tool:read',
+                'tool:restart',
+            ],
+        ]);
     } finally {
         $topology->cleanup();
     }

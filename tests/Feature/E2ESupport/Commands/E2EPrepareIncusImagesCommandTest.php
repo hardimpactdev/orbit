@@ -101,25 +101,23 @@ it('--force --role=blank invokes preparer and returns success envelope', functio
         ->assertSuccessful();
 });
 
-it('--force --role=blank without configured Incus host fails clearly', function (): void {
-    $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
-    $previousHost = getenv('ORBIT_E2E_HOST');
+it('--force --role=blank without configured Incus provider fails clearly', function (): void {
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
+    $previousProviders = getenv('ORBIT_E2E_PROVIDERS');
 
-    putenv('ORBIT_E2E_INCUS_HOSTS=');
-    putenv('ORBIT_E2E_HOST=');
-    putenv('ORBIT_E2E_PROVIDER=incus');
+    putenv('ORBIT_E2E_PROVIDER=hcloud');
+    putenv('ORBIT_E2E_PROVIDERS=hcloud');
 
     try {
         $this->artisan('e2e:prepare-incus-images', [
             '--force' => true,
             '--role' => 'blank',
         ])
+            ->expectsOutputToContain('No Incus provider configured.')
             ->assertFailed();
     } finally {
-        $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
-        $previousHost === false ? putenv('ORBIT_E2E_HOST') : putenv("ORBIT_E2E_HOST={$previousHost}");
         $previousProvider === false ? putenv('ORBIT_E2E_PROVIDER') : putenv("ORBIT_E2E_PROVIDER={$previousProvider}");
+        $previousProviders === false ? putenv('ORBIT_E2E_PROVIDERS') : putenv("ORBIT_E2E_PROVIDERS={$previousProviders}");
     }
 });
 

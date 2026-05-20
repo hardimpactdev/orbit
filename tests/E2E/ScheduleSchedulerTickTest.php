@@ -17,18 +17,14 @@ it('syncs app-node schedule intent and reports run history from a scheduler tick
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'schedule-scheduler-tick',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'schedule-scheduler-tick');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         scheduleSchedulerSeedGatewayIntent($topology, $scheduleName, $scheduleKey);
         scheduleSchedulerPrepareDevNode(
             $topology,
-            $gatewayApiIp,
+            e2eGatewayApiUrl($topology),
+            e2eGatewayWireGuardIp($topology),
             $topology->instance('dev')->waitForIpv4(),
             scheduleSchedulerGatewayRootCa($topology),
             $hookPath,
@@ -104,9 +100,10 @@ PHP;
     );
 }
 
-function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string $devIp, string $gatewayRootCa, string $hookPath): void
+function scheduleSchedulerPrepareDevNode($topology, string $gatewayUrl, string $gatewayWireGuardIp, string $devIp, string $gatewayRootCa, string $hookPath): void
 {
-    $gatewayApiIpValue = var_export($gatewayApiIp, true);
+    $gatewayUrlValue = var_export($gatewayUrl, true);
+    $gatewayWireGuardIpValue = var_export($gatewayWireGuardIp, true);
     $devIpValue = var_export($devIp, true);
     $caPath = $topology->checkout('dev').'/storage/app/orbit/gateway-ca/orbit.crt';
     $caPathValue = var_export($caPath, true);
@@ -120,7 +117,7 @@ function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string
         'tld' => 'test',
         'host' => {$devIpValue},
         'wireguard_address' => {$devIpValue},
-        'gateway_endpoint' => {$gatewayApiIpValue},
+        'gateway_endpoint' => {$gatewayWireGuardIpValue},
                 'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -129,8 +126,8 @@ function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string
 
 \$settings = \\App\\Models\\LocalGatewaySettings::current();
 \$settings->fill([
-    'gateway_url' => 'https://'.{$gatewayApiIpValue},
-    'gateway_wg_ip' => {$gatewayApiIpValue},
+    'gateway_url' => {$gatewayUrlValue},
+    'gateway_wg_ip' => {$gatewayWireGuardIpValue},
     'ca_pem_path' => {$caPathValue},
 ]);
 \$settings->save();

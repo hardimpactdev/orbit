@@ -19,10 +19,10 @@ it('documents docker topology image preparation without force', function (): voi
     Process::fake();
 
     $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator-gateway-appdev-appprod'])
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-control-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-dev-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-prod-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-control-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-dev-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-prod-dns-alias-current')
         ->expectsOutputToContain('Dry run')
         ->assertSuccessful();
 
@@ -48,11 +48,12 @@ it('outputs json for dry run with default kind', function (): void {
                 'provider' => 'docker',
                 'dry_run' => true,
                 'kind' => 'operator-gateway-appdev-appprod',
+                'topology_mode' => 'dns-alias',
                 'images' => [
-                    ['role' => 'control', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-control-current'],
-                    ['role' => 'gateway', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-current'],
-                    ['role' => 'dev', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-dev-current'],
-                    ['role' => 'prod', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-prod-current'],
+                    ['role' => 'control', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-control-dns-alias-current'],
+                    ['role' => 'gateway', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-dns-alias-current'],
+                    ['role' => 'dev', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-dev-dns-alias-current'],
+                    ['role' => 'prod', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-prod-dns-alias-current'],
                 ],
             ],
         ],
@@ -63,6 +64,24 @@ it('outputs json for dry run with default kind', function (): void {
         ->assertSuccessful();
 });
 
+it('documents dns-alias image names in dry run output', function (): void {
+    $this->artisan('e2e:prepare-docker-topology', [
+        'kind' => 'operator-gateway',
+        '--topology-mode' => 'dns-alias',
+    ])
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-control-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-gateway-dns-alias-current')
+        ->assertSuccessful();
+});
+
+it('rejects unsupported topology mode', function (): void {
+    $this->artisan('e2e:prepare-docker-topology', [
+        '--topology-mode' => 'invalid',
+    ])
+        ->expectsOutputToContain('Invalid topology mode')
+        ->assertFailed();
+});
+
 it('--force uses the docker topology builder and outputs json manifest', function (): void {
     $manifest = [
         ['role' => 'control', 'container' => 'orbit-e2e-build-control-control', 'image' => 'orbit-e2e-topology:control-control-current'],
@@ -70,7 +89,7 @@ it('--force uses the docker topology builder and outputs json manifest', functio
 
     $builder = m::mock();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control)
+        ->with(E2ETopologyKind::Control, 'dns-alias')
         ->once()
         ->andReturn($manifest);
 
@@ -84,6 +103,7 @@ it('--force uses the docker topology builder and outputs json manifest', functio
                 'provider' => 'docker',
                 'dry_run' => false,
                 'kind' => 'operator',
+                'topology_mode' => 'dns-alias',
                 'images' => $manifest,
             ],
         ],
@@ -91,6 +111,7 @@ it('--force uses the docker topology builder and outputs json manifest', functio
 
     $this->artisan('e2e:prepare-docker-topology', [
         'kind' => 'control',
+        '--topology-mode' => 'dns-alias',
         '--force' => true,
         '--json' => true,
     ])

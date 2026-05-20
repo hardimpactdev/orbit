@@ -34,6 +34,15 @@ function failedProcessResult(string $error = ''): ProcessResult
     return $result;
 }
 
+function mockIncusTopologyCurrentSnapshots(IncusHost $host, int $count): void
+{
+    $host->shouldReceive('run')
+        ->times($count)
+        ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
+            && str_contains($command, 'clean-operator'))
+        ->andReturn(successfulProcessResult());
+}
+
 function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB', string $incusStoragePool = ''): E2EConfig
 {
     return new E2EConfig(
@@ -215,6 +224,7 @@ it('returns null when every host with templates is at capacity', function (): vo
 it('builds a batch script that copies all roles in parallel, applies limits, then starts in parallel', function (): void {
     $config = makeIncusTopologyTemplateTestConfig('1', '2GiB');
     $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 4);
 
     $script = IncusTopologyTemplate::buildBatchScript(
         $host,
@@ -246,6 +256,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
 it('adds an explicit storage pool to topology clone copies when configured', function (): void {
     $config = makeIncusTopologyTemplateTestConfig(incusStoragePool: 'orbit-e2e');
     $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 2);
 
     $script = IncusTopologyTemplate::buildBatchScript(
         $host,
@@ -277,6 +288,7 @@ it('enables stateful migration before starting clones when stateful reset is req
     try {
         $config = makeIncusTopologyTemplateTestConfig();
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        mockIncusTopologyCurrentSnapshots($host, 2);
 
         $script = IncusTopologyTemplate::buildBatchScript(
             $host,

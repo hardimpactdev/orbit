@@ -16,6 +16,7 @@ final class E2ETopologyHarness
         private readonly E2ETopologyLease $lease,
         private array $checkouts = [],
         private readonly bool $cleanupOnRelease = true,
+        private ?E2EPhaseTimer $timer = null,
     ) {}
 
     public function lease(): E2ETopologyLease
@@ -34,7 +35,20 @@ final class E2ETopologyHarness
      */
     public function withCurrentCheckout(?array $roles = null, array $users = []): self
     {
-        $this->checkouts = E2ECurrentCheckout::installOnTopology($this->lease, $roles, $users);
+        $timer = $this->checkoutTimer()?->child('checkout');
+
+        try {
+            $this->checkouts = E2ECurrentCheckout::installOnTopology($this->lease, $roles, $users, $timer);
+        } finally {
+            $timer?->flush('checkout');
+        }
+
+        return $this;
+    }
+
+    public function setTimer(E2EPhaseTimer $timer): self
+    {
+        $this->timer = $timer;
 
         return $this;
     }
@@ -120,5 +134,20 @@ final class E2ETopologyHarness
             'gateway', 'dev', 'prod' => 'orbit',
             default => throw new RuntimeException("Unknown topology role [{$role}]."),
         };
+    }
+
+    private function checkoutTimer(): ?E2EPhaseTimer
+    {
+        if ($this->timer !== null) {
+            return $this->timer;
+        }
+
+        if (getenv('ORBIT_E2E_TIMINGS') !== '1') {
+            return null;
+        }
+
+        $this->timer = new E2EPhaseTimer;
+
+        return $this->timer;
     }
 }

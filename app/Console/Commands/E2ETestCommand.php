@@ -16,9 +16,11 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 
 #[Signature('e2e:test
     {--lanes= : Comma-separated lanes to run. Defaults to ORBIT_E2E_LANES or docker,incus}
+    {--canary : Restrict the Docker lane to the e2e-feature-canary group only}
     {--sequential-lanes : Run selected lanes one after another}
     {--dry-run : Print the lane commands without executing them}
     {--json : Output dry-run or failure details as JSON}')]
@@ -35,7 +37,7 @@ class E2ETestCommand extends Command
     private array $runningProcesses = [];
 
     /**
-     * @var array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>
+     * @var array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
      */
     private array $activePlans = [];
 
@@ -52,7 +54,7 @@ class E2ETestCommand extends Command
     }
 
     /**
-     * @param  Closure(array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>): array<string, string>  $resolver
+     * @param  Closure(array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>): array<string, string>  $resolver
      */
     public function setLaneAvailabilityResolver(Closure $resolver): void
     {
@@ -70,6 +72,10 @@ class E2ETestCommand extends Command
             );
         } catch (\InvalidArgumentException $exception) {
             return $this->failCommand($exception->getMessage());
+        }
+
+        if ($message = $this->validateLaneCapacity($plans)) {
+            return $this->failCommand($message);
         }
 
         if ((bool) $this->option('dry-run')) {
@@ -113,7 +119,7 @@ class E2ETestCommand extends Command
     /**
      * @param  list<string>  $lanes
      * @param  list<string>  $passThroughArguments
-     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>
+     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
      */
     private function lanePlans(array $lanes, array $passThroughArguments): array
     {
@@ -131,24 +137,56 @@ class E2ETestCommand extends Command
     }
 
     /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     */
+    private function validateLaneCapacity(array $plans): ?string
+    {
+        if (! isset($plans['docker'])) {
+            return null;
+        }
+
+        $config = E2EConfig::fromEnvironment();
+
+        if ($config->dockerHostSlots === []) {
+            return null;
+        }
+
+        $totalSlots = array_sum($config->dockerHostSlots);
+        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 8);
+
+        if ($processes !== $totalSlots) {
+            return "ORBIT_E2E_PARALLEL_PROCESSES must match total Docker slots [{$totalSlots}] for the measured Docker lane.";
+        }
+
+        $requiredContainers = max($config->dockerHostSlots) * 4;
+
+        if ($config->dockerMaxContainersPerHost < $requiredContainers) {
+            return "ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least {$requiredContainers} for the largest configured Docker host slot count.";
+        }
+
+        return null;
+    }
+
+    /**
      * @param  list<string>  $passThroughArguments
-     * @return array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}
+     * @return array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}
      */
     private function dockerPlan(array $passThroughArguments): array
     {
         $testPath = null;
         $testFiles = [];
+        $group = (bool) $this->option('canary') ? 'e2e-feature-canary' : 'e2e-feature';
         $command = [
             'php',
             'artisan',
             'test',
             '--testsuite=E2E',
-            '--group=e2e-feature',
+            "--group={$group}",
             '--exclude-group=e2e-topology-contract',
             '--exclude-group=e2e-provider-incus',
         ];
 
-        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 6);
+        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 8);
 
         if ($processes > 1 && ! $this->hasListTestsArgument($passThroughArguments)) {
             $command[] = '--parallel';
@@ -190,7 +228,7 @@ class E2ETestCommand extends Command
 
     /**
      * @param  list<string>  $passThroughArguments
-     * @return array{lane: string, command: list<string>, environment: array<string, string>}
+     * @return array{lane: string, command: list<string>, environment: array<string, string>, timings_file?: string}
      */
     private function incusPlan(array $passThroughArguments): array
     {
@@ -327,7 +365,7 @@ class E2ETestCommand extends Command
                 continue;
             }
 
-            if (in_array($token, ['--dry-run', '--json', '--sequential-lanes'], true)) {
+            if (in_array($token, ['--canary', '--dry-run', '--json', '--sequential-lanes'], true)) {
                 continue;
             }
 
@@ -348,7 +386,7 @@ class E2ETestCommand extends Command
     }
 
     /**
-     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>  $plans
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
      */
     private function renderDryRun(array $plans): int
     {
@@ -392,8 +430,16 @@ class E2ETestCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->preparePlanArtifacts($plans);
-        $this->registerInterruptHandlers($plans);
+        try {
+            $this->preparePlanArtifacts($plans);
+            $this->registerInterruptHandlers($plans);
+        } catch (\Throwable $throwable) {
+            $this->runningProcesses = [];
+            $this->activePlans = [];
+            $this->cleanupPlanArtifacts($plans);
+
+            throw $throwable;
+        }
 
         $laneStartedAt = [];
         $laneFinishedAt = [];
@@ -442,8 +488,8 @@ class E2ETestCommand extends Command
     }
 
     /**
-     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>  $plans
-     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
      */
     private function skipUnavailablePlans(array $plans): array
     {
@@ -482,7 +528,7 @@ class E2ETestCommand extends Command
     }
 
     /**
-     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}  $plan
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
      */
     private function incusLaneUnavailableReason(array $plan): ?string
     {
@@ -517,7 +563,7 @@ class E2ETestCommand extends Command
     /**
      * @template TValue
      *
-     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}  $plan
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
      * @param  callable(): TValue  $callback
      * @return TValue
      */
@@ -545,8 +591,17 @@ class E2ETestCommand extends Command
     private function runPlansSequentially(array $plans): int
     {
         $failed = false;
-        $this->preparePlanArtifacts($plans);
-        $this->registerInterruptHandlers($plans);
+
+        try {
+            $this->preparePlanArtifacts($plans);
+            $this->registerInterruptHandlers($plans);
+        } catch (\Throwable $throwable) {
+            $this->runningProcesses = [];
+            $this->activePlans = [];
+            $this->cleanupPlanArtifacts($plans);
+
+            throw $throwable;
+        }
 
         try {
             foreach ($plans as $lane => $plan) {
@@ -730,11 +785,16 @@ class E2ETestCommand extends Command
     }
 
     /**
-     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>  $plans
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
      */
-    private function preparePlanArtifacts(array $plans): void
+    private function preparePlanArtifacts(array &$plans): void
     {
-        foreach ($plans as $plan) {
+        foreach ($plans as &$plan) {
+            if ($this->timingsEnabled()) {
+                $plan['timings_file'] = $this->createTimingsFile($plan['lane']);
+                $plan['environment']['ORBIT_E2E_TIMINGS_FILE'] = $plan['timings_file'];
+            }
+
             $testPath = $plan['test_path'] ?? null;
             $testFiles = $plan['test_files'] ?? [];
 
@@ -758,19 +818,29 @@ class E2ETestCommand extends Command
                 }
             }
         }
+
+        unset($plan);
     }
 
     /**
-     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>}>  $plans
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
      */
     private function cleanupPlanArtifacts(array $plans): void
     {
         foreach ($plans as $plan) {
+            $this->replayTimingsFile($plan);
+
             $testPath = $plan['test_path'] ?? null;
 
             if (is_string($testPath)) {
                 $this->removeDirectory(base_path($testPath));
                 @rmdir(dirname(base_path($testPath)));
+            }
+
+            $timingsFile = $plan['timings_file'] ?? null;
+
+            if (is_string($timingsFile) && $timingsFile !== '') {
+                @unlink($timingsFile);
             }
         }
     }
@@ -864,5 +934,47 @@ class E2ETestCommand extends Command
         $this->error($message);
 
         return self::FAILURE;
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function replayTimingsFile(array $plan): void
+    {
+        $timingsFile = $plan['timings_file'] ?? null;
+
+        if (! is_string($timingsFile) || $timingsFile === '' || ! is_file($timingsFile)) {
+            return;
+        }
+
+        $contents = file_get_contents($timingsFile);
+
+        if ($contents === false || $contents === '') {
+            return;
+        }
+
+        if ($this->output instanceof ConsoleOutputInterface) {
+            $this->output->getErrorOutput()->write($contents);
+
+            return;
+        }
+
+        fwrite(STDERR, $contents);
+    }
+
+    private function timingsEnabled(): bool
+    {
+        return getenv('ORBIT_E2E_TIMINGS') === '1';
+    }
+
+    private function createTimingsFile(string $lane): string
+    {
+        $path = tempnam(sys_get_temp_dir(), "orbit-e2e-{$lane}-");
+
+        if (! is_string($path)) {
+            throw new \RuntimeException("Could not create timings file for E2E lane [{$lane}].");
+        }
+
+        return $path;
     }
 }

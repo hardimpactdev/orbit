@@ -133,7 +133,7 @@ it('updates app nodes in parallel while preserving json target order', function 
     }
 
     try {
-        app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell(logPath: $logPath, pullDelayMicroseconds: 500_000));
+        app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell(logPath: $logPath, pullDelayMicroseconds: 100_000));
 
         $exitCode = Artisan::call('update:all', ['--json' => true]);
         $payload = json_decode(Artisan::output(), true);

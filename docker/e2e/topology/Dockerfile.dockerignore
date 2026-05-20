@@ -7,6 +7,9 @@ storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
+storage/app/orbit/ca/**
+storage/app/orbit/certs/**
+storage/app/orbit/keys/**
 database/database.sqlite*
 *.log
 .env

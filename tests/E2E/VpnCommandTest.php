@@ -54,7 +54,28 @@ PHP;
         timeoutSeconds: 120,
     );
 
-    $controlScript = '\App\Models\Node::query()->where("role", "gateway")->update(["orbit_path" => '.var_export($topology->checkout('gateway'), true).', "status" => "active"]); echo "prepared";';
+    $gatewayCheckoutValue = var_export($topology->checkout('gateway'), true);
+    $controlScript = <<<PHP
+\$gateway = \App\Models\Node::query()
+    ->where('role', 'gateway')
+    ->orWhere('name', 'gateway-1')
+    ->first();
+
+if (! \$gateway instanceof \App\Models\Node) {
+    \$gateway = new \App\Models\Node(['name' => 'gateway-1']);
+}
+
+\$gateway->forceFill([
+    'role' => 'gateway',
+    'host' => 'gateway',
+    'wireguard_address' => '10.6.0.2',
+    'user' => 'orbit',
+    'orbit_path' => {$gatewayCheckoutValue},
+    'status' => 'active',
+])->save();
+
+echo 'prepared';
+PHP;
 
     $topology->ssh(
         'control',

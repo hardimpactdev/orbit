@@ -12,6 +12,7 @@ use App\Console\Commands\E2EReapDockerCommand;
 use App\Console\Commands\E2EReapHcloudCommand;
 use App\Console\Commands\E2EReapIncusCommand;
 use App\Console\Commands\E2ETestCommand;
+use Symfony\Component\Process\Process;
 
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
     expect(base_path('bin/e2e'))->not->toBeFile();
@@ -37,13 +38,22 @@ it('reports command docs lint severities in agent format', function (): void {
 it('keeps the aggregate quality gate complete', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
+    // The gate fans out docs-lint, phpstan, rector, pint, and pest concurrently
+    // via `bin/quality-check.sh`; the script is the canonical entry point.
     expect($composer['scripts']['quality-check'])->toBe([
-        '@docs-lint',
-        '@analyse',
-        '@rector',
-        '@format',
-        '@test',
+        'Composer\\Config::disableProcessTimeout',
+        'bin/quality-check.sh',
     ]);
+
+    $script = (string) file_get_contents(base_path('bin/quality-check.sh'));
+
+    expect($script)
+        ->toContain('librarian:lint')
+        ->toContain('phpstan analyse')
+        ->toContain('rector process')
+        ->toContain('vendor/bin/pint')
+        ->toContain('vendor/pestphp/pest/bin/pest')
+        ->toContain('--exclude-group=e2e');
 });
 
 it('runs default ephemeral e2e through prepared topology lanes', function (): void {
@@ -51,12 +61,14 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test'])
         ->sequence(
+            fn ($script) => $script->toBe('Composer\\Config::disableProcessTimeout'),
             fn ($script) => $script->toContain('artisan config:clear'),
             fn ($script) => $script->toContain('pest --exclude-group=e2e'),
         );
 
     $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test @additional_args';
     $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args';
+    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test --canary @additional_args';
     $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus php artisan e2e:test @additional_args';
 
     expect($composer['scripts']['test:e2e'])->toBe([
@@ -65,6 +77,9 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
     ])->and($composer['scripts']['test:e2e:docker'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         $dockerE2eScript,
+    ])->and($composer['scripts']['test:e2e:docker:canary'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        $dockerCanaryE2eScript,
     ])->and($composer['scripts']['test:e2e:incus'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         $incusE2eScript,
@@ -94,6 +109,23 @@ it('documents the supported verification lanes', function (): void {
         ->not->toContain('composer test:live')
         ->not->toContain('bin/live-smoke')
         ->not->toContain('Standing Live Node Rule');
+});
+
+it('documents the e2e docker benchmark protocol', function (): void {
+    $testing = file_get_contents(base_path('TESTING.md'));
+
+    expect($testing)
+        ->toContain('## E2E Docker lane - benchmark protocol')
+        ->toContain('ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \\')
+        ->toContain('composer test:e2e:docker:canary \\')
+        ->toContain('2>&1 | tee /tmp/e2e-canary.log | awk -f bin/e2e-timings.awk')
+        ->toContain('composer test:e2e:docker \\')
+        ->toContain('2>&1 | tee /tmp/e2e-full.log | awk -f bin/e2e-timings.awk')
+        ->toContain('## Recommended local SSH tuning')
+        ->toContain('ControlMaster auto')
+        ->toContain('ControlPath ~/.ssh/cm-%r@%h:%p.sock')
+        ->toContain('time ssh sidecar1 true')
+        ->toContain('drop below `10 ms`');
 });
 
 it('keeps active testing and orchestration docs on current e2e script names', function (): void {
@@ -189,6 +221,34 @@ it('registers ephemeral e2e as a guarded Pest group', function (): void {
         ->toContain("->in('E2E')");
 });
 
+it('keeps persisted orbit certificate material out of the docker build context', function (): void {
+    $dockerignore = file_get_contents(base_path('docker/e2e/topology/Dockerfile.dockerignore'));
+
+    expect($dockerignore)
+        ->toContain('storage/app/orbit/ca/**')
+        ->toContain('storage/app/orbit/certs/**')
+        ->toContain('storage/app/orbit/keys/**');
+});
+
+it('removes persisted orbit certificate material from runtime image worktrees before install', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+
+    expect($dockerfile)
+        ->toContain('cp -a /opt/orbit-source/. /home/control/orbit/')
+        ->toContain('cp -a /opt/orbit-source/. /home/orbit/orbit/')
+        ->toContain('rm -rf /opt/orbit-source/storage/app/orbit/ca /opt/orbit-source/storage/app/orbit/certs /opt/orbit-source/storage/app/orbit/keys')
+        ->toContain('rm -rf /home/control/orbit/storage/app/orbit/ca /home/control/orbit/storage/app/orbit/certs /home/control/orbit/storage/app/orbit/keys')
+        ->toContain('rm -rf /home/orbit/orbit/storage/app/orbit/ca /home/orbit/orbit/storage/app/orbit/certs /home/orbit/orbit/storage/app/orbit/keys');
+});
+
+it('installs dev composer dependencies in the docker runtime image', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+
+    expect($dockerfile)
+        ->toContain("composer install --no-interaction --no-progress'")
+        ->not->toContain('composer install --no-interaction --no-progress --no-dev');
+});
+
 it('registers the e2e artisan commands', function (): void {
     $commands = [
         E2EPreflightCommand::class,
@@ -243,6 +303,39 @@ it('waits for cloud-init before mutating apt on Ubuntu', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 
     expect($script)->toContain('cloud-init status --wait');
+});
+
+it('aggregates e2e timing lines by label and event', function (): void {
+    $input = <<<'TEXT'
+[orbit-e2e] topology acquire 1.25s
+[orbit-e2e] topology acquire 2.50s
+[orbit-e2e] topology acquire 3.75s
+[orbit-e2e] topology reset 4.00s
+[orbit-e2e] malformed
+[orbit-e2e] topology acquire nope
+noise line
+[orbit-e2e] node new 9.00s
+TEXT;
+
+    $process = new Process([
+        'awk',
+        '-f',
+        base_path('bin/e2e-timings.awk'),
+    ]);
+    $process->setInput($input);
+    $process->mustRun();
+
+    $lines = collect(preg_split('/\R+/', trim($process->getOutput())) ?: [])
+        ->filter()
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($lines)->toBe([
+        'node/new n=1 p50=9 p95=9',
+        'topology/acquire n=3 p50=2.5 p95=3.75',
+        'topology/reset n=1 p50=4 p95=4',
+    ]);
 });
 
 it('installs Supervisor as a platform prerequisite for runtime backend hosts', function (): void {

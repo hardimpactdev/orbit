@@ -181,7 +181,7 @@ describe('ProxyRouteFixer', function (): void {
 final readonly class ProxyFixerFakeCa extends OrbitCaService
 {
     /** @return array{cert: string, key: string} */
-    public function issueLeaf(string $host): array
+    public function issueLeaf(string $host, array $additionalSans = []): array
     {
         $dir = sys_get_temp_dir().'/orbit-proxy-fixer-ca';
 

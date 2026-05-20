@@ -84,10 +84,13 @@ RUN install -d -o control -g control /home/control/orbit \
     && install -d -o orbit -g orbit /home/orbit/orbit \
     && cp -a /opt/orbit-source/. /home/control/orbit/ \
     && cp -a /opt/orbit-source/. /home/orbit/orbit/ \
+    && rm -rf /opt/orbit-source/storage/app/orbit/ca /opt/orbit-source/storage/app/orbit/certs /opt/orbit-source/storage/app/orbit/keys \
+    && rm -rf /home/control/orbit/storage/app/orbit/ca /home/control/orbit/storage/app/orbit/certs /home/control/orbit/storage/app/orbit/keys \
+    && rm -rf /home/orbit/orbit/storage/app/orbit/ca /home/orbit/orbit/storage/app/orbit/certs /home/orbit/orbit/storage/app/orbit/keys \
     && chown -R control:control /home/control/orbit \
     && chown -R orbit:orbit /home/orbit/orbit \
-    && sudo -iu control bash -lc 'cd /home/control/orbit && composer install --no-interaction --no-progress --no-dev' \
-    && sudo -iu orbit bash -lc 'cd /home/orbit/orbit && composer install --no-interaction --no-progress --no-dev'
+    && sudo -iu control bash -lc 'cd /home/control/orbit && composer install --no-interaction --no-progress' \
+    && sudo -iu orbit bash -lc 'cd /home/orbit/orbit && composer install --no-interaction --no-progress'
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/orbit-e2e-container"]

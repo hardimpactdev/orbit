@@ -251,7 +251,7 @@ describe('process:add base contract', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 350),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 100),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 

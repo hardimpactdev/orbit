@@ -18,11 +18,23 @@ final readonly class DockerHost
     {
         $process = Process::timeout($timeoutSeconds ?? $this->config->timeoutSeconds);
 
-        if ($this->host !== 'local') {
-            $process = $process->env(['DOCKER_HOST' => "ssh://{$this->host}"]);
+        if ($this->environment() !== []) {
+            $process = $process->env($this->environment());
         }
 
         return $process->run($command);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function environment(): array
+    {
+        if ($this->host === 'local') {
+            return [];
+        }
+
+        return ['DOCKER_HOST' => "ssh://{$this->host}"];
     }
 
     public function mustRun(string $command, string $errorContext, ?int $timeoutSeconds = null): ProcessResult

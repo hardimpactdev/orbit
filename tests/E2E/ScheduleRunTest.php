@@ -11,15 +11,10 @@ it('runs a schedule from the control node through the gateway api and records hi
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
+        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'schedule-run',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'schedule-run');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),
             $config->controlUser,

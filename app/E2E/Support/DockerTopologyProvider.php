@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use Illuminate\Support\Facades\Process;
+
 final readonly class DockerTopologyProvider implements E2ETopologyProvider
 {
     private const int DockerMetadataProbeTimeoutSeconds = 120;
@@ -38,6 +40,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $resourceLease = $this->acquireResourceLease();
         $selection = $this->selectHost($kind, $resourceLease !== null ? [$resourceLease->host()] : null);
         $host = $selection['host'];
+        $imageNames = $selection['image_names'] ?? [];
 
         if ($host === null) {
             $resourceLease?->release();
@@ -47,25 +50,22 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         $network = "{$this->config->instancePrefix}-{$runId}";
         $networkPlan = DockerTopologyNetworkPlan::fromEnvironment();
+        $topologyMode = $this->topologyMode();
         $roles = $this->rolesFor($kind);
         $instances = [];
 
         try {
             $timer->measure('docker.network', fn () => $this->createNetwork($host, $network, $networkPlan));
 
-            foreach ($roles as $role) {
-                $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
-                $image = $this->resolvedImageNameFor($host, $kind, $role);
-                $ip = $networkPlan->ipForRole($role);
+            $instances = $this->startContainers($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $timer, 'docker.start');
 
-                $timer->measure("docker.start.{$role}", fn () => $this->startContainer($host, $name, $network, $ip, $image));
-
-                $instances[$role] = new DockerInstance($host, $name, $network);
+            if ($topologyMode === 'dns-alias') {
+                $timer->measure('docker.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $instances, $networkPlan));
+            } else {
+                $timer->measure('docker.retarget', fn () => $this->retargetTopology($instances, $networkPlan));
             }
 
-            $timer->measure('docker.retarget', fn () => $this->retargetTopology($instances, $networkPlan));
-
-            if ($options->startGatewayApi && isset($instances['gateway'])) {
+            if ($topologyMode !== 'dns-alias' && $options->startGatewayApi && isset($instances['gateway'])) {
                 $timer->measure('docker.gateway-restart', fn () => E2EGatewayApi::start(
                     $instances['gateway'],
                     "topology-{$runId}",
@@ -79,32 +79,16 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             throw $exception;
         }
 
-        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $network, $roles, $options, $networkPlan): array {
-            foreach ($roles as $role) {
-                $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
-                $cycleTimer->measure("reset.delete.{$role}", fn () => $host->run(sprintf('docker rm -f %s >/dev/null 2>&1 || true', escapeshellarg($name)), timeoutSeconds: 60));
+        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $network, $roles, $options, $networkPlan, $topologyMode, $imageNames): array {
+            $newInstances = $this->startContainers($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $cycleTimer, 'reset.start');
+
+            if ($topologyMode === 'dns-alias') {
+                $cycleTimer->measure('reset.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $newInstances, $networkPlan));
+            } else {
+                $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($newInstances, $networkPlan));
             }
 
-            $cycleTimer->measure('reset.network.recreate', function () use ($host, $network, $networkPlan): void {
-                $host->run(sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)), timeoutSeconds: 30);
-                $this->createNetwork($host, $network, $networkPlan);
-            });
-
-            $newInstances = [];
-
-            foreach ($roles as $role) {
-                $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
-                $image = $this->resolvedImageNameFor($host, $kind, $role);
-                $ip = $networkPlan->ipForRole($role);
-
-                $cycleTimer->measure("reset.start.{$role}", fn () => $this->startContainer($host, $name, $network, $ip, $image));
-
-                $newInstances[$role] = new DockerInstance($host, $name, $network);
-            }
-
-            $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($newInstances, $networkPlan));
-
-            if ($options->startGatewayApi && isset($newInstances['gateway'])) {
+            if ($topologyMode !== 'dns-alias' && $options->startGatewayApi && isset($newInstances['gateway'])) {
                 $cycleTimer->measure('reset.gateway-restart', fn () => E2EGatewayApi::start(
                     $newInstances['gateway'],
                     "topology-{$runId}",
@@ -118,13 +102,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             ];
         };
 
-        $teardown = fn (E2EPhaseTimer $cleanupTimer) => $cleanupTimer->measure(
-            'cleanup.network',
-            fn () => $host->run(
-                sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)),
-                timeoutSeconds: 30,
-            ),
-        );
+        $bulkCleanup = fn (E2EPhaseTimer $cleanupTimer) => $this->cleanupContainersForRoles($host, $roles, $runId, $cleanupTimer);
+        $teardown = fn (E2EPhaseTimer $cleanupTimer) => $this->cleanupNetwork($host, $network, $cleanupTimer);
 
         return new E2ETopologyLease(
             kind: $kind,
@@ -135,29 +114,41 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             sshKeyPair: new SshKeyPair('/dev/null', '/dev/null'),
             rebuild: $rebuild,
             snapshotReset: null,
+            bulkCleanup: $bulkCleanup,
             teardown: $teardown,
             gatewayApiIp: $networkPlan->ipForRole('gateway'),
             resourceLease: $resourceLease,
         );
     }
 
-    public function imageNameFor(E2ETopologyKind $kind, string $role): string
+    public function imageNameFor(E2ETopologyKind $kind, string $role, ?string $mode = null): string
     {
-        return "orbit-e2e-topology:{$kind->value}-{$role}-current";
+        return DockerTopologyBuilder::imageNameFor($kind, $role, $mode ?? $this->topologyMode());
     }
 
     /**
      * @return list<string>
      */
-    private function imageNameCandidatesFor(E2ETopologyKind $kind, string $role): array
+    private function imageNameCandidatesFor(E2ETopologyKind $kind, string $role, ?string $mode = null): array
     {
+        $mode ??= $this->topologyMode();
+
         return [
-            $this->imageNameFor($kind, $role),
+            $this->imageNameFor($kind, $role, $mode),
             ...array_map(
-                fn (string $value): string => "orbit-e2e-topology:{$value}-{$role}-current",
+                fn (string $value): string => $this->imageNameForValue($value, $role, $mode),
                 $kind->deprecatedValues(),
             ),
         ];
+    }
+
+    private function imageNameForValue(string $kind, string $role, string $mode): string
+    {
+        if ($mode === 'legacy-retarget') {
+            return "orbit-e2e-topology:{$kind}-{$role}-current";
+        }
+
+        return "orbit-e2e-topology:{$kind}-{$role}-{$mode}-current";
     }
 
     /**
@@ -174,11 +165,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     }
 
     /**
-     * @return array{host: DockerHost|null, failures: list<string>}
+     * @return array{host: DockerHost|null, failures: list<string>, image_names?: array<string, string>}
      */
     /**
      * @param  list<string>|null  $hostNames
-     * @return array{host: DockerHost|null, failures: list<string>}
+     * @return array{host: DockerHost|null, failures: list<string>, image_names?: array<string, string>}
      */
     private function selectHost(E2ETopologyKind $kind, ?array $hostNames = null): array
     {
@@ -205,7 +196,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 continue;
             }
 
-            $missingImage = $this->missingImage($host, $kind);
+            $imageNames = [];
+            $missingImage = $this->resolveImageNamesFor($host, $kind, $imageNames);
 
             if ($missingImage !== null) {
                 $failures[] = "{$hostName}: docker prepared image {$missingImage} is not available";
@@ -221,7 +213,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 continue;
             }
 
-            return ['host' => $host, 'failures' => $failures];
+            return ['host' => $host, 'failures' => $failures, 'image_names' => $imageNames];
         }
 
         return ['host' => null, 'failures' => $failures];
@@ -254,11 +246,16 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         )->acquire('docker', $this->config->dockerHostSlots, $this->config->exclusiveHosts);
     }
 
-    private function missingImage(DockerHost $host, E2ETopologyKind $kind): ?string
+    /**
+     * @param  array<string, string>  $imageNames
+     */
+    private function resolveImageNamesFor(DockerHost $host, E2ETopologyKind $kind, array &$imageNames): ?string
     {
         foreach ($this->rolesFor($kind) as $role) {
             foreach ($this->imageNameCandidatesFor($kind, $role) as $image) {
                 if ($host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
+                    $imageNames[$role] = $image;
+
                     continue 2;
                 }
             }
@@ -267,17 +264,6 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         }
 
         return null;
-    }
-
-    private function resolvedImageNameFor(DockerHost $host, E2ETopologyKind $kind, string $role): string
-    {
-        foreach ($this->imageNameCandidatesFor($kind, $role) as $image) {
-            if ($host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
-                return $image;
-            }
-        }
-
-        return $this->imageNameFor($kind, $role);
     }
 
     private function runningE2EContainerCount(DockerHost $host): int
@@ -306,31 +292,197 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         );
     }
 
-    private function startContainer(DockerHost $host, string $name, string $network, string $ip, string $image): void
+    /**
+     * @param  list<string>  $roles
+     * @param  array<string, string>  $imageNames
+     * @return array<string, DockerInstance>
+     */
+    private function startContainers(DockerHost $host, E2ETopologyKind $kind, string $runId, string $network, array $roles, DockerTopologyNetworkPlan $networkPlan, string $topologyMode, array $imageNames, E2EPhaseTimer $timer, string $timerPrefix): array
     {
-        $host->mustRun(
-            sprintf(
-                'docker run -d --name %s --network %s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s',
-                escapeshellarg($name),
-                escapeshellarg($network),
-                escapeshellarg($ip),
-                escapeshellarg($image),
-            ),
-            "Could not start container {$name}",
+        $tasks = [];
+
+        foreach ($roles as $role) {
+            $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
+            $ip = $networkPlan->ipForRole($role);
+            $image = $imageNames[$role] ?? $this->imageNameFor($kind, $role, $topologyMode);
+
+            $tasks[$role] = [
+                'name' => $name,
+                'command' => $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode),
+            ];
+        }
+
+        try {
+            if (! $this->parallelStartsEnabled()) {
+                $instances = [];
+
+                foreach ($tasks as $role => $task) {
+                    $timer->measure(
+                        "{$timerPrefix}.{$role}",
+                        fn () => $host->mustRun($task['command'], "Could not start container {$task['name']}"),
+                    );
+
+                    $instances[$role] = new DockerInstance($host, $task['name'], $network);
+                }
+
+                return $instances;
+            }
+
+            $results = $timer->measure($timerPrefix, fn () => Process::pool(function ($pool) use ($host, $tasks): void {
+                foreach ($tasks as $role => $task) {
+                    $pool->as($role)
+                        ->timeout($this->config->timeoutSeconds)
+                        ->env($host->environment())
+                        ->command($task['command']);
+                }
+            })->run());
+
+            $instances = [];
+
+            foreach ($tasks as $role => $task) {
+                $result = $results[$role];
+
+                if (! $result->successful()) {
+                    throw new \RuntimeException("Could not start container {$task['name']}: ".trim($result->errorOutput().' '.$result->output()));
+                }
+
+                $instances[$role] = new DockerInstance($host, $task['name'], $network);
+            }
+
+            return $instances;
+        } catch (\Throwable $throwable) {
+            $this->cleanupContainers($host, array_column($tasks, 'name'));
+
+            throw $throwable;
+        }
+    }
+
+    private function parallelStartsEnabled(): bool
+    {
+        $value = getenv('ORBIT_E2E_DOCKER_PARALLEL_STARTS');
+
+        return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
+    }
+
+    private function startContainerCommand(string $name, string $network, string $role, string $ip, string $image, string $topologyMode): string
+    {
+        $networkAlias = $topologyMode === 'dns-alias'
+            ? ' --network-alias '.escapeshellarg($role)
+            : '';
+
+        return sprintf(
+            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s',
+            escapeshellarg($name),
+            escapeshellarg($network),
+            $networkAlias,
+            escapeshellarg($ip),
+            escapeshellarg($image),
         );
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     */
+    private function primeGatewayApi(string $runId, array $instances, DockerTopologyNetworkPlan $networkPlan): void
+    {
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($gateway === null) {
+            return;
+        }
+
+        E2EGatewayApi::start(
+            $gateway,
+            "topology-{$runId}",
+            wireguardIdentity: '10.6.0.2',
+            bindAddress: '0.0.0.0',
+            certKey: 'gateway',
+            certSans: ['10.6.0.2'],
+            peerIdentityMap: $this->canonicalPeerIdentityMap($instances, $networkPlan),
+        );
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     * @return array<string, string>
+     */
+    private function canonicalPeerIdentityMap(array $instances, DockerTopologyNetworkPlan $networkPlan): array
+    {
+        $canonical = [
+            'gateway' => '10.6.0.2',
+            'control' => '10.6.0.3',
+            'dev' => '10.6.0.4',
+            'prod' => '10.6.0.5',
+        ];
+
+        $map = [];
+
+        foreach (array_keys($instances) as $role) {
+            if (! isset($canonical[$role])) {
+                continue;
+            }
+
+            $map[$networkPlan->ipForRole($role)] = $canonical[$role];
+        }
+
+        return $map;
     }
 
     /**
      * @param  list<string>  $roles
      */
-    private function cleanupResources(DockerHost $host, string $network, array $roles, string $runId): void
+    private function cleanupResources(DockerHost $host, string $network, array $roles, string $runId, ?E2EPhaseTimer $timer = null): void
     {
-        foreach ($roles as $role) {
-            $name = "{$this->config->instancePrefix}-{$runId}-{$role}";
-            $host->run(sprintf('docker rm -f %s >/dev/null 2>&1 || true', escapeshellarg($name)), timeoutSeconds: 60);
+        $containerNames = array_map(
+            fn (string $role): string => "{$this->config->instancePrefix}-{$runId}-{$role}",
+            $roles,
+        );
+
+        $this->cleanupContainers($host, $containerNames, $timer);
+        $this->cleanupNetwork($host, $network, $timer);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function cleanupContainersForRoles(DockerHost $host, array $roles, string $runId, ?E2EPhaseTimer $timer = null): void
+    {
+        $this->cleanupContainers($host, array_map(
+            fn (string $role): string => "{$this->config->instancePrefix}-{$runId}-{$role}",
+            $roles,
+        ), $timer);
+    }
+
+    /**
+     * @param  list<string>  $containerNames
+     */
+    private function cleanupContainers(DockerHost $host, array $containerNames, ?E2EPhaseTimer $timer = null): void
+    {
+        $deleteContainers = fn () => $host->run(sprintf(
+            'docker rm -f %s >/dev/null 2>&1 || true',
+            implode(' ', array_map(escapeshellarg(...), $containerNames)),
+        ), timeoutSeconds: 120);
+
+        if ($timer !== null) {
+            $timer->measure('cleanup.containers', $deleteContainers);
+
+            return;
         }
 
-        $host->run(sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)), timeoutSeconds: 30);
+        $deleteContainers();
+    }
+
+    private function cleanupNetwork(DockerHost $host, string $network, ?E2EPhaseTimer $timer = null): void
+    {
+        $deleteNetwork = fn () => $host->run(sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)), timeoutSeconds: 30);
+
+        if ($timer !== null) {
+            $timer->measure('cleanup.network', $deleteNetwork);
+
+            return;
+        }
+
+        $deleteNetwork();
     }
 
     /**
@@ -414,5 +566,12 @@ PHP;
             'cd /home/control/orbit && php artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
+    }
+
+    private function topologyMode(): string
+    {
+        return getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias'
+            ? 'dns-alias'
+            : 'legacy-retarget';
     }
 }

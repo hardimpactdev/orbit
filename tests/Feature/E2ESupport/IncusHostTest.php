@@ -12,12 +12,12 @@ afterEach(function (): void {
     m::close();
 });
 
-function incusHostTestConfig(string $incusStoragePool = ''): E2EConfig
+function incusHostTestConfig(string $incusStoragePool = '', string $host = 'beast'): E2EConfig
 {
     return new E2EConfig(
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
-        host: 'beast',
+        host: $host,
         sourceImage: 'images:ubuntu/26.04/cloud',
         blankImage: 'orbit-blank-ubuntu-26.04',
         baseImage: 'orbit-base-ubuntu-26.04',
@@ -148,6 +148,52 @@ it('restarts journald after refreshing cloned instance network identity', functi
     expect($commands[0])->toContain('systemd-machine-id-setup')
         ->and($commands[0])->toContain('systemctl restart systemd-journald')
         ->and($commands[0])->toContain('systemctl restart systemd-networkd');
+});
+
+it('keeps locally staged files readable before pushing them into an incus instance', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-incus-source-');
+    file_put_contents($source, 'archive');
+    chmod($source, 0644);
+
+    $pushedMode = null;
+    $commands = [];
+    $host = new class(incusHostTestConfig(host: 'localhost'), $commands, $pushedMode) extends IncusHost
+    {
+        /** @var list<string> */
+        private array $commands;
+
+        /**
+         * @param  list<string>  $commands
+         */
+        public function __construct(E2EConfig $config, array &$commands, private ?string &$pushedMode)
+        {
+            parent::__construct($config);
+            $this->commands = &$commands;
+        }
+
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (preg_match("/^incus file push '([^']+)' /", $command, $matches) === 1) {
+                $this->pushedMode = decoct(fileperms($matches[1]) & 0777);
+            }
+
+            return incusHostTestProcessResult();
+        }
+    };
+    $instance = new IncusInstance($host, 'orbit-template-control');
+    $previousUmask = umask(0077);
+
+    try {
+        $instance->copyLocalFileToInstance($source, '/tmp/orbit-current.tar.gz');
+    } finally {
+        umask($previousUmask);
+        @unlink($source);
+    }
+
+    expect($pushedMode)->toBe('644')
+        ->and($commands)->toContain("rm -f '/tmp/".basename($source)."'");
 });
 
 it('can restore snapshots concurrently', function (): void {

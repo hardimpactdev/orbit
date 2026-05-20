@@ -113,15 +113,19 @@ it('is idempotent: rerunning with same inputs does not recreate compose file unn
     $installer = new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath);
 
     $installer->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
-    $firstMtime = filemtime($this->workdir.'/wg-easy/docker-compose.yaml');
+    $composePath = $this->workdir.'/wg-easy/docker-compose.yaml';
+    $firstMtime = filemtime($composePath);
 
+    // Backdate the file so a second write would land on a different mtime
+    // (cheaper than `sleep(1)` while still detecting unnecessary rewrites).
+    touch($composePath, $firstMtime - 60);
+    $expectedMtime = filemtime($composePath);
     clearstatcache();
-    sleep(1);
 
     $installer->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
-    $secondMtime = filemtime($this->workdir.'/wg-easy/docker-compose.yaml');
+    $secondMtime = filemtime($composePath);
 
-    expect($secondMtime)->toBe($firstMtime);
+    expect($secondMtime)->toBe($expectedMtime);
 });
 
 it('rejects invalid public host', function (): void {

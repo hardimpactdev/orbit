@@ -60,6 +60,12 @@
         ],
         "docs-lint": "@php artisan librarian:lint --format=agent --path=docs/domains",
         "test": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan config:clear --ansi @no_additional_args",
+            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow"
+        ],
+        "test:slow": [
+            "Composer\\Config::disableProcessTimeout",
             "@php artisan config:clear --ansi @no_additional_args",
             "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e"
         ],
@@ -70,6 +76,10 @@
         "test:e2e:docker": [
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args"
+        ],
+        "test:e2e:docker:canary": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test --canary @additional_args"
         ],
         "test:e2e:incus": [
             "Composer\\Config::disableProcessTimeout",
@@ -115,11 +125,12 @@
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
         "quality-check": [
-            "@docs-lint",
-            "@analyse",
-            "@rector",
-            "@format",
-            "@test"
+            "Composer\\Config::disableProcessTimeout",
+            "bin/quality-check.sh"
+        ],
+        "quality-check:fix": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/quality-check.sh --fix"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

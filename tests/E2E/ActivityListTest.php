@@ -57,12 +57,7 @@ it('reads gateway activity from a control caller through the gateway api', funct
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'activity-list',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'activity-list');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         activityListSeed($topology);
@@ -87,4 +82,4 @@ it('reads gateway activity from a control caller through the gateway api', funct
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');

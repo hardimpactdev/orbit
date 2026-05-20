@@ -68,6 +68,26 @@ it('runs nodes with an assigned gateway role through bash without ssh', function
     Process::assertRan(fn (PendingProcess $process): bool => $process->command === "bash -c 'pwd'");
 });
 
+it('rejects invalid environment variable names before composing shell commands', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake();
+
+    $node = Node::factory()->create([
+        'role' => 'gateway',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    expect(fn () => (new SshRemoteShell)->run($node, 'pwd', [
+        'env' => ['APP_ENV; touch /tmp/orbit-pwned' => 'testing'],
+    ]))->toThrow(InvalidArgumentException::class, 'Invalid remote shell environment variable name');
+
+    Process::assertRanTimes(fn (): bool => true, 0);
+});
+
 it('runs remote nodes over ssh using wireguard address and steady state user', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
@@ -90,6 +110,94 @@ it('runs remote nodes over ssh using wireguard address and steady state user', f
             && str_contains((string) $process->command, "'deploy'@'10.44.0.20'")
             && str_contains((string) $process->command, 'bash -lc')
             && str_contains((string) $process->command, 'git clone git@github.com:acme/site.git site');
+    });
+});
+
+it('uses the host when docker topology mode is dns-alias', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "ok\n"),
+    ]);
+
+    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
+
+    try {
+        $node = Node::factory()->create([
+            'host' => 'dev',
+            'wireguard_address' => '10.6.0.4',
+            'user' => 'deploy',
+        ]);
+
+        (new SshRemoteShell)->run($node, 'hostname');
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            return str_contains((string) $process->command, "'deploy'@'dev'")
+                && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'");
+        });
+    } finally {
+        putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+    }
+});
+
+it('uses the host when docker topology mode is loaded from laravel env', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "ok\n"),
+    ]);
+
+    $previousServer = $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
+    $previousEnv = $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
+    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+    $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = 'dns-alias';
+    $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = 'dns-alias';
+
+    try {
+        $node = Node::factory()->create([
+            'host' => 'dev',
+            'wireguard_address' => '10.6.0.4',
+            'user' => 'deploy',
+        ]);
+
+        (new SshRemoteShell)->run($node, 'hostname');
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            return str_contains((string) $process->command, "'deploy'@'dev'")
+                && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'");
+        });
+    } finally {
+        if ($previousEnv === null) {
+            unset($_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE']);
+        } else {
+            $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = $previousEnv;
+        }
+
+        if ($previousServer === null) {
+            unset($_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE']);
+        } else {
+            $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = $previousServer;
+        }
+    }
+});
+
+it('uses the wireguard address by default when docker topology mode is not dns-alias', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "ok\n"),
+    ]);
+
+    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+
+    $node = Node::factory()->create([
+        'host' => 'dev',
+        'wireguard_address' => '10.6.0.4',
+        'user' => 'deploy',
+    ]);
+
+    (new SshRemoteShell)->run($node, 'hostname');
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        return str_contains((string) $process->command, "'deploy'@'10.6.0.4'")
+            && ! str_contains((string) $process->command, "'deploy'@'dev'");
     });
 });
 

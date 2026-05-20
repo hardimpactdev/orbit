@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -33,6 +36,29 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($node->status)->toBe('active');
     });
 
+    it('writes the matching active composable role assignment', function (): void {
+        $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-dev-1',
+            '--role' => 'app',
+            '--environment' => 'development',
+            '--host' => 'dev',
+            '--wireguard-address' => '10.6.0.4',
+            '--gateway-endpoint' => 'gateway',
+            '--user' => 'orbit',
+            '--tld' => 'test',
+        ])->assertSuccessful();
+
+        $node = Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $assignment = NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', NodeRoleName::AppDevelopment->value)
+            ->first();
+
+        expect($assignment)->not->toBeNull()
+            ->and($assignment?->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment?->settings)->toBe(['tld' => 'test']);
+    });
+
     it('is idempotent across repeated runs', function (): void {
         $args = [
             'name' => 'app-prod-1',
@@ -51,6 +77,10 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         expect(Node::query()->where('name', 'app-prod-1')->count())->toBe(1)
             ->and($node->environment)->toBe('production')
-            ->and($node->tld)->toBeNull();
+            ->and($node->tld)->toBeNull()
+            ->and(NodeRoleAssignment::query()
+                ->where('node_id', $node->id)
+                ->where('role', NodeRoleName::AppProduction->value)
+                ->count())->toBe(1);
     });
 });

@@ -84,12 +84,7 @@ it('lists app processes from a control caller through the gateway api', function
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'process-list',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'process-list');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         processListSeed($topology);
@@ -169,4 +164,4 @@ it('lists app processes from a control caller through the gateway api', function
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

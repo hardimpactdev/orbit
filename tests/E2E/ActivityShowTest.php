@@ -49,12 +49,7 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'activity-show',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'activity-show');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $id = activityShowSeed($topology);
@@ -91,12 +86,7 @@ it('shows one activity entry human output from a control caller', function (): v
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'activity-show-human',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'activity-show-human');
         E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $id = activityShowSeed($topology);
@@ -112,9 +102,11 @@ it('shows one activity entry human output from a control caller', function (): v
         );
 
         expect($result->successful())->toBeTrue()
-            ->and($result->output())->toContain("Activity {$id}")
-            ->and($result->output())->toContain('Type: node.created')
-            ->and($result->output())->toContain('Effect: write');
+            ->and($result->output())->toContain("Activity: {$id}")
+            ->and($result->output())->toContain('Type')
+            ->and($result->output())->toContain('node.created')
+            ->and($result->output())->toContain('Effect')
+            ->and($result->output())->toContain('write');
     } finally {
         $topology->cleanup();
     }

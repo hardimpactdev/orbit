@@ -14,8 +14,20 @@ final class E2EPhaseTimer
         /**
          * @var (\Closure(string): void)|null
          */
-        private readonly ?\Closure $writer = null
+        private readonly ?\Closure $writer = null,
+        private readonly string $prefix = '',
     ) {}
+
+    public function child(string $label): self
+    {
+        $prefix = trim($this->prefix.' '.$label);
+
+        return new self(
+            stream: $this->stream,
+            writer: $this->writer,
+            prefix: $prefix,
+        );
+    }
 
     public function measure(string $name, callable $callback): mixed
     {
@@ -66,12 +78,16 @@ final class E2EPhaseTimer
         }
 
         foreach ($this->events as $event) {
-            fwrite(STDERR, sprintf(
+            $line = sprintf(
                 "[orbit-e2e] %s %s %.3fs\n",
                 $label,
                 $event['name'],
                 $event['seconds'],
-            ));
+            );
+
+            if (! $this->appendToTimingsFile($line)) {
+                fwrite(STDERR, $line);
+            }
         }
     }
 
@@ -89,7 +105,7 @@ final class E2EPhaseTimer
             return;
         }
 
-        $line = "[orbit-e2e] {$message}";
+        $line = '[orbit-e2e] '.trim("{$this->prefix} {$message}");
 
         if ($this->writer !== null) {
             ($this->writer)($line);
@@ -98,5 +114,16 @@ final class E2EPhaseTimer
         }
 
         fwrite(STDERR, $line.PHP_EOL);
+    }
+
+    private function appendToTimingsFile(string $line): bool
+    {
+        $path = getenv('ORBIT_E2E_TIMINGS_FILE');
+
+        if (! is_string($path) || $path === '') {
+            return false;
+        }
+
+        return file_put_contents($path, $line, FILE_APPEND | LOCK_EX) !== false;
     }
 }

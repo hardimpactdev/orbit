@@ -16,6 +16,7 @@ use RuntimeException;
 #[Signature('e2e:prepare-docker-topology
     {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod)}
     {--force : Build the Docker prepared per-role images}
+    {--topology-mode=dns-alias : Topology mode to bake (legacy-retarget|dns-alias)}
     {--json : Output as JSON}')]
 #[Description('Prepare per-role Docker images used by the Docker prepared topology provider')]
 class E2EPrepareDockerTopologyCommand extends Command
@@ -44,13 +45,20 @@ class E2EPrepareDockerTopologyCommand extends Command
             return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.");
         }
 
-        $images = $this->imagesFor($kind);
+        $mode = (string) $this->option('topology-mode');
+
+        if (! $this->isSupportedTopologyMode($mode)) {
+            return $this->failValidation("Invalid topology mode [{$mode}]. Supported: legacy-retarget, dns-alias.");
+        }
+
+        $images = $this->imagesFor($kind, $mode);
 
         if (! (bool) $this->option('force')) {
             $result = [
                 'provider' => 'docker',
                 'dry_run' => true,
                 'kind' => $kind->value,
+                'topology_mode' => $mode,
                 'images' => $images,
             ];
 
@@ -74,7 +82,7 @@ class E2EPrepareDockerTopologyCommand extends Command
                 ? ($this->builderFactory)()
                 : new DockerTopologyBuilder(E2EConfig::fromEnvironment());
 
-            $manifest = $builder->build($kind);
+            $manifest = $builder->build($kind, $mode);
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         }
@@ -83,6 +91,7 @@ class E2EPrepareDockerTopologyCommand extends Command
             'provider' => 'docker',
             'dry_run' => false,
             'kind' => $kind->value,
+            'topology_mode' => $mode,
             'images' => $manifest,
         ];
 
@@ -104,15 +113,20 @@ class E2EPrepareDockerTopologyCommand extends Command
     /**
      * @return list<array{role: string, image: string}>
      */
-    private function imagesFor(E2ETopologyKind $kind): array
+    private function imagesFor(E2ETopologyKind $kind, string $mode): array
     {
         return array_map(
             fn (string $role): array => [
                 'role' => $role,
-                'image' => DockerTopologyBuilder::imageNameFor($kind, $role),
+                'image' => DockerTopologyBuilder::imageNameFor($kind, $role, $mode),
             ],
             DockerTopologyBuilder::rolesFor($kind),
         );
+    }
+
+    private function isSupportedTopologyMode(string $mode): bool
+    {
+        return in_array($mode, ['legacy-retarget', 'dns-alias'], true);
     }
 
     private function failValidation(string $message): int

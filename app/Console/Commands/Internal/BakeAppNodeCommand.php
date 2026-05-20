@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeRegistryWriter;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -43,7 +46,7 @@ class BakeAppNodeCommand extends Command
             throw new RuntimeException('Only app nodes can be baked with this command.');
         }
 
-        $registryWriter->writeAppNode(
+        $node = $registryWriter->writeAppNode(
             name: $name,
             environment: $environment,
             tld: $tld,
@@ -54,7 +57,31 @@ class BakeAppNodeCommand extends Command
             user: $user,
         );
 
+        $this->upsertRoleAssignment($node->id, $environment, $tld);
+
         return self::SUCCESS;
+    }
+
+    private function upsertRoleAssignment(int $nodeId, string $environment, ?string $tld): void
+    {
+        $role = match ($environment) {
+            'development' => NodeRoleName::AppDevelopment->value,
+            'production' => NodeRoleName::AppProduction->value,
+            default => throw new RuntimeException("Invalid app node environment [{$environment}]."),
+        };
+
+        NodeRoleAssignment::query()->updateOrCreate(
+            [
+                'node_id' => $nodeId,
+                'role' => $role,
+            ],
+            [
+                'status' => NodeRoleStatus::Active->value,
+                'settings' => $tld !== null ? ['tld' => $tld] : [],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
     }
 
     private function stringArgument(string $name): ?string

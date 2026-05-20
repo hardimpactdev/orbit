@@ -33,7 +33,7 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('shows a registered tool from gateway intent as human output', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -54,11 +54,12 @@ it('shows a registered tool from gateway intent as human output', function (): v
 
         expect($result->successful())->toBeTrue()
             ->and($result->output())->toContain('Tool: redis')
-            ->and($result->output())->toContain('Node: app-dev-1');
+            ->and($result->output())->toContain('Node')
+            ->and($result->output())->toContain('app-dev-1');
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('returns tool.not_found error for unknown tool name in the gateway registry', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -81,7 +82,7 @@ it('returns tool.not_found error for unknown tool name in the gateway registry',
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('returns tool.unsupported_action error for an unsupported tool catalog name', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -105,7 +106,7 @@ it('returns tool.unsupported_action error for an unsupported tool catalog name',
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 it('includes live key in JSON output when --live flag is passed', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -135,7 +136,7 @@ it('includes live key in JSON output when --live flag is passed', function (): v
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
 
 function toolShowSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

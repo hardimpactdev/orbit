@@ -98,8 +98,8 @@ it('defaults docker max containers per host', function (): void {
     withE2EConfigEnvironment([], function (): void {
         $config = E2EConfig::fromEnvironment();
 
-        expect($config->dockerMaxContainersPerHost)->toBe(8)
-            ->and($config->forHost('sidecar1')->dockerMaxContainersPerHost)->toBe(8);
+        expect($config->dockerMaxContainersPerHost)->toBe(16)
+            ->and($config->forHost('sidecar1')->dockerMaxContainersPerHost)->toBe(16);
     });
 });
 
@@ -118,6 +118,17 @@ it('parses docker host slots for the lease pool', function (): void {
             'sidecar2' => 2,
             'beast' => 3,
         ]);
+    });
+});
+
+it('parses docker image build hosts', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast, Sidecar1',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->dockerImageBuildHosts)->toBe(['beast', 'sidecar1'])
+            ->and($config->forHost('sidecar1')->dockerImageBuildHosts)->toBe(['beast', 'sidecar1']);
     });
 });
 

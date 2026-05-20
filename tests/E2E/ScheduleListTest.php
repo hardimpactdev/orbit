@@ -11,15 +11,10 @@ it('lists schedules from the control node through the gateway api', function ():
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
+        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        E2EGatewayApi::restart(
-            $topology->instance('gateway'),
-            'schedule-list',
-            $topology->checkout('gateway'),
-            gatewayIp: $gatewayApiIp,
-        );
+        e2eRestartGatewayApi($topology, 'schedule-list');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),
             $config->controlUser,
@@ -89,4 +84,4 @@ PHP;
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

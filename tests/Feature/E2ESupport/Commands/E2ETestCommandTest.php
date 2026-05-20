@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Console\Commands\E2ETestCommand;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 
 it('plans docker and incus lanes by default', function (): void {
     putenv('ORBIT_E2E_LANES');
@@ -42,6 +46,28 @@ it('uses selected lanes from the environment', function (): void {
     }
 });
 
+it('does not allocate a timings file for dry-run json output', function (): void {
+    $previous = getenv('ORBIT_E2E_TIMINGS');
+    putenv('ORBIT_E2E_TIMINGS=1');
+
+    try {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'docker',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $environment = $payload['success']['data']['lanes'][0]['environment'];
+
+        expect($exitCode)->toBe(0)
+            ->and($environment)->not->toHaveKey('ORBIT_E2E_TIMINGS_FILE');
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_TIMINGS')
+            : putenv("ORBIT_E2E_TIMINGS={$previous}");
+    }
+});
+
 it('disables pest parallel mode for list-tests passthrough', function (): void {
     $this->artisan('e2e:test --dry-run --json --lanes=docker --list-tests')
         ->expectsOutputToContain('"--list-tests"')
@@ -49,7 +75,23 @@ it('disables pest parallel mode for list-tests passthrough', function (): void {
         ->assertSuccessful();
 });
 
-it('uses six docker processes by default', function (): void {
+it('plans the docker canary lane without leaking the canary flag', function (): void {
+    $exitCode = Artisan::call('e2e:test', [
+        '--canary' => true,
+        '--dry-run' => true,
+        '--json' => true,
+        '--lanes' => 'docker',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $command = $payload['success']['data']['lanes'][0]['command'];
+
+    expect($exitCode)->toBe(0)
+        ->and($command)->toContain('--group=e2e-feature-canary')
+        ->and($command)->not->toContain('--group=e2e-feature')
+        ->and($command)->not->toContain('--canary');
+});
+
+it('uses eight docker processes by default', function (): void {
     $previous = getenv('ORBIT_E2E_PARALLEL_PROCESSES');
     putenv('ORBIT_E2E_PARALLEL_PROCESSES');
 
@@ -62,12 +104,35 @@ it('uses six docker processes by default', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['lanes'][0]['command'])->toContain('--parallel', '--processes=6');
+            ->and($payload['success']['data']['lanes'][0]['command'])->toContain('--parallel', '--processes=8');
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_PARALLEL_PROCESSES')
             : putenv("ORBIT_E2E_PARALLEL_PROCESSES={$previous}");
     }
+});
+
+it('rejects docker worker counts that do not match configured host slots', function (): void {
+    withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:4,sidecar2:4',
+        'ORBIT_E2E_PARALLEL_PROCESSES' => '6',
+    ], function (): void {
+        $this->artisan('e2e:test --dry-run --json --lanes=docker')
+            ->expectsOutputToContain('ORBIT_E2E_PARALLEL_PROCESSES must match total Docker slots')
+            ->assertFailed();
+    });
+});
+
+it('rejects docker container caps below the largest configured host slot capacity', function (): void {
+    withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:4,sidecar2:4',
+        'ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST' => '12',
+        'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
+    ], function (): void {
+        $this->artisan('e2e:test --dry-run --json --lanes=docker')
+            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 16')
+            ->assertFailed();
+    });
 });
 
 it('disables pest parallel mode for a single docker process', function (): void {
@@ -178,6 +243,143 @@ it('skips unavailable incus lanes before invoking pest', function (): void {
         && in_array('test', $process->command, true), 0);
 });
 
+it('allocates a timings file env for timed runs and removes it during cleanup', function (): void {
+    $previous = getenv('ORBIT_E2E_TIMINGS');
+    putenv('ORBIT_E2E_TIMINGS=1');
+
+    try {
+        $command = app(E2ETestCommand::class);
+        $reflection = new ReflectionClass($command);
+        $prepare = $reflection->getMethod('preparePlanArtifacts');
+        $cleanup = $reflection->getMethod('cleanupPlanArtifacts');
+
+        $plans = [
+            'docker' => [
+                'lane' => 'docker',
+                'command' => ['php', 'artisan', 'test'],
+                'environment' => [
+                    'ORBIT_E2E' => '1',
+                ],
+            ],
+        ];
+
+        $prepare->invokeArgs($command, [&$plans]);
+
+        $timingsFile = $plans['docker']['timings_file'] ?? null;
+
+        expect($timingsFile)->toBeString()
+            ->and($plans['docker']['environment']['ORBIT_E2E_TIMINGS_FILE'] ?? null)->toBe($timingsFile)
+            ->and(is_file($timingsFile))->toBeTrue();
+
+        file_put_contents($timingsFile, "[orbit-e2e] checkout.worker checkout.reset 0.111s\n", FILE_APPEND | LOCK_EX);
+
+        $cleanup->invoke($command, $plans);
+
+        expect(is_file($timingsFile))->toBeFalse();
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_TIMINGS')
+            : putenv("ORBIT_E2E_TIMINGS={$previous}");
+    }
+});
+
+it('replays a timings file to the command error output', function (): void {
+    $timingsFile = tempnam(sys_get_temp_dir(), 'orbit-e2e-replay-');
+    file_put_contents($timingsFile, "[orbit-e2e] checkout.worker checkout.reset 0.111s\n");
+
+    $command = app(E2ETestCommand::class);
+    $reflection = new ReflectionClass($command);
+    $outputProperty = $reflection->getProperty('output');
+    $outputProperty->setAccessible(true);
+
+    $output = new class extends BufferedOutput implements ConsoleOutputInterface
+    {
+        public BufferedOutput $errorOutput;
+
+        public function __construct()
+        {
+            parent::__construct();
+            $this->errorOutput = new BufferedOutput;
+        }
+
+        public function getErrorOutput(): BufferedOutput
+        {
+            return $this->errorOutput;
+        }
+
+        public function setErrorOutput(OutputInterface $error): void
+        {
+            if ($error instanceof BufferedOutput) {
+                $this->errorOutput = $error;
+            }
+        }
+
+        public function section(): never
+        {
+            throw new RuntimeException('Not used in this test.');
+        }
+    };
+    $outputProperty->setValue($command, $output);
+
+    $method = $reflection->getMethod('replayTimingsFile');
+    $method->invoke($command, [
+        'lane' => 'docker',
+        'command' => ['php', 'artisan', 'test'],
+        'environment' => [],
+        'timings_file' => $timingsFile,
+    ]);
+
+    expect($output->errorOutput->fetch())->toContain('[orbit-e2e] checkout.worker checkout.reset 0.111s');
+
+    @unlink($timingsFile);
+});
+
+it('cleans up partial artifacts when preparation fails before parallel lanes start', function (): void {
+    $previous = getenv('ORBIT_E2E_TIMINGS');
+    putenv('ORBIT_E2E_TIMINGS=1');
+
+    try {
+        $command = app(E2ETestCommand::class);
+        setE2ETestCommandInput($command, []);
+
+        $plans = failingPreparationPlans();
+        $before = currentDockerTimingsFiles();
+
+        expect(function () use ($command, &$plans): void {
+            invokeE2ETestCommandMethod($command, 'runPlans', [&$plans]);
+        })->toThrow(ErrorException::class, 'DefinitelyMissingTest.php');
+
+        assertNoLeakedPlanArtifacts($plans, $before);
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_TIMINGS')
+            : putenv("ORBIT_E2E_TIMINGS={$previous}");
+    }
+});
+
+it('cleans up partial artifacts when preparation fails before sequential lanes start', function (): void {
+    $previous = getenv('ORBIT_E2E_TIMINGS');
+    putenv('ORBIT_E2E_TIMINGS=1');
+
+    try {
+        $command = app(E2ETestCommand::class);
+        setE2ETestCommandInput($command, ['--sequential-lanes' => true]);
+
+        $plans = failingPreparationPlans();
+        $before = currentDockerTimingsFiles();
+
+        expect(function () use ($command, &$plans): void {
+            invokeE2ETestCommandMethod($command, 'runPlansSequentially', [&$plans]);
+        })->toThrow(ErrorException::class, 'DefinitelyMissingTest.php');
+
+        assertNoLeakedPlanArtifacts($plans, $before);
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_TIMINGS')
+            : putenv("ORBIT_E2E_TIMINGS={$previous}");
+    }
+});
+
 it('reaps active docker and incus resources during interrupt cleanup', function (): void {
     Process::fake(['*' => Process::result()]);
     Process::preventStrayProcesses();
@@ -244,4 +446,85 @@ function firstGeneratedDockerPath(array $command): ?string
     }
 
     return null;
+}
+
+/**
+ * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path: string, test_files: list<string>, timings_file?: string}>
+ */
+function failingPreparationPlans(): array
+{
+    $testPath = 'tests/E2E/.docker-feature-tests/run_failure_'.bin2hex(random_bytes(4));
+
+    return [
+        'docker' => [
+            'lane' => 'docker',
+            'command' => ['php', 'artisan', 'test'],
+            'environment' => [
+                'ORBIT_E2E' => '1',
+            ],
+            'test_path' => $testPath,
+            'test_files' => [
+                'tests/E2E/ToolCredentialsTest.php',
+                'tests/E2E/DefinitelyMissingTest.php',
+            ],
+        ],
+    ];
+}
+
+/**
+ * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+ * @param  list<string>  $beforeTimingsFiles
+ */
+function assertNoLeakedPlanArtifacts(array $plans, array $beforeTimingsFiles): void
+{
+    $plan = $plans['docker'];
+    $testPath = $plan['test_path'] ?? null;
+
+    expect($testPath)->toBeString()
+        ->and(is_dir(base_path($testPath)))->toBeFalse()
+        ->and(is_dir(dirname(base_path($testPath))))->toBeFalse();
+
+    expect(currentDockerTimingsFiles())->toBe($beforeTimingsFiles);
+}
+
+/**
+ * @param  array<int|string, mixed>  $arguments
+ */
+function setE2ETestCommandInput(E2ETestCommand $command, array $arguments): void
+{
+    $reflection = new ReflectionClass($command);
+    $input = $reflection->getProperty('input');
+    $input->setAccessible(true);
+    $input->setValue($command, new ArrayInput($arguments, $command->getDefinition()));
+
+    $output = $reflection->getProperty('output');
+    $output->setAccessible(true);
+    $output->setValue($command, new BufferedOutput);
+}
+
+/**
+ * @param  list<mixed>  $arguments
+ */
+function invokeE2ETestCommandMethod(E2ETestCommand $command, string $method, array $arguments = []): mixed
+{
+    $reflection = new ReflectionClass($command);
+    $target = $reflection->getMethod($method);
+
+    return $target->invokeArgs($command, $arguments);
+}
+
+/**
+ * @return list<string>
+ */
+function currentDockerTimingsFiles(): array
+{
+    $matches = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'orbit-e2e-docker-*');
+
+    if ($matches === false) {
+        return [];
+    }
+
+    sort($matches);
+
+    return array_values($matches);
 }
