@@ -597,7 +597,7 @@ class DoctorCommand extends Command implements Loggable
      */
     private function doctorPanelLines(array $doctor): array
     {
-        $width = 80;
+        $width = $this->doctorPanelWidth($doctor);
         $innerWidth = $width - 2;
         $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
         $node = $this->doctorHumanValue($scope['node'] ?? null);
@@ -751,14 +751,93 @@ class DoctorCommand extends Command implements Loggable
         $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
 
         foreach ($items as $item) {
-            $entry = '- '.$item;
-            $entry = mb_strimwidth($entry, 0, $contentWidth, '…');
-            $lines[] = '│  '.str_pad($entry, $contentWidth).'│';
+            foreach ($this->doctorPanelListItemRows($item, $contentWidth) as $entry) {
+                $lines[] = '│  '.str_pad($entry, $contentWidth).'│';
+            }
         }
 
         $lines[] = $this->doctorPanelTableSeparator($widths, 'bottom');
 
         return $lines;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function doctorPanelListItemRows(string $item, int $contentWidth): array
+    {
+        $rows = [];
+
+        foreach ($this->doctorPanelListItemSegments($item) as $segment) {
+            $prefix = $rows === [] ? '- ' : '';
+            $availableWidth = max(1, $contentWidth - mb_strlen($prefix));
+
+            foreach ($this->doctorWrapText($segment, $availableWidth) as $index => $line) {
+                $rows[] = ($index === 0 ? $prefix : str_repeat(' ', mb_strlen($prefix))).$line;
+            }
+        }
+
+        return $rows === [] ? ['-'] : $rows;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function doctorPanelListItemSegments(string $item): array
+    {
+        $segments = preg_split('/(?<=\.)\s+/', trim($item), limit: 2, flags: PREG_SPLIT_NO_EMPTY);
+
+        if (! is_array($segments) || $segments === []) {
+            return [$item];
+        }
+
+        return array_values(array_filter($segments, is_string(...)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function doctorWrapText(string $text, int $width): array
+    {
+        $lines = [];
+        $remaining = trim($text);
+
+        while (mb_strlen($remaining) > $width) {
+            $candidate = mb_substr($remaining, 0, $width + 1);
+            $break = mb_strrpos($candidate, ' ');
+
+            if (! is_int($break) || $break < 1) {
+                $break = $width;
+            }
+
+            $lines[] = rtrim(mb_substr($remaining, 0, $break));
+            $remaining = ltrim(mb_substr($remaining, $break));
+        }
+
+        if ($remaining !== '') {
+            $lines[] = $remaining;
+        }
+
+        return $lines === [] ? [''] : $lines;
+    }
+
+    private function doctorPanelWidth(array $doctor): int
+    {
+        $width = 80;
+
+        foreach ($this->doctorList($doctor, 'issues') as $issue) {
+            if (($issue['family'] ?? null) !== 'node') {
+                continue;
+            }
+
+            $summary = $this->doctorString($issue['summary'] ?? null);
+
+            foreach ($this->doctorPanelListItemSegments($summary) as $index => $segment) {
+                $width = max($width, mb_strlen($segment) + ($index === 0 ? 6 : 4));
+            }
+        }
+
+        return min(120, $width);
     }
 
     /**

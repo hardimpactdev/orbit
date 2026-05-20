@@ -144,6 +144,26 @@ describe('doctor node updates contract', function (): void {
             ]);
     });
 
+    it('renders explicit reboot guidance in human output', function (): void {
+        createDoctorNodeUpdatesGateway();
+        app()->instance(RemoteShell::class, new DoctorNodeUpdatesShell([
+            doctorNodeUpdatesProbeResult([
+                'reboot_required' => true,
+                'reboot_required_packages' => ['linux-image-generic'],
+            ]),
+        ]));
+
+        $exitCode = Artisan::call('doctor', [
+            '--family' => ['node'],
+            '--key' => 'node.updates',
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('This node requires an explicit reboot to finish installed updates.')
+            ->and($output)->toContain('Orbit will not reboot it automatically. Reboot this server as soon as possible.');
+    });
+
     it('returns healthy JSON for a node without a supported update driver', function (): void {
         createDoctorNodeUpdatesGateway(['platform' => 'macos_15']);
         $shell = new DoctorNodeUpdatesShell([]);
