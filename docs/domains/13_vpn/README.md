@@ -25,13 +25,13 @@ These rules govern all VPN commands and their gateway-execution contract.
 - VPN commands must start with a VPN compound command prefix before the colon,
   such as `vpn-client:*` or `vpn-web-ui:*`.
 - VPN commands execute against the active `vpn` role runtime. In this version
-  the active `vpn` role is gateway-coupled, so execution remains on the
-  gateway host.
+  that runtime usually lives on the same machine as the `gateway` role, but the
+  command target is the `vpn` role node.
 - Gateway callers execute the backend operation locally.
 - Operator callers may initiate VPN commands only when they can SSH to the
-  active `vpn` role host over the Orbit/WireGuard path. In v1 that is the
-  gateway-coupled host. This is a VPN-role infrastructure exception and does
-  not create a general public SSH path from control to gateway.
+  active `vpn` role host over the Orbit/WireGuard path. This is a VPN-role
+  infrastructure exception and does not create a general public SSH path from
+  control to gateway.
 - App-role callers are denied before prompts or side effects.
 - `vpn-client:*` commands manage VPN clients for humans and operators, not Orbit node peers.
 
