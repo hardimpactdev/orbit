@@ -10,6 +10,8 @@ use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\OrbitUpdater;
@@ -23,6 +25,7 @@ use Illuminate\Http\Request;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+#[RequiresPermission('*', servingNode: ServingNode::Gateway)]
 final class UpdateAllController implements Loggable
 {
     private const int REMOTE_UPDATE_CONCURRENCY = 4;
@@ -44,11 +47,7 @@ final class UpdateAllController implements Loggable
             return $this->stream($request, $updater, $streams);
         }
 
-        $authorized = $this->authorizeCaller($request);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
-        }
+        $this->captureActivitySubject($request);
 
         $result = $this->runUpdateAll($updater);
 
@@ -77,13 +76,9 @@ final class UpdateAllController implements Loggable
         ]);
     }
 
-    private function stream(Request $request, OrbitUpdater $updater, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
+    private function stream(Request $request, OrbitUpdater $updater, ProgressEventStreamResponseFactory $streams): StreamedResponse
     {
-        $authorized = $this->authorizeCaller($request);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
-        }
+        $this->captureActivitySubject($request);
 
         return $streams->make(function ($emitter) use ($updater): void {
             $result = $this->runUpdateAll($updater, app(ProgressReporter::class));
@@ -121,18 +116,12 @@ final class UpdateAllController implements Loggable
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
-    private function authorizeCaller(Request $request): ?JsonResponse
+    private function captureActivitySubject(Request $request): void
     {
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (! $caller instanceof Node) {
-            return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        $this->activitySubject = $caller;
-
-        return null;
+        $this->activitySubject = $caller instanceof Node ? $caller : null;
     }
 
     /**
@@ -833,17 +822,6 @@ final class UpdateAllController implements Loggable
             'completed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'completed')),
             'failed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'failed')),
         ];
-    }
-
-    private function authorizationFailed(string $message): JsonResponse
-    {
-        return response()->json([
-            'error' => [
-                'code' => 'authorization_failed',
-                'message' => $message,
-                'meta' => [],
-            ],
-        ], 403);
     }
 
     public function effect(): ActivityLogType
