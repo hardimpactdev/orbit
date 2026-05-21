@@ -320,6 +320,46 @@ it('reports missing role companion contracts when canonical docs declare role-sp
         ]);
 });
 
+it('allows deployment companion subsets without app-role companion contracts', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        canonicalContract: validOrbitCanonicalContract(extra: "\nDeployment-context test mapping lives in:\n\n- [Client](2_node-new_on-client.md#test-mapping)\n- [Gateway](3_node-new_on-gateway-node.md#test-mapping)\n"),
+    );
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/README.md', "# Domain Docs\n\n## JSON Envelope\n\nShared envelope.\n");
+
+    $companionContract = "# Technical Contract: `node:new` From Configured Clients\n\n"
+        ."[Back to `node:new` technical contract.](1_node-new.md)\n\n"
+        ."## Allowed Paths\n\n"
+        ."| Context | Behavior |\n"
+        ."| --- | --- |\n"
+        ."| Configured client | Forward to the gateway. |\n\n"
+        ."## Test Mapping\n\n"
+        ."| Path | Coverage |\n"
+        ."| --- | --- |\n"
+        ."| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers optional deployment-context companion slots. |\n";
+
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/2_node-new_on-client.md', $companionContract);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/3_node-new_on-gateway-node.md', $companionContract);
+
+    config()->set('librarian.rules', [RoleCompanionCoverageRule::class]);
+    app()->forgetInstance(DocsConfig::class);
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'references',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['findings'] ?? [])->toBe([])
+        ->and($exitCode)->toBe(0)
+        ->and($payload)->toMatchArray([
+            'tool' => 'librarian',
+            'result' => 'passed',
+            'issues' => 0,
+        ]);
+});
+
 it('reports technical command files without test mapping sections', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,

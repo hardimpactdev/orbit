@@ -74,13 +74,15 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
 
         $canonicalContents = file_get_contents($canonicalFile) ?: '';
 
-        if (! $this->requiresRoleCompanions($canonicalContents, $commandDirectory, $commandName)) {
+        $companionSlots = $this->companionSlotsToCheck($canonicalContents, $commandDirectory, $commandName);
+
+        if ($companionSlots === []) {
             return [];
         }
 
         $findings = [];
 
-        foreach (self::ROLE_SUFFIXES as $slot => $suffix) {
+        foreach ($companionSlots as $slot => $suffix) {
             $companionFile = "{$commandDirectory}/technical/{$slot}_{$commandName}{$suffix}.md";
 
             if (! is_file($companionFile)) {
@@ -105,23 +107,28 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
         return $findings;
     }
 
-    private function requiresRoleCompanions(string $canonicalContents, string $commandDirectory, string $commandName): bool
+    /**
+     * @return array<int, string>
+     */
+    private function companionSlotsToCheck(string $canonicalContents, string $commandDirectory, string $commandName): array
     {
         if (str_contains($canonicalContents, 'Role-specific behavior is defined in these companion contracts')) {
-            return true;
+            return self::ROLE_SUFFIXES;
         }
+
+        $slots = [];
 
         foreach (self::ROLE_SUFFIXES as $slot => $suffix) {
             if (is_file("{$commandDirectory}/technical/{$slot}_{$commandName}{$suffix}.md")) {
-                return true;
+                $slots[$slot] = $suffix;
             }
 
             if (str_contains($canonicalContents, "{$slot}_{$commandName}{$suffix}.md")) {
-                return true;
+                $slots[$slot] = $suffix;
             }
         }
 
-        return false;
+        return $slots;
     }
 
     /**
