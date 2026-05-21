@@ -32,6 +32,11 @@ node record. HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 node service host, such as `orbit.<node-tld>:5432`, and must not be represented
 as HTTP proxy routes.
 
+Catalog placeholders such as `<node-tld>` and `<agent-tld>` are contextual
+references to that same node-level TLD field. Use `<node-tld>` for generic
+tool endpoints and `<agent-tld>` only when the example is explicitly scoped to
+an agent node; neither placeholder names a separate TLD owner.
+
 ## Tool-Specific Command Families
 
 Catalog membership does not create a top-level command family. Most tool

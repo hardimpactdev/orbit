@@ -27,7 +27,7 @@ Evaluate each path eligibility rule as soon as the fields needed for that rule
 are known. For example, a client with no configured gateway and a
 resolved explicit requested role other than `gateway` fails before side effects,
 before prompting for app-role host, environment, TLD, or any later input.
-Omitted `--role` does not show a role prompt; it follows the joined/client
+Omitted `--role` does not show a role prompt; it follows the client identity
 no-role path and only succeeds when a gateway is already configured.
 Non-interactive input mode fails at the same early eligibility point for the
 same blocker. All path eligibility must complete before side effects begin.
@@ -37,8 +37,8 @@ same blocker. All path eligibility must complete before side effects begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local client onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| omitted `--role` | Forward a joined/client identity request with no roles to the configured gateway over HTTPS. |
-| `control` | Legacy compatibility alias for the no-role joined/client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
+| omitted `--role` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
+| `control` | Legacy compatibility alias for the no-role client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
 | `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
 | `app-production` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-production']`. Requires `node_new.host` and `node_new.user`. |
 | `database` | Forward a canonical role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |

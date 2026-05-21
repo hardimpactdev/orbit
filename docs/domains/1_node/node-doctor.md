@@ -55,8 +55,8 @@ The node probe reads gateway node records and checks these layers:
    recorded WireGuard address.
 6. **Platform reality:** gateway and nodes report supported Ubuntu platform
    identifiers through SSH. The local client reports a supported macOS or
-   Ubuntu platform identifier when `--self` can inspect it. Remote joined
-   clients are verified through identity and gateway API reachability, not SSH.
+   Ubuntu platform identifier when `--self` can inspect it. Remote client
+   machines are verified through identity and gateway API reachability, not SSH.
 7. **SSH reachability:** the gateway can SSH to nodes. Clients are
    not SSH targets for node doctor checks.
 8. **Gateway runtime readiness:** the gateway node exposes the Orbit API and

@@ -58,8 +58,8 @@ side effects that the gateway owns begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. |
-| omitted `--role` | Enroll a joined/client identity with no roles by minting a WireGuard peer and active node record. |
-| `control` | Legacy compatibility alias for the no-role joined/client enrollment path. |
+| omitted `--role` | Enroll a client identity with no roles by minting a WireGuard peer and active node record. |
+| `control` | Legacy compatibility alias for the no-role client enrollment path. |
 | `app-development` | Provision or adopt an app-development node over SSH, then create the role assignment. |
 | `app-production` | Provision or adopt an app-production node over SSH, then create the role assignment. |
 | `database` | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
@@ -75,7 +75,7 @@ side effects that the gateway owns begin.
   must not bind UDP `51820`.
 - Gateway execution may write durable node state directly.
 - Gateway execution may use SSH to provision app-hosting nodes.
-- Gateway execution must not SSH to joined/client identities for omitted
+- Gateway execution must not SSH to client identities for omitted
   `--role` or legacy `--role=control`.
 
 ## Gateway convergence and adoption
