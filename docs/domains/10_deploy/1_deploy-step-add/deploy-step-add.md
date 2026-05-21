@@ -55,8 +55,7 @@ JSON output returns the created deploy step entity.
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
-- The caller is authorized to manage deployment policy for the production app.
-- App-role callers are denied before prompts or side effects.
+- The caller has `deploy:step` on the production app's owning node.
 
 ## Related
 
