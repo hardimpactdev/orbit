@@ -29,7 +29,10 @@ class FirewallRuleQuery
             throw new GatewayApiException(
                 message: 'This node is not authorized to read the firewall rule registry.',
                 errorCode: 'authorization_failed',
-                errorMeta: ['caller_role' => $caller->role],
+                errorMeta: [
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'firewall_rule:read',
+                ],
             );
         }
 
