@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Enums\ProcessEventType;
 use App\Models\Node;
 use App\Models\ProcessEvent;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessRuntimeUnitResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,7 @@ final readonly class ProcessEventIngestController implements Loggable
 {
     public function __construct(
         private ProcessRuntimeUnitResolver $resolver,
+        private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -28,11 +30,11 @@ final readonly class ProcessEventIngestController implements Loggable
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (! $caller instanceof Node || $caller->role !== 'app' || $caller->status !== 'active') {
+        if (! $caller instanceof Node || $caller->status !== 'active' || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($caller)) {
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',
-                    'message' => 'Only active app-node identities may ingest process crash events.',
+                    'message' => 'Only active app-host identities may ingest process crash events.',
                     'meta' => (object) [],
                 ],
             ], 403);

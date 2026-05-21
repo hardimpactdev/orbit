@@ -16,12 +16,18 @@ const PROCESS_LOG_CALLER_WG_IP = '10.6.0.94';
 
 function createProcessLogCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => PROCESS_LOG_CALLER_WG_IP,
         'wireguard_address' => PROCESS_LOG_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProcessLogAccess(Node $caller, Node $appNode): void
@@ -29,6 +35,8 @@ function grantProcessLogAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['process:logs'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -37,7 +45,7 @@ function grantProcessLogAccess(Node $caller, Node $appNode): void
 describe('ProcessLogController', function (): void {
     it('returns bounded logs for authorized control callers', function (): void {
         $caller = createProcessLogCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         grantProcessLogAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -58,7 +66,7 @@ describe('ProcessLogController', function (): void {
 
     it('requires authorization before log reads', function (): void {
         createProcessLogCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
@@ -69,14 +77,16 @@ describe('ProcessLogController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:logs');
 
         expect($remoteShell->scripts)->toBe([]);
     });
 
     it('returns log read failures as gateway errors', function (): void {
         createProcessLogCallerNode(['role' => 'gateway']);
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([

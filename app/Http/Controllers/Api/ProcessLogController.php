@@ -7,18 +7,25 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Processes\ShowProcessLogs;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
 final class ProcessLogController implements Loggable
 {
     private ?App $activitySubject = null;
+
+    public function __construct(
+        private readonly NodeAccessAuthorizer $authorizer,
+    ) {}
 
     public function __invoke(string $name, Request $request, ShowProcessLogs $showProcessLogs): JsonResponse
     {
@@ -29,10 +36,6 @@ final class ProcessLogController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        if (! in_array($caller->role, ['control', 'gateway', 'app'], true)) {
-            return $this->error('caller_role_not_allowed', 'The local Orbit caller role could not be resolved.', ['caller_role' => $caller->role], 403);
-        }
-
         $context = $this->resolveContext($request);
 
         if ($context instanceof JsonResponse) {
@@ -41,8 +44,10 @@ final class ProcessLogController implements Loggable
 
         [$app, $workspace] = $context;
 
-        if (! $this->callerCanReadApp($caller, $app)) {
-            return $this->error('authorization_failed', "This node is not authorized to read process logs for app '{$app->name}'.", ['app' => $app->name], 403);
+        $authorization = $this->authorizeProcessAccess($caller, $app, 'process:logs');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         try {
@@ -106,20 +111,28 @@ final class ProcessLogController implements Loggable
         return [$app, null];
     }
 
-    private function callerCanReadApp(Node $caller, App $app): bool
+    private function authorizeProcessAccess(Node $caller, App $app, string $permission): ?JsonResponse
     {
-        if ($caller->role === 'gateway') {
-            return true;
+        $app->loadMissing('node');
+
+        if (! $app->node instanceof Node) {
+            return $this->error('authorization_failed', "Serving node could not be resolved for app '{$app->name}'.", [
+                'reason' => 'serving_node_unresolved',
+                'missing_permission' => $permission,
+            ], 403);
         }
 
-        if ($caller->id === $app->node_id) {
-            return true;
+        $result = $this->authorizer->authorize($caller, $app->node, $permission);
+
+        if ($result->allowed) {
+            return null;
         }
 
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $app->node_id)
-            ->exists();
+        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$app->node->name}'.", [
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $app->node->name,
+        ], 403);
     }
 
     private function lines(Request $request): int
@@ -140,7 +153,7 @@ final class ProcessLogController implements Loggable
     {
         return match ($exception->errorCode()) {
             'process.not_found' => 404,
-            'authorization_failed', 'caller_role_not_allowed' => 403,
+            'authorization_failed' => 403,
             'process.log_read_failed' => 502,
             default => 422,
         };

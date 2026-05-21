@@ -16,12 +16,18 @@ const PROCESS_DESTROY_CALLER_WG_IP = '10.6.0.91';
 
 function createProcessDestroyCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => PROCESS_DESTROY_CALLER_WG_IP,
         'wireguard_address' => PROCESS_DESTROY_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProcessDestroyAccess(Node $caller, Node $appNode): void
@@ -29,6 +35,8 @@ function grantProcessDestroyAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['process:remove'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -37,7 +45,7 @@ function grantProcessDestroyAccess(Node $caller, Node $appNode): void
 describe('ProcessDestroyController', function (): void {
     it('removes process intent for authorized control callers with destructive consent', function (): void {
         $caller = createProcessDestroyCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         grantProcessDestroyAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -60,7 +68,7 @@ describe('ProcessDestroyController', function (): void {
 
     it('requires authorization and destructive consent before deleting intent', function (array $payload, bool $grantAccess, int $status, string $code): void {
         $caller = createProcessDestroyCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         if ($grantAccess) {
             grantProcessDestroyAccess($caller, $appNode);
         }
@@ -79,8 +87,10 @@ describe('ProcessDestroyController', function (): void {
         'unauthorized' => [['app' => 'docs', 'destructive_consent' => true], false, 403, 'authorization_failed'],
     ]);
 
-    it('denies app callers before deleting intent', function (): void {
-        createProcessDestroyCallerNode(['role' => 'app']);
+    it('denies app callers without a process remove grant before deleting intent', function (): void {
+        $caller = createProcessDestroyCallerNode(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
         $response = $this->call('DELETE', '/api/processes/vite', [
@@ -89,12 +99,14 @@ describe('ProcessDestroyController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:remove');
     });
 
     it('returns process not found without cleanup', function (): void {
         createProcessDestroyCallerNode(['role' => 'gateway']);
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 

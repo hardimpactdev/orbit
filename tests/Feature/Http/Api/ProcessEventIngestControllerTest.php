@@ -15,13 +15,19 @@ const PROCESS_EVENT_INGEST_APP_WG_IP = '10.6.0.95';
 
 function createProcessEventIngestNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'app-node',
         'role' => 'app',
         'status' => 'active',
         'host' => PROCESS_EVENT_INGEST_APP_WG_IP,
         'wireguard_address' => PROCESS_EVENT_INGEST_APP_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 describe('ProcessEventIngestController', function (): void {

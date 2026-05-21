@@ -22,12 +22,18 @@ const PROCESS_STORE_CALLER_WG_IP = '10.6.0.89';
 
 function createProcessStoreCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => PROCESS_STORE_CALLER_WG_IP,
         'wireguard_address' => PROCESS_STORE_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProcessStoreAccess(Node $caller, Node $appNode): void
@@ -35,6 +41,8 @@ function grantProcessStoreAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['process:add'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -43,7 +51,7 @@ function grantProcessStoreAccess(Node $caller, Node $appNode): void
 describe('ProcessStoreController', function (): void {
     it('creates process intent for authorized control callers', function (): void {
         $caller = createProcessStoreCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         grantProcessStoreAccess($caller, $appNode);
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
@@ -69,7 +77,7 @@ describe('ProcessStoreController', function (): void {
 
     it('rejects unauthorized callers before writing intent', function (): void {
         createProcessStoreCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
@@ -80,13 +88,16 @@ describe('ProcessStoreController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:add');
 
         expect(Process::query()->exists())->toBeFalse();
     });
 
-    it('denies app callers before writing intent', function (): void {
-        createProcessStoreCallerNode(['role' => 'app']);
+    it('denies app callers without a process add grant before writing intent', function (): void {
+        $caller = createProcessStoreCallerNode(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
         $response = $this->call('POST', '/api/processes', [
@@ -96,7 +107,9 @@ describe('ProcessStoreController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:add');
     });
 
     it('returns validation errors before writing intent', function (array $payload, string $field): void {
@@ -119,7 +132,7 @@ describe('ProcessStoreController', function (): void {
 
     it('returns duplicate process conflicts', function (): void {
         createProcessStoreCallerNode(['role' => 'gateway']);
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));

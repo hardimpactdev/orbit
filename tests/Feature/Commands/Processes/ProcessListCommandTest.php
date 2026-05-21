@@ -26,12 +26,18 @@ afterEach(function (): void {
 
 function createProcessListLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $attributes = [
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-    ]);
+    ];
+
+    return match ($role) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 describe('process:list base contract', function (): void {
@@ -181,7 +187,10 @@ describe('process:list base contract', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read process intent.',
-                    'meta' => ['caller_role' => 'app'],
+                    'meta' => [
+                        'reason' => 'missing_permission',
+                        'missing_permission' => 'process:read',
+                    ],
                 ],
             ], 403),
         ]);
@@ -191,7 +200,7 @@ describe('process:list base contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
+            ->and($payload['error']['meta']['missing_permission'])->toBe('process:read');
     });
 
     it('validates required context before gateway calls', function (): void {

@@ -22,12 +22,18 @@ const PROCESS_UPDATE_CALLER_WG_IP = '10.6.0.90';
 
 function createProcessUpdateCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => PROCESS_UPDATE_CALLER_WG_IP,
         'wireguard_address' => PROCESS_UPDATE_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProcessUpdateAccess(Node $caller, Node $appNode): void
@@ -35,6 +41,8 @@ function grantProcessUpdateAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['process:edit'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -43,7 +51,7 @@ function grantProcessUpdateAccess(Node $caller, Node $appNode): void
 describe('ProcessUpdateController', function (): void {
     it('updates process intent for authorized control callers', function (): void {
         $caller = createProcessUpdateCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
@@ -66,7 +74,7 @@ describe('ProcessUpdateController', function (): void {
 
     it('rejects unauthorized callers before changing intent', function (): void {
         createProcessUpdateCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
@@ -77,13 +85,17 @@ describe('ProcessUpdateController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:edit');
 
         expect(Process::query()->where('name', 'vite')->value('command'))->toBe('npm run dev');
     });
 
-    it('denies app callers before changing intent', function (): void {
-        createProcessUpdateCallerNode(['role' => 'app']);
+    it('denies app callers without a process edit grant before changing intent', function (): void {
+        $caller = createProcessUpdateCallerNode(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
         $response = $this->call('PATCH', '/api/processes/vite', [
@@ -92,12 +104,14 @@ describe('ProcessUpdateController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:edit');
     });
 
     it('returns validation and not found errors', function (array $payload, string $processName, int $status, string $code): void {
         createProcessUpdateCallerNode(['role' => 'gateway']);
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
