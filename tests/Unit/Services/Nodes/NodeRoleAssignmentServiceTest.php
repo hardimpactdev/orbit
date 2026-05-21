@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -166,6 +167,30 @@ describe('node role assignment service', function (): void {
         expect($node->role)->toBe('control')
             ->and($node->environment)->toBeNull()
             ->and($node->tld)->toBeNull();
+    });
+
+    it('materializes and reconciles role-derived self grants through role mutations', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-production', []);
+
+        $selfGrant = NodeAccess::query()
+            ->where('consumer_node_id', $node->id)
+            ->where('serving_node_id', $node->id)
+            ->first();
+
+        expect($selfGrant?->permissions)->toBe(['workspace:setup'])
+            ->and($selfGrant?->custom_permissions)->toBe([]);
+
+        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-production', force: true);
+
+        expect(NodeAccess::query()
+            ->where('consumer_node_id', $node->id)
+            ->where('serving_node_id', $node->id)
+            ->exists())->toBeFalse();
     });
 
     it('materializes docker as a desired tool for database roles', function (): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRoleRequest;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -186,6 +187,12 @@ describe('node role:remove', function (): void {
         ]);
 
         assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        NodeAccess::query()->create([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+            'permissions' => ['workspace:setup'],
+            'custom_permissions' => [],
+        ]);
 
         $removeExitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
@@ -207,6 +214,10 @@ describe('node role:remove', function (): void {
             ->and($node->role)->toBe('control')
             ->and($node->environment)->toBeNull()
             ->and($node->tld)->toBeNull()
+            ->and(NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->where('serving_node_id', $node->id)
+                ->exists())->toBeFalse()
             ->and($updateExitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.field_role_incompatible')
             ->and($payload['error']['meta']['field'])->toBe('tld')

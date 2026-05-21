@@ -27,6 +27,7 @@ use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
+use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Tools\ToolCatalog;
@@ -2926,21 +2927,21 @@ SCRIPT,
             return $this->validationFailed('self-grant', 'Self-grant mode must be one of default or custom.');
         }
 
-        $permissions = match ($selfGrantMode) {
-            'default' => app(NodePermissionPresets::class)->permissions('agent-self'),
-            'custom' => $this->resolveGrantPermissions(null, $selfGrantPermissions),
-        };
+        $materializer = app(RoleSelfGrantMaterializer::class);
+
+        if ($selfGrantMode === 'default') {
+            $materializer->materializeOnRoleApplied($node, NodeRoleName::Agent);
+
+            return null;
+        }
+
+        $permissions = $this->resolveGrantPermissions(null, $selfGrantPermissions);
 
         if (is_int($permissions)) {
             return $permissions;
         }
 
-        NodeAccess::query()->firstOrCreate([
-            'consumer_node_id' => $node->id,
-            'serving_node_id' => $node->id,
-        ], [
-            'permissions' => $permissions,
-        ]);
+        $materializer->replaceCustomSelfPermissions($node, $permissions);
 
         return null;
     }

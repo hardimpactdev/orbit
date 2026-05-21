@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -224,6 +225,12 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
+        NodeAccess::query()->create([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+            'permissions' => ['workspace:setup'],
+            'custom_permissions' => [],
+        ]);
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [], [
             'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
@@ -237,7 +244,11 @@ describe('NodeRoleRemoveController', function (): void {
         expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeFalse()
             ->and($node->role)->toBe('control')
             ->and($node->environment)->toBeNull()
-            ->and($node->tld)->toBeNull();
+            ->and($node->tld)->toBeNull()
+            ->and(NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->where('serving_node_id', $node->id)
+                ->exists())->toBeFalse();
     });
 
     it('removes Orbit-owned role dependents when force is true without purge data', function (): void {

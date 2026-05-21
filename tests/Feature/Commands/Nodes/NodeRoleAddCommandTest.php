@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Nodes\AddNodeRoleRequest;
+use App\Models\NodeAccess;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -55,6 +56,14 @@ describe('node role:add', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
+
+        $selfGrant = NodeAccess::query()
+            ->whereRelation('consumer', 'name', 'client-1')
+            ->whereColumn('consumer_node_id', 'serving_node_id')
+            ->first();
+
+        expect($selfGrant?->permissions)->toBe(['workspace:setup'])
+            ->and($selfGrant?->custom_permissions)->toBe([]);
     });
 
     it('rejects adding gateway through the command surface', function (): void {

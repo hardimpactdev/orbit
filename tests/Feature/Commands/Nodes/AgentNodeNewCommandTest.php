@@ -169,7 +169,8 @@ it('creates an agent node with default self-grant', function (): void {
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-        ]);
+        ])
+        ->and($selfGrant->custom_permissions)->toBe([]);
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'orbit'@'192.0.2.10'")
         && str_contains((string) $process->command, '99-orbit-hardening.conf')
@@ -203,7 +204,8 @@ it('creates an agent node with default self-grant when omitted', function (): vo
             'tool:read',
             'tool:restart',
             'tool:update:agent-tools',
-        ]);
+        ])
+        ->and($selfGrant->custom_permissions)->toBe([]);
 });
 
 it('creates an agent node with custom self-grant permissions', function (): void {
@@ -225,7 +227,8 @@ it('creates an agent node with custom self-grant permissions', function (): void
 
     expect($exitCode)->toBe(0)
         ->and($selfGrant)->not->toBeNull()
-        ->and($selfGrant->permissions)->toBe(['node:read', 'tool:read']);
+        ->and($selfGrant->permissions)->toBe(['node:read', 'tool:read'])
+        ->and($selfGrant->custom_permissions)->toBe(['node:read', 'tool:read']);
 });
 
 it('expands grant-to=all to all current eligible nodes', function (): void {

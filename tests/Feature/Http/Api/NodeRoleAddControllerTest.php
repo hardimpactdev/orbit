@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -46,7 +47,7 @@ describe('NodeRoleAddController', function (): void {
     });
 
     it('returns the authorized control caller response shape', function (): void {
-        setUpNodeRoleApiContractAccess();
+        [, , $target] = setUpNodeRoleApiContractAccess();
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-development',
@@ -70,5 +71,13 @@ describe('NodeRoleAddController', function (): void {
             ])
             ->assertJsonPath('success.data.node', 'target-1')
             ->assertJsonPath('success.data.assignment.settings.tld', 'test');
+
+        $selfGrant = NodeAccess::query()
+            ->where('consumer_node_id', $target->id)
+            ->where('serving_node_id', $target->id)
+            ->first();
+
+        expect($selfGrant?->permissions)->toBe(['workspace:setup'])
+            ->and($selfGrant?->custom_permissions)->toBe([]);
     });
 });
