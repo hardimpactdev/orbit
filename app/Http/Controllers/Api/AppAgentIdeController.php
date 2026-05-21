@@ -7,14 +7,15 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\SetAppAgentIdeApiRequest;
 use App\Models\App;
-use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('app:agent', servingNode: ServingNode::AppOwning)]
 final class AppAgentIdeController implements Loggable
 {
     private ?App $activitySubject = null;
@@ -34,23 +35,6 @@ final class AppAgentIdeController implements Loggable
     {
         $this->activityTargetName = $app;
 
-        /** @var mixed $resolvedUser */
-        $resolvedUser = $request->user();
-        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
-
-        if (! $caller instanceof Node) {
-            return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from an operator or gateway node.',
-                meta: ['caller_role' => 'app'],
-                status: 403,
-            );
-        }
-
         $targetApp = $this->resolveApp($app);
 
         if (! $targetApp instanceof App) {
@@ -63,16 +47,6 @@ final class AppAgentIdeController implements Loggable
         }
 
         $targetApp->loadMissing('node');
-
-        if (! $targetApp->node instanceof Node || ! $this->callerCanManageApp($caller, $targetApp)) {
-            return $this->authorizationFailed(
-                message: "This node is not authorized to manage app '{$targetApp->name}'.",
-                meta: [
-                    'app' => $targetApp->name,
-                    'caller_role' => $caller->role,
-                ],
-            );
-        }
 
         $agentIde = $request->agentIde();
 
@@ -185,37 +159,6 @@ final class AppAgentIdeController implements Loggable
                 || $app->url() === "https://{$selector}")
             ->values()
             ->first();
-    }
-
-    private function callerCanManageApp(Node $caller, App $app): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            return false;
-        }
-
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
-    }
-
-    /**
-     * @param  array<string, mixed>  $meta
-     */
-    private function authorizationFailed(string $message, array $meta = []): JsonResponse
-    {
-        return $this->error(
-            code: 'authorization_failed',
-            message: $message,
-            meta: $meta,
-            status: 403,
-        );
     }
 
     /**

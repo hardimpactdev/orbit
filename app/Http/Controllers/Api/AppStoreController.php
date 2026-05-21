@@ -8,6 +8,8 @@ use App\Actions\Apps\CreateAppSourceOnNode;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -16,8 +18,8 @@ use App\Support\GitRepositoryReference;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('app:new', servingNode: ServingNode::Target)]
 final class AppStoreController implements Loggable
 {
     private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
@@ -30,25 +32,6 @@ final class AppStoreController implements Loggable
 
     public function __invoke(Request $request, CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): JsonResponse
     {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
-        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
-
-        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
-            return $this->error(
-                'caller_role_not_allowed',
-                'This command may only be run from an operator or gateway node.',
-                ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
-                403,
-            );
-        }
-
         $input = $this->validatedInput($request);
 
         if ($input instanceof JsonResponse) {
@@ -60,10 +43,6 @@ final class AppStoreController implements Loggable
 
         if ($node instanceof JsonResponse) {
             return $node;
-        }
-
-        if (! $this->callerCanCreateOnNode($caller, $node, $callerIsGateway)) {
-            return $this->error('authorization_failed', "This node is not authorized to create apps on '{$node->name}'.", ['node' => $node->name], 403);
         }
 
         $existingApp = App::query()->with('node')->where('name', $input['name'])->first();
@@ -191,18 +170,6 @@ final class AppStoreController implements Loggable
         }
 
         return $node;
-    }
-
-    private function callerCanCreateOnNode(Node $caller, Node $node, bool $callerIsGateway): bool
-    {
-        if ($callerIsGateway) {
-            return true;
-        }
-
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
     }
 
     /**

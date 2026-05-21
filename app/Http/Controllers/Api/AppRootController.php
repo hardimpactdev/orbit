@@ -6,31 +6,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Models\Node;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('app:root', servingNode: ServingNode::AppOwning)]
 final class AppRootController implements Loggable
 {
     private ?App $activitySubject = null;
 
     public function __invoke(string $app, Request $request): JsonResponse
     {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         $targetApp = $this->resolveApp($app);
 
         if (! $targetApp instanceof App) {
@@ -38,10 +28,6 @@ final class AppRootController implements Loggable
         }
 
         $targetApp->loadMissing('node');
-
-        if (! $targetApp->node instanceof Node || ! $this->callerCanManageApp($caller, $targetApp)) {
-            return $this->error('authorization_failed', "This node is not authorized to manage app '{$targetApp->name}'.", ['app' => $targetApp->name], 403);
-        }
 
         $root = $this->optionalString($request, 'root');
 
@@ -72,24 +58,6 @@ final class AppRootController implements Loggable
                 || $app->url() === "https://{$selector}")
             ->values()
             ->first();
-    }
-
-    private function callerCanManageApp(Node $caller, App $app): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            return false;
-        }
-
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
     }
 
     private function optionalString(Request $request, string $key): ?string

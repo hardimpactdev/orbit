@@ -160,10 +160,28 @@ final class ServingNodeResolver
             return null;
         }
 
-        return OrbitApp::query()
+        $app = OrbitApp::query()
             ->with('node')
             ->where('name', $value)
             ->first();
+
+        if ($app instanceof OrbitApp) {
+            return $app;
+        }
+
+        $app = OrbitApp::query()
+            ->with('node')
+            ->where('domain', $value)
+            ->first();
+
+        if ($app instanceof OrbitApp) {
+            return $app;
+        }
+
+        return OrbitApp::query()
+            ->with('node')
+            ->get()
+            ->first(fn (OrbitApp $app): bool => $app->url() === "https://{$value}" || $app->url() === $value);
     }
 
     private function processFromValue(mixed $value, ?OrbitApp $app = null): ?OrbitProcess
