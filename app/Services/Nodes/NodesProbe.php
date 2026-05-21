@@ -855,7 +855,7 @@ final readonly class NodesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'node.app_ssh_unreachable',
+                    key: 'node.ssh_unreachable',
                     kind: DriftKind::Unverifiable,
                     summary: "Gateway cannot reach app node {$node->name} over SSH: {$e->getMessage()}",
                     detail: [
@@ -870,7 +870,7 @@ final readonly class NodesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'node.app_ssh_unreachable',
+                    key: 'node.ssh_unreachable',
                     kind: DriftKind::Unverifiable,
                     summary: "Gateway cannot reach app node {$node->name} over SSH.",
                     detail: [
@@ -911,7 +911,7 @@ final readonly class NodesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'node.app_runtime_missing',
+                    key: 'node.runtime_missing',
                     kind: DriftKind::Unverifiable,
                     summary: "App node {$node->name} runtime readiness could not be verified: {$e->getMessage()}",
                     detail: [
@@ -926,7 +926,7 @@ final readonly class NodesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'node.app_runtime_missing',
+                    key: 'node.runtime_missing',
                     kind: DriftKind::Unverifiable,
                     summary: "App node {$node->name} is missing the required runtime backend.",
                     detail: [
@@ -1002,7 +1002,7 @@ final readonly class NodesProbe
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
-            'node.app_runtime_missing',
+            'node.runtime_missing',
             'node.access_grant_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
@@ -1016,7 +1016,7 @@ final readonly class NodesProbe
             'node.wireguard_peer_missing' => $this->reconcileWireguardPeerMissing($node),
             'node.wireguard_address_mismatch' => $this->reconcileWireguardAddressMismatch($node),
             'node.gateway_runtime_unready' => $this->reconcileGatewayRuntime($node),
-            'node.app_runtime_missing' => $this->reconcileAppRuntime($node),
+            'node.runtime_missing' => $this->reconcileAppRuntime($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
             'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
             'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node, $entry),
@@ -1232,13 +1232,13 @@ final readonly class NodesProbe
             try {
                 $runtimeBackend = $this->runtimeBackendProbe()->check($node);
 
-                $items['node.app_runtime_missing'] = [
+                $items['node.runtime_missing'] = [
                     'available' => $runtimeBackend->available,
                     'exit_code' => $runtimeBackend->exitCode,
                     'output' => $runtimeBackend->output,
                 ];
             } catch (Throwable $e) {
-                $items['node.app_runtime_missing'] = [
+                $items['node.runtime_missing'] = [
                     'available' => false,
                     'exception' => $e::class,
                     'message' => $e->getMessage(),
@@ -1408,19 +1408,19 @@ final readonly class NodesProbe
             }
         }
 
-        $appRuntimeMissing = $snapshot->get('node.app_runtime_missing');
+        $appRuntimeMissing = $snapshot->get('node.runtime_missing');
 
         if ($appRuntimeMissing === null) {
             $results[] = new AdoptResult(
                 family: $this->key(),
-                key: 'node.app_runtime_missing',
+                key: 'node.runtime_missing',
                 action: AdoptAction::Skipped,
                 summary: 'App runtime readiness adoption skipped.',
             );
         } elseif (($appRuntimeMissing['available'] ?? null) === true) {
             $results[] = new AdoptResult(
                 family: $this->key(),
-                key: 'node.app_runtime_missing',
+                key: 'node.runtime_missing',
                 action: AdoptAction::Updated,
                 summary: "Verified app runtime readiness for {$node->name}.",
                 detail: $appRuntimeMissing,
@@ -1428,7 +1428,7 @@ final readonly class NodesProbe
         } else {
             $results[] = new AdoptResult(
                 family: $this->key(),
-                key: 'node.app_runtime_missing',
+                key: 'node.runtime_missing',
                 action: AdoptAction::Conflict,
                 summary: "App runtime readiness for {$node->name} cannot be adopted because the runtime is unavailable.",
                 detail: $appRuntimeMissing,

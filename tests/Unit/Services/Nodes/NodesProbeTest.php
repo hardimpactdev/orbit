@@ -143,8 +143,8 @@ describe('record completeness', function (): void {
         $keys = array_map(fn (DriftEntry $entry): string => $entry->key, $drift);
 
         expect($keys)->toContain('node.record_incomplete')
-            ->and($keys)->not->toContain('node.app_ssh_unreachable')
-            ->and($keys)->not->toContain('node.app_runtime_missing')
+            ->and($keys)->not->toContain('node.ssh_unreachable')
+            ->and($keys)->not->toContain('node.runtime_missing')
             ->and($remoteShell->scripts)->toBe([]);
     });
 
@@ -717,7 +717,7 @@ describe('external service stubs', function (): void {
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
+        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');
 
         expect($ssh)->toHaveCount(0);
         expect($remoteShell->scripts)->toBe([
@@ -747,7 +747,7 @@ describe('external service stubs', function (): void {
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable'));
+        $ssh = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable'));
 
         expect($ssh)->toHaveCount(1);
         expect($ssh[0]->kind)->toBe(DriftKind::Unverifiable);
@@ -774,7 +774,7 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
+        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');
 
         expect($ssh)->toHaveCount(0);
         expect($remoteShell->scripts)->toBe([]);
@@ -819,7 +819,7 @@ describe('external service stubs', function (): void {
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing');
+        $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.runtime_missing');
 
         expect($runtime)->toHaveCount(0);
         expect($remoteShell->scripts)->toBe([
@@ -849,7 +849,7 @@ describe('external service stubs', function (): void {
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $runtime = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing'));
+        $runtime = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.runtime_missing'));
 
         expect($runtime)->toHaveCount(1);
         expect($runtime[0]->kind)->toBe(DriftKind::Unverifiable);
@@ -876,7 +876,7 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing');
+        $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.runtime_missing');
 
         expect($runtime)->toHaveCount(0);
         expect($remoteShell->scripts)->toBe([]);
@@ -1106,7 +1106,7 @@ describe('reconciliation', function (): void {
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
-            'node.app_runtime_missing',
+            'node.runtime_missing',
             'node.access_grant_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
@@ -1445,7 +1445,7 @@ describe('adoption', function (): void {
                 'interface_public_key' => 'app-public-key',
             ],
         ])
-            ->and($snapshot->get('node.app_runtime_missing'))->toMatchArray([
+            ->and($snapshot->get('node.runtime_missing'))->toMatchArray([
                 'available' => true,
                 'exit_code' => 0,
             ]);
@@ -1471,7 +1471,7 @@ describe('adoption', function (): void {
         $snapshot = $probe->snapshotForAdopt($node);
 
         expect($snapshot->get('node.wireguard_peer_missing'))->toBeNull()
-            ->and($snapshot->get('node.app_runtime_missing'))->toBeNull()
+            ->and($snapshot->get('node.runtime_missing'))->toBeNull()
             ->and($remoteShell->scripts)->toBe([]);
     });
 
@@ -1528,7 +1528,7 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.app_runtime_missing'))->toBe([
+        expect($snapshot->get('node.runtime_missing'))->toBe([
             'available' => true,
             'exit_code' => 0,
             'output' => 'supervisor OK',
@@ -1562,7 +1562,7 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.app_runtime_missing'))->toBe([
+        expect($snapshot->get('node.runtime_missing'))->toBe([
             'available' => false,
             'exit_code' => 127,
             'output' => 'missing supervisorctl',
@@ -1589,7 +1589,7 @@ describe('adoption', function (): void {
         expect($keys)->toContain('node.wireguard_peer_missing');
         expect($keys)->toContain('node.wireguard_peer_extra');
         expect($keys)->toContain('node.wireguard_address_mismatch');
-        expect($keys)->toContain('node.app_runtime_missing');
+        expect($keys)->toContain('node.runtime_missing');
         expect($keys)->toContain('node.platform_record_mismatch');
 
         foreach ($results as $result) {
@@ -1756,7 +1756,7 @@ describe('adoption', function (): void {
         ]);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
-        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.app_runtime_missing'));
+        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.runtime_missing'));
 
         expect($runtime)->toHaveCount(1);
         expect($runtime[0]->action)->toBe(AdoptAction::Updated);
@@ -1790,7 +1790,7 @@ describe('adoption', function (): void {
         ]);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
-        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.app_runtime_missing'));
+        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.runtime_missing'));
 
         expect($runtime)->toHaveCount(1);
         expect($runtime[0]->action)->toBe(AdoptAction::Conflict);
