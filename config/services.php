@@ -25,7 +25,7 @@ return [
     'wg_easy' => [
         'username' => env('WG_EASY_USERNAME', 'orbit'),
         'password' => env('WG_EASY_PASSWORD'),
-        'database_path' => env('WG_EASY_DATABASE_PATH', env('HOME', '/home/orbit').'/.wg-easy/wg-easy.db'),
+        'database_path' => env('WG_EASY_DATABASE_PATH', '/home/orbit/.wg-easy/wg-easy.db'),
         'fake_backend_path' => env('ORBIT_VPN_FAKE_BACKEND_PATH'),
     ],
 

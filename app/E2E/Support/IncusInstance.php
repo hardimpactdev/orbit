@@ -96,7 +96,7 @@ final class IncusInstance implements E2EInstance
             throw new \RuntimeException("Local file not found: {$sourcePath}");
         }
 
-        $remotePath = '/tmp/'.basename($sourcePath);
+        $remotePath = '/tmp/orbit-current-transfer-'.bin2hex(random_bytes(6)).'-'.basename($sourcePath);
         $hostName = $this->host->config->host;
 
         if ($this->isLocalHost($hostName)) {

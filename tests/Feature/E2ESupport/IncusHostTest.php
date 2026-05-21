@@ -107,6 +107,25 @@ it('uses reusable stateful snapshots for warm topology reset points', function (
     expect($commands[0])->toContain("incus snapshot create 'orbit-e2e-run-control' 'lease-warm' --stateful --reuse");
 });
 
+it('force stops instances when graceful incus stop times out', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+
+    $host->stopInstance('orbit-template-control');
+
+    expect($commands[0])->toContain("incus stop 'orbit-template-control' --timeout 120 || incus stop 'orbit-template-control' --force");
+});
+
+it('checks snapshots by exact Incus snapshot path', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+
+    $host->snapshotExists('orbit-template-control', 'clean-operator-gateway');
+
+    expect($commands[0])->toContain("incus query '/1.0/instances/orbit-template-control/snapshots/clean-operator-gateway' >/dev/null 2>&1")
+        ->and($commands[0])->not->toContain('grep -q');
+});
+
 it('ignores topology WireGuard addresses when resolving an Incus provider IPv4', function (): void {
     $commands = [];
 
@@ -193,7 +212,8 @@ it('keeps locally staged files readable before pushing them into an incus instan
     }
 
     expect($pushedMode)->toBe('644')
-        ->and($commands)->toContain("rm -f '/tmp/".basename($source)."'");
+        ->and($commands[0])->toContain("incus file push '/tmp/orbit-current-transfer-")
+        ->and($commands[1])->toContain("rm -f '/tmp/orbit-current-transfer-");
 });
 
 it('can restore snapshots concurrently', function (): void {

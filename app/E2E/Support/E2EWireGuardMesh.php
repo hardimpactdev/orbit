@@ -28,6 +28,8 @@ final readonly class E2EWireGuardMesh
         ?string $devPublicKey = null,
         ?string $prodPrivateKey = null,
         ?string $prodPublicKey = null,
+        ?string $agentPrivateKey = null,
+        ?string $agentPublicKey = null,
     ): self {
         $peers = [
             'gateway' => self::peerRecord('10.6.0.2', $gatewayHostPrivateKey, $gatewayHostPublicKey),
@@ -40,6 +42,10 @@ final readonly class E2EWireGuardMesh
 
         if ($prodPrivateKey !== null && $prodPublicKey !== null) {
             $peers['prod'] = self::peerRecord('10.6.0.5', $prodPrivateKey, $prodPublicKey);
+        }
+
+        if ($agentPrivateKey !== null && $agentPublicKey !== null) {
+            $peers['agent'] = self::peerRecord('10.6.0.6', $agentPrivateKey, $agentPublicKey);
         }
 
         return new self($gatewayProviderIp, $wgEasyPublicKey, $peers);

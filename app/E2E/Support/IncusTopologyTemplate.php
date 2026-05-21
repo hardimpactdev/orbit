@@ -58,11 +58,7 @@ final readonly class IncusTopologyTemplate
             $checks[] = 'incus info '.escapeshellarg($template).' >/dev/null 2>&1';
 
             $snapshotChecks = array_map(
-                static fn (string $snapshot): string => sprintf(
-                    'incus info %s --show-log=false 2>/dev/null | grep -q %s',
-                    escapeshellarg($template),
-                    escapeshellarg($snapshot),
-                ),
+                static fn (string $snapshot): string => self::snapshotExistsCommand($template, $snapshot),
                 self::snapshotCandidates($kind),
             );
 
@@ -167,11 +163,7 @@ final readonly class IncusTopologyTemplate
         $template = self::templateName($kind, $role);
 
         foreach (self::snapshotCandidates($kind) as $snapshot) {
-            $result = $host->run(sprintf(
-                'incus info %s --show-log=false 2>/dev/null | grep -q %s',
-                escapeshellarg($template),
-                escapeshellarg($snapshot),
-            ), timeoutSeconds: 30);
+            $result = $host->run(self::snapshotExistsCommand($template, $snapshot), timeoutSeconds: 30);
 
             if ($result->successful()) {
                 return $snapshot;
@@ -179,5 +171,13 @@ final readonly class IncusTopologyTemplate
         }
 
         return self::snapshotName($kind);
+    }
+
+    private static function snapshotExistsCommand(string $template, string $snapshot): string
+    {
+        return sprintf(
+            'incus query %s >/dev/null 2>&1',
+            escapeshellarg("/1.0/instances/{$template}/snapshots/{$snapshot}"),
+        );
     }
 }

@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeRegistryWriter;
+use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -38,6 +39,8 @@ class BakeAgentNodeCommand extends Command
             throw new RuntimeException('Name, host, and wireguard-address are required.');
         }
 
+        $hostKey = app(SshHostKeyPinner::class)->pin($host);
+
         $node = $registryWriter->writeNodeIdentity(
             name: $name,
             legacyRole: 'control',
@@ -49,6 +52,7 @@ class BakeAgentNodeCommand extends Command
             gatewayEndpoint: $gatewayEndpoint,
             user: $user,
             orbitPath: "/home/{$user}/orbit",
+            hostKey: $hostKey,
         );
 
         NodeRoleAssignment::query()->updateOrCreate(

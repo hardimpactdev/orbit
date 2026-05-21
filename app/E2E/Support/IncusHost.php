@@ -281,9 +281,8 @@ class IncusHost
     public function snapshotExists(string $instance, string $snapshot): bool
     {
         return $this->run(sprintf(
-            'incus info %s --show-log=false 2>/dev/null | grep -q %s',
-            escapeshellarg($instance),
-            escapeshellarg("{$snapshot}"),
+            'incus query %s >/dev/null 2>&1',
+            escapeshellarg("/1.0/instances/{$instance}/snapshots/{$snapshot}"),
         ))->successful();
     }
 
@@ -339,7 +338,10 @@ class IncusHost
 
     public function stopInstance(string $name): ProcessResult
     {
-        return $this->run(sprintf('incus stop %s --timeout 120', escapeshellarg($name)));
+        return $this->run(sprintf(
+            'incus stop %1$s --timeout 120 || incus stop %1$s --force',
+            escapeshellarg($name),
+        ), timeoutSeconds: 180);
     }
 
     public function deleteInstance(string $name): ProcessResult

@@ -112,6 +112,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(WgEasyServiceInstaller::class, fn (): WgEasyServiceInstaller => new WgEasyServiceInstaller(
             rootPath: $this->orbitConfigPath(),
+            statePath: $this->wgEasyStatePath(),
         ));
 
         $this->app->singleton(OrbitDnsServiceInstaller::class, fn ($app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
@@ -163,5 +164,16 @@ class AppServiceProvider extends ServiceProvider
         }
 
         return $home.'/.config/orbit';
+    }
+
+    private function wgEasyStatePath(): string
+    {
+        $databasePath = config('services.wg_easy.database_path');
+
+        if (is_string($databasePath) && $databasePath !== '') {
+            return rtrim(dirname($databasePath), '/');
+        }
+
+        return '/home/orbit/.wg-easy';
     }
 }

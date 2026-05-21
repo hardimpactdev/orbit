@@ -165,6 +165,21 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
         ->and($lane['test_files'])->not->toContain('tests/E2E/RuntimeBackendHostInitTest.php');
 });
 
+it('includes the agent topology coverage in the incus lane', function (): void {
+    $exitCode = Artisan::call('e2e:test', [
+        '--dry-run' => true,
+        '--json' => true,
+        '--lanes' => 'incus',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $lane = $payload['success']['data']['lanes'][0];
+
+    expect($exitCode)->toBe(0)
+        ->and($lane['test_files'])->toContain('tests/E2E/NodeListAgentTopologyTest.php')
+        ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_CACHE'])->toBe('0')
+        ->and($lane['environment']['ORBIT_E2E_CHECKOUT_CACHE'])->toBe('process');
+});
+
 it('uses a unique generated docker test directory per plan', function (): void {
     $exitCode = Artisan::call('e2e:test', [
         '--dry-run' => true,

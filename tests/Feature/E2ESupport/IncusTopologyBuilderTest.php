@@ -151,6 +151,40 @@ it('replaces prerequisite stage templates before rebuilding a larger topology', 
         ->and($deleted)->toBe(array_reverse($existing));
 });
 
+it('widens a force rebuild to the highest existing shared template role', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $deleted = [];
+
+    $existing = [
+        'orbit-template-control',
+        'orbit-template-gateway',
+        'orbit-template-dev',
+        'orbit-template-prod',
+        'orbit-template-agent',
+    ];
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->andReturn(true);
+    $host->shouldReceive('instanceExists')
+        ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
+    $host->shouldReceive('deleteInstance')
+        ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
+            $deleted[] = $name;
+
+            return incusTopologyBuilderProcessResult();
+        });
+    $host->shouldReceive('run')
+        ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
+        ->andReturn(incusTopologyBuilderProcessResult(successful: false));
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    expect(fn () => $builder->build(E2ETopologyKind::ControlGateway, replaceExisting: true))
+        ->toThrow(RuntimeException::class, 'Could not create work directory')
+        ->and($deleted)->toBe(array_reverse($existing));
+});
+
 it('records phase timings while building topology templates', function (): void {
     $config = incusTopologyBuilderConfig();
     $timer = new E2EPhaseTimer;
@@ -286,6 +320,9 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain('--name wg-easy')
         ->and($commandOutput)->toContain('-p 51820:51820/udp')
         ->and($commandOutput)->not->toContain('51822')
+        ->and($commandOutput)->toContain('orbit:internal:bootstrap-gateway-local gateway')
+        ->and($commandOutput)->toContain('--public-host=')
+        ->and($commandOutput)->toContain('public_endpoint')
         ->and($commandOutput)->toContain('gateway-ca/orbit.crt')
         ->and($commandOutput)->toContain('ca_pem_path')
         ->and($commandOutput)->toContain('/etc/wireguard/wg-orbit.conf')

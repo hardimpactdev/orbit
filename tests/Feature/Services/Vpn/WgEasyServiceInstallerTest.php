@@ -50,6 +50,53 @@ it('renders the wg-easy compose file with the configured runtime envs', function
         ->and($compose)->toContain('SYS_MODULE');
 });
 
+it('defaults the wg-easy database path to the managed orbit home', function (): void {
+    expect(config('services.wg_easy.database_path'))->toBe('/home/orbit/.wg-easy/wg-easy.db');
+});
+
+it('resolves the configured database state path when resolved from the container', function (): void {
+    $previousServerHome = $_SERVER['HOME'] ?? null;
+    $_SERVER['HOME'] = '/var/www';
+
+    config()->set('services.wg_easy.database_path', '/home/orbit/.wg-easy/wg-easy.db');
+    app()->forgetInstance(WgEasyServiceInstaller::class);
+
+    $peerScript = null;
+
+    Process::fake(function ($process) use (&$peerScript) {
+        $command = (string) $process->command;
+
+        if (str_contains($command, 'clients_table')) {
+            $peerScript = $command;
+        }
+
+        return Process::result();
+    });
+
+    try {
+        app(WgEasyServiceInstaller::class)->configurePeers([
+            [
+                'name' => 'app-dev-1',
+                'private_key' => 'app-dev-private',
+                'public_key' => 'app-dev-public',
+                'pre_shared_key' => 'app-dev-psk',
+                'address' => '10.6.0.4',
+            ],
+        ]);
+    } finally {
+        if ($previousServerHome === null) {
+            unset($_SERVER['HOME']);
+        } else {
+            $_SERVER['HOME'] = $previousServerHome;
+        }
+
+        app()->forgetInstance(WgEasyServiceInstaller::class);
+    }
+
+    expect($peerScript)->toContain("sqlite3 '/home/orbit/.wg-easy'/wg-easy.db")
+        ->and($peerScript)->not->toContain('/var/www/.wg-easy');
+});
+
 it('uses the default runtime values when install inputs are omitted', function (): void {
     Process::fake();
 
@@ -71,13 +118,13 @@ it('invokes docker compose up to start the wg-easy container', function (): void
     (new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath))
         ->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker compose')
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '$ORBIT_DOCKER compose')
         && str_contains((string) $process->command, 'up -d'));
 });
 
 it('reads the wg-easy server public key from the running container', function (): void {
     Process::fake(function ($process) {
-        if ($process->command === 'docker exec wg-easy wg show wg0 public-key') {
+        if (str_contains((string) $process->command, 'wg show wg0 public-key')) {
             return Process::result(output: "wg-easy-public-key\n");
         }
 
@@ -118,6 +165,7 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
     ]);
 
     expect($peerScript)->toContain('wg-easy.db')
+        ->and($peerScript)->toContain('ORBIT_DOCKER="sudo docker"')
         ->and($peerScript)->toContain('clients_table')
         ->and($peerScript)->toContain('gateway-public')
         ->and($peerScript)->toContain('gateway-psk')

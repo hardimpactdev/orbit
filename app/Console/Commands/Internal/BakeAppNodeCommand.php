@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeRegistryWriter;
+use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -47,6 +48,8 @@ class BakeAppNodeCommand extends Command
             throw new RuntimeException('Only app nodes can be baked with this command.');
         }
 
+        $hostKey = app(SshHostKeyPinner::class)->pin($host);
+
         $node = $registryWriter->writeAppNode(
             name: $name,
             environment: $environment,
@@ -57,6 +60,7 @@ class BakeAppNodeCommand extends Command
             sshUser: $user,
             user: $user,
             status: Node::STATUS_ACTIVE,
+            hostKey: $hostKey,
         );
 
         $this->upsertRoleAssignment($node->id, $environment, $tld);

@@ -43,13 +43,13 @@ class IncusTopologyBuilder
      */
     public function build(E2ETopologyKind $kind, bool $replaceExisting = false): array
     {
-        $this->timer->measure('preflight', fn () => $this->validatePreFlight($kind, $replaceExisting));
+        $buildTarget = $this->timer->measure('preflight', fn (): E2ETopologyKind => $this->validatePreFlight($kind, $replaceExisting));
 
         $workDirectory = $this->timer->measure('workdir', fn (): string => $this->createWorkDirectory());
 
         try {
             $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
-            $manifests = $this->buildStages($kind, $key);
+            $manifests = $this->buildStages($buildTarget, $key);
 
             return $manifests[$kind->value];
         } finally {
@@ -57,7 +57,7 @@ class IncusTopologyBuilder
         }
     }
 
-    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): void
+    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): E2ETopologyKind
     {
         $blankImage = $this->host->config->blankImage;
 
@@ -71,7 +71,9 @@ class IncusTopologyBuilder
             );
         }
 
-        foreach ($this->templateNamesForRefresh($kind, includeLegacyNames: $replaceExisting) as $name) {
+        $buildTarget = $this->resolveBuildTarget($kind, $replaceExisting);
+
+        foreach ($this->templateNamesForRefresh($buildTarget, includeLegacyNames: $replaceExisting) as $name) {
             if (! $this->host->instanceExists($name)) {
                 continue;
             }
@@ -86,6 +88,45 @@ class IncusTopologyBuilder
                 throw new RuntimeException("Could not delete existing template [{$name}]: {$result->errorOutput()}");
             }
         }
+
+        return $buildTarget;
+    }
+
+    private function resolveBuildTarget(E2ETopologyKind $kind, bool $replaceExisting): E2ETopologyKind
+    {
+        if (! $replaceExisting) {
+            return $kind;
+        }
+
+        $stages = $this->stageOrder();
+        $targetIndex = array_search($kind, $stages, true);
+
+        if ($targetIndex === false) {
+            throw new RuntimeException("Unsupported topology kind [{$kind->value}].");
+        }
+
+        $buildIndex = $targetIndex;
+        $roleStages = [
+            'agent' => E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            'prod' => E2ETopologyKind::ControlGatewayDevProd,
+            'dev' => E2ETopologyKind::ControlGatewayDev,
+            'gateway' => E2ETopologyKind::ControlGateway,
+            'control' => E2ETopologyKind::Control,
+        ];
+
+        foreach ($roleStages as $role => $roleStage) {
+            if (! $this->host->instanceExists(IncusTopologyTemplate::templateName($roleStage, $role))) {
+                continue;
+            }
+
+            $roleIndex = array_search($roleStage, $stages, true);
+
+            if ($roleIndex !== false) {
+                $buildIndex = max($buildIndex, $roleIndex);
+            }
+        }
+
+        return $stages[$buildIndex];
     }
 
     private function createWorkDirectory(): string
@@ -146,13 +187,7 @@ class IncusTopologyBuilder
      */
     private function stagesThrough(E2ETopologyKind $target): array
     {
-        $stages = [
-            E2ETopologyKind::Control,
-            E2ETopologyKind::ControlGateway,
-            E2ETopologyKind::ControlGatewayDev,
-            E2ETopologyKind::ControlGatewayDevProd,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-        ];
+        $stages = $this->stageOrder();
 
         $targetIndex = array_search($target, $stages, true);
 
@@ -161,6 +196,20 @@ class IncusTopologyBuilder
         }
 
         return array_slice($stages, 0, $targetIndex + 1);
+    }
+
+    /**
+     * @return list<E2ETopologyKind>
+     */
+    private function stageOrder(): array
+    {
+        return [
+            E2ETopologyKind::Control,
+            E2ETopologyKind::ControlGateway,
+            E2ETopologyKind::ControlGatewayDev,
+            E2ETopologyKind::ControlGatewayDevProd,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        ];
     }
 
     /**
@@ -223,14 +272,15 @@ class IncusTopologyBuilder
 
         $this->timer->measure('gateway.provision', fn () => $this->host->provisionInstance($gateway->name(), 'gateway', (string) $this->remoteBundleDir));
         $this->timer->measure('gateway.real-wireguard', fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure('gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($gateway));
+        $this->timer->measure('gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($gateway, $gatewayIp));
         $this->timer->measure('gateway.trust-control', fn () => $this->trustGatewayCaOnControl($control, $gateway, $key));
         $this->timer->measure('gateway.seed-control', fn () => E2EGatewayApi::seedControlIdentity($gateway, self::ControlWireGuardIp, $this->host->config->controlUser));
-        $this->timer->measure('gateway.retarget-control', fn () => $this->retargetControl($control, $key));
+        $this->timer->measure('gateway.retarget-control', fn () => $this->retargetControl($control, $gatewayIp, $key));
         $this->timer->measure('gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl($control, $key));
         $this->timer->measure('gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($gateway, $key));
         $this->timer->measure('gateway.api.start', fn () => E2EGatewayApi::start($gateway, 'template-gateway'));
         $this->timer->measure('gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key));
+        $this->timer->measure('gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($gateway));
 
         return $instances;
     }
@@ -245,6 +295,7 @@ class IncusTopologyBuilder
         $this->timer->measure('dev.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('dev.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-dev'));
         $this->timer->measure('dev.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
+        $this->timer->measure('dev.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
 
         $dev = $this->launchBlankRole('dev', $key);
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
@@ -273,6 +324,7 @@ class IncusTopologyBuilder
         $this->timer->measure('prod.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prod.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prod'));
         $this->timer->measure('prod.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
+        $this->timer->measure('prod.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
 
         $prod = $this->launchBlankRole('prod', $key);
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
@@ -300,6 +352,7 @@ class IncusTopologyBuilder
         $this->timer->measure('agent.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('agent.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-agent'));
         $this->timer->measure('agent.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
+        $this->timer->measure('agent.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
 
         $agent = $this->launchBlankRole('agent', $key);
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
@@ -444,22 +497,34 @@ PHP;
         E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
     }
 
-    private function bootstrapGatewayLocal(IncusInstance $gateway): void
+    private function waitForGatewayWireGuard(IncusInstance $gateway): void
+    {
+        E2ECommand::exec(
+            $gateway,
+            'deadline=$((SECONDS+180)); until test -f /home/orbit/.wg-easy/wg-easy.db && docker exec wg-easy ip link show wg0 >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then docker ps -a; docker logs --tail=120 wg-easy 2>&1 || true; exit 1; fi; sleep 2; done',
+            "wg-easy did not become ready on {$gateway->name()}",
+            timeoutSeconds: 210,
+        );
+    }
+
+    private function bootstrapGatewayLocal(IncusInstance $gateway, string $publicHost): void
     {
         E2ECommand::orbit(
             $gateway,
             sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
                 escapeshellarg(self::GatewayWireGuardIp),
+                escapeshellarg($publicHost),
             ),
             'Could not bootstrap local gateway identity',
             timeoutSeconds: 120,
         );
     }
 
-    private function retargetControl(IncusInstance $control, SshKeyPair $key): void
+    private function retargetControl(IncusInstance $control, string $gatewayPublicEndpoint, SshKeyPair $key): void
     {
         $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
+        $gatewayPublicEndpointValue = var_export($gatewayPublicEndpoint, true);
 
         $php = <<<PHP
 \$gateway = \\App\\Models\\Node::query()->updateOrCreate(
@@ -488,7 +553,7 @@ PHP;
     [
         'status' => 'active',
         'settings' => [
-            'public_endpoint' => {$gatewayIpValue},
+            'public_endpoint' => {$gatewayPublicEndpointValue},
             'wireguard_cidr' => '10.6.0.0/24',
             'wireguard_port' => 51820,
             'dns_ip' => '10.6.0.1',
@@ -598,7 +663,7 @@ PHP;
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod'] as $role) {
+        foreach (['gateway', 'control', 'dev', 'prod', 'agent'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -610,6 +675,7 @@ PHP;
             'control',
             isset($instances['dev']) ? 'dev' : null,
             isset($instances['prod']) ? 'prod' : null,
+            isset($instances['agent']) ? 'agent' : null,
         ])));
     }
 
@@ -623,6 +689,7 @@ PHP;
         $control = $generator->generateKeyPair();
         $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
+        $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -636,6 +703,8 @@ PHP;
             devPublicKey: $dev['public_key'] ?? null,
             prodPrivateKey: $prod['private_key'] ?? null,
             prodPublicKey: $prod['public_key'] ?? null,
+            agentPrivateKey: $agent['private_key'] ?? null,
+            agentPublicKey: $agent['public_key'] ?? null,
         );
     }
 

@@ -48,7 +48,8 @@ class WgEasyServiceInstaller
         }
 
         $result = Process::timeout(180)->run(sprintf(
-            'docker compose -f %s up -d',
+            "%s\n\$ORBIT_DOCKER compose -f %s up -d",
+            $this->dockerShellPrefix(),
             escapeshellarg($composePath),
         ));
 
@@ -66,7 +67,10 @@ class WgEasyServiceInstaller
     {
         $this->waitUntilReady();
 
-        $result = Process::timeout(30)->run('docker exec wg-easy wg show wg0 public-key');
+        $result = Process::timeout(30)->run(sprintf(
+            "%s\n\$ORBIT_DOCKER exec wg-easy wg show wg0 public-key",
+            $this->dockerShellPrefix(),
+        ));
 
         if (! $result->successful()) {
             throw new RuntimeException(
@@ -144,7 +148,7 @@ INSERT INTO clients_table (
 SQL;
 
             $runtimeCommands[] = sprintf(
-                'docker exec wg-easy sh -lc %s',
+                '$ORBIT_DOCKER exec wg-easy sh -lc %s',
                 escapeshellarg(sprintf(
                     'tmp="$(mktemp)" && printf %s %s > "$tmp" && wg set wg0 peer %s preshared-key "$tmp" allowed-ips %s; status="$?"; rm -f "$tmp"; exit "$status"',
                     escapeshellarg('%s\n'),
@@ -158,11 +162,13 @@ SQL;
         $script = sprintf(
             <<<'SH'
 set -euo pipefail
+%s
 sqlite3 %s/wg-easy.db <<'ORBIT_WG_EASY_SQL'
 %s
 ORBIT_WG_EASY_SQL
 %s
 SH,
+            $this->dockerShellPrefix(),
             $this->statePathForShell(),
             implode("\n", $statements),
             implode("\n", $runtimeCommands),
@@ -181,12 +187,14 @@ SH,
     {
         $result = Process::timeout(75)->run(sprintf(
             <<<'SH'
+%s
 for i in $(seq 1 60); do
-    test -f %s/wg-easy.db && docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && exit 0
+    test -f %s/wg-easy.db && $ORBIT_DOCKER exec wg-easy ip link show wg0 >/dev/null 2>&1 && exit 0
     sleep 1
 done
 exit 1
 SH,
+            $this->dockerShellPrefix(),
             $this->statePathForShell(),
         ));
 
@@ -208,10 +216,12 @@ SH,
 
         $result = Process::timeout(30)->run(sprintf(
             <<<'SH'
-docker exec wg-easy ip addr replace %s dev wg0
-docker exec wg-easy ip route replace %s dev wg0
+%s
+$ORBIT_DOCKER exec wg-easy ip addr replace %s dev wg0
+$ORBIT_DOCKER exec wg-easy ip route replace %s dev wg0
 sqlite3 %s/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = %s WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = %s, default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
 SH,
+            $this->dockerShellPrefix(),
             escapeshellarg($serverAddress),
             escapeshellarg($wireguardCidr),
             $this->statePathForShell(),
@@ -313,12 +323,17 @@ YAML;
             return $this->statePath;
         }
 
-        return rtrim((string) ($_SERVER['HOME'] ?? getenv('HOME') ?: '/home/orbit'), '/').'/.wg-easy';
+        return '/home/orbit/.wg-easy';
     }
 
     private function statePathForShell(): string
     {
         return escapeshellarg($this->statePath());
+    }
+
+    private function dockerShellPrefix(): string
+    {
+        return 'if docker ps >/dev/null 2>&1; then ORBIT_DOCKER=docker; else ORBIT_DOCKER="sudo docker"; fi';
     }
 
     private function sqliteString(string $value): string

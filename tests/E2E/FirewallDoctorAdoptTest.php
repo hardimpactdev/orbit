@@ -36,7 +36,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
             sprintf(
                 'cd %s && php artisan tinker --execute=%s',
                 escapeshellarg($gatewayCheckout),
-                escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->first(); if ($node) { $node->update(["platform" => "ubuntu", "status" => "active", "host" => "'.$devLanIp.'", "wireguard_address" => null]); echo "updated"; } else { echo "not found"; }'),
+                escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->first(); if ($node) { \App\Models\FirewallRule::query()->where("node_id", $node->id)->delete(); $node->update(["platform" => "ubuntu", "status" => "active", "host" => "'.$devLanIp.'", "wireguard_address" => null]); echo "updated"; } else { echo "not found"; }'),
             ),
             timeoutSeconds: 120,
         );

@@ -45,6 +45,10 @@ final class E2ECurrentCheckout
                 seedFrom: $seedFrom,
                 timer: $timer,
             );
+
+            if ($role === 'gateway') {
+                self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $paths[$role], $timer);
+            }
         }
 
         return $paths;
@@ -312,6 +316,29 @@ final class E2ECurrentCheckout
         ]);
     }
 
+    private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer): void
+    {
+        self::runTimed(
+            $timer,
+            'checkout.host-keys',
+            fn () => E2ECommand::ssh(
+                $instance,
+                $user,
+                $keyPair,
+                self::hostKeyRefreshCommand($remotePath),
+                timeoutSeconds: 120,
+            ),
+        );
+    }
+
+    private static function hostKeyRefreshCommand(string $remotePath): string
+    {
+        return implode(' && ', [
+            'cd '.escapeshellarg($remotePath),
+            'php artisan orbit:internal:pin-node-host-keys --json',
+        ]);
+    }
+
     private static function cloneCachedCheckoutCommand(string $basePath, string $remotePath): string
     {
         $quotedBasePath = escapeshellarg($basePath);
@@ -369,6 +396,10 @@ final class E2ECurrentCheckout
             $roles[] = 'prod';
         }
 
+        if ($topology->agent() !== null) {
+            $roles[] = 'agent';
+        }
+
         return $roles;
     }
 
@@ -386,6 +417,7 @@ final class E2ECurrentCheckout
             'gateway' => self::requiredRole($topology->gateway(), $role, $users['gateway'] ?? 'orbit'),
             'dev' => self::requiredRole($topology->devApp(), $role, $users['dev'] ?? 'orbit'),
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),
+            'agent' => self::requiredRole($topology->agent(), $role, $users['agent'] ?? 'orbit'),
             default => throw new RuntimeException("Unknown topology role [{$role}]."),
         };
     }

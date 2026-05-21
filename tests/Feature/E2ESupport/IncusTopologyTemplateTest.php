@@ -39,7 +39,7 @@ function mockIncusTopologyCurrentSnapshots(IncusHost $host, int $count): void
     $host->shouldReceive('run')
         ->times($count)
         ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
-            && str_contains($command, 'clean-operator'))
+            && str_contains($command, '/snapshots/clean-operator'))
         ->andReturn(successfulProcessResult());
 }
 
@@ -76,7 +76,8 @@ it('maps each topology kind to expected roles', function (): void {
     expect(IncusTopologyTemplate::rolesFor(E2ETopologyKind::Control))->toBe(['control'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway))->toBe(['control', 'gateway'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDev))->toBe(['control', 'gateway', 'dev'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDevProd))->toBe(['control', 'gateway', 'dev', 'prod']);
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDevProd))->toBe(['control', 'gateway', 'dev', 'prod'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['control', 'gateway', 'dev', 'prod', 'agent']);
 });
 
 it('generates correct template and clone names', function (): void {
@@ -97,13 +98,29 @@ it('returns true when all template instances and clean snapshots exist', functio
                 && str_contains($command, 'orbit-template-control')
                 && str_contains($command, 'orbit-template-gateway')
                 && str_contains($command, 'orbit-template-dev')
-                && str_contains($command, 'clean-operator-gateway-appdev')
-                && str_contains($command, 'clean-control-gateway-dev')
-                && substr_count($command, 'grep -q') === 6;
+                && str_contains($command, '/1.0/instances/orbit-template-control/snapshots/clean-operator-gateway-appdev')
+                && str_contains($command, '/1.0/instances/orbit-template-gateway/snapshots/clean-control-gateway-dev')
+                && ! str_contains($command, 'grep -q')
+                && substr_count($command, '/snapshots/clean-') === 6;
         })
         ->andReturn(successfulProcessResult());
 
     expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::ControlGatewayDev))->toBeTrue();
+});
+
+it('checks prepared snapshots by exact snapshot path instead of prefix matching', function (): void {
+    $host = m::mock(IncusHost::class);
+    $host->shouldReceive('run')
+        ->once()
+        ->withArgs(function (string $command): bool {
+            return str_contains($command, "incus query '/1.0/instances/orbit-template-control/snapshots/clean-operator-gateway' >/dev/null 2>&1")
+                && str_contains($command, "incus query '/1.0/instances/orbit-template-gateway/snapshots/clean-operator-gateway' >/dev/null 2>&1")
+                && ! str_contains($command, 'incus info \'orbit-template-control\' --show-log=false')
+                && ! str_contains($command, 'grep -q');
+        })
+        ->andReturn(failedProcessResult());
+
+    expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::ControlGateway))->toBeFalse();
 });
 
 it('returns false when any template instance is missing', function (): void {
@@ -277,7 +294,9 @@ it('does not use synthetic provider-interface routes for prepared gateway clones
         ->and($source)->not->toContain('DockerTopologyNetworkPlan')
         ->and($source)->toContain("private const string GatewayWireGuardIp = '10.6.0.2'")
         ->and($source)->toContain("private const string DevWireGuardIp = '10.6.0.4'")
+        ->and($source)->toContain("private const string AgentWireGuardIp = '10.6.0.6'")
         ->and($source)->toContain('retargetRealWireGuard')
+        ->and($source)->toContain('orbit:internal:bake-agent-node agent-1')
         ->and($source)->toContain('E2EWgEasyGateway');
 });
 

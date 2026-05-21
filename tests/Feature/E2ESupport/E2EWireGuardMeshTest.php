@@ -94,6 +94,31 @@ it('returns persistent wg-easy peer records for topology roles', function (): vo
         ->and($peers[2]['pre_shared_key'])->not->toBeEmpty();
 });
 
+it('can include an agent peer with a stable WireGuard address', function (): void {
+    $mesh = E2EWireGuardMesh::standard(
+        gatewayProviderIp: '10.231.0.11',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
+        controlPrivateKey: 'control-private',
+        controlPublicKey: 'control-public',
+        agentPrivateKey: 'agent-private',
+        agentPublicKey: 'agent-public',
+    );
+
+    $peers = $mesh->wgEasyPeers();
+
+    expect($mesh->addressFor('agent'))->toBe('10.6.0.6')
+        ->and($mesh->peerConfig('agent'))->toContain('Address = 10.6.0.6/24')
+        ->and($peers)->toHaveCount(3)
+        ->and($peers[2])->toMatchArray([
+            'name' => 'agent',
+            'private_key' => 'agent-private',
+            'public_key' => 'agent-public',
+            'address' => '10.6.0.6',
+        ]);
+});
+
 it('installs and restarts wg-orbit for a role', function (): void {
     $commands = [];
     $instance = m::mock(E2EInstance::class);

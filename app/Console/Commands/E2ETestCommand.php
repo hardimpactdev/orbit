@@ -266,7 +266,7 @@ class E2ETestCommand extends Command
                 'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
                 'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'incus',
                 'ORBIT_E2E_GATEWAY_API' => '1',
-                'ORBIT_E2E_TOPOLOGY_CACHE' => 'process',
+                'ORBIT_E2E_TOPOLOGY_CACHE' => '0',
                 'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
                 'ORBIT_E2E_TOPOLOGY_STRATEGY' => 'minimal',
             ],

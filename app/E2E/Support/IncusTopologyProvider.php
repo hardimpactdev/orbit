@@ -16,6 +16,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private const string ProdWireGuardIp = '10.6.0.5';
 
+    private const string AgentWireGuardIp = '10.6.0.6';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -269,7 +271,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod'] as $role) {
+        foreach (['gateway', 'control', 'dev', 'prod', 'agent'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -281,6 +283,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             'control',
             isset($instances['dev']) ? 'dev' : null,
             isset($instances['prod']) ? 'prod' : null,
+            isset($instances['agent']) ? 'agent' : null,
         ])));
     }
 
@@ -294,6 +297,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $control = $generator->generateKeyPair();
         $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
+        $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -307,6 +311,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             devPublicKey: $dev['public_key'] ?? null,
             prodPrivateKey: $prod['private_key'] ?? null,
             prodPublicKey: $prod['public_key'] ?? null,
+            agentPrivateKey: $agent['private_key'] ?? null,
+            agentPublicKey: $agent['public_key'] ?? null,
         );
     }
 
@@ -344,6 +350,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=%s --wireguard-address=%s --environment=production --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::ProdWireGuardIp),
+                escapeshellarg(self::GatewayWireGuardIp),
+            ), timeoutSeconds: 120);
+        }
+
+        if (isset($instances['agent'])) {
+            E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-agent-node agent-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --tld=agent',
+                escapeshellarg(self::AgentWireGuardIp),
+                escapeshellarg(self::AgentWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 120);
         }

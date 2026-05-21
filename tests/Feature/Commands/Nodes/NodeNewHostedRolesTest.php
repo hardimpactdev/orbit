@@ -164,7 +164,7 @@ beforeEach(function (): void {
             return Process::result(output: "ubuntu_24-04\n");
         }
 
-        if ($command === 'docker exec wg-easy wg show wg0 public-key') {
+        if (str_contains($command, 'wg show wg0 public-key')) {
             return Process::result(output: "wg-easy-public-key\n");
         }
 

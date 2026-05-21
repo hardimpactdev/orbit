@@ -2,15 +2,40 @@
 
 declare(strict_types=1);
 
+use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 describe('orbit:internal:bake-app-node', function (): void {
+    beforeEach(function (): void {
+        $this->hostKeyPinner = new class
+        {
+            /** @var list<array{host: string, expected: ?string}> */
+            public array $calls = [];
+
+            public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
+            {
+                $this->calls[] = ['host' => $host, 'expected' => $expectedFingerprint];
+
+                return new PinnedHostKey(
+                    host: $host,
+                    type: 'ssh-ed25519',
+                    publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIBakeAppNodeHostKey',
+                    fingerprint: 'SHA256:bake-app-node-host-key',
+                    pinMode: 'tofu',
+                );
+            }
+        };
+
+        app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
+    });
+
     it('writes an app node row with the same shape as node:new produces', function (): void {
         $this->artisan('orbit:internal:bake-app-node', [
             'name' => 'app-dev-1',
@@ -33,7 +58,15 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
             ->and($node->tld)->toBe('test')
-            ->and($node->status)->toBe('active');
+            ->and($node->status)->toBe('active')
+            ->and($node->host_key_type)->toBe('ssh-ed25519')
+            ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeAppNodeHostKey')
+            ->and($node->host_key_fingerprint)->toBe('SHA256:bake-app-node-host-key')
+            ->and($node->host_key_pin_mode)->toBe('tofu')
+            ->and($node->host_key_pinned_at)->not->toBeNull()
+            ->and($this->hostKeyPinner->calls)->toBe([
+                ['host' => '10.6.0.4', 'expected' => null],
+            ]);
     });
 
     it('writes the matching active composable role assignment', function (): void {

@@ -299,7 +299,7 @@ JS;
     {
         $databasePath = (string) config(
             'services.wg_easy.database_path',
-            ($_SERVER['HOME'] ?? '/home/orbit').'/.wg-easy/wg-easy.db',
+            '/home/orbit/.wg-easy/wg-easy.db',
         );
 
         $result = Process::timeout(5)

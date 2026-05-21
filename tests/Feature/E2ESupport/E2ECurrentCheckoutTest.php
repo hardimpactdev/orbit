@@ -603,6 +603,7 @@ it('can install the current checkout on selected topology roles', function (): v
     $gatewayCommands = [];
     $devCommands = [];
     $prodCommands = [];
+    $agentCommands = [];
 
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
@@ -611,23 +612,30 @@ it('can install the current checkout on selected topology roles', function (): v
         gateway: currentCheckoutFakeInstance($gatewayCommands, 'gateway'),
         dev: currentCheckoutFakeInstance($devCommands, 'dev'),
         prod: currentCheckoutFakeInstance($prodCommands, 'prod'),
+        agent: currentCheckoutFakeInstance($agentCommands, 'agent'),
         sshKeyPair: $key,
         rebuild: fn () => throw new RuntimeException('not expected'),
     );
 
-    $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['control', 'gateway', 'dev', 'prod']);
+    $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['control', 'gateway', 'dev', 'prod', 'agent']);
 
     expect($paths)->toBe([
         'control' => '/home/control/orbit-current',
         'gateway' => '/home/orbit/orbit-current',
         'dev' => '/home/orbit/orbit-current',
         'prod' => '/home/orbit/orbit-current',
+        'agent' => '/home/orbit/orbit-current',
     ]);
 
     expect(implode("\n", $controlCommands))->toContain("cp '/home/control/orbit/.env' .env");
     expect(implode("\n", $gatewayCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
+    expect(implode("\n", $gatewayCommands))->toContain('php artisan orbit:internal:pin-node-host-keys --json');
     expect(implode("\n", $devCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
+    expect(implode("\n", $devCommands))->not->toContain('php artisan orbit:internal:pin-node-host-keys --json');
     expect(implode("\n", $prodCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
+    expect(implode("\n", $prodCommands))->not->toContain('php artisan orbit:internal:pin-node-host-keys --json');
+    expect(implode("\n", $agentCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
+    expect(implode("\n", $agentCommands))->not->toContain('php artisan orbit:internal:pin-node-host-keys --json');
 });
 
 it('passes checkout timing through topology installation', function (): void {
