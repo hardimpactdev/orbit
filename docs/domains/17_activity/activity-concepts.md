@@ -54,7 +54,9 @@ Each activity entry carries the following fields.
   initiated by an autonomous agent tool running on an `agent` node, causer
   is the node identity. Orbit does not attribute activity to a
   per-tool sub-identity, because per-tool identities are spoofable
-  without a stronger identity mechanism than the node handshake.
+  without a stronger identity mechanism than the node handshake. The actor
+  is serialized as `{ node: <slug> }`; the legacy node-row `role` shadow
+  field is not part of the actor object.
 - **Properties:** Structured audit fields declared by the command or
   controller. Properties never include secrets, raw command argv, raw
   request bodies, or full credentials. Property keys are declared per

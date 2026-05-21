@@ -173,10 +173,7 @@ class ActivityShowCommand extends Command
             return '';
         }
 
-        $node = $this->stringValue($actor['node'] ?? '');
-        $role = $this->stringValue($actor['role'] ?? '');
-
-        return $role === '' ? $node : "{$node} ({$role})";
+        return $this->stringValue($actor['node'] ?? '');
     }
 
     private function stringValue(mixed $value): string
