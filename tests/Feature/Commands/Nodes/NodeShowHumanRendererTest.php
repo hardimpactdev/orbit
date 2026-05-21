@@ -283,7 +283,7 @@ describe('node:show human renderer contract', function (): void {
         $result = invokeNodeShowFailCommandHuman(
             code: 'authorization_failed',
             message: "This node is not authorized to inspect 'app-1'.",
-            meta: ['name' => 'app-1', 'caller_role' => 'control'],
+            meta: ['name' => 'app-1', 'reason' => 'missing_permission', 'missing_permission' => 'node:read'],
         );
 
         expect($result['exitCode'])->not->toBe(0);

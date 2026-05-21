@@ -16,7 +16,7 @@ const DEPLOY_API_CALLER_WG_IP = '10.6.0.89';
  * @param  list<string>  $permissions
  * @return array{caller: Node, node: Node, app: App}
  */
-function createDeployApiFixture(string $callerRole, array $permissions): array
+function createDeployApiFixture(string $executionContext, array $permissions): array
 {
     $node = createTestAppHostNode([
         'name' => 'app-prod-1',
@@ -33,8 +33,8 @@ function createDeployApiFixture(string $callerRole, array $permissions): array
     ]);
 
     $caller = Node::factory()->create([
-        'name' => "deploy-api-{$callerRole}",
-        'role' => $callerRole,
+        'name' => "deploy-api-{$executionContext}",
+        'role' => $executionContext,
         'status' => 'active',
         'wireguard_address' => DEPLOY_API_CALLER_WG_IP,
     ]);

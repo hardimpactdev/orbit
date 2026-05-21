@@ -34,7 +34,7 @@ class NodeRemoveCommand extends Command
 
     public function handle(): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $name = $this->argument('name');
         if ($name === null) {
@@ -94,7 +94,7 @@ class NodeRemoveCommand extends Command
             }
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardRemove($name, $isSelfRemoval);
         }
 

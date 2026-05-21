@@ -128,7 +128,7 @@ describe('tool:list command contract', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read the tool registry.',
-                    'meta' => ['caller_role' => 'control'],
+                    'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read'],
                 ],
             ], 403),
         ]);
@@ -138,7 +138,7 @@ describe('tool:list command contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('control');
+            ->and($payload['error']['meta']['missing_permission'])->toBe('tool:read');
     });
 
     it('does not mutate registry state or run processes', function (): void {

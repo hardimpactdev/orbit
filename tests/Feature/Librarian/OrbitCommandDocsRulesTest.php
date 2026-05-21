@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Docs\Librarian\Rules\ActivityLoggingContractRule;
-use App\Docs\Librarian\Rules\AppNodeWriteDenialRule;
 use App\Docs\Librarian\Rules\AppPhpVersionContractRule;
 use App\Docs\Librarian\Rules\BehaviorContractStructureRule;
 use App\Docs\Librarian\Rules\CanonicalBehaviorBoundaryRule;
@@ -101,7 +100,6 @@ beforeEach(function (): void {
         SharedFailureVocabularyRule::class,
         NextActionContractRule::class,
         AppPhpVersionContractRule::class,
-        AppNodeWriteDenialRule::class,
         ReadCommandNoLiveProbeRule::class,
         DriftIssueSuffixRule::class,
         CommonFailureNotRestatedRule::class,
@@ -1019,24 +1017,6 @@ it('reports app docs that use the old php option contract', function (): void {
         ]);
 });
 
-it('reports app write commands without grant authorization contracts', function (): void {
-    writeOrbitAppCommandDocsFamily($this->docsRoot);
-
-    $exitCode = Artisan::call('librarian:lint', [
-        '--format' => 'agent',
-        '--path' => 'docs/domains',
-        '--group' => 'contracts',
-    ]);
-    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-    $matchingFindings = findingsForRule($payload, 'command_docs.app_node_write_denial');
-
-    expect($exitCode)->toBe(1)
-        ->and(array_column($matchingFindings, 'message'))->toContain(
-            'App write commands must document the required `app:new` grant permission.',
-            'App write commands must use authorization_failed for missing app write grants.',
-        );
-});
-
 it('reports read-only command contracts that document implicit live checks', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
@@ -1299,35 +1279,6 @@ function writeOrbitCommandDocsFamily(
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/1_node-new.md', $canonicalContract);
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md', $humanRendererContract);
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md', $jsonRendererContract);
-}
-
-function writeOrbitAppCommandDocsFamily(string $root): void
-{
-    writeOrbitDocsFile($root, 'docs/domains/5_app/README.md', "# App Commands\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/app.md', "# App\n\n## Purpose\n\nApp command contracts describe how Orbit manages application intent and runtime ownership.\n\n## Responsibilities\n\nApp docs own the app command family and app-specific behavior contracts.\n\n## Boundaries\n\nShared command UX and cross-family behavior stay in their owning docs.\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/app-new.md', "# `orbit app:new`\n\n[Technical](technical/1_app-new.md)\n\n## Usage\n\nUse it.\n\n## Arguments and options\n\nNone.\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/technical/1_app-new.md', "# Technical Contract: `orbit app:new`\n\n"
-        ."**Owner:** App domain.\n"
-        ."**Effects:** Writes app intent.\n"
-        ."**Prerequisites:** Gateway access.\n\n"
-        ."## Signature\n\n"
-        ."```text\norbit app:new\n```\n\n"
-        ."## Input Contract\n\n"
-        ."[Invocation Model](../../README.md#invocation-model)\n\n"
-        ."## Behavior Contract\n\n"
-        ."### App Creation\n\nCreates the app intent.\n\n"
-        ."## Failure Semantics\n\n"
-        ."Uses shared failure semantics.\n\n"
-        ."## Doctor Relationship\n\n"
-        ."References app-doctor.md for drift detection.\n\n"
-        ."## Activity Logging\n\n"
-        ."This command does not emit activity events.\n\n"
-        ."## Test Mapping\n\n"
-        ."| Path | Coverage |\n"
-        ."| --- | --- |\n"
-        ."| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers app command contracts. |\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/technical/6.1_app-new_output-render_human.md', "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating App\n○ Resolve target\n○ Create app intent\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers app human renderer mapping. |\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/technical/6.2_app-new_output-render_json.md', "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers app json renderer mapping. |\n");
 }
 
 function validOrbitCanonicalContract(

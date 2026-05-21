@@ -30,7 +30,7 @@ class AgentIdeMessageCommand extends Command
     public function handle(
         AgentIdeMessageDelivery $delivery,
     ): int {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         try {
             $message = $this->resolveMessage();
@@ -82,7 +82,7 @@ class AgentIdeMessageCommand extends Command
             $pathSelector = realpath((string) getcwd()) ?: (string) getcwd();
         }
 
-        if ($callerRole !== 'gateway') {
+        if ($executionContext !== 'gateway') {
             return $this->forwardMessage($message, $appSelector, $workspaceSelector, $pathSelector);
         }
 

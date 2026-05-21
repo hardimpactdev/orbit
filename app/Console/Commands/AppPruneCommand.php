@@ -30,7 +30,7 @@ class AppPruneCommand extends Command
 
     public function handle(PruneAppWorkspaces $prune, AppAgentIdeDefaults $defaults): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $selector = $this->stringArgument('app');
 
@@ -56,7 +56,7 @@ class AppPruneCommand extends Command
             return $this->failValidation('force', 'Use --force to prune stale workspaces.');
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardPrune($selector, $dryRun);
         }
 

@@ -52,7 +52,7 @@ class AppNewCommand extends Command
 
     public function handle(CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $input = $this->resolveInput();
 
@@ -60,7 +60,7 @@ class AppNewCommand extends Command
             return $input;
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardCreate($input);
         }
 

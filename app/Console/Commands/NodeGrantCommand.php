@@ -34,13 +34,13 @@ class NodeGrantCommand extends Command
 {
     public function handle(): int
     {
-        $callerRole = $this->resolveLocalNodeRole();
+        $executionContext = $this->resolveLocalNodeRole();
 
-        if ($callerRole === 'gateway') {
+        if ($executionContext === 'gateway') {
             return $this->handleGatewayLocal();
         }
 
-        if ($callerRole === 'app') {
+        if ($executionContext === 'app') {
             return $this->forwardAppNodeGrant();
         }
 

@@ -172,7 +172,7 @@ describe('tool:show JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to read the tool registry.',
-            'meta' => ['caller_role' => 'control'],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read'],
         ], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',

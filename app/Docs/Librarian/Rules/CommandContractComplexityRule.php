@@ -51,11 +51,11 @@ final readonly class CommandContractComplexityRule implements GroupedRule
                     severity: FindingSeverity::Warning,
                     rule: 'command_docs.command_contract_complexity',
                     message: sprintf(
-                        'Command contract complexity score is %d. Metrics: %d input field(s), %d conditional required field(s), %d caller-role path(s), %d behavior item(s), %d failure case(s), %d doctor handoff(s), and %d scope-boundary clause(s). Consider grouping behavior by path, extracting stable concepts, or adding stronger split-file test ownership.',
+                        'Command contract complexity score is %d. Metrics: %d input field(s), %d conditional required field(s), %d authorization path(s), %d behavior item(s), %d failure case(s), %d doctor handoff(s), and %d scope-boundary clause(s). Consider grouping behavior by path, extracting stable concepts, or adding stronger split-file test ownership.',
                         $score,
                         $metrics['input_fields'],
                         $metrics['conditional_required_fields'],
-                        $metrics['caller_role_paths'],
+                        $metrics['authorization_paths'],
                         $metrics['behavior_items'],
                         $metrics['failure_cases'],
                         $metrics['doctor_handoffs'],
@@ -72,7 +72,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
      * @return array{
      *     input_fields: int,
      *     conditional_required_fields: int,
-     *     caller_role_paths: int,
+     *     authorization_paths: int,
      *     behavior_items: int,
      *     failure_cases: int,
      *     doctor_handoffs: int,
@@ -82,7 +82,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
     private function metrics(string $contents): array
     {
         $inputRows = $this->firstTableRows($this->section($contents, 'Input Contract'));
-        $callerRoleRows = $this->firstTableRows($this->section($contents, 'Caller Role Behavior'));
+        $executionContextRows = $this->firstTableRows($this->section($contents, 'Authorization Behavior'));
         $failureSection = $this->section($contents, 'Failure Semantics');
         $failureRows = $this->firstTableRows($failureSection);
         $behaviorSection = $this->section($contents, 'Behavior Contract');
@@ -93,7 +93,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
                 $inputRows,
                 fn (array $row): bool => isset($row[2]) && ! in_array($this->normalizedCell($row[2]), ['never', 'optional', ''], true),
             )),
-            'caller_role_paths' => count($callerRoleRows),
+            'authorization_paths' => count($executionContextRows),
             'behavior_items' => $this->listItemCount($behaviorSection),
             'failure_cases' => max(count($failureRows), $this->listItemCount($failureSection)),
             'doctor_handoffs' => $this->matchCount('/\bdoctor\s+--(?:family|self)\b/', $contents),
@@ -105,7 +105,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
      * @param  array{
      *     input_fields: int,
      *     conditional_required_fields: int,
-     *     caller_role_paths: int,
+     *     authorization_paths: int,
      *     behavior_items: int,
      *     failure_cases: int,
      *     doctor_handoffs: int,
@@ -116,7 +116,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
     {
         return $metrics['input_fields']
             + ($metrics['conditional_required_fields'] * 2)
-            + (max(0, $metrics['caller_role_paths'] - 1) * 3)
+            + (max(0, $metrics['authorization_paths'] - 1) * 3)
             + ($metrics['behavior_items'] * 3)
             + ($metrics['failure_cases'] * 2)
             + $metrics['doctor_handoffs']
@@ -171,7 +171,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
                 explode('|', trim($trimmed, '|')),
             );
 
-            if (isset($cells[0]) && in_array(strtolower($cells[0]), ['field', 'caller role', 'condition', 'failure'], true)) {
+            if (isset($cells[0]) && in_array(strtolower($cells[0]), ['field', 'authorization path', 'condition', 'failure'], true)) {
                 continue;
             }
 

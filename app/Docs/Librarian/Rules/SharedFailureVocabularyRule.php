@@ -15,7 +15,8 @@ final readonly class SharedFailureVocabularyRule implements GroupedRule
      * @var array<string, string>
      */
     private const array BANNED_CODES = [
-        'auth.unauthorized_role' => 'Use caller_role_not_allowed for role denial.',
+        'auth.unauthorized_role' => 'Use authorization_failed with error.meta.missing_permission.',
+        'caller_role_not_allowed' => 'Use authorization_failed with error.meta.missing_permission.',
         'ambiguous_workspace' => 'Use workspace.ambiguous_name for workspace name ambiguity.',
         'artifact_enactment_failed' => 'Use a singular product code such as node.artifact_enactment_failed.',
         'consent_required' => 'Use validation_failed with error.meta.field=force for missing or declined destructive consent.',
@@ -36,7 +37,7 @@ final readonly class SharedFailureVocabularyRule implements GroupedRule
         'node_provisioning_incomplete' => 'Use node.provisioning_incomplete for incomplete node provisioning.',
         'run_not_found' => 'Use workspace.run_not_found for workspace run lookup failures.',
         'ssh_unreachable' => 'Use node.ssh_unreachable for SSH reachability failures.',
-        'unauthorized_role' => 'Use caller_role_not_allowed for role denial.',
+        'unauthorized_role' => 'Use authorization_failed with error.meta.missing_permission.',
         'unsupported_adapter' => 'Use the owning product code, such as node.unsupported_adapter or app.unsupported_adapter.',
         'unsupported_platform' => 'Use node.unsupported_platform for unsupported node platform failures.',
         'validation.missing_argument' => 'Use validation_failed with error.meta.field for missing input.',

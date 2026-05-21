@@ -89,7 +89,7 @@ class NodeNewCommand extends Command
         WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
         NodesProbe $nodesProbe,
     ): int {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $name = $this->resolveName();
         $requestedRoles = $this->resolveRequestedRoles();
@@ -136,7 +136,7 @@ class NodeNewCommand extends Command
                 );
             }
 
-            if ($callerRole === 'control') {
+            if ($executionContext === 'control') {
                 return $this->forwardHostedRoleNodeCreation($name, $requestedRoles['hosted'], $inputs);
             }
 
@@ -195,7 +195,7 @@ class NodeNewCommand extends Command
                 );
             }
 
-            if ($callerRole === 'control') {
+            if ($executionContext === 'control') {
                 return $this->forwardAppNodeCreation($name, $inputs);
             }
 
@@ -214,7 +214,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        if ($callerRole === 'control' && ! $gatewayConfigured && $role === 'control') {
+        if ($executionContext === 'control' && ! $gatewayConfigured && $role === 'control') {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required before creating app or operator nodes.',
@@ -229,27 +229,27 @@ class NodeNewCommand extends Command
                 return $this->validationFailed($forbiddenInput, 'Operator nodes do not use SSH/bootstrap-only input.');
             }
 
-            if ($callerRole === 'control') {
+            if ($executionContext === 'control') {
                 return $this->forwardControlNodeEnrollment($name);
             }
 
             return $this->enrollControlNode($wireGuardKeyGenerator, $name);
         }
 
-        if ($gatewayConfigured || $callerRole === 'gateway') {
+        if ($gatewayConfigured || $executionContext === 'gateway') {
             if (
-                $callerRole === 'control'
+                $executionContext === 'control'
                 && $gatewayConfigured
                 && $this->gatewayQuery()->where('name', $name)->exists()
             ) {
                 return $this->convergeFirstGateway($name);
             }
 
-            if ($callerRole === 'control' && $this->gatewayApiConfigured()) {
+            if ($executionContext === 'control' && $this->gatewayApiConfigured()) {
                 return $this->forwardGatewayConvergence($name);
             }
 
-            if ($callerRole === 'gateway') {
+            if ($executionContext === 'gateway') {
                 return $this->convergeGatewayLocally($name);
             }
 

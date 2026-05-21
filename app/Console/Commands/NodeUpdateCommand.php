@@ -41,9 +41,9 @@ class NodeUpdateCommand extends Command
 
     public function handle(ReenactNodeArtifacts $reenactNodeArtifacts): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
-        if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
+        if ($executionContext === 'control' && ! $this->hasConfiguredGateway()) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required to update a node.',
@@ -51,7 +51,7 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        $name = $this->resolveName($callerRole);
+        $name = $this->resolveName($executionContext);
 
         if ($name instanceof GatewayApiException) {
             return $this->failCommand(
@@ -81,7 +81,7 @@ class NodeUpdateCommand extends Command
 
         $node = null;
 
-        if ($callerRole === 'gateway') {
+        if ($executionContext === 'gateway') {
             $node = Node::query()
                 ->where('name', $name)
                 ->where('status', 'active')
@@ -128,7 +128,7 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardUpdate($name, $providedFields);
         }
 
@@ -196,7 +196,7 @@ class NodeUpdateCommand extends Command
         return $this->respondSuccess($name, array_keys($changes), $warnings);
     }
 
-    private function resolveName(string $callerRole): string|GatewayApiException|null
+    private function resolveName(string $executionContext): string|GatewayApiException|null
     {
         $name = $this->stringArgument('name');
 

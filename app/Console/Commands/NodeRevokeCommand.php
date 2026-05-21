@@ -35,9 +35,9 @@ class NodeRevokeCommand extends Command
 
     public function handle(): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->handleControl();
         }
 

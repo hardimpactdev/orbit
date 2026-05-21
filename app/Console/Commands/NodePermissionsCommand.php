@@ -35,9 +35,9 @@ class NodePermissionsCommand extends Command
     {
         $this->collectInteractiveInputs($nodeRoleAssignments);
 
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardPermissions();
         }
 
@@ -50,9 +50,9 @@ class NodePermissionsCommand extends Command
             return;
         }
 
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
-        if ($callerRole !== 'gateway') {
+        if ($executionContext !== 'gateway') {
             return;
         }
 

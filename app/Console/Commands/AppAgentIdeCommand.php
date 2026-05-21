@@ -39,7 +39,7 @@ class AppAgentIdeCommand extends Command
 
     public function handle(AppAgentIdeDefaults $defaults, PruneAppWorkspaces $pruneAppWorkspaces): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $selector = $this->stringArgument('app');
 
@@ -63,7 +63,7 @@ class AppAgentIdeCommand extends Command
 
         if ($agentIde === null && $this->isInteractiveInput()) {
             try {
-                $agentIde = $this->promptForAgentIde($callerRole, $defaults);
+                $agentIde = $this->promptForAgentIde($executionContext, $defaults);
             } catch (GatewayApiException $e) {
                 return $this->failCommand(
                     code: $e->errorCode() ?? 'gateway_unavailable',
@@ -85,7 +85,7 @@ class AppAgentIdeCommand extends Command
             return $this->failValidation('agent_ide', 'Agent IDE adapter is required.');
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardSet($selector, $agentIde);
         }
 
@@ -181,9 +181,9 @@ class AppAgentIdeCommand extends Command
         return $this->successCommand($data);
     }
 
-    private function promptForAgentIde(string $callerRole, AppAgentIdeDefaults $defaults): string
+    private function promptForAgentIde(string $executionContext, AppAgentIdeDefaults $defaults): string
     {
-        $options = collect($this->agentIdeChoices($callerRole, $defaults))
+        $options = collect($this->agentIdeChoices($executionContext, $defaults))
             ->mapWithKeys(fn (string $adapter): array => [$adapter => $this->agentIdeChoiceLabel($adapter)])
             ->all();
 
@@ -200,9 +200,9 @@ class AppAgentIdeCommand extends Command
     /**
      * @return list<string>
      */
-    private function agentIdeChoices(string $callerRole, AppAgentIdeDefaults $defaults): array
+    private function agentIdeChoices(string $executionContext, AppAgentIdeDefaults $defaults): array
     {
-        if ($callerRole !== 'control') {
+        if ($executionContext !== 'control') {
             return $defaults->supportedAdapters();
         }
 

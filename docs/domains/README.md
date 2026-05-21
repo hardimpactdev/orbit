@@ -385,8 +385,8 @@ Use shared failure vocabulary unless a domain-specific code is needed:
 | `gateway_unavailable` | The CLI cannot reach the gateway API required for the command. |
 
 Do not introduce new synonyms such as `missing_input`, `missing_argument`,
-`validation.missing_input`, `unauthorized`, `auth.unauthorized_role`, or
-`caller_role_not_allowed` in new or touched contracts.
+`validation.missing_input`, `unauthorized`, or role-denial-specific legacy
+codes in new or touched contracts.
 
 Fields that are structural members of an entity object are serialized as `null`
 when they are inapplicable for the returned entity. Purely optional metadata

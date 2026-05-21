@@ -29,9 +29,9 @@ class AppShowCommand extends Command
 
     public function handle(): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
-        $app = $this->resolveAppSelector($callerRole);
+        $app = $this->resolveAppSelector($executionContext);
 
         if ($app instanceof GatewayApiException) {
             return $this->failCommand(
@@ -49,7 +49,7 @@ class AppShowCommand extends Command
             );
         }
 
-        $result = $callerRole === 'gateway'
+        $result = $executionContext === 'gateway'
             ? $this->fetchLocalApp($app)
             : $this->fetchGatewayApp($app);
 
@@ -80,7 +80,7 @@ class AppShowCommand extends Command
         return self::SUCCESS;
     }
 
-    private function resolveAppSelector(string $callerRole): string|GatewayApiException|null
+    private function resolveAppSelector(string $executionContext): string|GatewayApiException|null
     {
         $app = $this->argument('app');
 
@@ -95,7 +95,7 @@ class AppShowCommand extends Command
         }
 
         if ($this->isInteractiveInput()) {
-            return $this->promptApp($callerRole);
+            return $this->promptApp($executionContext);
         }
 
         return null;
@@ -128,7 +128,7 @@ class AppShowCommand extends Command
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    protected function promptApp(string $callerRole): string|GatewayApiException
+    protected function promptApp(string $executionContext): string|GatewayApiException
     {
         try {
             return $this->promptForVisibleApp(label: 'Select an app');
