@@ -14,7 +14,6 @@ use App\Http\Gateway\Requests\Firewall\StoreFirewallRuleRequest;
 use App\Http\Gateway\Responses\Firewall\FirewallRuleMutationResponse;
 use App\Models\LocalNodeDefault;
 use App\Services\Firewall\FirewallRuleIntent;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -26,7 +25,7 @@ abstract class AbstractFirewallStoreCommand extends Command
 
     abstract protected function firewallAction(): string;
 
-    public function handle(FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    public function handle(FirewallRuleIntent $intent): int
     {
         $input = $this->validatedInput();
 
@@ -35,11 +34,11 @@ abstract class AbstractFirewallStoreCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $this->handleStoreHuman($input, $intent, $callerRoleResolver);
+            return $this->handleStoreHuman($input, $intent);
         }
 
         try {
-            if ($callerRoleResolver->resolve() !== 'gateway') {
+            if (! (bool) config('orbit.is_gateway', false)) {
                 return $this->forwardStore($input);
             }
 
@@ -74,7 +73,7 @@ abstract class AbstractFirewallStoreCommand extends Command
     /**
      * @param  array{name: string, node: string, direction: string, source: string, destination: ?string, port: string, protocol: string, reason: ?string}  $input
      */
-    private function handleStoreHuman(array $input, FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    private function handleStoreHuman(array $input, FirewallRuleIntent $intent): int
     {
         $result = null;
 
@@ -91,9 +90,9 @@ abstract class AbstractFirewallStoreCommand extends Command
                 ],
                 [
                     'label' => 'Apply and verify firewall rule',
-                    'run' => function () use ($input, $intent, $callerRoleResolver, &$result): string {
+                    'run' => function () use ($input, $intent, &$result): string {
                         try {
-                            if ($callerRoleResolver->resolve() !== 'gateway') {
+                            if (! (bool) config('orbit.is_gateway', false)) {
                                 /** @var FirewallRuleMutationResponse $dto */
                                 $dto = app(GatewayConnector::class)
                                     ->send(new StoreFirewallRuleRequest(

@@ -14,7 +14,6 @@ use App\Http\Gateway\Requests\Deploy\RunDeployRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
 use App\Models\App;
 use App\Services\Deploy\DeployManager;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Support\Cli\RemoteProgressRenderer;
 use App\Support\Cli\RemoteProgressReporter;
 use Illuminate\Console\Attributes\Description;
@@ -33,11 +32,10 @@ class DeployRunCommand extends Command
 
     public function handle(
         DeployManager $deploy,
-        CallerRoleResolver $roles,
         DeployRunGatewayStreamClient $deployStream,
     ): int {
         $detach = $this->option('detach') === true;
-        $callerRole = $roles->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $app = $this->stringArgument('app');
 
@@ -62,13 +60,13 @@ class DeployRunCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $callerRole === 'gateway'
+            return $onGateway
                 ? $this->runLocallyForHuman($deploy, $app, $detach)
                 : $this->forwardRunForHuman($deployStream, $app, $detach);
         }
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 /** @var DeployResponse $dto */
                 $dto = app(GatewayConnector::class)
                     ->send(new RunDeployRequest($app, $detach))

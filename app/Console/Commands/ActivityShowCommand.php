@@ -26,7 +26,7 @@ class ActivityShowCommand extends Command
 
     public function handle(ActivityHistory $history): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $id = $this->validatedId();
 
@@ -35,7 +35,7 @@ class ActivityShowCommand extends Command
         }
 
         try {
-            $result = $this->fetchActivity($callerRole, $id, $history);
+            $result = $this->fetchActivity($onGateway, $id, $history);
         } catch (Throwable) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
@@ -107,9 +107,9 @@ class ActivityShowCommand extends Command
     /**
      * @return array{activity: array<string, mixed>, related: list<array<string, mixed>>, meta: array<string, mixed>}|GatewayApiException|null
      */
-    private function fetchActivity(string $callerRole, int $id, ActivityHistory $history): array|GatewayApiException|null
+    private function fetchActivity(bool $onGateway, int $id, ActivityHistory $history): array|GatewayApiException|null
     {
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             return $history->show($id);
         }
 

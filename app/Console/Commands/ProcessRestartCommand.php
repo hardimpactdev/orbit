@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Processes\RestartProcessesRequest;
 use App\Http\Gateway\Responses\Processes\ProcessRestartResponse;
 use App\Models\App;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -33,12 +32,12 @@ class ProcessRestartCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(RestartProcesses $restartProcesses, CallerRoleResolver $callerRoleResolver): int
+    public function handle(RestartProcesses $restartProcesses): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 return $this->forwardRestart();
             }
 

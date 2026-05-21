@@ -101,7 +101,7 @@ class ProfileCommand extends Command implements Loggable
 
     private function executeProfile(ShowProfile $profile): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $target = $this->stringArgument('target');
         $appOption = $this->stringOption('app');
@@ -148,7 +148,7 @@ class ProfileCommand extends Command implements Loggable
         $nodeConstraint = $this->stringOption('node');
         $this->activityNode = $nodeConstraint;
 
-        if ($callerRole === 'gateway' && $nodeConstraint !== null && ! Node::query()->where('name', $nodeConstraint)->where('status', 'active')->exists()) {
+        if ($onGateway && $nodeConstraint !== null && ! Node::query()->where('name', $nodeConstraint)->where('status', 'active')->exists()) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: "Node '{$nodeConstraint}' not found.",
@@ -178,13 +178,13 @@ class ProfileCommand extends Command implements Loggable
             $this->activityUri = $uri;
         }
 
-        if ($selector === null && $callerRole === 'gateway') {
+        if ($selector === null && $onGateway) {
             $cwd = getcwd();
             $selector = is_string($cwd) ? $cwd : null;
         }
 
         if ($selector === null && $this->canPromptForApp()) {
-            $selector = $this->promptForApp($callerRole, $nodeConstraint);
+            $selector = $this->promptForApp($onGateway, $nodeConstraint);
         }
 
         if ($selector === null) {
@@ -198,12 +198,12 @@ class ProfileCommand extends Command implements Loggable
             );
         }
 
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             $app = $this->resolveLocalApp($selector, $nodeConstraint);
 
             if (! $app instanceof App) {
                 if ($selectorWasOmitted && $this->canPromptForApp()) {
-                    $selected = $this->promptForApp($callerRole, $nodeConstraint);
+                    $selected = $this->promptForApp($onGateway, $nodeConstraint);
                     $app = $selected !== null ? $this->resolveLocalApp($selected, $nodeConstraint) : null;
                 }
 
@@ -279,7 +279,7 @@ class ProfileCommand extends Command implements Loggable
         );
 
         if (($result['success'] ?? false) !== true) {
-            if ($callerRole === 'control') {
+            if (! $onGateway) {
                 $gatewayResult = $this->profileThroughGateway($selector, $uri, $nodeConstraint);
 
                 if (! $gatewayResult instanceof GatewayApiException) {
@@ -418,9 +418,9 @@ class ProfileCommand extends Command implements Loggable
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    private function promptForApp(string $callerRole, ?string $nodeConstraint): ?string
+    private function promptForApp(bool $onGateway, ?string $nodeConstraint): ?string
     {
-        $apps = $this->fetchPromptApps($callerRole, $nodeConstraint);
+        $apps = $this->fetchPromptApps($onGateway, $nodeConstraint);
 
         if ($apps === [] || $apps instanceof GatewayApiException) {
             return null;
@@ -460,9 +460,9 @@ class ProfileCommand extends Command implements Loggable
     /**
      * @return list<array<string, mixed>>|GatewayApiException
      */
-    private function fetchPromptApps(string $callerRole, ?string $nodeConstraint): array|GatewayApiException
+    private function fetchPromptApps(bool $onGateway, ?string $nodeConstraint): array|GatewayApiException
     {
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             return App::query()
                 ->with('node')
                 ->when($nodeConstraint !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $nodeConstraint)))

@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Processes\StopProcessesRequest;
 use App\Http\Gateway\Responses\Processes\ProcessStopResponse;
 use App\Models\App;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -33,12 +32,12 @@ class ProcessStopCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(StopProcesses $stopProcesses, CallerRoleResolver $callerRoleResolver): int
+    public function handle(StopProcesses $stopProcesses): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 return $this->forwardStop();
             }
 

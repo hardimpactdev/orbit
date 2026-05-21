@@ -11,7 +11,6 @@ use App\Http\Gateway\Requests\Workspaces\ListWorkspaceStepsRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceStepListResponse;
 use App\Models\App;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Console\Command;
 use Throwable;
@@ -26,7 +25,7 @@ abstract class AbstractWorkspaceStepListCommand extends Command
 
     public function handle(WorkspaceStepListPayload $payload): int
     {
-        $callerRole = app(CallerRoleResolver::class)->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $app = $this->stringOption('app');
         $path = null;
@@ -40,7 +39,7 @@ abstract class AbstractWorkspaceStepListCommand extends Command
         }
 
         try {
-            $steps = $this->fetchSteps($app, $path, $callerRole, $payload);
+            $steps = $this->fetchSteps($app, $path, $onGateway, $payload);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -67,9 +66,9 @@ abstract class AbstractWorkspaceStepListCommand extends Command
     /**
      * @return list<array<string, mixed>>
      */
-    private function fetchSteps(?string $app, ?string $path, string $callerRole, WorkspaceStepListPayload $payload): array
+    private function fetchSteps(?string $app, ?string $path, bool $onGateway, WorkspaceStepListPayload $payload): array
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             /** @var WorkspaceStepListResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new ListWorkspaceStepsRequest(

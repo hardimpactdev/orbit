@@ -13,7 +13,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleManualRunResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Schedules\SchedulePayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -36,7 +35,7 @@ class ScheduleRunCommand extends Command
 
     private ?string $resolvedScheduleNode = null;
 
-    public function handle(SchedulePayload $payload, RunSchedule $runSchedule, CallerRoleResolver $callerRoleResolver): int
+    public function handle(SchedulePayload $payload, RunSchedule $runSchedule): int
     {
         $name = $this->resolveNameInput();
 
@@ -44,13 +43,13 @@ class ScheduleRunCommand extends Command
             return $name;
         }
 
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $result = null;
         $failure = null;
-        $operation = function () use ($name, $callerRole, $payload, $runSchedule, &$result, &$failure): string {
+        $operation = function () use ($name, $onGateway, $payload, $runSchedule, &$result, &$failure): string {
             try {
-                if ($callerRole !== 'gateway') {
+                if (! $onGateway) {
                     $result = $this->forwardRunResult($name);
 
                     return 'gateway accepted';

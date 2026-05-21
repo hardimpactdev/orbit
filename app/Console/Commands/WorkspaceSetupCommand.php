@@ -41,7 +41,7 @@ class WorkspaceSetupCommand extends Command
         SetupWorkspaceProgress $setupProgress,
         WorkspaceSetupGatewayStreamClient $setupStream,
     ): int {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $path = $this->stringOption('path');
 
@@ -75,7 +75,7 @@ class WorkspaceSetupCommand extends Command
             $this->input->setOption('app', $promptedApp);
         }
 
-        if ($callerRole === 'control') {
+        if (! $onGateway) {
             return $this->forwardSetup($setupStream);
         }
 

@@ -13,7 +13,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleRemoveResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Schedules\SchedulePayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -39,9 +38,9 @@ class ScheduleRemoveCommand extends Command
 
     private ?string $resolvedScheduleNode = null;
 
-    public function handle(SchedulePayload $payload, RemoveSchedule $removeSchedule, CallerRoleResolver $callerRoleResolver): int
+    public function handle(SchedulePayload $payload, RemoveSchedule $removeSchedule): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
         $name = $this->resolveNameInput();
 
         if (is_int($name)) {
@@ -56,9 +55,9 @@ class ScheduleRemoveCommand extends Command
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $payload, $removeSchedule, $name, &$result, &$failure): string {
+        $operation = function () use ($onGateway, $payload, $removeSchedule, $name, &$result, &$failure): string {
             try {
-                if ($callerRole !== 'gateway') {
+                if (! $onGateway) {
                     $result = $this->forwardRemoveResult($name);
 
                     return 'gateway accepted';

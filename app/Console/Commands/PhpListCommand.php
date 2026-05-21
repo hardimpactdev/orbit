@@ -29,9 +29,9 @@ class PhpListCommand extends Command
 {
     public function handle(PhpRuntimeManager $php): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
-        $result = $callerRole === 'gateway'
+        $result = $onGateway
             ? $php->view(
                 app: $this->stringOption('app'),
                 workspace: $this->stringOption('workspace'),

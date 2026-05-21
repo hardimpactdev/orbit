@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -17,7 +16,7 @@ use Saloon\Enums\Method;
 #[Description('Add or converge a Cloudflare cache rule for an app')]
 final class CfCacheRuleAddCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $app = $this->stringArgument('app');
 
@@ -26,7 +25,6 @@ final class CfCacheRuleAddCommand extends CloudflareCommand
         }
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(Method::POST, "/api/cloudflare/cache-rules/{$app}"),
             local: fn (): array => $cloudflare->addCacheRule($app),
             gatewayFailureMessage: 'Gateway connection is required to manage Cloudflare cache rules.',

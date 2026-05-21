@@ -42,7 +42,7 @@ class PhpUseCommand extends Command
     {
         $this->resolvedVersion = null;
 
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         if ($this->option('inherit') !== true) {
             $versionResult = $this->resolveVersionInput();
@@ -55,10 +55,10 @@ class PhpUseCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $this->handleHuman($php, $callerRole);
+            return $this->handleHuman($php, $onGateway);
         }
 
-        $result = $this->runPhpUseOperation($php, $callerRole);
+        $result = $this->runPhpUseOperation($php, $onGateway);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(new PhpRuntimeFailure(
@@ -106,13 +106,13 @@ class PhpUseCommand extends Command
         }
     }
 
-    private function handleHuman(PhpRuntimeManager $php, string $callerRole): int
+    private function handleHuman(PhpRuntimeManager $php, bool $onGateway): int
     {
         $result = null;
         $failure = null;
 
-        $operation = function () use ($php, $callerRole, &$result, &$failure): string {
-            $result = $this->runPhpUseOperation($php, $callerRole);
+        $operation = function () use ($php, $onGateway, &$result, &$failure): string {
+            $result = $this->runPhpUseOperation($php, $onGateway);
 
             if ($result instanceof GatewayApiException) {
                 $failure = new PhpRuntimeFailure(
@@ -164,9 +164,9 @@ class PhpUseCommand extends Command
         return self::SUCCESS;
     }
 
-    private function runPhpUseOperation(PhpRuntimeManager $php, string $callerRole): PhpRuntimeOperation|GatewayApiException
+    private function runPhpUseOperation(PhpRuntimeManager $php, bool $onGateway): PhpRuntimeOperation|GatewayApiException
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             return $this->forwardToGateway();
         }
 

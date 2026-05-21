@@ -34,14 +34,14 @@ class WorkspaceShowCommand extends Command
     {
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
         $path = null;
 
         if ($name === null) {
-            $name = $this->resolveNameFromCwd($callerRole);
+            $name = $this->resolveNameFromCwd($onGateway);
         }
 
-        if ($name === null && $callerRole !== 'gateway') {
+        if ($name === null && ! $onGateway) {
             $path = realpath((string) getcwd()) ?: (string) getcwd();
         }
 
@@ -70,12 +70,12 @@ class WorkspaceShowCommand extends Command
         }
 
         try {
-            $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
+            $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $onGateway);
         } catch (GatewayApiException $e) {
             if ($this->shouldPromptForAmbiguousApp($e, $app)) {
                 $app = $this->promptForApp($e->errorMeta(), (string) $name);
                 try {
-                    $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
+                    $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $onGateway);
                 } catch (GatewayApiException $retryException) {
                     return $this->failCommand(
                         code: $retryException->errorCode() ?? 'gateway_unavailable',
@@ -110,9 +110,9 @@ class WorkspaceShowCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function fetchWorkspace(?string $name, ?string $app, ?string $path, WorkspaceShowPayload $payload, string $callerRole): array
+    private function fetchWorkspace(?string $name, ?string $app, ?string $path, WorkspaceShowPayload $payload, bool $onGateway): array
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             /** @var WorkspaceShowResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new ShowWorkspaceRequest(name: $name, app: $app, path: $path))
@@ -140,7 +140,7 @@ class WorkspaceShowCommand extends Command
                 $selection = $this->promptForLocalWorkspaceMatches($matches);
                 $app = $selection['app'];
 
-                return $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
+                return $this->fetchWorkspace($name, $app, $path, $payload, $onGateway);
             }
 
             throw new GatewayApiException("Workspace name '{$name}' is ambiguous.", 'workspace.ambiguous_name', [
@@ -169,9 +169,9 @@ class WorkspaceShowCommand extends Command
             ->get();
     }
 
-    private function resolveNameFromCwd(string $callerRole): ?string
+    private function resolveNameFromCwd(bool $onGateway): ?string
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             return null;
         }
 

@@ -44,7 +44,7 @@ class WorkspaceNewCommand extends Command
         CreateWorkspaceProgress $createProgress,
         WorkspaceNewGatewayStreamClient $createStream,
     ): int {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $name = $this->resolveName();
 
@@ -80,7 +80,7 @@ class WorkspaceNewCommand extends Command
             );
         }
 
-        $app = $this->resolveApp($callerRole);
+        $app = $this->resolveApp($onGateway);
 
         if ($app === null) {
             return $this->failCommand(
@@ -93,7 +93,7 @@ class WorkspaceNewCommand extends Command
         $base = $this->stringOption('base') ?? 'main';
         $phpVersion = $this->stringOption('php-version');
 
-        if ($callerRole === 'control') {
+        if (! $onGateway) {
             return $this->forwardCreate($createStream, $name, $app, $base, $phpVersion);
         }
 
@@ -395,7 +395,7 @@ class WorkspaceNewCommand extends Command
         return null;
     }
 
-    private function resolveApp(string $callerRole): ?string
+    private function resolveApp(bool $onGateway): ?string
     {
         $app = $this->stringOption('app');
 

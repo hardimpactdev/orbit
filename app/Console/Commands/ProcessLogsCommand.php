@@ -16,7 +16,6 @@ use App\Http\Gateway\Responses\Processes\ProcessLogsResponse;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -38,9 +37,9 @@ class ProcessLogsCommand extends Command
 
     private const string PROCESS_SELECTION_SEPARATOR = "\t";
 
-    public function handle(ShowProcessLogs $showProcessLogs, CallerRoleResolver $callerRoleResolver): int
+    public function handle(ShowProcessLogs $showProcessLogs): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $input = $this->validatedInput();
 
@@ -49,7 +48,7 @@ class ProcessLogsCommand extends Command
         }
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 return $this->forwardLogs($input);
             }
 

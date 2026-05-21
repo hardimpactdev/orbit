@@ -13,7 +13,6 @@ use App\Http\Gateway\Requests\Deploy\ShowDeployLogRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
 use App\Models\App;
 use App\Services\Deploy\DeployManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -30,9 +29,9 @@ class DeployLogCommand extends Command
     use HandlesPromptCancellation;
     use RendersDeployResponses;
 
-    public function handle(DeployManager $deploy, CallerRoleResolver $roles): int
+    public function handle(DeployManager $deploy): int
     {
-        $callerRole = $roles->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $app = $this->stringArgument('app');
         $run = $this->stringArgument('run');
@@ -71,7 +70,7 @@ class DeployLogCommand extends Command
         }
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 /** @var DeployResponse $dto */
                 $dto = app(GatewayConnector::class)
                     ->send(new ShowDeployLogRequest($app, (int) $run, $step, $lines))

@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Processes\RemoveProcessRequest;
 use App\Http\Gateway\Responses\Processes\ProcessRemoveResponse;
 use App\Models\App;
 use App\Models\Process;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -35,9 +34,9 @@ class ProcessRemoveCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(RemoveProcess $removeProcess, CallerRoleResolver $callerRoleResolver): int
+    public function handle(RemoveProcess $removeProcess): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $input = $this->validatedInput();
 
@@ -53,9 +52,9 @@ class ProcessRemoveCommand extends Command
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $input, $removeProcess, &$result, &$failure): string {
+        $operation = function () use ($onGateway, $input, $removeProcess, &$result, &$failure): string {
             try {
-                if ($callerRole === 'control') {
+                if (! $onGateway) {
                     $result = $this->forwardRemoveResult($input);
 
                     return 'gateway accepted';

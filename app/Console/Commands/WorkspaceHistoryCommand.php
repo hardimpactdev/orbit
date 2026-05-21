@@ -43,14 +43,14 @@ class WorkspaceHistoryCommand extends Command
 
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
         $path = null;
 
         if ($name === null) {
-            $name = $this->resolveNameFromCwd($callerRole);
+            $name = $this->resolveNameFromCwd($onGateway);
         }
 
-        if ($name === null && $callerRole !== 'gateway') {
+        if ($name === null && ! $onGateway) {
             $path = realpath((string) getcwd()) ?: (string) getcwd();
         }
 
@@ -63,7 +63,7 @@ class WorkspaceHistoryCommand extends Command
         }
 
         try {
-            $history = $this->fetchHistory($name, $app, $path, $filters, $payload, $callerRole);
+            $history = $this->fetchHistory($name, $app, $path, $filters, $payload, $onGateway);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -91,9 +91,9 @@ class WorkspaceHistoryCommand extends Command
      * @param  array{limit: int, since: Carbon|null, until: Carbon|null, limit_capped: bool, raw_since: string|null, raw_until: string|null}  $filters
      * @return array{runs: list<array<string, mixed>>, pagination: array<string, mixed>, workspace: array{app: string|null, name: string|null}}
      */
-    private function fetchHistory(?string $name, ?string $app, ?string $path, array $filters, WorkspaceHistoryPayload $payload, string $callerRole): array
+    private function fetchHistory(?string $name, ?string $app, ?string $path, array $filters, WorkspaceHistoryPayload $payload, bool $onGateway): array
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             /** @var WorkspaceHistoryResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new ShowWorkspaceHistoryRequest(
@@ -239,9 +239,9 @@ class WorkspaceHistoryCommand extends Command
         }
     }
 
-    private function resolveNameFromCwd(string $callerRole): ?string
+    private function resolveNameFromCwd(bool $onGateway): ?string
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             return null;
         }
 

@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleAddResponse;
 use App\Models\App;
 use App\Models\Node;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -41,9 +40,9 @@ class ScheduleAddCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(AddSchedule $addSchedule, CallerRoleResolver $callerRoleResolver): int
+    public function handle(AddSchedule $addSchedule): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $input = $this->validatedInput();
 
@@ -53,7 +52,7 @@ class ScheduleAddCommand extends Command
 
         $target = null;
 
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             $target = $this->resolveTarget($input['app'], $input['node']);
 
             if (is_int($target)) {
@@ -63,9 +62,9 @@ class ScheduleAddCommand extends Command
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $input, $addSchedule, $target, &$result, &$failure): string {
+        $operation = function () use ($onGateway, $input, $addSchedule, $target, &$result, &$failure): string {
             try {
-                if ($callerRole !== 'gateway') {
+                if (! $onGateway) {
                     $result = $this->forwardAddResult($input);
 
                     return 'gateway accepted';

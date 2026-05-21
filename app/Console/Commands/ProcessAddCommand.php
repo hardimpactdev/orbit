@@ -16,7 +16,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\AddProcessRequest;
 use App\Http\Gateway\Responses\Processes\ProcessAddResponse;
 use App\Models\App;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -41,9 +40,9 @@ class ProcessAddCommand extends Command
 
     private const string NAME_PATTERN = '/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/';
 
-    public function handle(AddProcess $addProcess, CallerRoleResolver $callerRoleResolver): int
+    public function handle(AddProcess $addProcess): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $input = $this->validatedInput();
 
@@ -53,9 +52,9 @@ class ProcessAddCommand extends Command
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $input, $addProcess, &$result, &$failure): string {
+        $operation = function () use ($onGateway, $input, $addProcess, &$result, &$failure): string {
             try {
-                if ($callerRole === 'control') {
+                if (! $onGateway) {
                     $result = $this->forwardAddResult($input);
 
                     return 'gateway accepted';

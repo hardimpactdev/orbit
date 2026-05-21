@@ -12,7 +12,6 @@ use App\Http\Gateway\Responses\Workspaces\WorkspaceStepMutationResponse;
 use App\Models\App;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Console\Command;
 use Throwable;
@@ -28,7 +27,7 @@ abstract class AbstractWorkspaceStepRemoveCommand extends Command
 
     public function handle(WorkspaceStepListPayload $payload): int
     {
-        $callerRole = app(CallerRoleResolver::class)->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $step = $this->resolveStepId();
 
@@ -55,7 +54,7 @@ abstract class AbstractWorkspaceStepRemoveCommand extends Command
         }
 
         try {
-            $response = $this->removeStep($app, $path, $step, $callerRole, $payload);
+            $response = $this->removeStep($app, $path, $step, $onGateway, $payload);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -86,10 +85,10 @@ abstract class AbstractWorkspaceStepRemoveCommand extends Command
         ?string $app,
         ?string $path,
         int $step,
-        string $callerRole,
+        bool $onGateway,
         WorkspaceStepListPayload $payload,
     ): array {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             /** @var WorkspaceStepMutationResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new RemoveWorkspaceStepRequest(

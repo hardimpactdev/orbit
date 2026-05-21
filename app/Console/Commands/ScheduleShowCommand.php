@@ -11,7 +11,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleShowResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Schedules\SchedulePayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -33,7 +32,7 @@ class ScheduleShowCommand extends Command
 
     private ?string $resolvedScheduleNode = null;
 
-    public function handle(SchedulePayload $payload, CallerRoleResolver $callerRoleResolver): int
+    public function handle(SchedulePayload $payload): int
     {
         $name = $this->resolveNameInput();
 
@@ -41,10 +40,10 @@ class ScheduleShowCommand extends Command
             return $name;
         }
 
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            $data = $this->fetchSchedule($payload, $callerRole, $name);
+            $data = $this->fetchSchedule($payload, $onGateway, $name);
         } catch (GatewayApiException $e) {
             return $this->failCommand($e->errorCode() ?? 'gateway_unavailable', $e->getMessage(), $e->errorMeta());
         } catch (Throwable) {
@@ -102,12 +101,12 @@ class ScheduleShowCommand extends Command
     /**
      * @return array{schedule: array<string, mixed>, meta: array<string, mixed>}
      */
-    private function fetchSchedule(SchedulePayload $payload, string $callerRole, string $name): array
+    private function fetchSchedule(SchedulePayload $payload, bool $onGateway, string $name): array
     {
         $app = $this->resolvedScheduleApp ?? $this->stringOption('app');
         $node = $this->resolvedScheduleNode ?? $this->stringOption('node');
 
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             return $payload->show($name, $app, $node);
         }
 

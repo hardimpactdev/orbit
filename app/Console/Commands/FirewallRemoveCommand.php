@@ -12,7 +12,6 @@ use App\Http\Gateway\Requests\Firewall\RemoveFirewallRuleRequest;
 use App\Http\Gateway\Responses\Firewall\FirewallRuleMutationResponse;
 use App\Models\LocalNodeDefault;
 use App\Services\Firewall\FirewallRuleIntent;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -31,7 +30,7 @@ class FirewallRemoveCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    public function handle(FirewallRuleIntent $intent): int
     {
         $name = $this->stringArgument('name');
         $node = $this->stringOption('node') ?? $this->defaultNodeName();
@@ -51,11 +50,11 @@ class FirewallRemoveCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $this->handleRemoveHuman($name, $node, $intent, $callerRoleResolver);
+            return $this->handleRemoveHuman($name, $node, $intent);
         }
 
         try {
-            if ($callerRoleResolver->resolve() !== 'gateway') {
+            if (! (bool) config('orbit.is_gateway', false)) {
                 return $this->forwardRemove($name, $node);
             }
 
@@ -77,7 +76,7 @@ class FirewallRemoveCommand extends Command
         return $this->successPayload($result['data'], $result['meta']);
     }
 
-    private function handleRemoveHuman(string $name, string $node, FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    private function handleRemoveHuman(string $name, string $node, FirewallRuleIntent $intent): int
     {
         $result = null;
 
@@ -94,9 +93,9 @@ class FirewallRemoveCommand extends Command
                 ],
                 [
                     'label' => 'Remove backend firewall rule',
-                    'run' => function () use ($name, $node, $intent, $callerRoleResolver, &$result): string {
+                    'run' => function () use ($name, $node, $intent, &$result): string {
                         try {
-                            if ($callerRoleResolver->resolve() !== 'gateway') {
+                            if (! (bool) config('orbit.is_gateway', false)) {
                                 /** @var FirewallRuleMutationResponse $dto */
                                 $dto = app(GatewayConnector::class)
                                     ->send(new RemoveFirewallRuleRequest(name: $name, node: $node))

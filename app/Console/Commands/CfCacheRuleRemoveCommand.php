@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -18,7 +17,7 @@ use Saloon\Enums\Method;
 #[Description('Remove a Cloudflare cache rule for an app')]
 final class CfCacheRuleRemoveCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $app = $this->stringArgument('app');
 
@@ -33,7 +32,6 @@ final class CfCacheRuleRemoveCommand extends CloudflareCommand
         }
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(
                 method: Method::DELETE,
                 endpoint: "/api/cloudflare/cache-rules/{$app}",
