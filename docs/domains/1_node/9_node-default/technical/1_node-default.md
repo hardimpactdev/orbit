@@ -7,13 +7,13 @@
 **Effects:** `read`, `write`.
 
 **Prerequisites:**
-- For the `choose` or `set` sub-action: the CLI caller can reach the Orbit
-  gateway, passes the `/api/me` operator-role preflight, and the target node is a
-  visible development node. Gateway and app callers are rejected before
-  prompts or local default mutation.
-- For the `show` and `clear` sub-actions: no gateway reachability, `/api/me`
-  preflight, or role check is required; these paths read or write local CLI
-  configuration only.
+- The command runs from a non-gateway deployment context. Gateway hosts reject
+  every sub-action before local default mutation.
+- For the `choose` or `set` sub-action: the target node resolves as a visible
+  active app-development node, either from the configured gateway or from the
+  local node registry when no gateway is configured.
+- For the `show` and `clear` sub-actions: no gateway reachability or grant
+  check is required; these paths read or write local CLI configuration only.
 
 ## Signature
 
@@ -59,11 +59,10 @@ input:
    - For `show` and `clear`, no node target is resolved.
 3. Validate `node_default.name` immediately when the sub-action is `set` or
    `choose`.
-   - Configured non-gateway callers must pass a `/api/me` preflight with
-     `self.role=control` before prompts or local default writes.
-   - Must resolve to a visible development node.
-   - Must not be a gateway or client.
-   - The caller must be authorized to see the target node.
+   - Gateway hosts fail with `validation_failed` and
+     `reason: not_supported_on_gateway`.
+   - Must resolve to a visible active app-development node.
+   - Must not be a gateway, control, or production app node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
 ## Input Mode Contracts
@@ -75,12 +74,12 @@ input:
 
 ### Choose sub-action
 
-1. Query the gateway for visible development nodes.
-   - Configured callers that are not gateways first call `/api/me`; if `self.role` is not
-     `control`, the gateway rejects the command before any prompt is rendered.
-2. Present the authorized nodes as choices.
-3. Store the selected node as the local default development node.
-4. Return the stored name and the `set` action. `choose` is an interactive
+1. Fail immediately when running on a gateway host.
+2. Query the configured gateway for visible development app nodes, or the local
+   node registry when no gateway is configured.
+3. Present the visible development app nodes as choices.
+4. Store the selected node as the local default development node.
+5. Return the stored name and the `set` action. `choose` is an interactive
    input path, not a separate persisted result action.
 
 ### Show sub-action
@@ -89,27 +88,28 @@ input:
 2. If a default is set, return the stored name.
 3. If no default is set, return the empty-state result without failure.
 
-No gateway call, `/api/me` preflight, or role check is required for the show
-sub-action. If no default is stored and the caller wants to discover a default
-interactively, that behavior belongs to the interactive input mode contract.
+Gateway hosts reject the show sub-action. In supported deployment contexts, no
+gateway call or grant check is required. If no default is stored and the caller
+wants to discover a default interactively, that behavior belongs to the
+interactive input mode contract.
 
 ### Set sub-action
 
-1. For configured non-gateway callers, call `/api/me`; if `self.role` is not
-   `control`, reject before local default mutation.
-2. Query the gateway for visible nodes.
-3. Validate that the resolved `name` matches a visible development node.
-4. Validate that the caller is authorized to operate against that node.
-5. Store the name as the local default development node.
-6. Return the stored name and the `set` action.
+1. Fail immediately when running on a gateway host.
+2. Query the configured gateway for visible development app nodes, or the local
+   node registry when no gateway is configured.
+3. Validate that the resolved `name` matches a visible active app-development
+   node.
+4. Store the name as the local default development node.
+5. Return the stored name and the `set` action.
 
 ### Clear sub-action
 
 1. Remove the locally stored default development node, if any.
 2. Return the clear result, indicating whether a default was previously set.
 
-No gateway call, `/api/me` preflight, or role check is required for the clear
-sub-action.
+Gateway hosts reject the clear sub-action. In supported deployment contexts, no
+gateway call or grant check is required for the clear sub-action.
 
 ### Scope Boundaries
 
@@ -134,15 +134,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Mutually exclusive input | `--clear` is combined with `name`. | Failure |
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
 | Not a development node | `set` sub-action and the selected node matches a node that is not a development node. | Failure |
-| Not authorized | `set` or `choose` sub-action and the caller is not authorized to see or operate on the selected node. | Failure |
+| Gateway host unsupported | Any sub-action is requested on a gateway host. | Failure |
 
-The `show` and `clear` sub-actions do not perform caller-role checks and do not
-fail when no default is set. The
-`show` sub-action reports the empty state; the `clear` sub-action reports
-success with `was_set: false`. Missing target input is not a failure in
-interactive input mode because the `choose` sub-action prompts. Missing target
-input is not a failure in non-interactive input mode because the `show`
-sub-action is selected instead.
+The `show` and `clear` sub-actions do not perform grant checks and do not fail
+when no default is set. The `show` sub-action reports the empty state; the
+`clear` sub-action reports success with `was_set: false`. Missing target input
+is not a failure in interactive input mode because the `choose` sub-action
+prompts. Missing target input is not a failure in non-interactive input mode
+because the `show` sub-action is selected instead.
 
 ## Doctor Relationship
 
@@ -178,8 +177,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract (see scope below). |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Operator-caller contract: show and clear local-only, `/api/me` preflight before configured choose/set, and gateway-local shortcut rejection. |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnAppNodeContractTest.php` | App-caller contract: choose/set rejection before prompts, node listing, or local writes; show and clear local-only. |
+| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Configured-client contract: show and clear local-only, choose/set without identity preflight, and gateway-host rejection. |
 | `tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
 | `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
 | `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
@@ -192,9 +190,8 @@ Primary test owners:
 - set with invalid/non-development node;
 - clear with and without existing default;
 - mutually exclusive input rejection;
-- gateway-unavailable and authorization failures for choose/set;
-- app-caller denial;
-- gateway-caller denial;
+- gateway-unavailable failures for choose/set;
+- gateway-host rejection;
 - local write guarantee (no gateway mutation, no grant creation).
 
 Input-mode-specific test mapping lives in:
@@ -207,8 +204,7 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-default_output-render_human.md`](6.1_node-default_output-render_human.md#test-mapping)
 - [`6.2_node-default_output-render_json.md`](6.2_node-default_output-render_json.md#test-mapping)
 
-Role-specific test mapping lives in:
+Deployment-context-specific test mapping lives in:
 
 - [`2_node-default_on-client.md`](2_node-default_on-client.md#test-mapping)
 - [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md#test-mapping)
-- [`4_node-default_on-app-role.md`](4_node-default_on-app-role.md#test-mapping)

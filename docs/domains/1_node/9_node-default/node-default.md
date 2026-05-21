@@ -46,15 +46,17 @@ Run `node:default` when you want to choose, set, or clear the development node y
 
 `node:default` reads and writes local client configuration only. It does
 not mutate gateway node configuration, grant access to the default node, or
-change the gateway endpoint configured by `gateway:add`.
+change the gateway endpoint configured by `gateway:add`. Gateway hosts reject
+the command; it is a client/local deployment-context convenience.
 
 ### Choose or set
 
 In interactive input mode, running `node:default` without a target queries the
-gateway for visible development nodes and presents them as choices. If the
-current local default is still in that choice list, it is preselected. Selecting
-a node stores it as the local default. Providing `name` skips
-the choice prompt and validates that node directly.
+configured gateway for visible development nodes, or the local node registry
+when no gateway is configured, and presents matching app-development nodes as
+choices. If the current local default is still in that choice list, it is
+preselected. Selecting a node stores it as the local default. Providing `name`
+skips the choice prompt and validates that node directly.
 
 ### Show (non-interactive no `name`, no `--clear`)
 
@@ -65,9 +67,8 @@ is set, reports that state without failure.
 ### Set (`name` provided)
 
 Validates that the named node is a visible development node by querying the
-gateway, then stores the name as the local default development node. Setting
-requires the CLI caller to reach the Orbit gateway and the target to be visible
-to the current identity.
+configured gateway, or the local node registry when no gateway is configured,
+then stores the name as the local default development node.
 
 ### Clear (`--clear`)
 
@@ -101,13 +102,10 @@ and payload shapes.
 ## Requirements
 
 - The local CLI has an active gateway configuration for interactive `choose`
-  and direct `set`; `show` and `clear` work with purely local state.
-- Choosing or setting a default requires the CLI caller to reach the Orbit
-  gateway and pass the `/api/me` operator-role preflight before prompts or local
-  default mutation.
-- The target node must be a visible development node.
-- App-role and gateway callers are rejected before prompts or side effects for
-  `choose` and `set`; `show` and `clear` perform no role check.
+  and direct `set` when the target must be resolved from the gateway; otherwise
+  those paths can use local active app-development node records.
+- The target node must be a visible active app-development node.
+- Gateway hosts reject the command before prompts or side effects.
 
 ## Related Commands
 
