@@ -22,6 +22,8 @@ This command removes one role assignment from a node and gates destructive clean
 - Removal blocks when dependents exist.
 - `--force` removes Orbit-owned dependents while preserving user data.
 - `--force --purge-data` also requests purge cleanup.
+- Configured non-gateway callers forward through the typed gateway API and need
+  `role:remove` on the target node.
 
 ## Technical Contract
 

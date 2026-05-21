@@ -254,7 +254,7 @@ describe('node role:add', function (): void {
             ->and($node->roleAssignments()->where('role', 'database')->count())->toBe(1);
     });
 
-    it('forwards control callers to the gateway', function (): void {
+    it('forwards configured callers to the gateway', function (): void {
         setupNodeRoleControlCaller();
 
         $mock = fakeNodeRoleGateway(AddNodeRoleRequest::class, [

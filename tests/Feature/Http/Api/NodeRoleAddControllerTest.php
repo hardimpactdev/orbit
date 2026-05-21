@@ -10,8 +10,8 @@ uses(RefreshDatabase::class);
 require_once __DIR__.'/NodeRoleApiTestHelpers.php';
 
 describe('NodeRoleAddController', function (): void {
-    it('adds a role for an authorized control caller and returns the assignment payload', function (): void {
-        [, , $target] = setUpNodeRoleApiContractAccess();
+    it('adds a role for an authorized caller and returns the assignment payload', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'database',
@@ -29,7 +29,7 @@ describe('NodeRoleAddController', function (): void {
     });
 
     it('rejects gateway role additions before side effects', function (): void {
-        [, , $target] = setUpNodeRoleApiContractAccess();
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'gateway',
@@ -46,8 +46,8 @@ describe('NodeRoleAddController', function (): void {
         expect($target->roleAssignments()->where('role', 'gateway')->exists())->toBeFalse();
     });
 
-    it('returns the authorized control caller response shape', function (): void {
-        [, , $target] = setUpNodeRoleApiContractAccess();
+    it('returns the authorized caller response shape', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-development',

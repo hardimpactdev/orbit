@@ -9,7 +9,8 @@
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
 - Gateway callers read locally.
-- Non-gateway callers are authorized through the existing gateway grant pattern.
+- Non-gateway callers have `role:read` on the target node, or an equivalent
+  gateway-admin grant.
 
 ## Signature
 
@@ -37,6 +38,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Gateway callers read role assignments locally.
 - Non-gateway callers forward to the gateway through `GatewayConnector`.
+- The gateway authorizes the request with `role:read` on the target node.
 
 ### Role Payload Rules
 

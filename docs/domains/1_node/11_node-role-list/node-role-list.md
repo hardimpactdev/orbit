@@ -15,7 +15,8 @@ orbit node role:list [node] [--json]
 This command summarizes role state for one node and forwards remote calls through the gateway.
 
 - Lists the role assignments for exactly one node.
-- Uses the existing gateway read path: gateway callers read locally; joined callers forward to the gateway over typed HTTPS.
+- Gateway callers read locally; configured non-gateway callers forward to the
+  gateway over typed HTTPS and need `role:read` on the target node.
 - Each assignment includes `role`, `status`, `settings`, `last_error`, and `converged_at`.
 - `--json` forces non-interactive mode.
 

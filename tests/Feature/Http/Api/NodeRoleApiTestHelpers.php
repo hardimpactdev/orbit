@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 function nodeRoleApiContractCallerIp(): string
@@ -36,7 +36,7 @@ function nodeRoleApiContractRow(array $overrides = []): array
 function createNodeRoleApiContractCaller(): Node
 {
     return Node::query()->create(nodeRoleApiContractRow([
-        'name' => 'control-caller',
+        'name' => 'api-caller',
         'host' => nodeRoleApiContractCallerIp(),
         'wireguard_address' => nodeRoleApiContractCallerIp(),
     ]));
@@ -56,13 +56,16 @@ function createNodeRoleApiContractGateway(): Node
     return $gateway;
 }
 
-function grantNodeRoleApiContractGatewayAccess(Node $caller, Node $gateway): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantNodeRoleApiContractAccess(Node $caller, Node $target, array $permissions): void
 {
-    DB::table('node_access')->insert([
+    NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
-        'serving_node_id' => $gateway->id,
-        'created_at' => now(),
-        'updated_at' => now(),
+        'serving_node_id' => $target->id,
+        'permissions' => $permissions,
+        'custom_permissions' => [],
     ]);
 }
 
@@ -99,14 +102,6 @@ function postNodeRoleApiContractJson(string $uri, array $data): TestResponse
     return nodeRoleApiContractRequest('POST', $uri, $data);
 }
 
-/**
- * @param  array<string, mixed>  $data
- */
-function patchNodeRoleApiContractJson(string $uri, array $data = []): TestResponse
-{
-    return nodeRoleApiContractRequest('PATCH', $uri, $data);
-}
-
 function getNodeRoleApiContractJson(string $uri): TestResponse
 {
     return nodeRoleApiContractRequest('GET', $uri, []);
@@ -133,12 +128,15 @@ function nodeRoleApiContractRequest(string $method, string $uri, array $data): T
     );
 }
 
-function setUpNodeRoleApiContractAccess(): array
+/**
+ * @param  list<string>  $permissions
+ */
+function setUpNodeRoleApiContractAccess(array $permissions): array
 {
     $caller = createNodeRoleApiContractCaller();
     $gateway = createNodeRoleApiContractGateway();
-    grantNodeRoleApiContractGatewayAccess($caller, $gateway);
     $target = createNodeRoleApiContractTarget();
+    grantNodeRoleApiContractAccess($caller, $target, $permissions);
 
     return [$caller, $gateway, $target];
 }

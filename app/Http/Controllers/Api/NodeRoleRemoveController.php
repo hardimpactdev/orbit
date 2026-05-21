@@ -6,7 +6,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Controllers\Api\Concerns\AuthorizesNodeRoleCaller;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\RemoveNodeRoleApiRequest;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -17,10 +18,9 @@ use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
 use Throwable;
 
+#[RequiresPermission('role:remove', servingNode: ServingNode::Target)]
 final class NodeRoleRemoveController implements Loggable
 {
-    use AuthorizesNodeRoleCaller;
-
     private ?Node $activitySubject = null;
 
     private string $activityAction = 'node.role.removed';
@@ -37,19 +37,6 @@ final class NodeRoleRemoveController implements Loggable
 
     public function __invoke(RemoveNodeRoleApiRequest $request, string $name, string $role): JsonResponse
     {
-        /** @var mixed $resolvedUser */
-        $resolvedUser = $request->user();
-        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
-
-        if (! $caller instanceof Node) {
-            return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        $authorization = $this->authorizeNodeRoleCaller($caller, 'remove node roles');
-        if ($authorization instanceof JsonResponse) {
-            return $authorization;
-        }
-
         $node = Node::query()->where('name', $name)->where('status', 'active')->first();
         if (! $node instanceof Node) {
             return $this->error('node.not_found', "Node '{$name}' not found.", ['name' => $name], 404);
@@ -112,14 +99,6 @@ final class NodeRoleRemoveController implements Loggable
                 ],
             ],
         ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $meta
-     */
-    private function authorizationFailed(string $message, array $meta = []): JsonResponse
-    {
-        return $this->error('authorization_failed', $message, $meta, 403);
     }
 
     /**

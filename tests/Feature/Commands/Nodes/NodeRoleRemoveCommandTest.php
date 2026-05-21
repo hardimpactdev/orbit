@@ -256,7 +256,7 @@ describe('node role:remove', function (): void {
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
-    it('forwards control callers to the gateway', function (): void {
+    it('forwards configured callers to the gateway', function (): void {
         setupNodeRoleControlCaller();
 
         $mock = fakeNodeRoleGateway(RemoveNodeRoleRequest::class, [

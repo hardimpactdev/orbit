@@ -57,11 +57,16 @@ function createNodeRoleApiGateway(): int
     return $nodeId;
 }
 
-function grantNodeRoleApiGatewayAccess(int $callerId, int $gatewayId): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantNodeRoleApiAccess(int $callerId, int $servingNodeId, array $permissions): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $callerId,
-        'serving_node_id' => $gatewayId,
+        'serving_node_id' => $servingNodeId,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -109,27 +114,6 @@ function postNodeRoleApiJson(string $uri, array $data, array $server = []): Test
  * @param  array<string, mixed>  $data
  * @param  array<string, string>  $server
  */
-function patchNodeRoleApiJson(string $uri, array $data, array $server = []): TestResponse
-{
-    /** @phpstan-ignore-next-line Pest resolves call() on the bound Laravel test case at runtime. */
-    return test()->call(
-        'PATCH',
-        $uri,
-        $data,
-        [],
-        [],
-        array_merge([
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/json',
-        ], $server),
-        json_encode($data, JSON_THROW_ON_ERROR),
-    );
-}
-
-/**
- * @param  array<string, mixed>  $data
- * @param  array<string, string>  $server
- */
 function deleteNodeRoleApiJson(string $uri, array $data, array $server = []): TestResponse
 {
     /** @phpstan-ignore-next-line Pest resolves call() on the bound Laravel test case at runtime. */
@@ -149,13 +133,13 @@ function deleteNodeRoleApiJson(string $uri, array $data, array $server = []): Te
 
 beforeEach(function (): void {
     $callerId = createNodeRoleApiCaller();
-    $gatewayId = createNodeRoleApiGateway();
-    grantNodeRoleApiGatewayAccess($callerId, $gatewayId);
+    createNodeRoleApiGateway();
 
-    DB::table('nodes')->insert(apiNodeRoleRow([
+    $targetId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
         'name' => 'target-1',
         'wireguard_address' => '10.6.0.20',
     ]));
+    grantNodeRoleApiAccess($callerId, $targetId, ['role:add', 'role:remove']);
 });
 
 describe('node role api validation envelopes', function (): void {
@@ -182,38 +166,9 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
-    it('returns the orbit error envelope for non-array settings on update', function (): void {
-        $response = patchNodeRoleApiJson('/api/nodes/target-1/roles/database', [
-            'settings' => 'invalid',
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
-
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'settings')
-            ->assertJsonPath('error.message', 'Settings must be an object.')
-            ->assertJsonMissingPath('success');
-    });
-
     it('rejects path-like app-development tld settings on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
             'role' => 'app-development',
-            'settings' => ['tld' => '../../orbit'],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
-
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The app-development role requires a valid tld setting.')
-            ->assertJsonMissingPath('success');
-    });
-
-    it('rejects path-like app-development tld settings on update', function (): void {
-        $targetId = (int) DB::table('nodes')
-            ->where('name', 'target-1')
-            ->value('id');
-
-        assignNodeRoleApiRole($targetId, 'app-development', ['tld' => 'test']);
-
-        $response = patchNodeRoleApiJson('/api/nodes/target-1/roles/app-development', [
             'settings' => ['tld' => '../../orbit'],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -267,34 +222,6 @@ describe('node role api validation envelopes', function (): void {
             ->and(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
     });
 
-    it('rejects updating gateway when the target has an active composable role', function (): void {
-        $targetId = (int) DB::table('nodes')
-            ->where('name', 'target-1')
-            ->value('id');
-
-        assignNodeRoleApiRole($targetId, 'gateway');
-        assignNodeRoleApiRole($targetId, 'app-development', ['tld' => 'test']);
-
-        $response = patchNodeRoleApiJson('/api/nodes/target-1/roles/gateway', [
-            'settings' => [],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
-
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The gateway role cannot be managed through node role commands.')
-            ->assertJsonPath('error.meta.field', 'role')
-            ->assertJsonPath('error.meta.role', 'gateway')
-            ->assertJsonMissingPath('success');
-
-        $gatewayAssignment = DB::table('node_roles')
-            ->where('node_id', $targetId)
-            ->where('role', 'gateway')
-            ->first();
-
-        expect($gatewayAssignment?->status)->toBe('active')
-            ->and(json_decode((string) $gatewayAssignment?->settings, true, flags: JSON_THROW_ON_ERROR))->toBe([]);
-    });
-
     it('returns the orbit error envelope for invalid force on remove', function (): void {
         $response = deleteNodeRoleApiJson('/api/nodes/target-1/roles/database', [
             'force' => 'invalid',
@@ -338,16 +265,8 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonPath('success.data.assignment.role', 'database');
     });
 
-    it('uses an active gateway role assignment when reporting the required gateway node', function (): void {
+    it('reports missing role permission against the target node', function (): void {
         DB::table('node_access')->delete();
-
-        $gatewayId = (int) DB::table('nodes')
-            ->where('name', 'gateway-1')
-            ->value('id');
-
-        DB::table('nodes')
-            ->where('id', $gatewayId)
-            ->update(['role' => 'control']);
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
             'role' => 'database',
@@ -356,26 +275,23 @@ describe('node role api validation envelopes', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'role:add')
+            ->assertJsonPath('error.meta.serving_node', 'target-1');
     });
 
-    it('authorizes callers through any active gateway they can access', function (): void {
+    it('authorizes callers through a gateway-admin grant', function (): void {
         DB::table('node_access')->delete();
 
         $callerId = (int) DB::table('nodes')
             ->where('wireguard_address', NODE_ROLE_API_CALLER_WG_IP)
             ->value('id');
 
-        $authorizedGatewayId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
-            'name' => 'zzz-gateway',
-            'role' => 'control',
-            'host' => '10.6.0.3',
-            'environment' => null,
-            'wireguard_address' => '10.6.0.3',
-        ]));
+        $gatewayId = (int) DB::table('nodes')
+            ->where('name', 'gateway-1')
+            ->value('id');
 
-        assignNodeRoleApiRole($authorizedGatewayId, 'gateway');
-        grantNodeRoleApiGatewayAccess($callerId, $authorizedGatewayId);
+        grantNodeRoleApiAccess($callerId, $gatewayId, ['*']);
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
             'role' => 'database',

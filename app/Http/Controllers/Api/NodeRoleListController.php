@@ -6,34 +6,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Controllers\Api\Concerns\AuthorizesNodeRoleCaller;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\NodeRoleListApiRequest;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
+#[RequiresPermission('role:read', servingNode: ServingNode::Target)]
 final class NodeRoleListController implements Loggable
 {
-    use AuthorizesNodeRoleCaller;
-
     private ?Node $activitySubject = null;
 
     public function __invoke(NodeRoleListApiRequest $request, string $name): JsonResponse
     {
-        /** @var mixed $resolvedUser */
-        $resolvedUser = $request->user();
-        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
-
-        if (! $caller instanceof Node) {
-            return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        $authorization = $this->authorizeNodeRoleCaller($caller, 'list node roles');
-        if ($authorization instanceof JsonResponse) {
-            return $authorization;
-        }
-
         $node = Node::query()
             ->with('roleAssignments')
             ->where('name', $name)
@@ -56,14 +43,6 @@ final class NodeRoleListController implements Loggable
                 ],
             ],
         ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $meta
-     */
-    private function authorizationFailed(string $message, array $meta = []): JsonResponse
-    {
-        return $this->error('authorization_failed', $message, $meta, 403);
     }
 
     /**
