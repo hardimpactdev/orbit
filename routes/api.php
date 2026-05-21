@@ -110,7 +110,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/cloudflare/cache/flush', [CloudflareController::class, 'flushCache']);
         Route::post('/cloudflare/cache-rules/{app}', [CloudflareController::class, 'addCacheRule']);
         Route::delete('/cloudflare/cache-rules/{app}', [CloudflareController::class, 'removeCacheRule']);
-        Route::put('/cloudflare/zones/{zone}/ssl', [CloudflareController::class, 'updateSsl']);
+        Route::put('/cloudflare/zones/{zone}/ssl', [CloudflareController::class, 'enableSsl']);
+        Route::put('/cloudflare/zones/{zone}/ssl/disable', [CloudflareController::class, 'disableSsl']);
         Route::post('/doctor/fix', DoctorFixController::class);
         Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/database-connections', [DatabaseConnectionController::class, 'index']);

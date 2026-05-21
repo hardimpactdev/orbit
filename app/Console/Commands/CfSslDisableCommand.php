@@ -36,8 +36,8 @@ final class CfSslDisableCommand extends CloudflareCommand
             callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(
                 method: Method::PUT,
-                endpoint: "/api/cloudflare/zones/{$zone}/ssl",
-                payload: ['mode' => 'off', 'destructive_consent' => true],
+                endpoint: "/api/cloudflare/zones/{$zone}/ssl/disable",
+                payload: ['destructive_consent' => true],
             ),
             local: fn (): array => $cloudflare->disableSsl($zone),
             gatewayFailureMessage: 'Gateway connection is required to manage Cloudflare SSL.',

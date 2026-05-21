@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Cloudflare\CloudflareManager;
@@ -17,29 +19,26 @@ final class CloudflareController implements Loggable
 {
     private ?Node $activitySubject = null;
 
+    #[RequiresPermission('cf:zone:list', servingNode: ServingNode::Gateway)]
     public function zones(Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         return $this->run(fn (): array => $cloudflare->listZones());
     }
 
+    #[RequiresPermission('cf:dns:list', servingNode: ServingNode::Gateway)]
     public function dnsRecords(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         return $this->run(fn (): array => $cloudflare->listDnsRecords($zone));
     }
 
+    #[RequiresPermission('cf:dns:add', servingNode: ServingNode::Gateway)]
     public function storeDnsRecord(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         $name = $this->stringInput($request, 'name');
         $content = $this->stringInput($request, 'content');
@@ -57,11 +56,10 @@ final class CloudflareController implements Loggable
         ));
     }
 
+    #[RequiresPermission('cf:dns:remove', servingNode: ServingNode::Gateway)]
     public function removeDnsRecord(string $zone, string $record, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         if (! $request->boolean('destructive_consent')) {
             return $this->error('validation_failed', 'Removing a Cloudflare DNS record requires --force in non-interactive mode.', [
@@ -73,11 +71,10 @@ final class CloudflareController implements Loggable
         return $this->run(fn (): array => $cloudflare->removeDnsRecord($record, $zone));
     }
 
+    #[RequiresPermission('cf:cache:flush', servingNode: ServingNode::Gateway)]
     public function flushCache(Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         $zone = $this->stringInput($request, 'zone');
 
@@ -88,20 +85,18 @@ final class CloudflareController implements Loggable
         return $this->run(fn (): array => $cloudflare->flushCache($zone));
     }
 
+    #[RequiresPermission('cf:cache:rule:add', servingNode: ServingNode::Gateway)]
     public function addCacheRule(string $app, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         return $this->run(fn (): array => $cloudflare->addCacheRule($app));
     }
 
+    #[RequiresPermission('cf:cache:rule:remove', servingNode: ServingNode::Gateway)]
     public function removeCacheRule(string $app, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         if (! $request->boolean('destructive_consent')) {
             return $this->error('validation_failed', 'Removing a Cloudflare cache rule requires --force in non-interactive mode.', [
@@ -113,24 +108,29 @@ final class CloudflareController implements Loggable
         return $this->run(fn (): array => $cloudflare->removeCacheRule($app));
     }
 
-    public function updateSsl(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
+    #[RequiresPermission('cf:ssl:enable', servingNode: ServingNode::Gateway)]
+    public function enableSsl(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        if ($response = $this->authorizeProviderAdministration($request)) {
-            return $response;
-        }
+        $this->captureActivitySubject($request);
 
         $mode = $this->stringInput($request, 'mode') ?? 'strict';
 
-        if ($mode === 'off' && ! $request->boolean('destructive_consent')) {
+        return $this->run(fn (): array => $cloudflare->enableSsl($zone, $mode));
+    }
+
+    #[RequiresPermission('cf:ssl:disable', servingNode: ServingNode::Gateway)]
+    public function disableSsl(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
+    {
+        $this->captureActivitySubject($request);
+
+        if (! $request->boolean('destructive_consent')) {
             return $this->error('validation_failed', 'Disabling Cloudflare SSL requires --force in non-interactive mode.', [
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ], 422);
         }
 
-        return $this->run(fn (): array => $mode === 'off'
-            ? $cloudflare->disableSsl($zone)
-            : $cloudflare->enableSsl($zone, $mode));
+        return $this->run(fn (): array => $cloudflare->disableSsl($zone));
     }
 
     /**
@@ -157,24 +157,12 @@ final class CloudflareController implements Loggable
         ]);
     }
 
-    private function authorizeProviderAdministration(Request $request): ?JsonResponse
+    private function captureActivitySubject(Request $request): void
     {
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if (! in_array($caller->role, ['gateway', 'control'], true)) {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', [
-                'caller_role' => $caller->role,
-            ], 403);
-        }
-
-        $this->activitySubject = $caller;
-
-        return null;
+        $this->activitySubject = $caller instanceof Node ? $caller : null;
     }
 
     private function stringInput(Request $request, string $key): ?string
@@ -187,7 +175,7 @@ final class CloudflareController implements Loggable
     private function statusFor(GatewayApiException $exception): int
     {
         return match ($exception->errorCode()) {
-            'authorization_failed', 'caller_role_not_allowed' => 403,
+            'authorization_failed' => 403,
             'cloudflare_unavailable' => 503,
             default => 422,
         };

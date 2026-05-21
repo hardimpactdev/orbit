@@ -28,14 +28,6 @@ abstract class CloudflareCommand extends Command
     ): array|int {
         $callerRole = $callerRoleResolver->resolve();
 
-        if (in_array($callerRole, ['app', 'unknown'], true)) {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $callerRole],
-            );
-        }
-
         try {
             if ($callerRole === 'gateway') {
                 return $local();
