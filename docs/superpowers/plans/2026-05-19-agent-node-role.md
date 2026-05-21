@@ -60,7 +60,7 @@
 - `docs/architecture.md` and `docs/tech-stack.md` already mention `agent` as a hosted role in design.
 - `docs/domains/1_node/**` still formalizes only `app-development`, `app-production`, and `database`, so node docs must be aligned before implementation.
 - Current `node_access` is binary (`consumer_node_id`, `serving_node_id`) and self-grants are rejected by `NodeGrantController`.
-- Old Orbit evidence favors gateway-owned state plus agentless hosted nodes. The new `agent` role must remain a workload calling the gateway API, not an Orbit control-plane daemon.
+- The new `agent` role must remain a workload calling the gateway API, not an Orbit control-plane daemon.
 - OpenClaw docs currently document Linux installation with `curl -fsSL https://openclaw.ai/install.sh | bash`, verification with `openclaw --version`, `openclaw doctor`, and `openclaw gateway status`.
 - Hermes docs currently document Linux installation with `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash`, verification with `hermes doctor`, and update with `hermes update`.
 

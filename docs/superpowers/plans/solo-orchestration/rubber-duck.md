@@ -11,15 +11,14 @@ You are one rubber duck in a two-agent blocker review.
    - product docs named by the todo
    - relevant `docs/domains/**` authoritive on how features need to work
    - `docs/porting/PORTING.md`
-   - relevant `../orbit-old-may` evidence
    - current code/tests touching the blocker.
 
    Do not consult the other duck.
 
-2. Apply the evidence stack — current docs, then `docs/porting/PORTING.md`, then
-   `../orbit-old-may`, then current code/tests — and return `verdict=PATH`
-   only if that stack selects one safe path aligned with the clean rebuild.
-   Otherwise return `verdict=NEEDS_USER_DIRECTION`.
+2. Apply the evidence stack — current docs, then `docs/porting/PORTING.md`,
+   then current code/tests — and return `verdict=PATH` only if that stack
+   selects one safe path aligned with the clean rebuild. Otherwise return
+   `verdict=NEEDS_USER_DIRECTION`.
 
 3. Post exactly one proposal on the blocked todo:
 
@@ -30,7 +29,6 @@ You are one rubber duck in a two-agent blocker review.
    evidence:
      - docs: <citation or n/a>
      - porting: <citation or n/a>
-     - old-repo: <citation or n/a>
      - existing-code: <citation or n/a>
    rationale: <2-4 lines>
    risk: <2-4 lines>
@@ -45,7 +43,6 @@ You are one rubber duck in a two-agent blocker review.
    what_was_checked:
      - docs: <citation or no relevant guidance>
      - porting: <citation or no relevant guidance>
-     - old-repo: <citation or no relevant guidance>
      - existing-code: <citation or no relevant guidance>
    ```
 

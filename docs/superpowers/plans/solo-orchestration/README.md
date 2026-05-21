@@ -146,11 +146,10 @@ Use this evidence order when product or architecture choices fork:
 
 1. Current docs as product authority.
 2. `docs/porting/PORTING.md` for migration order and tracker state.
-3. `../orbit-old-may` as legacy implementation evidence.
-4. Current code, tests, and todo comments as implementation evidence.
+3. Current code, tests, and todo comments as implementation evidence.
 
-Current docs decide product behavior. Current implementation and the old repo
-are evidence, not automatic authority.
+Current docs decide product behavior. Current implementation is evidence, not
+automatic authority.
 
 The orchestration loop should create Pest E2E work using
 `composer test:e2e:provision`, `composer test:e2e`, and

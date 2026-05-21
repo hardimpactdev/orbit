@@ -21,7 +21,6 @@ You are the long-lived implementer for exactly one Solo todo.
    - relevant `docs/domains/**`
    - `docs/porting/PORTING.md`
    - `TESTING.md`
-   - relevant `../orbit-old-may` evidence
    - current code, tests, and worktree diff in owned scope
    - other open Solo todos currently tagged `in-progress` and their
      `Owned Files Or Domains` (used in step 5 as foreign scope).

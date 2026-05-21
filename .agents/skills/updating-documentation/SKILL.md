@@ -7,8 +7,8 @@ description: Use when Orbit documentation, command contracts, product docs, arch
 
 ## Overview
 
-Update Orbit documentation against the current product contract. Keep docs,
-legacy evidence, and implementation handoff needs aligned before code changes.
+Update Orbit documentation against the current product contract. Keep docs and
+implementation handoff needs aligned before code changes.
 
 ## Workflow
 
@@ -21,11 +21,10 @@ legacy evidence, and implementation handoff needs aligned before code changes.
    - `docs/concepts.md`
    - relevant `docs/domains/**`
    - relevant `docs/superpowers/**`
-3. Read relevant `../orbit-old-may/**` evidence when the behavior may already have existed.
-4. Keep this pass focused on documentation; PHP and JavaScript implementation belongs to a separate implementation pass.
-5. Keep changes scoped to the request.
-6. Record open questions and unresolved decisions explicitly.
-7. Run the documentation quality gate:
+3. Keep this pass focused on documentation; PHP and JavaScript implementation belongs to a separate implementation pass.
+4. Keep changes scoped to the request.
+5. Record open questions and unresolved decisions explicitly.
+6. Run the documentation quality gate:
 
    ```bash
    composer docs-lint
@@ -34,7 +33,8 @@ legacy evidence, and implementation handoff needs aligned before code changes.
 ## Documentation Rules
 
 - Current docs are product authority.
-- Use `../orbit-old-may` as historical evidence before changing behavior Orbit already solved.
+- Do not use external historical Orbit repositories as reference material unless
+  the user explicitly provides source material for the current task.
 - Keep docs contract-first: behavior, inputs, outputs, failure modes, role boundaries, and tests.
 - Keep documentation changes scoped to the request.
 - Record open questions and unresolved decisions explicitly.

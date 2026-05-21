@@ -32,8 +32,3 @@ Useful checks:
 composer quality-check
 composer test:e2e
 ```
-
-## Legacy Reference
-
-The previous implementation lives at `../orbit-old-may`. Use it as reference
-material only; this repository should grow through small, verified slices.

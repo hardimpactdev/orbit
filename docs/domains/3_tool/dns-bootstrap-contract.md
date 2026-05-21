@@ -153,7 +153,7 @@ rebuilds `dnsmasq.conf` from current state and `docker compose up -d`).
 
 ## Evidence Pointers
 
-These pointers locate the current Orbit code paths and the old-repo references that informed this contract.
+These pointers locate the current Orbit code paths that implement this contract.
 
 ### Current Orbit
 
@@ -166,12 +166,3 @@ These files implement the bootstrap, builder, reconciler, and probe described ab
 - `app/Services/Dns/DnsmasqReconciler.php` — reconciler.
 - `app/Services/Doctor/` — DNS runtime probe (`DnsRuntimeProbe`).
 - `app/Tools/DnsTool.php` — `dns` tool definition.
-
-### Old repo references
-
-These old-repo files motivated the current shape and remain useful for historical context.
-
-- `../orbit-old-may/app/Services/RemoteProvisioner.php:947` — original `network_mode: container:wg-easy` rationale.
-- `../orbit-old-may/app/Services/DnsmasqConfigGenerator.php` — original generator shape.
-- `../orbit-old-may/app/Services/DoctorService.php:692` — original "orbit-dns container not found" failure.
-- `../orbit-old-may/app/Console/Commands/TldSyncCommand.php` — original lifecycle hook (the operator-side fetcher we are *not* porting; gateway authoritative DB row replaces it).

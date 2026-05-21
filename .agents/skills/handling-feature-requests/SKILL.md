@@ -22,12 +22,11 @@ documentation and implementation work through Solo MCP.
    - `docs/concepts.md`
    - relevant `docs/domains/**`
    - relevant `docs/superpowers/**`
-4. Check `../orbit-old-may` for prior behavior when the request touches behavior Orbit may already have solved.
-5. Flag missing or contradictory docs before implementation and record unresolved decisions explicitly.
-6. Define the smallest useful vertical slice that can be documented, tested, implemented, and verified.
-7. Prepare the handoff shape below.
-8. Spawn the Solo documentation agent using the Documentation Agent config below and prompt it to use `updating-documentation`.
-9. After documentation is aligned, spawn the Solo implementation agent using the Implementation Agent config below and prompt it to use `implementing-features`.
+4. Flag missing or contradictory docs before implementation and record unresolved decisions explicitly.
+5. Define the smallest useful vertical slice that can be documented, tested, implemented, and verified.
+6. Prepare the handoff shape below.
+7. Spawn the Solo documentation agent using the Documentation Agent config below and prompt it to use `updating-documentation`.
+8. After documentation is aligned, spawn the Solo implementation agent using the Implementation Agent config below and prompt it to use `implementing-features`.
 
 ## Product Decisions
 
@@ -35,8 +34,7 @@ Use this decision order when evidence conflicts:
 
 1. Current docs are product authority.
 2. Current tests describe expected implementation behavior only when they match the docs.
-3. `../orbit-old-may` is historical evidence, not automatic authority.
-4. Current code explains what exists, not necessarily what should exist.
+3. Current code explains what exists, not necessarily what should exist.
 
 If a new decision is needed, make it explicit in the handoff:
 
@@ -44,7 +42,6 @@ If a new decision is needed, make it explicit in the handoff:
 Decision needed: <question>
 Known evidence:
 - Current docs: <path and summary>
-- Old Orbit: <path and summary>
 - Current code/tests: <path and summary>
 Recommended direction: <specific choice and why>
 ```
@@ -62,7 +59,7 @@ skills:
 - Authority docs:
 - Behavior to add/change:
 - Behavior explicitly out of scope:
-- Old Orbit evidence:
+- Existing code/test evidence:
 
 ## Acceptance Criteria
 - <observable behavior>
@@ -132,7 +129,6 @@ Required context:
 - `docs/concepts.md`
 - relevant `docs/domains/**`
 - relevant `docs/superpowers/**`
-- relevant `../orbit-old-may/**` evidence
 
 Return changed files, product decisions, unresolved questions, and verification performed.
 ```
@@ -151,7 +147,6 @@ Required context:
 - `AGENTS.md`
 - updated product docs named in the handoff
 - relevant `docs/domains/**`
-- relevant `../orbit-old-may/**` evidence
 - current code and tests in owned scope
 
 Return changed files, tests, verification, blockers, and risks.
@@ -160,13 +155,11 @@ Return changed files, tests, verification, blockers, and risks.
 ## Stop Conditions
 
 - Stop and ask for direction if current docs contradict the requested behavior.
-- Stop and ask for direction if the old repo solved the behavior but the requested direction rejects it without rationale.
 - Stop and ask for direction if the request requires destructive live-node work without an ephemeral E2E plan.
 - Stop and narrow scope if the request mixes unrelated product surfaces.
 
 ## Common Mistakes
 
 - Treating an implementation guess as product authority.
-- Skipping `../orbit-old-may` for behavior that likely existed before the rebuild.
 - Creating broad abstractions before the vertical slice proves they are needed.
 - Starting implementation before the documentation Solo process has aligned the product contract.

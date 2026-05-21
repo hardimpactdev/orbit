@@ -15,7 +15,7 @@ Every worker todo must state:
 - scope and non-goals;
 - sequencing and blockers;
 - product authority;
-- legacy evidence;
+- existing implementation evidence;
 - owned files or domains;
 - focused quality gate with exact Pest/PHP commands for implementation work;
 - E2E lane, or `none` with a concrete reason;
@@ -56,9 +56,9 @@ Every worker todo must state:
 
 - <docs/architecture.md, docs/tech-stack.md, docs/domains/**, or other current docs>
 
-### Legacy Evidence
+### Existing Implementation Evidence
 
-- <../orbit-old-may paths to inspect, or none with reason>
+- <current code/test paths to inspect, or none with reason>
 
 ### Owned Files Or Domains
 

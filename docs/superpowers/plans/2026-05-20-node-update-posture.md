@@ -32,7 +32,6 @@ Do not reintroduce a `security` doctor family. Do not convert `--key=` back to r
 - Active security-foundations plan: `.worktrees/app-node-security-foundations/docs/superpowers/plans/2026-05-16-app-node-security-baseline.md`
 - Existing operation contract: `docs/domains/11_operation/3_doctor/doctor.md`
 - Existing node doctor contract: `docs/domains/1_node/node-doctor.md`
-- Legacy evidence: `../orbit-old-may/app/Services/DoctorService.php` had `checkSystemUpdates()` using `apt list --upgradable`; this plan intentionally replaces that package-list heuristic with `unattended-upgrades` posture.
 - Ubuntu reference: https://ubuntu.com/server/docs/how-to/software/automatic-updates
 
 ## Complexity

@@ -14,10 +14,6 @@
 **Reference material:**
 - `docs/abstractions/16_dns.md` — DNS *commands* are caller-local; gateway DNS is **out of scope** for the `dns:*` command family. This plan lives in the **tool family** + **node family** + **bootstrap**.
 - `docs/domains/3_tool/catalog/dns.md` — declares the contract: `dns` is a required infrastructure tool, Docker backend, gateway-only, install/remove not user-facing operations. *"`tool:install dns` and `tool:remove dns` are not supported as ordinary operator actions unless a later DNS bootstrap contract explicitly says so."* This plan establishes that bootstrap contract.
-- `../orbit-old-may/app/Services/RemoteProvisioner.php:947-953` — historical pattern: *"Shares wg-easy's network namespace so dnsmasq binds the VPN server — requires wg-easy to be running first: `--network container:wg-easy` pins the netns, so wg-easy is an orbit-dns hard dependency."*
-- `../orbit-old-may/app/Services/DnsmasqConfigGenerator.php` — old generator output: `address=/.{tld}/{ip}`, `local=/{tld}/`, `conf-dir=/etc/dnsmasq.d/,*.conf`, upstream resolvers Cloudflare + Google.
-- `../orbit-old-may/app/Services/DoctorService.php:692` — old doctor check expected `orbit-dns container not found` as a failure mode.
-- `../orbit-old-may/app/Console/Commands/TldSyncCommand.php` — old lifecycle hook.
 
 **Out of scope:**
 - Any change to `dns:*` commands (`dns:resolve-tld`, `dns:list`) — those stay caller-local.
@@ -47,7 +43,7 @@
 - Create `docs/domains/3_tool/dns-bootstrap-contract.md`: define the bootstrap contract referenced by `docs/domains/3_tool/catalog/dns.md`. Spec: who writes the compose, who writes dnsmasq.conf, how lifecycle hooks update it, what doctor checks, why install/remove stay non-operator commands.
 - Modify `docs/domains/3_tool/catalog/dns.md`: link to the new bootstrap contract, remove the deferred-contract caveat.
 - Create `app/Services/Vpn/WgEasyServiceInstaller.php`: encapsulates writing `/opt/vpn-stack/docker-compose.yml`-equivalent (under Orbit-managed path, e.g. `~/.config/orbit/wg-easy/docker-compose.yaml`), generating the wg-easy admin password hash, and `docker compose up -d`. Reads `WG_HOST` from the gateway's public IPv4 (already in `nodes.public_ipv4`).
-- Create `app/Services/Dns/DnsmasqConfigBuilder.php`: pure function — given the `Node` collection (gateway + apps with `tld` + `wireguard_address` set), produce the dnsmasq.conf string. Includes `address=/.{tld}/{wg_ip}` lines, upstream resolvers, log config. Matches `orbit-old-may/app/Services/DnsmasqConfigGenerator.php` shape.
+- Create `app/Services/Dns/DnsmasqConfigBuilder.php`: pure function — given the `Node` collection (gateway + apps with `tld` + `wireguard_address` set), produce the dnsmasq.conf string. Includes `address=/.{tld}/{wg_ip}` lines, upstream resolvers, and log config.
 - Create `app/Services/Dns/OrbitDnsServiceInstaller.php`: writes `~/.config/orbit/docker-compose.yaml` with the `orbit-dns` service shape (`network_mode: container:wg-easy`, volume mount for `dnsmasq.conf`, `cap_add: NET_ADMIN`, `restart: unless-stopped`). Writes the initial `dnsmasq.conf` via `DnsmasqConfigBuilder`. Starts the container.
 - Create `app/Services/Dns/DnsmasqReconciler.php`: rewrites `dnsmasq.conf` from current DB state and SIGHUPs orbit-dns (`docker exec orbit-dns kill -HUP 1`). Idempotent.
 - Modify `app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php`: add a DNS bootstrap step after Caddy/PHP-FPM. Order is: WG kernel install → CA → API runtime → **wg-easy → orbit-dns + dnsmasq.conf** → mark gateway environment. Add idempotency: rerunning bootstrap must not duplicate state.

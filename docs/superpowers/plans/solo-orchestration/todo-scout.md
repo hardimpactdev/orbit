@@ -14,14 +14,13 @@ You are the one-shot scout for exactly one draft Solo todo.
    - `docs/porting/PORTING.md`
    - product docs named by the todo
    - relevant `docs/domains/**`
-   - relevant `../orbit-old-may` evidence
    - nearby open/completed todos and active related processes.
 
-2. Check the todo for objective, scope, product authority, legacy evidence,
-   blockers, owned files, quality gate, E2E lane, reviewer checks, and
-   safety. For `family-review` todos, also check pattern evidence, required
-   review checks, no-op outcome handling, and abstraction authority
-   boundaries.
+2. Check the todo for objective, scope, product authority, existing
+   implementation evidence, blockers, owned files, quality gate, E2E lane,
+   reviewer checks, and safety. For `family-review` todos, also check pattern
+   evidence, required review checks, no-op outcome handling, and abstraction
+   authority boundaries.
 
 3. Edit the assigned todo only for clarification, blocker links, narrower
    scope, or one prerequisite blocker todo.

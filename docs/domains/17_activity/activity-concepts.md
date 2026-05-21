@@ -120,8 +120,7 @@ Activity covers the following categories of operations.
   `destructive` for irreversible mutations (deletes, removes, revokes,
   retention prunes).
 - All gateway API endpoints that read state (lists, shows, status). Effect
-  `read`. Default-on; matches the historical convention from the old repo
-  where most read controllers were Loggable.
+  `read`. Default-on for consistent activity visibility.
 - CLI commands that perform CLI-only state changes (e.g. local gateway
   connection setup) emit through the CLI helper.
 

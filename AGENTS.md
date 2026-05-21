@@ -1,7 +1,6 @@
 # Orbit
 
-Orbit is being rebuilt as a clean Laravel 13 codebase. The old implementation is
-preserved at `../orbit-old-may` and is reference material only.
+Orbit is a clean Laravel 13 codebase.
 
 ## Current Shape
 
@@ -10,7 +9,7 @@ preserved at `../orbit-old-may` and is reference material only.
   managed machines.
 - Database: SQLite at the normal Laravel path.
 
-## Reference Material
+## Product Authority
 
 Orbit's current product contract lives in this repo:
 
@@ -20,26 +19,10 @@ Orbit's current product contract lives in this repo:
 - `docs/tech-stack.md`
 - `docs/domains/**`
 
-Use `../orbit-old-may` for historical implementation and pre-clean-rebuild
-context. Do not copy old behavior blindly. When current code and old repo
-evidence disagree, treat the old repo as evidence, then make an explicit
-product decision before bringing the behavior forward.
-
-Before implementing Orbit-specific behavior, always consult `../orbit-old-may`
-for the previous solution. Prefer porting the old approach with the smallest
-clean-repo and Laravel 13 adjustments unless a new implementation is clearly
-simpler, safer, or better aligned with the rebuilt architecture. If you choose a
-new implementation for behavior the old repo already solved, document why before
-committing to that direction.
-
-Useful old-reference locations:
-
-- `../orbit-old-may/app/**`
-- `../orbit-old-may/config/**`
-- `../orbit-old-may/database/**`
-- `../orbit-old-may/tests/**`
-- `../orbit-old-may/docs/superpowers/**`
-- `../orbit-old-may/TESTING.md`
+Do not use external historical Orbit repositories as product authority or
+implementation reference material. Current docs, current tests, and current
+code in this repository are the only valid inputs for Orbit behavior unless the
+user explicitly provides additional source material for a specific task.
 
 ## Development and debugging Rules
 
@@ -88,12 +71,10 @@ for the full verification model and lane map.
 
 ## AI Guideline Precedence
 
-Orbit-specific instructions in this file and the old-repo reference workflow
-override the generated Laravel Boost and Spatie guidelines below when they
-conflict. Use Boost and Spatie as the PHP/Laravel baseline, not as permission to
-override Orbit's command contracts, clean-rebuild constraints, or local
-conventions. Generic Laravel advice must not reintroduce broad legacy
-abstractions or bypass `../orbit-old-may` when Orbit already solved a behavior.
+Orbit-specific instructions in this file override the generated Laravel Boost
+and Spatie guidelines below when they conflict. Use Boost and Spatie as the
+PHP/Laravel baseline, not as permission to override Orbit's command contracts,
+clean-rebuild constraints, or local conventions.
 
 ===
 

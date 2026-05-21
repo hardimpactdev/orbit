@@ -7,10 +7,10 @@ mismatch between the canonical UX doc and per-command renderer docs, surface
 the spec from the command-designer skill, and close the test-fidelity gap
 caused by `laravel/pao` stripping tree glyphs from agent-observed output.
 
-**Background:** A previous step ported the `SpinnerTreeRenderer` /
-`LifecycleSummaryRenderer` / `WithStepTree` / `WithSpinner` stack from
-`../orbit-old-may` and rewrote `UpdateCommand` and `UpdateAllCommand` to use
-it. That work surfaced three problems this plan addresses:
+**Background:** A previous step implemented the `SpinnerTreeRenderer` /
+`LifecycleSummaryRenderer` / `WithStepTree` / `WithSpinner` stack and rewrote
+`UpdateCommand` and `UpdateAllCommand` to use it. That work surfaced three
+problems this plan addresses:
 
 1. `docs/ux/commands/progress/progress-tree.md` describes the proper anatomy
    (pipes, double-spacing, dim/accent treatment, Working/Done footer) but

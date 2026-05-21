@@ -13,7 +13,6 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
    - product docs named by the todo
    - relevant `docs/domains/**`
    - `docs/porting/PORTING.md`
-   - relevant `../orbit-old-may` evidence
    - assigned worktree path and branch from the todo's `Worktree Assignment`
    - other open todos that were `in-progress` while this work ran, plus
      their `Owned Files Or Domains` (used as foreign scope in step 4).
@@ -38,8 +37,8 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
      `review-ready`, add `in-progress`, and exit.
 
 3. Review the assigned worktree diff against the todo contract, current
-   docs, legacy evidence handling, owned scope, non-goals, focused gates,
-   E2E evidence (declared lane and any prior `E2E_DONE`), safety, and
+   docs, existing implementation evidence, owned scope, non-goals, focused
+   gates, E2E evidence (declared lane and any prior `E2E_DONE`), safety, and
    tag/lock state. If the todo changed product contract behavior, verify
    the product docs changed in the same worktree.
 
