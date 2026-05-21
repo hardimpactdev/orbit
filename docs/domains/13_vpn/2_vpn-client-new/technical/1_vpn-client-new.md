@@ -4,12 +4,13 @@
 
 **Owner:** `vpn`.
 
-**Effects:** `write`, `gateway-admin`.
+**Effects:** `write`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized client with SSH access
-  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
-  gateway-coupled.
+- The caller is the gateway node, has `vpn:write` on the active gateway node,
+  or has `gateway-admin` (`*`) on the active gateway node.
+- Non-gateway callers can reach the active `vpn` role node over
+  Orbit/WireGuard SSH. In v1 that node is gateway-coupled.
 - The active `vpn` role is resolvable.
 - The VPN runtime backend is installed and reachable on the active `vpn` role host.
 - The operator can authenticate to the VPN runtime backend when TOTP is
@@ -79,7 +80,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | VPN runtime unavailable | No active `vpn` role node exists for VPN administration. | `error.code=vpn_runtime_unavailable` |
-| VPN runtime SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
+| VPN runtime SSH unavailable | A non-gateway caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
 | VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
@@ -95,6 +96,6 @@ role.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: caller-role denial, SSH execution to the active `vpn` role node, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
+| `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: grant denial, SSH execution to the active `vpn` role node, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
 | `tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php` | Human and JSON renderer output, config rendering, and every documented `error.code` value. |
 | `tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php` | Wg-easy adapter normalization of generated client configs to `DNS = <wireguard-server-ip>`. |

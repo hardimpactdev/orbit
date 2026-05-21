@@ -4,12 +4,13 @@
 
 **Owner:** `vpn`.
 
-**Effects:** `read`, `gateway-admin`.
+**Effects:** `read`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized client with SSH access
-  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
-  gateway-coupled.
+- The caller is the gateway node, has `vpn:read` on the active gateway node,
+  or has `gateway-admin` (`*`) on the active gateway node.
+- Non-gateway callers can reach the active `vpn` role node over
+  Orbit/WireGuard SSH. In v1 that node is gateway-coupled.
 - The active `vpn` role is resolvable.
 - The VPN runtime backend is installed and reachable on the active `vpn` role host.
 - The operator can authenticate to the VPN runtime backend when TOTP is
@@ -67,7 +68,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | VPN runtime unavailable | No active `vpn` role node exists for VPN administration. | `error.code=vpn_runtime_unavailable` |
-| VPN runtime SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
+| VPN runtime SSH unavailable | A non-gateway caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
 | VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
@@ -82,5 +83,5 @@ runtime drift, and node reachability drift.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientListCommandTest.php` | Command contract: caller-role denial, operator-caller SSH execution to the active `vpn` role node, VPN-role runtime backend execution, backend authentication, TOTP handling, empty list success, node peer classification, and read-only behavior. |
+| `tests/Feature/Commands/Vpn/VpnClientListCommandTest.php` | Command contract: grant denial, non-gateway SSH execution to the active `vpn` role node, VPN-role runtime backend execution, backend authentication, TOTP handling, empty list success, node peer classification, and read-only behavior. |
 | `tests/Feature/Commands/Vpn/VpnClientListRendererTest.php` | Human and JSON renderer output, empty state, classified client rows, and every documented `error.code` value. |
