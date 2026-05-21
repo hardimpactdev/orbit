@@ -7,9 +7,9 @@ namespace App\Services\Schedules;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 
 class SchedulePayload
 {
@@ -20,11 +20,12 @@ class SchedulePayload
     {
         $this->ensureExclusiveFilters($app, $node);
 
-        $visibleNodeIds = $this->visibleNodeIds($caller);
+        $visibleNodeIds = $this->visibleNodeIds($caller, 'schedule:read');
 
         if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
             throw new GatewayApiException('This node is not authorized to read schedule intent.', 'authorization_failed', [
-                'caller_role' => $caller->role,
+                'reason' => 'missing_permission',
+                'missing_permission' => 'schedule:read',
             ]);
         }
 
@@ -66,15 +67,16 @@ class SchedulePayload
         ];
     }
 
-    public function find(string $name, ?string $app, ?string $node, ?Node $caller = null): Schedule
+    public function find(string $name, ?string $app, ?string $node, ?Node $caller = null, string $permission = 'schedule:read'): Schedule
     {
         $this->ensureExclusiveFilters($app, $node);
 
-        $visibleNodeIds = $this->visibleNodeIds($caller);
+        $visibleNodeIds = $this->visibleNodeIds($caller, $permission);
 
         if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
             throw new GatewayApiException('This node is not authorized to read schedule intent.', 'authorization_failed', [
-                'caller_role' => $caller->role,
+                'reason' => 'missing_permission',
+                'missing_permission' => $permission,
             ]);
         }
 
@@ -114,34 +116,59 @@ class SchedulePayload
      */
     private function visibleSchedules(?Node $caller, ?array $visibleNodeIds): Builder
     {
+        $canSeeOrbitSchedules = $visibleNodeIds !== null
+            && array_intersect($visibleNodeIds, $this->gatewayNodeIds()) !== [];
+
         return Schedule::query()
             ->with(['app.node', 'node', 'latestRun'])
-            ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->where(function (Builder $query) use ($visibleNodeIds): void {
+            ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->where(function (Builder $query) use ($visibleNodeIds, $canSeeOrbitSchedules): void {
                 $query
                     ->whereIn('node_id', $visibleNodeIds ?? [])
                     ->orWhereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? []));
+
+                if ($canSeeOrbitSchedules) {
+                    $query->orWhere('scope', 'orbit');
+                }
             }));
     }
 
     /**
      * @return list<int>|null
      */
-    private function visibleNodeIds(?Node $caller): ?array
+    private function visibleNodeIds(?Node $caller, string $permission): ?array
     {
         if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return null;
         }
 
-        return DB::table('node_access')
-            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->where(function ($query): void {
+        $authorizer = app(NodeAccessAuthorizer::class);
+        $nodes = Node::query()
+            ->where('status', 'active')
+            ->where(function (Builder $query): void {
                 $query
-                    ->where('nodes.role', 'gateway')
-                    ->orWhereIn('nodes.id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
+                    ->whereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
             })
-            ->where('nodes.status', 'active')
-            ->pluck('nodes.id')
+            ->get();
+
+        $visibleNodeIds = [];
+
+        foreach ($nodes as $node) {
+            if ($authorizer->allows($caller, $node, $permission)) {
+                $visibleNodeIds[] = $node->id;
+            }
+        }
+
+        return $visibleNodeIds;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function gatewayNodeIds(): array
+    {
+        return app(NodeRoleAssignments::class)
+            ->activeGatewayNodeQuery()
+            ->pluck('id')
             ->all();
     }
 

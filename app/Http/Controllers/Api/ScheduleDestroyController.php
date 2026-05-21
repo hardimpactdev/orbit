@@ -10,11 +10,9 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
-use App\Models\Schedule;
 use App\Services\Schedules\SchedulePayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 final readonly class ScheduleDestroyController implements Loggable
 {
@@ -38,13 +36,7 @@ final readonly class ScheduleDestroyController implements Loggable
         }
 
         try {
-            $schedule = $this->payload->find($name, $this->stringQuery($request, 'app'), $this->stringQuery($request, 'node'), $caller);
-
-            if (! $this->callerCanManageSchedule($caller, $schedule)) {
-                return $this->error('authorization_failed', 'This node is not authorized to manage the selected schedule.', [
-                    'caller_role' => $caller->role,
-                ], 403);
-            }
+            $schedule = $this->payload->find($name, $this->stringQuery($request, 'app'), $this->stringQuery($request, 'node'), $caller, 'schedule:remove');
 
             $this->setScheduleActivitySubject($request, $schedule);
             $result = $removeSchedule->handle($schedule);
@@ -53,20 +45,6 @@ final readonly class ScheduleDestroyController implements Loggable
         }
 
         return response()->json(['success' => $result]);
-    }
-
-    private function callerCanManageSchedule(Node $caller, Schedule $schedule): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        $servingNodeId = $schedule->scope === 'app' ? $schedule->app?->node_id : $schedule->node_id;
-
-        return is_int($servingNodeId) && DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $servingNodeId)
-            ->exists();
     }
 
     private function stringQuery(Request $request, string $key): ?string

@@ -12,15 +12,19 @@ use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
-final class ScheduleStoreController implements Loggable
+final readonly class ScheduleStoreController implements Loggable
 {
     use LogsScheduleApiActivity;
+
+    public function __construct(
+        private NodeAccessAuthorizer $authorizer,
+    ) {}
 
     public function __invoke(Request $request, AddSchedule $addSchedule): JsonResponse
     {
@@ -43,10 +47,10 @@ final class ScheduleStoreController implements Loggable
             return $target;
         }
 
-        if (! $this->callerCanManageTarget($caller, $target)) {
-            return $this->error('authorization_failed', 'This node is not authorized to manage schedules for the selected scope.', [
-                'caller_role' => $caller->role,
-            ], 403);
+        $authorization = $this->authorizeTarget($caller, $target);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         try {
@@ -149,18 +153,28 @@ final class ScheduleStoreController implements Loggable
             : $this->error('validation_failed', "Node '{$node}' not found.", ['field' => 'node', 'value' => $node], 422);
     }
 
-    private function callerCanManageTarget(Node $caller, App|Node $target): bool
+    private function authorizeTarget(Node $caller, App|Node $target): ?JsonResponse
     {
-        if (app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
-            return true;
+        $servingNode = $target instanceof App ? $target->node : $target;
+
+        if (! $servingNode instanceof Node) {
+            return $this->error('authorization_failed', 'This node is not authorized to manage schedules for the selected scope.', [
+                'reason' => 'serving_node_unresolved',
+                'missing_permission' => 'schedule:add',
+            ], 403);
         }
 
-        $servingNodeId = $target instanceof App ? $target->node_id : $target->id;
+        $result = $this->authorizer->authorize($caller, $servingNode, 'schedule:add');
 
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $servingNodeId)
-            ->exists();
+        if ($result->allowed) {
+            return null;
+        }
+
+        return $this->error('authorization_failed', 'This node is not authorized to manage schedules for the selected scope.', [
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $servingNode->name,
+        ], 403);
     }
 
     private function optionalString(Request $request, string $key): ?string
