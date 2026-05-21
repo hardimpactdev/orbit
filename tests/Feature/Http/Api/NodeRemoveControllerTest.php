@@ -73,11 +73,16 @@ function assignRemoveNodeRole(int $nodeId, string $role, string $status = 'activ
     ]);
 }
 
-function grantRemoveGatewayAccess(int $callerId, int $gatewayId): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantRemoveGatewayAccess(int $callerId, int $gatewayId, array $permissions = ['*']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $callerId,
         'serving_node_id' => $gatewayId,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -218,7 +223,7 @@ describe('NodeRemoveController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
     });
 
-    it('rejects stale gateway role shadows before mutation', function (): void {
+    it('rejects callers without node remove grants before mutation', function (): void {
         createRemoveCallerNode('gateway');
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
@@ -228,13 +233,15 @@ describe('NodeRemoveController', function (): void {
         ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.meta.caller_role', 'gateway');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:remove')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });
 
-    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+    it('removes for database callers with gateway admin grants even when the legacy role shadow is control', function (): void {
         $callerId = createRemoveCallerNode();
         assignRemoveNodeRole($callerId, 'database');
         $gatewayId = createRemoveGatewayNode();
@@ -246,11 +253,10 @@ describe('NodeRemoveController', function (): void {
             'destructive_consent_source' => 'force',
         ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+        $response->assertOk()
+            ->assertJsonPath('success.data.name', 'app-1');
 
-        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
     });
 
     it('rejects removal for nodes with an assigned gateway role before mutation', function (): void {
@@ -299,20 +305,19 @@ describe('NodeRemoveController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });
 
-    it('rejects app callers before mutation', function (): void {
-        createRemoveCallerNode('app');
-        DB::table('nodes')->insert(apiRemoveNodeRow());
+    it('removes for app callers with explicit target node remove grants', function (): void {
+        $callerId = createRemoveCallerNode('app');
+        $targetId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow());
+        grantRemoveNodeAccess($callerId, $targetId);
 
         $response = deleteRemoveNodeJson('/api/nodes/app-1', [
             'destructive_consent' => true,
         ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+        $response->assertOk()
+            ->assertJsonPath('success.data.name', 'app-1');
 
-        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
     });
 
     it('rejects control callers without gateway access before mutation', function (): void {
@@ -326,9 +331,9 @@ describe('NodeRemoveController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This operator node is not authorized to remove nodes.')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:remove')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });

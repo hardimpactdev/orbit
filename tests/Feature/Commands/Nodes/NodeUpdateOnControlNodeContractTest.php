@@ -171,10 +171,11 @@ describe('node:update on control node contract', function (): void {
     })->with([
         'authorization failure' => [[
             'code' => 'authorization_failed',
-            'message' => 'This control node is not authorized to update nodes.',
+            'message' => "This node is not authorized for 'node:update' on 'app-1'.",
             'meta' => [
-                'required_node' => 'gateway-1',
-                'caller_role' => 'control',
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:update',
+                'serving_node' => 'app-1',
             ],
         ]],
         'duplicate tld' => [[

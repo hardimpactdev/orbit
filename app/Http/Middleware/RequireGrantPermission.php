@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Authorization\ServingNodeResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -46,6 +47,10 @@ final readonly class RequireGrantPermission
         $serving = $this->servingNodeResolver->resolve($request, $attribute->servingNode);
 
         if (! $serving instanceof Node) {
+            if ($attribute->servingNode !== ServingNode::Gateway) {
+                return $next($request);
+            }
+
             return $this->forbidden('Serving node could not be resolved for this route.', [
                 'reason' => 'serving_node_unresolved',
                 'missing_permission' => $attribute->permission,

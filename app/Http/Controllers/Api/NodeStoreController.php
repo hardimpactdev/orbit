@@ -6,19 +6,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
+#[RequiresPermission('node:new', servingNode: ServingNode::Gateway)]
 final readonly class NodeStoreController implements Loggable
 {
-    public function __construct(
-        private NodeRoleAssignments $nodeRoleAssignments,
-    ) {}
-
     public function __invoke(Request $request): JsonResponse
     {
         /** @var mixed $resolvedUser */
@@ -26,13 +24,6 @@ final readonly class NodeStoreController implements Loggable
         $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
 
         if (! $caller instanceof Node) {
-            return $this->forbidden();
-        }
-
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
-        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
-
-        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
             return $this->forbidden();
         }
 

@@ -184,14 +184,12 @@ describe('RequireGrantPermission middleware', function (): void {
             ->assertJsonPath('success.data.target', 'target-1');
     });
 
-    it('denies when the serving node cannot be resolved', function (): void {
+    it('passes unresolved target resources through to the controller', function (): void {
         requireGrantNode('caller-1', REQUIRE_GRANT_CALLER_WG_IP);
 
         requireGrantGet('/_test/require-grant/protected/missing')
-            ->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.reason', 'serving_node_unresolved')
-            ->assertJsonPath('error.meta.missing_permission', 'tool:read');
+            ->assertOk()
+            ->assertJsonPath('success.data.target', 'missing');
     });
 
     it('denies protected routes when the caller node is unavailable', function (): void {

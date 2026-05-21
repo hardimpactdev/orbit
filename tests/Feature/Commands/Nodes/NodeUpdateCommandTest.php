@@ -295,10 +295,11 @@ describe('node:update control forwarding', function (): void {
         fakeNodeUpdateGateway([
             'error' => [
                 'code' => 'authorization_failed',
-                'message' => 'This control node is not authorized to update nodes.',
+                'message' => "This node is not authorized for 'node:update' on 'app-1'.",
                 'meta' => [
-                    'required_node' => 'gateway-1',
-                    'caller_role' => 'control',
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'node:update',
+                    'serving_node' => 'app-1',
                 ],
             ],
         ], 403);
@@ -313,10 +314,11 @@ describe('node:update control forwarding', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toBe('This control node is not authorized to update nodes.')
+            ->and($payload['error']['message'])->toBe("This node is not authorized for 'node:update' on 'app-1'.")
             ->and($payload['error']['meta'])->toBe([
-                'required_node' => 'gateway-1',
-                'caller_role' => 'control',
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:update',
+                'serving_node' => 'app-1',
             ]);
     });
 

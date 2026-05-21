@@ -340,8 +340,12 @@ describe('node:remove JSON renderer contract', function (): void {
         $result = invokeNodeRemoveFailCommandJson(
             json: true,
             code: 'authorization_failed',
-            message: 'This control node is not authorized to remove nodes.',
-            meta: ['required_node' => 'gateway-1', 'caller_role' => 'control'],
+            message: "This node is not authorized for 'node:remove' on 'app-1'.",
+            meta: [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:remove',
+                'serving_node' => 'app-1',
+            ],
         );
 
         $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
@@ -353,8 +357,12 @@ describe('node:remove JSON renderer contract', function (): void {
         $error = $payload['error'];
 
         expect($error['code'])->toBe('authorization_failed')
-            ->and($error['message'])->toBe('This control node is not authorized to remove nodes.')
-            ->and($error['meta'])->toBe(['required_node' => 'gateway-1', 'caller_role' => 'control']);
+            ->and($error['message'])->toBe("This node is not authorized for 'node:remove' on 'app-1'.")
+            ->and($error['meta'])->toBe([
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:remove',
+                'serving_node' => 'app-1',
+            ]);
     });
 
     it('uses correct enum value for action', function (): void {
