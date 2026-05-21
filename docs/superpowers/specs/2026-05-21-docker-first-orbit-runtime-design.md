@@ -548,15 +548,20 @@ permanent dual-runtime system.
 - Running Docker-in-Docker for topology E2E.
 - Replacing the ingress role split.
 
-## Open Questions
+## Resolved Decisions And Stop Conditions
 
-- Exact image strategy: build locally from the Orbit checkout, publish versioned
-  registry images, or support both during development.
-- Exact container naming and network naming conventions.
-- Whether workspace worker mode needs a first-class command in the same slice
-  as app worker mode.
-- Whether any non-PHP process should continue to use host Supervisor after the
-  first migration, or whether `supervisor` should become a compatibility-only
-  runtime.
-- How to expose low-level container diagnostics without leaking Docker
-  implementation details into every command output.
+- Image strategy: v1 builds local development/test images from the Orbit
+  checkout. Versioned registry images may be added later, but implementation
+  must not block on a registry. Stop and reconcile only if deployment docs
+  require registry-published runtime images before Docker-first can merge.
+- Container/network naming: use deterministic `orbit-*` names owned by the
+  runtime container manager. Stop and reconcile if landed ingress/router code
+  already introduced a conflicting naming convention.
+- Worker mode: app worker mode ships first. Workspace worker mode waits for a
+  separate explicit workflow unless the workspace runtime implementation needs
+  the same schema fields for consistency.
+- Process runtime: `supervisor` remains an explicit residual runtime for
+  supported non-PHP host-side cases. PHP app/workspace processes default to
+  Docker.
+- Diagnostics: low-level Docker status/log inspection belongs in doctor and
+  targeted runtime diagnostics, not every product command output.

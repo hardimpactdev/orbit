@@ -40,12 +40,12 @@ function fakeBundleProcessing(): void
     ]);
 }
 
-it('defaults to operator-gateway-appdev-appprod kind', function (): void {
+it('defaults to operator_gateway_app-dev_app-prod kind', function (): void {
     $this->artisan('e2e:prepare-topology')
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway-appdev-appprod)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway-appdev-appprod)')
-        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator-gateway-appdev-appprod)')
-        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-operator-gateway-appdev-appprod)')
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev_app-prod)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator_gateway_app-dev_app-prod)')
+        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator_gateway_app-dev_app-prod)')
+        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-operator_gateway_app-dev_app-prod)')
         ->assertSuccessful();
 });
 
@@ -55,27 +55,27 @@ it('supports operator kind', function (): void {
         ->assertSuccessful();
 });
 
-it('supports operator-gateway kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator-gateway'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway)')
+it('supports operator_gateway kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway'])
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator_gateway)')
         ->assertSuccessful();
 });
 
-it('supports operator-gateway-appdev kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator-gateway-appdev'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway-appdev)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway-appdev)')
-        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator-gateway-appdev)')
+it('supports operator_gateway_app-dev kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev'])
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator_gateway_app-dev)')
+        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator_gateway_app-dev)')
         ->assertSuccessful();
 });
 
-it('supports operator-gateway-appprod-ingress kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator-gateway-appprod-ingress'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway-appprod-ingress)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway-appprod-ingress)')
-        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-operator-gateway-appprod-ingress)')
-        ->expectsOutputToContain('planned: orbit-template-ingress (snapshot: clean-operator-gateway-appprod-ingress)')
+it('supports operator_gateway_app-prod_ingress kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
+        ->expectsOutputToContain('planned: orbit-template-ingress-control (snapshot: clean-operator_gateway_app-prod_ingress)')
+        ->expectsOutputToContain('planned: orbit-template-ingress-gateway (snapshot: clean-operator_gateway_app-prod_ingress)')
+        ->expectsOutputToContain('planned: orbit-template-ingress-prod (snapshot: clean-operator_gateway_app-prod_ingress)')
+        ->expectsOutputToContain('planned: orbit-template-ingress (snapshot: clean-operator_gateway_app-prod_ingress)')
         ->doesntExpectOutputToContain('planned: orbit-template-dev')
         ->doesntExpectOutputToContain('planned: orbit-template-agent')
         ->assertSuccessful();
@@ -110,7 +110,7 @@ it('outputs json for dry run with default kind', function (): void {
             'data' => [
                 'provider' => 'incus',
                 'dry_run' => true,
-                'kind' => 'operator-gateway-appdev-appprod',
+                'kind' => 'operator_gateway_app-dev_app-prod',
                 'templates' => $templates,
             ],
         ],
@@ -154,10 +154,10 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
         ->assertSuccessful();
 })->with([
     ['operator', 1],
-    ['operator-gateway', 2],
-    ['operator-gateway-appdev', 3],
-    ['operator-gateway-appdev-appprod', 4],
-    ['operator-gateway-appprod-ingress', 4],
+    ['operator_gateway', 2],
+    ['operator_gateway_app-dev', 3],
+    ['operator_gateway_app-dev_app-prod', 4],
+    ['operator_gateway_app-prod_ingress', 4],
     ['control', 1],
     ['control-gateway', 2],
     ['control-gateway-dev', 3],
@@ -168,7 +168,7 @@ it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent, operator-gateway-appprod-ingress. Legacy control topology names are accepted as aliases.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress. Legacy control topology names are accepted as aliases.',
         ],
     ], JSON_THROW_ON_ERROR);
 

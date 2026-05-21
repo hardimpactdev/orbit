@@ -117,17 +117,30 @@ it('force stops instances when graceful incus stop times out', function (): void
     expect($commands[0])->toContain("incus stop 'orbit-template-control' --timeout 120 || incus stop 'orbit-template-control' --force");
 });
 
+it('force stops reusable template instances only when they are running', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+
+    $host->stopInstancesIfRunning([
+        'orbit-template-control',
+        'orbit-template-gateway',
+    ]);
+
+    expect($commands[0])->toContain("incus stop 'orbit-template-control' --force >/dev/null 2>&1 || true")
+        ->and($commands[0])->toContain("incus stop 'orbit-template-gateway' --force >/dev/null 2>&1 || true");
+});
+
 it('checks snapshots by exact Incus snapshot path', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->snapshotExists('orbit-template-control', 'clean-operator-gateway');
+    $host->snapshotExists('orbit-template-control', 'clean-operator_gateway');
 
-    expect($commands[0])->toContain("incus query '/1.0/instances/orbit-template-control/snapshots/clean-operator-gateway' >/dev/null 2>&1")
+    expect($commands[0])->toContain("incus query '/1.0/instances/orbit-template-control/snapshots/clean-operator_gateway' >/dev/null 2>&1")
         ->and($commands[0])->not->toContain('grep -q');
 });
 
-it('ignores topology WireGuard addresses when resolving an Incus provider IPv4', function (): void {
+it('queries exact Incus instance state when resolving a provider IPv4', function (): void {
     $commands = [];
 
     $host = new class(incusHostTestConfig(), $commands) extends IncusHost
@@ -155,7 +168,9 @@ it('ignores topology WireGuard addresses when resolving an Incus provider IPv4',
     $instance = new IncusInstance($host, 'orbit-template-control');
 
     expect($instance->waitForIpv4())->toBe('10.231.0.10')
-        ->and($commands[0])->toContain("grep -Ev '\\((wg-orbit|docker0|br-|veth|wg0)'");
+        ->and($commands[0])->toContain("incus query '/1.0/instances/orbit-template-control/state'")
+        ->and($commands[0])->toContain('python3 -c')
+        ->and($commands[0])->toContain("awk -F, -v name='orbit-template-control'");
 });
 
 it('restarts journald after refreshing cloned instance network identity', function (): void {

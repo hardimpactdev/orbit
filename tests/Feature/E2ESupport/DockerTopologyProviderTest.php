@@ -190,6 +190,44 @@ it('counts running docker containers with the configured e2e instance prefix', f
     });
 });
 
+it('does not fail availability on transient docker capacity when host slots are configured', function (): void {
+    $probedCapacity = false;
+
+    Process::fake(function ($process) use (&$probedCapacity) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if (str_contains($process->command, 'docker image inspect')) {
+            return Process::result();
+        }
+
+        if (str_starts_with($process->command, 'docker ps ')) {
+            $probedCapacity = true;
+
+            return Process::result(output: "orbit-e2e-a\norbit-e2e-b\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:1',
+        'ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST' => '1',
+    ], function () use (&$probedCapacity): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+        $availability = $provider->availability(E2ETopologyKind::ControlGateway);
+
+        expect($availability->available)->toBeTrue()
+            ->and($availability->message)->toContain('sidecar1')
+            ->and($probedCapacity)->toBeFalse();
+    });
+});
+
 it('acquires a control-gateway lease by launching containers from prepared images', function (): void {
     Process::fake(function ($process) {
         $command = $process->command;
@@ -255,12 +293,12 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
     Process::fake([
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:control-gateway-control-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:control-gateway-gateway-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:operator_gateway-control-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:operator_gateway-gateway-current' >/dev/null" => Process::result(),
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
-        "docker network create --subnet '10.62.0.0/16' 'orbit-e2e-run123'" => Process::result(),
-        "docker run -d --name 'orbit-e2e-run123-control' --network 'orbit-e2e-run123' --ip '10.62.0.3' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:control-gateway-control-current'" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.62.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:control-gateway-gateway-current'" => Process::result(output: "gateway-id\n"),
+        "docker network create --subnet '10.42.0.0/16' 'orbit-e2e-run123'" => Process::result(),
+        "docker run -d --name 'orbit-e2e-run123-control' --network 'orbit-e2e-run123' --ip '10.42.0.3' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator_gateway-control-current'" => Process::result(output: "control-id\n"),
+        "docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.42.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator_gateway-gateway-current'" => Process::result(output: "gateway-id\n"),
         'docker exec *' => Process::result(),
     ]);
 
@@ -272,9 +310,9 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
         $lease = $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
 
         expect($lease->control()->name())->toBe('orbit-e2e-run123-control')
-            ->and($lease->gatewayApiIp())->toBe('10.62.0.2');
+            ->and($lease->gatewayApiIp())->toBe('10.42.0.2');
 
-        Process::assertRan("docker network create --subnet '10.62.0.0/16' 'orbit-e2e-run123'");
+        Process::assertRan("docker network create --subnet '10.42.0.0/16' 'orbit-e2e-run123'");
     } finally {
         if ($previous === false) {
             putenv('TEST_TOKEN');
@@ -309,7 +347,7 @@ it('leases docker host slots independently from the parallel worker token', func
             return Process::result();
         }
 
-        if (str_starts_with($process->command, "docker network create --subnet '10.65.0.0/16'")) {
+        if (str_starts_with($process->command, "docker network create --subnet '10.90.0.0/16'")) {
             $networkHost = $host;
 
             return Process::result();
@@ -557,12 +595,12 @@ it('maps parallel docker subnet peer ips back to canonical dns-alias identities'
         );
     });
 
-    expect($commands)->toContain("docker network create --subnet '10.61.0.0/16' 'orbit-e2e-run123'");
+    expect($commands)->toContain("docker network create --subnet '10.26.0.0/16' 'orbit-e2e-run123'");
     expect(implode("\n", $commands))
         ->toContain('cat > /tmp/orbit-topology-run123-tls.php')
         ->toContain('$peerIdentityMap = array')
-        ->toContain('10.61.0.3')
+        ->toContain('10.26.0.3')
         ->toContain('10.6.0.3')
-        ->toContain('10.61.0.2')
+        ->toContain('10.26.0.2')
         ->toContain('10.6.0.2');
 });

@@ -7,11 +7,11 @@ namespace App\E2E\Support;
 enum E2ETopologyKind: string
 {
     case Operator = 'operator';
-    case OperatorGateway = 'operator-gateway';
-    case OperatorGatewayAppdev = 'operator-gateway-appdev';
-    case OperatorGatewayAppdevAppprod = 'operator-gateway-appdev-appprod';
-    case OperatorGatewayAppdevAppprodAgent = 'operator-gateway-appdev-appprod-agent';
-    case OperatorGatewayAppprodIngress = 'operator-gateway-appprod-ingress';
+    case OperatorGateway = 'operator_gateway';
+    case OperatorGatewayAppdev = 'operator_gateway_app-dev';
+    case OperatorGatewayAppdevAppprod = 'operator_gateway_app-dev_app-prod';
+    case OperatorGatewayAppdevAppprodAgent = 'operator_gateway_app-dev_app-prod_agent';
+    case OperatorGatewayAppprodIngress = 'operator_gateway_app-prod_ingress';
 
     #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
     public const self Control = self::Operator;
@@ -32,6 +32,15 @@ enum E2ETopologyKind: string
             'control-gateway' => self::OperatorGateway,
             'control-gateway-dev' => self::OperatorGatewayAppdev,
             'control-gateway-dev-prod' => self::OperatorGatewayAppdevAppprod,
+            'operator-gateway' => self::OperatorGateway,
+            'operator-gateway-app-dev' => self::OperatorGatewayAppdev,
+            'operator-gateway-app-dev-app-prod' => self::OperatorGatewayAppdevAppprod,
+            'operator-gateway-app-dev-app-prod-agent' => self::OperatorGatewayAppdevAppprodAgent,
+            'operator-gateway-app-prod-ingress' => self::OperatorGatewayAppprodIngress,
+            'operator-gateway-appdev' => self::OperatorGatewayAppdev,
+            'operator-gateway-appdev-appprod' => self::OperatorGatewayAppdevAppprod,
+            'operator-gateway-appdev-appprod-agent' => self::OperatorGatewayAppdevAppprodAgent,
+            'operator-gateway-appprod-ingress' => self::OperatorGatewayAppprodIngress,
             default => self::tryFrom($value),
         };
     }
@@ -43,11 +52,11 @@ enum E2ETopologyKind: string
     {
         return match ($this) {
             self::Operator => ['control'],
-            self::OperatorGateway => ['control-gateway'],
-            self::OperatorGatewayAppdev => ['control-gateway-dev'],
-            self::OperatorGatewayAppdevAppprod => ['control-gateway-dev-prod'],
-            self::OperatorGatewayAppdevAppprodAgent => [],
-            self::OperatorGatewayAppprodIngress => [],
+            self::OperatorGateway => ['operator-gateway', 'control-gateway'],
+            self::OperatorGatewayAppdev => ['operator-gateway-app-dev', 'operator-gateway-appdev', 'control-gateway-dev'],
+            self::OperatorGatewayAppdevAppprod => ['operator-gateway-app-dev-app-prod', 'operator-gateway-appdev-appprod', 'control-gateway-dev-prod'],
+            self::OperatorGatewayAppdevAppprodAgent => ['operator-gateway-app-dev-app-prod-agent', 'operator-gateway-appdev-appprod-agent'],
+            self::OperatorGatewayAppprodIngress => ['operator-gateway-app-prod-ingress', 'operator-gateway-appprod-ingress'],
         };
     }
 

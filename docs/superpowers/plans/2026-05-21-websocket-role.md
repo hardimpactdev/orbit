@@ -4,9 +4,9 @@
 
 **Goal:** Add a private `websocket` node role that runs Laravel Reverb behind router-owned service endpoints and app-owned public WebSocket bindings.
 
-**Architecture:** Build on the router/public-ingress contract: public-ingress accepts public WSS hosts and forwards to router, router owns `websocket.orbit` and websocket backend pools, and websocket nodes run Reverb with Redis-backed scaling configuration. Apps receive per-app Reverb credentials and never target concrete websocket nodes.
+**Architecture:** Build on the router/ingress contract: ingress accepts public WSS hosts and forwards to router, router owns `websocket.orbit` and websocket backend pools, and websocket nodes run Reverb with Redis-backed scaling configuration. Apps receive per-app Reverb credentials and never target concrete websocket nodes.
 
-**Tech Stack:** Laravel 13, PHP 8.5, Pest 4, SQLite JSON role settings, encrypted Eloquent casts, Laravel Reverb, Redis tool on database nodes, Caddy route rendering, Supervisor/process manager, Orbit CA certificates.
+**Tech Stack:** Laravel 13, PHP 8.5, Pest 4, SQLite JSON role settings, encrypted Eloquent casts, Laravel Reverb, Redis tool on database nodes, Caddy route rendering, Docker-first runtime containers, Orbit CA certificates.
 
 ---
 
@@ -14,10 +14,10 @@
 
 **Source spec:** `docs/superpowers/specs/2026-05-21-websocket-role-design.md`
 
-**Required dependency:** The router/public-ingress contract in
-`docs/superpowers/plans/2026-05-21-public-ingress-router-addendum.md` must land
+**Required dependency:** The router/ingress contract in
+`docs/superpowers/plans/2026-05-21-ingress-router-addendum.md` must land
 before this plan is implemented. This plan assumes `router` exists as a visible
-gateway-coupled role and public-ingress forwards public traffic to router.
+gateway-coupled role and ingress forwards public traffic to router.
 
 **Out of scope:**
 
@@ -38,7 +38,7 @@ gateway-coupled role and public-ingress forwards public traffic to router.
 - Modify: `docs/domains/1_node/1_node-new/**` - document `--role=websocket --redis-node=`.
 - Modify: `docs/domains/1_node/12_node-role-add/**` - document adding `websocket`.
 - Modify: `docs/domains/5_app/**` - document app websocket binding ownership.
-- Modify: `docs/domains/8_proxy/**` - document websocket route placement through router and public-ingress.
+- Modify: `docs/domains/8_proxy/**` - document websocket route placement through router and ingress.
 - Modify: `docs/domains/3_tool/catalog/reverb.md` - align the current Reverb tool catalog with the role-owned Reverb runtime.
 
 ### Schema And Models
@@ -70,7 +70,7 @@ gateway-coupled role and public-ingress forwards public traffic to router.
 - Create: `app/Services/WebSockets/WebSocketBindingService.php`
 - Create: `app/Services/WebSockets/WebSocketCredentials.php`
 - Create: `app/Services/WebSockets/WebSocketRouteRegistrar.php`
-- Modify: router route rendering services created by the public-ingress/router work.
+- Modify: router route rendering services created by the ingress/router work.
 - Modify: `app/Services/Proxy/ProxyRouteRenderer.php` or the post-router equivalent to support WebSocket upstream options.
 
 ### Commands And API
@@ -97,7 +97,8 @@ gateway-coupled role and public-ingress forwards public traffic to router.
 - Create: `tests/Feature/Commands/Nodes/NodeNewWebSocketRoleTest.php`
 - Create: `tests/Feature/Commands/Nodes/NodeRoleAddWebSocketTest.php`
 - Create: `tests/Feature/Commands/Apps/AppWebSocketCommandTest.php`
-- Create: `tests/E2E/WebSocketReverbRouteTest.php`
+- Create: `tests/E2E/WebSocketPrivateRouteTest.php`
+- Create: `tests/E2E/WebSocketIngressRouteTest.php`
 
 ## Task 1: Align Product Documentation
 
@@ -113,7 +114,7 @@ Add this contract language to `docs/architecture.md`:
 The `websocket` role is a private workload role for Orbit-managed realtime
 infrastructure. A websocket node runs Laravel Reverb, binds only to its
 WireGuard address, and receives traffic through router-owned private service
-routes. Public WebSocket traffic enters through `public-ingress`, then flows to
+routes. Public WebSocket traffic enters through `ingress`, then flows to
 `router`, then to the websocket backend pool. Apps use the stable
 `websocket.orbit` endpoint and never target a concrete websocket node.
 ```
@@ -124,7 +125,7 @@ Add `websocket` to role vocabulary, platform support, settings, and
 compatibility. The compatibility row must be:
 
 ```markdown
-| `websocket` | none | `gateway`, `vpn`, `router`, `public-ingress`, `app-development`, `app-production`, `database`, `agent` |
+| `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
 ```
 
 Add the role setting:
@@ -149,9 +150,9 @@ Add this app-owned concept:
 Add this route-placement rule:
 
 ```markdown
-Public WebSocket hosts are public-ingress routes that forward to router.
+Public WebSocket hosts are ingress routes that forward to router.
 Router owns `websocket.orbit`, websocket backend pools, and private
-router-to-websocket TLS verification. Public-ingress must not route directly to
+router-to-websocket TLS verification. Ingress must not route directly to
 websocket role nodes.
 ```
 
@@ -446,10 +447,8 @@ expect($registry->definition('websocket')->conflictsWith)->toBe([
     'gateway',
     'vpn',
     'router',
-    'public-ingress',
-    'app-development',
+    'ingress',
     'app-production',
-    'database',
     'agent',
 ]);
 ```
@@ -539,10 +538,8 @@ new NodeRoleDefinition(
         NodeRoleName::Gateway->value,
         NodeRoleName::Vpn->value,
         NodeRoleName::Router->value,
-        NodeRoleName::PublicIngress->value,
-        NodeRoleName::AppDevelopment->value,
+        NodeRoleName::Ingress->value,
         NodeRoleName::AppProduction->value,
-        NodeRoleName::Database->value,
         NodeRoleName::Agent->value,
     ],
     supportedPlatforms: ['ubuntu'],
@@ -550,7 +547,9 @@ new NodeRoleDefinition(
 )
 ```
 
-Add `websocket` to every other role's conflict list.
+Add `websocket` to every other role's conflict list except `app-development`,
+`database`, and `s3`. The S3 role is allowed to co-locate with `websocket` on
+dev-services topology nodes.
 
 - [ ] **Step 6: Run the role tests**
 
@@ -802,13 +801,13 @@ php artisan test --compact tests/Unit/Services/WebSockets/WebSocketRuntimeRender
 
 Expected: pass.
 
-## Task 6: Add Router And Public-Ingress Route Integration
+## Task 6: Add Router And Ingress Route Integration
 
 **Files:**
 
 - Create: `app/Services/WebSockets/WebSocketRouteRegistrar.php`
 - Modify: router route rendering services from the router branch.
-- Modify: public-ingress route rendering services from the public-ingress branch.
+- Modify: ingress route rendering services from the ingress branch.
 - Test: `tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php`
 
 - [ ] **Step 1: Write route registrar tests**
@@ -836,7 +835,7 @@ For public host binding:
 $registrar->syncPublicHosts($binding);
 
 expect(proxyRouteFor('ws.example.com'))
-    ->node_id->toBe($publicIngress->id)
+    ->node_id->toBe($ingress->id)
     ->kind->toBe('proxy')
     ->owner_type->toBe('app-websocket')
     ->config->toMatchArray([
@@ -867,7 +866,7 @@ public function syncPublicHosts(AppWebSocketBinding $binding): void
 role backends. It writes one router-owned `websocket.orbit` route with an
 `upstreams` list.
 
-`syncPublicHosts()` writes one public-ingress route per public host. Each route
+`syncPublicHosts()` writes one ingress route per public host. Each route
 targets `https://websocket.orbit` and does not include concrete websocket node
 backends.
 
@@ -884,7 +883,7 @@ Update the proxy renderer to support:
 
 Rendered Caddy must include `reverse_proxy` to the upstreams and must not buffer
 or transform WebSocket upgrade traffic. Use the Caddy pattern already used in
-the router/public-ingress branch for long-lived streams.
+the router/ingress branch for long-lived streams.
 
 - [ ] **Step 5: Run route tests**
 
@@ -936,7 +935,7 @@ Expected JSON:
 Also test:
 
 - enabling fails when no active websocket node exists;
-- enabling fails when public host is requested without public-ingress;
+- enabling fails when public host is requested without ingress;
 - `app:websocket credentials docs --json` includes key and secret;
 - two apps get different credentials;
 - `app:websocket disable docs --json` disables the binding and removes public
@@ -1003,7 +1002,7 @@ Expected: pass.
 **Files:**
 
 - Modify: `app/Services/Doctor/DoctorReportRunner.php`
-- Modify doctor helpers touched by router/public-ingress branch.
+- Modify doctor helpers touched by router/ingress branch.
 - Test: existing doctor tests plus websocket-specific tests.
 
 - [ ] **Step 1: Write doctor tests**
@@ -1015,7 +1014,7 @@ Add tests that produce findings for:
 - backend cert name mismatch;
 - Redis selected but unreachable;
 - router missing `websocket.orbit`;
-- public-ingress missing `ws.example.com` route for enabled binding;
+- ingress missing `ws.example.com` route for enabled binding;
 - Reverb bound to `0.0.0.0`.
 
 Expected issue keys:
@@ -1062,16 +1061,24 @@ Expected: pass.
 
 **Files:**
 
-- Create: `tests/E2E/WebSocketReverbRouteTest.php`
-- Modify E2E topology prep files as needed for `router + database + websocket + public-ingress + app-production`.
+- Create: `tests/E2E/WebSocketPrivateRouteTest.php`
+- Create: `tests/E2E/WebSocketIngressRouteTest.php`
+- Modify E2E topology prep files as needed for the smallest operator
+  topologies that cover WebSocket:
+  - `operator_gateway_app-dev` for private `websocket.orbit` assertions;
+  - `operator_gateway_app-dev_app-prod` for
+    `ingress -> router -> websocket` assertions.
 
 - [ ] **Step 1: Write E2E test**
 
 Create an E2E test that:
 
-- leases a topology with gateway/router, database Redis, websocket, public-ingress, and app-production;
+- leases `operator_gateway_app-dev` for private `websocket.orbit` assertions;
+- leases `operator_gateway_app-dev_app-prod` for ingress-to-router-to-websocket assertions;
+- uses the app-dev node as the dev-services node with `app-development`,
+  `database`, `websocket`, and `s3` roles when the S3 role has landed;
 - enables websocket for a production app with `ws.<domain>`;
-- connects a WebSocket client through public-ingress;
+- connects a WebSocket client through ingress;
 - publishes a Reverb event through `https://websocket.orbit`;
 - asserts the client receives the event.
 
@@ -1080,7 +1087,7 @@ Create an E2E test that:
 Run:
 
 ```bash
-composer test:e2e:docker -- tests/E2E/WebSocketReverbRouteTest.php
+composer test:e2e:docker -- tests/E2E/WebSocketPrivateRouteTest.php tests/E2E/WebSocketIngressRouteTest.php
 ```
 
 Expected: pass after topology support is prepared.
@@ -1124,16 +1131,17 @@ Expected: all checks pass.
 Run:
 
 ```bash
-composer test:e2e:docker -- tests/E2E/WebSocketReverbRouteTest.php
+composer test:e2e:docker -- tests/E2E/WebSocketPrivateRouteTest.php tests/E2E/WebSocketIngressRouteTest.php
 ```
 
 Expected: pass.
 
-## Open Questions
+## Resolved Decisions And Stop Conditions
 
-- Should `app:websocket credentials` use a new permission such as
-  `app:websocket:credentials`, or reuse an existing app credential permission if
-  one exists after router/public-ingress lands?
-- Should private-only development usage default frontend config to
-  `websocket.orbit`, or should browser-facing development hosts be explicit per
-  app/workspace?
+- V1 uses the existing app write permission for enable/disable and an explicit
+  app credential permission for `app:websocket credentials`, following the
+  existing credential-output pattern. Stop and reconcile only if the landed app
+  permission registry has no credential-read concept to attach to.
+- Private-only development usage defaults to `websocket.orbit`. Browser-facing
+  public development hosts must be explicit per app/workspace and route through
+  ingress when enabled.

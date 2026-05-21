@@ -46,7 +46,7 @@ it('updates a docker-managed tool on an app node through the gateway', function 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function toolUpdatePrepareComposeFile(E2ETopologyHarness $topology): void
 {

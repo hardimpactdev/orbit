@@ -119,7 +119,7 @@ it('deletes target template instances before replacing them', function (): void 
         ->toThrow(RuntimeException::class, 'Could not create work directory');
 });
 
-it('replaces prerequisite stage templates before rebuilding a larger topology', function (): void {
+it('rebuilds prerequisites when no complete reusable base exists', function (): void {
     $config = E2EConfig::fromEnvironment();
     $deleted = [];
 
@@ -133,6 +133,7 @@ it('replaces prerequisite stage templates before rebuilding a larger topology', 
     $host->shouldReceive('imageExists')->andReturn(true);
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
+    $host->shouldReceive('snapshotExists')->andReturn(false);
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
@@ -151,7 +152,7 @@ it('replaces prerequisite stage templates before rebuilding a larger topology', 
         ->and($deleted)->toBe(array_reverse($existing));
 });
 
-it('widens a force rebuild to the highest existing shared template role', function (): void {
+it('reuses the highest complete prior stage before rebuilding a larger topology', function (): void {
     $config = E2EConfig::fromEnvironment();
     $deleted = [];
 
@@ -163,10 +164,18 @@ it('widens a force rebuild to the highest existing shared template role', functi
         'orbit-template-agent',
     ];
 
+    $baseSnapshots = [
+        'orbit-template-control:clean-operator_gateway_app-dev',
+        'orbit-template-gateway:clean-operator_gateway_app-dev',
+        'orbit-template-dev:clean-operator_gateway_app-dev',
+    ];
+
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->andReturn(true);
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
+    $host->shouldReceive('snapshotExists')
+        ->andReturnUsing(fn (string $name, string $snapshot): bool => in_array("{$name}:{$snapshot}", $baseSnapshots, true));
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
@@ -180,9 +189,94 @@ it('widens a force rebuild to the highest existing shared template role', functi
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    expect(fn () => $builder->build(E2ETopologyKind::ControlGateway, replaceExisting: true))
+    expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
-        ->and($deleted)->toBe(array_reverse($existing));
+        ->and($deleted)->toBe([
+            'orbit-template-agent',
+            'orbit-template-prod',
+        ]);
+});
+
+it('rebuilds ingress-specific templates without deleting the standard prod template', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $deleted = [];
+
+    $existing = [
+        'orbit-template-control',
+        'orbit-template-gateway',
+        'orbit-template-prod',
+        'orbit-template-ingress-control',
+        'orbit-template-ingress-gateway',
+        'orbit-template-ingress-prod',
+        'orbit-template-ingress',
+    ];
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->andReturn(true);
+    $host->shouldReceive('instanceExists')
+        ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
+    $host->shouldReceive('snapshotExists')
+        ->andReturnUsing(fn (string $name, string $snapshot): bool => in_array($name, ['orbit-template-control', 'orbit-template-gateway'], true)
+            && $snapshot === 'clean-operator_gateway');
+    $host->shouldReceive('deleteInstance')
+        ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
+            $deleted[] = $name;
+
+            return incusTopologyBuilderProcessResult();
+        });
+    $host->shouldReceive('run')
+        ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
+        ->andReturn(incusTopologyBuilderProcessResult(successful: false));
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppprodIngress, replaceExisting: true))
+        ->toThrow(RuntimeException::class, 'Could not create work directory')
+        ->and($deleted)->toContain('orbit-template-ingress-control')
+        ->and($deleted)->toContain('orbit-template-ingress-gateway')
+        ->and($deleted)->toContain('orbit-template-ingress-prod')
+        ->and($deleted)->toContain('orbit-template-ingress')
+        ->and($deleted)->not->toContain('orbit-template-prod');
+});
+
+it('restores a reusable base stage before continuing a force rebuild', function (): void {
+    $config = E2EConfig::fromEnvironment();
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->andReturn(true);
+    $host->shouldReceive('instanceExists')
+        ->andReturnUsing(fn (string $name): bool => $name === 'orbit-template-control');
+    $host->shouldReceive('snapshotExists')
+        ->with('orbit-template-control', 'clean-operator')
+        ->andReturn(true);
+    $host->shouldReceive('deleteInstance')->never();
+    $host->shouldReceive('stopInstancesIfRunning')
+        ->with(['orbit-template-control'])
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('restoreSnapshotsConcurrently')
+        ->with(['orbit-template-control'], 'clean-operator')
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('startInstance')
+        ->with('orbit-template-control')
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult(errorOutput: 'start failed', successful: false));
+    $host->shouldReceive('run')
+        ->andReturnUsing(function (string $command): ProcessResult {
+            if (str_starts_with($command, 'mktemp -d ')) {
+                return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
+            }
+
+            return incusTopologyBuilderProcessResult();
+        });
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    expect(fn () => $builder->build(E2ETopologyKind::OperatorGateway, replaceExisting: true))
+        ->toThrow(RuntimeException::class, 'Could not start orbit-template-control: start failed');
 });
 
 it('records phase timings while building topology templates', function (): void {
@@ -288,28 +382,28 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         [
             'role' => 'control',
             'name' => 'orbit-template-control',
-            'snapshot' => 'clean-operator-gateway-appdev-appprod',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod',
         ],
         [
             'role' => 'gateway',
             'name' => 'orbit-template-gateway',
-            'snapshot' => 'clean-operator-gateway-appdev-appprod',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod',
         ],
         [
             'role' => 'dev',
             'name' => 'orbit-template-dev',
-            'snapshot' => 'clean-operator-gateway-appdev-appprod',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod',
         ],
         [
             'role' => 'prod',
             'name' => 'orbit-template-prod',
-            'snapshot' => 'clean-operator-gateway-appdev-appprod',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod',
         ],
     ])->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-control'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-gateway'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-dev'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prod'")
-        ->and($commandOutput)->not->toContain('orbit-template-operator-gateway-appdev-appprod-control')
+        ->and($commandOutput)->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-control')
         ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
         ->and($commandOutput)->not->toContain('--role=gateway')
         ->and($commandOutput)->not->toContain('--control-name=control-1')
@@ -334,6 +428,7 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain('provisioner')
         ->and($commandOutput)->toContain('app-prod-1')
         ->and($commandOutput)->toContain('10.201.0.13')
+        ->and($commandOutput)->toContain('--role=ingress')
         ->and($commandOutput)->not->toContain('orbit:internal:bake-app-node');
 });
 
@@ -364,6 +459,18 @@ it('builds ingress topology without development or agent stages', function (): v
             return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
         }
 
+        if (str_contains($command, 'orbit-template-ingress-control')) {
+            return incusTopologyBuilderProcessResult("10.201.0.10\n");
+        }
+
+        if (str_contains($command, 'orbit-template-ingress-gateway')) {
+            return incusTopologyBuilderProcessResult("10.201.0.11\n");
+        }
+
+        if (str_contains($command, 'orbit-template-ingress-prod')) {
+            return incusTopologyBuilderProcessResult("10.201.0.13\n");
+        }
+
         if (str_contains($command, 'orbit-template-ingress')) {
             return incusTopologyBuilderProcessResult("10.201.0.14\n");
         }
@@ -392,26 +499,28 @@ it('builds ingress topology without development or agent stages', function (): v
     expect($manifest)->toBe([
         [
             'role' => 'control',
-            'name' => 'orbit-template-control',
-            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+            'name' => 'orbit-template-ingress-control',
+            'snapshot' => 'clean-operator_gateway_app-prod_ingress',
         ],
         [
             'role' => 'gateway',
-            'name' => 'orbit-template-gateway',
-            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+            'name' => 'orbit-template-ingress-gateway',
+            'snapshot' => 'clean-operator_gateway_app-prod_ingress',
         ],
         [
             'role' => 'prod',
-            'name' => 'orbit-template-prod',
-            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+            'name' => 'orbit-template-ingress-prod',
+            'snapshot' => 'clean-operator_gateway_app-prod_ingress',
         ],
         [
             'role' => 'ingress',
             'name' => 'orbit-template-ingress',
-            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+            'snapshot' => 'clean-operator_gateway_app-prod_ingress',
         ],
     ])->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-ingress'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prod'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-ingress-prod'")
+        ->and($commandOutput)->toContain("incus copy 'orbit-template-control/clean-operator_gateway' 'orbit-template-ingress-control'")
+        ->and($commandOutput)->toContain("incus copy 'orbit-template-gateway/clean-operator_gateway' 'orbit-template-ingress-gateway'")
         ->and($commandOutput)->toContain('edge-1')
         ->and($commandOutput)->toContain('--role=ingress')
         ->and($commandOutput)->toContain('--role=app-prod')

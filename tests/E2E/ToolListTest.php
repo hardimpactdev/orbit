@@ -29,7 +29,7 @@ it('lists registered tools from gateway intent as JSON', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 it('lists registered tools from gateway intent as human output', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -53,7 +53,7 @@ it('lists registered tools from gateway intent as human output', function (): vo
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 it('filters tool list by node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -79,7 +79,7 @@ it('filters tool list by node', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 it('filters tool list by app', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -105,7 +105,7 @@ it('filters tool list by app', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function toolListSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

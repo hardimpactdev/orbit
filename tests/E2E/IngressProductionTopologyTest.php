@@ -103,4 +103,4 @@ it('serves a production app through a prepared dedicated ingress topology', func
         $topology->ssh('prod', 'sudo rm -rf '.escapeshellarg("/home/orbit/apps/{$name}"), timeoutSeconds: 60, allowFailure: true);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appprod-ingress');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-prod_ingress');

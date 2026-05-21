@@ -23,6 +23,15 @@ final readonly class IncusTopologyTemplate
 
     public static function templateName(E2ETopologyKind $kind, string $role): string
     {
+        if ($kind === E2ETopologyKind::OperatorGatewayAppprodIngress) {
+            return match ($role) {
+                'control' => 'orbit-template-ingress-control',
+                'gateway' => 'orbit-template-ingress-gateway',
+                'prod' => 'orbit-template-ingress-prod',
+                default => "orbit-template-{$role}",
+            };
+        }
+
         return "orbit-template-{$role}";
     }
 
@@ -36,13 +45,7 @@ final readonly class IncusTopologyTemplate
      */
     public static function snapshotCandidates(E2ETopologyKind $kind): array
     {
-        return [
-            self::snapshotName($kind),
-            ...array_map(
-                static fn (string $value): string => "clean-{$value}",
-                $kind->deprecatedValues(),
-            ),
-        ];
+        return [self::snapshotName($kind)];
     }
 
     public static function cloneName(string $runId, string $role): string

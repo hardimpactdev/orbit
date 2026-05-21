@@ -279,8 +279,31 @@ final class IncusInstance implements E2EInstance
     private function providerIpv4(): ?string
     {
         try {
+            $python = <<<'PY'
+import json
+import sys
+
+state = json.load(sys.stdin)
+ignored = {"docker0", "lo", "wg-orbit", "wg0"}
+
+for interface, details in state.get("network", {}).items():
+    if interface in ignored or interface.startswith(("br-", "veth")):
+        continue
+
+    for address in details.get("addresses", []):
+        if address.get("family") == "inet" and address.get("scope") == "global":
+            print(address.get("address", ""))
+            raise SystemExit(0)
+PY;
+
             $result = $this->host->run(sprintf(
-                "incus list %s --format csv -c 4 | grep -Ev '\\((wg-orbit|docker0|br-|veth|wg0)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true",
+                "if command -v python3 >/dev/null 2>&1; then\n"
+                    .'incus query %s | python3 -c %s'."\n"
+                    ."else\n"
+                    ."incus list --format csv -c n,4 | awk -F, -v name=%s '\$1 == name {print \$2}' | grep -Ev '\\((wg-orbit|docker0|br-|veth|wg0|lo)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true\n"
+                    .'fi',
+                escapeshellarg("/1.0/instances/{$this->name}/state"),
+                escapeshellarg($python),
                 escapeshellarg($this->name),
             ), timeoutSeconds: 30);
         } catch (\Throwable) {

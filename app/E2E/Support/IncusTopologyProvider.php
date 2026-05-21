@@ -36,7 +36,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     public function availability(E2ETopologyKind $kind): ProviderAvailability
     {
-        $availability = IncusHostPool::fromEnvironment($this->config)->availabilityFor($kind);
+        $availability = IncusHostPool::fromEnvironment($this->config)->availabilityFor(
+            $kind,
+            checkCapacity: $this->config->incusHostSlots === [],
+        );
         $host = $availability['host'];
 
         if ($host === null) {
@@ -49,18 +52,37 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
     {
         $pool = IncusHostPool::fromEnvironment($this->config);
-        $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind));
+        $resourceLease = $this->acquireResourceLease();
+        $hostNames = $resourceLease === null ? null : [$resourceLease->host()];
+        $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind, $hostNames));
         $host = $availability['host'];
+        $instances = [];
 
         if ($host === null) {
+            $resourceLease?->release();
+
             throw new \RuntimeException("Prepared topology {$kind->value} is not available on any Incus host: {$availability['reason']}");
         }
 
-        $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer);
+        try {
+            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer);
 
-        $sshKeyPair = $this->createSshKeyPair($host, $runId);
-        $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options);
-        $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer, $options->startGatewayApi);
+            $sshKeyPair = $this->createSshKeyPair($host, $runId);
+            $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options);
+            $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer, $options->startGatewayApi);
+        } catch (\Throwable $exception) {
+            foreach ($instances as $instance) {
+                try {
+                    $instance->delete();
+                } catch (\Throwable) {
+                    // Keep the original acquisition failure visible.
+                }
+            }
+
+            $resourceLease?->release();
+
+            throw $exception;
+        }
 
         $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options): array {
             $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer);
@@ -82,9 +104,22 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
             gatewayApiIp: self::GatewayWireGuardIp,
+            resourceLease: $resourceLease,
             agent: $instances['agent'] ?? null,
             ingress: $instances['ingress'] ?? null,
         );
+    }
+
+    private function acquireResourceLease(): ?E2EResourceLease
+    {
+        if ($this->config->incusHostSlots === []) {
+            return null;
+        }
+
+        return E2EResourceLeasePool::fromEnvironment(
+            waitSeconds: $this->config->slotWaitSeconds,
+            staleSeconds: $this->config->slotStaleSeconds,
+        )->acquire('incus', $this->config->incusHostSlots, $this->config->exclusiveHosts);
     }
 
     /**

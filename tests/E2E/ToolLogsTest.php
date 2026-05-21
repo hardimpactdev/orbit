@@ -95,7 +95,7 @@ BASH),
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function toolLogsUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
 {

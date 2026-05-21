@@ -51,8 +51,8 @@ installation, cloud-init, or host-level daemon behavior:
 ```bash
 composer e2e:preflight
 php artisan e2e:prepare-incus-images --role=blank --force
-composer e2e:prepare-topology -- --force control-gateway-dev-prod
-composer e2e:prepare-topology -- --force operator-gateway-appprod-ingress
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-topology -- --force operator_gateway_app-prod_ingress
 composer test:e2e:provision
 ```
 
@@ -69,20 +69,34 @@ with per-topology clean snapshots:
    + bootstrap user + sshd. Used by the provisioning lane's blank-VM
    lifecycle test and as the source for prepared topology roles.
 2. **Role templates** (`orbit-template-control`, `orbit-template-gateway`,
-   `orbit-template-dev`, `orbit-template-prod`, `orbit-template-agent`). Built by
+   `orbit-template-dev`, `orbit-template-prod`, `orbit-template-agent`,
+   `orbit-template-ingress-control`, `orbit-template-ingress-gateway`,
+   `orbit-template-ingress`, and `orbit-template-ingress-prod`). Built by
    `composer e2e:prepare-topology -- --force <kind>`. The command tars the
    current checkout, ships it plus `bin/install-orbit` and
    `bin/e2e-provision-node` to the host, installs Orbit on the control
    template from the blank image, snapshots `clean-operator`, then starts that
    template and provisions the gateway through real `node:new`. It repeats
-   the chain for gateway, dev, prod, and agent roles as required by the target
-   kind. Each topology kind is a snapshot set such as
-   `clean-operator-gateway-appdev`, not a separate copy of every role template.
-   Tests clone the requested role templates from the matching snapshot per run.
+   the chain for gateway, dev, prod, agent, and ingress roles as required by
+   the target kind. The dedicated ingress topology copies the
+   `operator_gateway` base into `orbit-template-ingress-control` and
+   `orbit-template-ingress-gateway`, and uses `orbit-template-ingress-prod`
+   for the private app-production backend. This keeps ingress refreshes from
+   deleting the standard app-prod/agent snapshots. Each topology kind is a
+   snapshot set such as `clean-operator_gateway_app-dev`, not a separate copy
+   of every role template. Tests clone the requested role templates from the
+   matching snapshot per run.
 
-Source code lives in the per-run bundle, not in any image. Topology snapshots
-get rebuilt each time `e2e:prepare-topology --force` runs. Rebuild the blank
-image only when the bootstrap image shape changes.
+Source code lives in the per-run bundle, not in the blank image. Forced
+topology preparation resumes from the highest complete canonical prerequisite
+snapshot set and rebuilds only the later roles. For example, after a failed
+`operator_gateway_app-dev_app-prod_agent` build, a complete
+`operator_gateway_app-dev` snapshot lets the next run restore
+`orbit-template-{control,gateway,dev}` and continue with prod and agent instead
+of rebuilding from blank. Delete the shared `orbit-template-*` instances before
+`--force` only when you intentionally need a fully cold rebuild from the
+current checkout. Rebuild the blank image only when the bootstrap image shape
+changes.
 
 Every machine that runs the Incus lane must be able to reach the configured
 Incus host with ordinary non-interactive SSH and SCP. The harness runs Incus
@@ -94,7 +108,7 @@ overly strict local SSH options before changing E2E lane selection.
 
 Latest Beast prepared-topology measurement (May 21, 2026):
 
-- Full `operator-gateway-appdev-appprod-agent` rebuild completed in
+- Full `operator_gateway_app-dev_app-prod_agent` rebuild completed in
   `real 607.63s`. This is an explicit preparation/provisioning command and is
   not part of `composer test:e2e`.
 - The rebuild used `ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e`; all
@@ -266,7 +280,7 @@ topology kinds use the canonical `operator-*` spelling.
 | `control-gateway` | control + 1 gateway | Use for gateway trust, onboarding, or node-registry flows. |
 | `control-gateway-dev` | control + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
 | `control-gateway-dev-prod` | control + gateway + dev + 1 prod app | Full topology. Slowest but most realistic. Use for production-app flows or full-stack verification. |
-| `operator-gateway-appprod-ingress` | control + gateway + 1 prod app + 1 ingress | Use for public production ingress and private app-production backend flows that do not need dev or agent nodes. |
+| `operator_gateway_app-prod_ingress` | control + gateway + 1 prod app + 1 ingress | Use for public production ingress and private app-production backend flows that do not need dev or agent nodes. |
 
 ## Feature Checkout Overlay
 
@@ -389,7 +403,7 @@ Common requirements for every prepared topology:
 - production-app assertions can run without re-provisioning the control,
   gateway, or development app nodes.
 
-`operator-gateway-appprod-ingress`:
+`operator_gateway_app-prod_ingress`:
 
 - includes everything from `control-gateway`;
 - skips development and agent clones;
@@ -425,19 +439,19 @@ php artisan e2e:prepare-incus-images --role=blank --force
 # checkout, installs Orbit on the control template, then provisions gateway/app
 # templates through node:new from control before snapshotting clean.
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
-composer e2e:prepare-topology -- --force operator-gateway-appprod-ingress
+composer e2e:prepare-topology -- --force operator_gateway_app-prod_ingress
 
 # Prepare Docker feature topology images
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
-composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-prod_ingress
 
 # Prepare Docker feature topology images on the build host, then import on Docker hosts
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
 composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias control-gateway-dev-prod
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appprod-ingress
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appprod-ingress
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
 
 # Reap stale E2E resources
 composer e2e:reap-incus
@@ -507,7 +521,7 @@ For single-host local debugging, the lower-level equivalents are:
 ```bash
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
-composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-prod_ingress
 ```
 
 On this Mac, OrbStack provides the local Docker CLI and daemon. The active
@@ -661,8 +675,8 @@ configured Docker host pool:
 ```bash
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appdev-appprod
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appprod-ingress
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
 ```
 
 When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command imports into each unique
@@ -924,7 +938,7 @@ concurrency is bounded by:
 - `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, the maximum number of Orbit-owned
   prepared-topology VMs allowed on an Incus host.
 - The cached topology size selected by the lane. The Incus feature lane uses
-  the five-node `operator-gateway-appdev-appprod-agent` superset so all Incus
+  the five-node `operator_gateway_app-dev_app-prod_agent` superset so all Incus
   feature tests assigned to a worker can share one lease.
 
 For example, `ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3`,
@@ -967,7 +981,7 @@ Every listed template should show `pool: orbit-e2e`. If the templates show
 prepared topology before trusting Incus feature-lane timings:
 
 ```bash
-composer e2e:prepare-topology -- --force operator-gateway-appdev-appprod-agent
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
 The regression signature for a storage-pool mismatch is

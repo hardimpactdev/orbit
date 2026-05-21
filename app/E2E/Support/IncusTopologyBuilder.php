@@ -43,13 +43,13 @@ class IncusTopologyBuilder
      */
     public function build(E2ETopologyKind $kind, bool $replaceExisting = false): array
     {
-        $buildTarget = $this->timer->measure('preflight', fn (): E2ETopologyKind => $this->validatePreFlight($kind, $replaceExisting));
+        $plan = $this->timer->measure('preflight', fn (): array => $this->validatePreFlight($kind, $replaceExisting));
 
         $workDirectory = $this->timer->measure('workdir', fn (): string => $this->createWorkDirectory());
 
         try {
             $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
-            $manifests = $this->buildStages($buildTarget, $key);
+            $manifests = $this->buildStages($plan['target'], $key, $plan['reusableBase']);
 
             return $manifests[$kind->value];
         } finally {
@@ -57,7 +57,13 @@ class IncusTopologyBuilder
         }
     }
 
-    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): E2ETopologyKind
+    /**
+     * @return array{
+     *     target: E2ETopologyKind,
+     *     reusableBase: E2ETopologyKind|null,
+     * }
+     */
+    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): array
     {
         $blankImage = $this->host->config->blankImage;
 
@@ -71,9 +77,11 @@ class IncusTopologyBuilder
             );
         }
 
-        $buildTarget = $this->resolveBuildTarget($kind, $replaceExisting);
+        $reusableBase = $replaceExisting
+            ? $this->resolveReusableBaseStage($kind)
+            : null;
 
-        foreach ($this->templateNamesForRefresh($buildTarget, includeLegacyNames: $replaceExisting) as $name) {
+        foreach ($this->templateNamesForRefresh($kind, $reusableBase, includeLegacyNames: $replaceExisting) as $name) {
             if (! $this->host->instanceExists($name)) {
                 continue;
             }
@@ -89,48 +97,49 @@ class IncusTopologyBuilder
             }
         }
 
-        return $buildTarget;
+        return [
+            'target' => $kind,
+            'reusableBase' => $reusableBase,
+        ];
     }
 
-    private function resolveBuildTarget(E2ETopologyKind $kind, bool $replaceExisting): E2ETopologyKind
+    private function resolveReusableBaseStage(E2ETopologyKind $kind): ?E2ETopologyKind
     {
         if ($kind === E2ETopologyKind::OperatorGatewayAppprodIngress) {
-            return $kind;
+            return $this->stageSnapshotsAvailable(E2ETopologyKind::OperatorGateway)
+                ? E2ETopologyKind::OperatorGateway
+                : null;
         }
 
-        if (! $replaceExisting) {
-            return $kind;
-        }
+        $stages = $this->stagesThrough($kind);
+        array_pop($stages);
 
-        $stages = $this->stageOrder();
-        $targetIndex = array_search($kind, $stages, true);
-
-        if ($targetIndex === false) {
-            throw new RuntimeException("Unsupported topology kind [{$kind->value}].");
-        }
-
-        $buildIndex = $targetIndex;
-        $roleStages = [
-            'agent' => E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-            'prod' => E2ETopologyKind::ControlGatewayDevProd,
-            'dev' => E2ETopologyKind::ControlGatewayDev,
-            'gateway' => E2ETopologyKind::ControlGateway,
-            'control' => E2ETopologyKind::Control,
-        ];
-
-        foreach ($roleStages as $role => $roleStage) {
-            if (! $this->host->instanceExists(IncusTopologyTemplate::templateName($roleStage, $role))) {
-                continue;
-            }
-
-            $roleIndex = array_search($roleStage, $stages, true);
-
-            if ($roleIndex !== false) {
-                $buildIndex = max($buildIndex, $roleIndex);
+        foreach (array_reverse($stages) as $stage) {
+            if ($this->stageSnapshotsAvailable($stage)) {
+                return $stage;
             }
         }
 
-        return $stages[$buildIndex];
+        return null;
+    }
+
+    private function stageSnapshotsAvailable(E2ETopologyKind $stage): bool
+    {
+        $snapshot = IncusTopologyTemplate::snapshotName($stage);
+
+        foreach (IncusTopologyTemplate::rolesFor($stage) as $role) {
+            $template = IncusTopologyTemplate::templateName($stage, $role);
+
+            if (! $this->host->instanceExists($template)) {
+                return false;
+            }
+
+            if (! $this->host->snapshotExists($template, $snapshot)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function createWorkDirectory(): string
@@ -166,12 +175,28 @@ class IncusTopologyBuilder
     /**
      * @return array<string, list<array{role: string, name: string, snapshot: string}>>
      */
-    private function buildStages(E2ETopologyKind $target, SshKeyPair $key): array
+    private function buildStages(E2ETopologyKind $target, SshKeyPair $key, ?E2ETopologyKind $reusableBase): array
     {
         $manifests = [];
         $instances = [];
+        $stages = $this->stagesThrough($target);
+        $startIndex = 0;
 
-        foreach ($this->stagesThrough($target) as $stage) {
+        if ($reusableBase !== null && ! $this->usesCopiedReusableBase($target, $reusableBase)) {
+            $this->restoreReusableBaseStage($reusableBase);
+        }
+
+        if ($reusableBase !== null) {
+            $baseIndex = array_search($reusableBase, $stages, true);
+
+            if ($baseIndex === false) {
+                throw new RuntimeException("Reusable base [{$reusableBase->value}] is not a prerequisite for [{$target->value}].");
+            }
+
+            $startIndex = $baseIndex + 1;
+        }
+
+        foreach (array_slice($stages, $startIndex) as $stage) {
             $instances = match ($stage) {
                 E2ETopologyKind::Control => $this->buildControlStage($key),
                 E2ETopologyKind::ControlGateway => $this->buildGatewayStage($key),
@@ -185,6 +210,31 @@ class IncusTopologyBuilder
         }
 
         return $manifests;
+    }
+
+    private function usesCopiedReusableBase(E2ETopologyKind $target, E2ETopologyKind $reusableBase): bool
+    {
+        return $target === E2ETopologyKind::OperatorGatewayAppprodIngress
+            && $reusableBase === E2ETopologyKind::OperatorGateway;
+    }
+
+    private function restoreReusableBaseStage(E2ETopologyKind $stage): void
+    {
+        $snapshot = IncusTopologyTemplate::snapshotName($stage);
+        $names = array_map(
+            static fn (string $role): string => IncusTopologyTemplate::templateName($stage, $role),
+            IncusTopologyTemplate::rolesFor($stage),
+        );
+
+        $result = $this->timer->measure("base.stop.{$stage->value}", fn () => $this->host->stopInstancesIfRunning($names));
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not stop reusable base [{$stage->value}]: {$result->errorOutput()}");
+        }
+
+        $result = $this->timer->measure("base.restore.{$stage->value}", fn () => $this->host->restoreSnapshotsConcurrently($names, $snapshot));
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not restore reusable base [{$stage->value}]: {$result->errorOutput()}");
+        }
     }
 
     /**
@@ -228,11 +278,18 @@ class IncusTopologyBuilder
     /**
      * @return list<string>
      */
-    private function templateNamesForRefresh(E2ETopologyKind $kind, bool $includeLegacyNames): array
+    private function templateNamesForRefresh(E2ETopologyKind $kind, ?E2ETopologyKind $reusableBase, bool $includeLegacyNames): array
     {
         $names = [];
+        $baseRoles = $reusableBase !== null
+            ? IncusTopologyTemplate::rolesFor($reusableBase)
+            : [];
 
         foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
+            if ($this->preservesReusableTemplate($kind, $role, $reusableBase)) {
+                continue;
+            }
+
             $names[] = IncusTopologyTemplate::templateName($kind, $role);
         }
 
@@ -240,13 +297,55 @@ class IncusTopologyBuilder
             return array_reverse(array_values(array_unique($names)));
         }
 
-        foreach ($this->stagesThrough($kind) as $stage) {
+        foreach ($this->stagesAfter($kind, $reusableBase) as $stage) {
             foreach (IncusTopologyTemplate::rolesFor($stage) as $role) {
+                if (in_array($role, $baseRoles, true) && $stage !== $kind) {
+                    continue;
+                }
+
                 $names[] = "orbit-template-{$stage->value}-{$role}";
+
+                foreach ($stage->deprecatedValues() as $deprecatedValue) {
+                    $names[] = "orbit-template-{$deprecatedValue}-{$role}";
+                }
             }
         }
 
         return array_reverse(array_values(array_unique($names)));
+    }
+
+    private function preservesReusableTemplate(E2ETopologyKind $target, string $role, ?E2ETopologyKind $reusableBase): bool
+    {
+        if ($reusableBase === null) {
+            return false;
+        }
+
+        if (! in_array($role, IncusTopologyTemplate::rolesFor($reusableBase), true)) {
+            return false;
+        }
+
+        return IncusTopologyTemplate::templateName($target, $role)
+            === IncusTopologyTemplate::templateName($reusableBase, $role);
+    }
+
+    /**
+     * @return list<E2ETopologyKind>
+     */
+    private function stagesAfter(E2ETopologyKind $target, ?E2ETopologyKind $base): array
+    {
+        $stages = $this->stagesThrough($target);
+
+        if ($base === null) {
+            return $stages;
+        }
+
+        $baseIndex = array_search($base, $stages, true);
+
+        if ($baseIndex === false) {
+            throw new RuntimeException("Reusable base [{$base->value}] is not a prerequisite for [{$target->value}].");
+        }
+
+        return array_slice($stages, $baseIndex + 1);
     }
 
     /**
@@ -349,6 +448,7 @@ class IncusTopologyBuilder
             'app-prod-1',
             $prodIp,
             'production',
+            withIngress: true,
         ));
         $this->timer->measure('prod.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
@@ -387,14 +487,21 @@ class IncusTopologyBuilder
      */
     private function buildIngressProductionStage(SshKeyPair $key): array
     {
-        $instances = $this->startTemplateRoles(['control', 'gateway'], $key);
+        $this->copyIngressBaseTemplates();
+
+        $instances = $this->startTemplateRoles(['control', 'gateway'], $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
+        $gatewayIp = $this->timer->measure('ingress.gateway.ipv4', fn (): string => $instances['gateway']->waitForIpv4());
 
         $this->timer->measure('ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('ingress.gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($instances['gateway'], $gatewayIp));
+        $this->timer->measure('ingress.gateway.retarget-control', fn () => $this->retargetControl($instances['control'], $gatewayIp, $key));
+        $this->timer->measure('ingress.gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl($instances['control'], $key));
         $this->timer->measure('ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-ingress'));
         $this->timer->measure('ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
         $this->timer->measure('ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+        $this->timer->measure('ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
 
-        $ingress = $this->launchBlankRole('ingress', $key);
+        $ingress = $this->launchBlankRole('ingress', $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
         $ingressIp = $this->timer->measure('ingress.ipv4', fn (): string => $ingress->waitForIpv4());
         $instances['ingress'] = $ingress;
 
@@ -404,12 +511,24 @@ class IncusTopologyBuilder
             'edge-1',
             $ingressIp,
         ));
+        $this->timer->measure('ingress.seed-control', fn () => $this->seedIngressNodeOnControl(
+            $instances['control'],
+            $key,
+            'edge-1',
+            $ingressIp,
+        ));
 
-        $prod = $this->launchBlankRole('prod', $key);
+        $prod = $this->launchBlankRole('prod', $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
         $instances['prod'] = $prod;
 
-        $this->timer->measure('prod.node-new-private', fn () => $this->runPrivateProductionAppNodeNew(
+        $this->timer->measure('prod.node-new-private', fn () => $this->runPrivateProductionAppNodeNewOnGateway(
+            $instances['gateway'],
+            'app-prod-1',
+            $prodIp,
+            'edge-1',
+        ));
+        $this->timer->measure('prod.seed-control', fn () => $this->seedPrivateProductionNodeOnControl(
             $instances['control'],
             $key,
             'app-prod-1',
@@ -426,24 +545,135 @@ class IncusTopologyBuilder
         ];
     }
 
+    private function seedIngressNodeOnControl(IncusInstance $control, SshKeyPair $key, string $name, string $host): void
+    {
+        $nameValue = var_export($name, true);
+        $hostValue = var_export($host, true);
+        $userValue = var_export('orbit', true);
+        $orbitPathValue = var_export('/home/orbit/orbit', true);
+        $wireGuardAddressValue = var_export('10.6.0.4', true);
+        $gatewayEndpointValue = var_export(self::GatewayWireGuardIp, true);
+
+        $php = <<<PHP
+\$node = \\App\\Models\\Node::query()->updateOrCreate(
+    ['name' => {$nameValue}],
+    array_merge(
+        [
+            'role' => 'control',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'ubuntu',
+            'host' => {$hostValue},
+            'wireguard_address' => {$wireGuardAddressValue},
+            'gateway_endpoint' => {$gatewayEndpointValue},
+            'user' => {$userValue},
+            'orbit_path' => {$orbitPathValue},
+            'status' => 'active',
+        ],
+        \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => {$userValue}] : [],
+    ),
+);
+
+\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$node->id, 'role' => \\App\\Enums\\Nodes\\NodeRoleName::Ingress->value],
+    ['status' => \\App\\Enums\\Nodes\\NodeRoleStatus::Active->value, 'settings' => [], 'last_error' => null, 'converged_at' => now()],
+);
+PHP;
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
+    private function seedPrivateProductionNodeOnControl(IncusInstance $control, SshKeyPair $key, string $name, string $host, string $ingressNode): void
+    {
+        $nameValue = var_export($name, true);
+        $hostValue = var_export($host, true);
+        $ingressNodeValue = var_export($ingressNode, true);
+        $userValue = var_export('orbit', true);
+        $orbitPathValue = var_export('/home/orbit/orbit', true);
+        $wireGuardAddressValue = var_export('10.6.0.5', true);
+        $gatewayEndpointValue = var_export(self::GatewayWireGuardIp, true);
+
+        $php = <<<PHP
+\$ingressNode = \\App\\Models\\Node::query()
+    ->where('name', {$ingressNodeValue})
+    ->whereHas('roleAssignments', fn (\$query) => \$query
+        ->where('role', \\App\\Enums\\Nodes\\NodeRoleName::Ingress->value)
+        ->where('status', \\App\\Enums\\Nodes\\NodeRoleStatus::Active->value))
+    ->firstOrFail();
+
+\$node = \\App\\Models\\Node::query()->updateOrCreate(
+    ['name' => {$nameValue}],
+    array_merge(
+        [
+            'role' => 'app',
+            'environment' => 'production',
+            'tld' => null,
+            'platform' => 'ubuntu',
+            'host' => {$hostValue},
+            'wireguard_address' => {$wireGuardAddressValue},
+            'gateway_endpoint' => {$gatewayEndpointValue},
+            'user' => {$userValue},
+            'orbit_path' => {$orbitPathValue},
+            'status' => 'active',
+        ],
+        \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => {$userValue}] : [],
+    ),
+);
+
+\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$node->id, 'role' => \\App\\Enums\\Nodes\\NodeRoleName::AppProduction->value],
+    ['status' => \\App\\Enums\\Nodes\\NodeRoleStatus::Active->value, 'settings' => ['ingress_node_id' => \$ingressNode->id], 'last_error' => null, 'converged_at' => now()],
+);
+PHP;
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
+    private function copyIngressBaseTemplates(): void
+    {
+        $baseSnapshot = IncusTopologyTemplate::snapshotName(E2ETopologyKind::OperatorGateway);
+
+        foreach (['control', 'gateway'] as $role) {
+            $source = IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGateway, $role)."/{$baseSnapshot}";
+            $target = IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGatewayAppprodIngress, $role);
+
+            $result = $this->timer->measure("ingress.base.copy.{$role}", fn () => $this->host->copyInstance($source, $target));
+            if (! $result->successful()) {
+                throw new RuntimeException("Could not copy ingress base template [{$source}] to [{$target}]: {$result->errorOutput()}");
+            }
+        }
+    }
+
     /**
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
-    private function startTemplateRoles(array $roles, SshKeyPair $key): array
+    private function startTemplateRoles(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Control): array
     {
         $instances = [];
 
         foreach ($roles as $role) {
-            $instances[$role] = $this->startTemplateRole($role, $key);
+            $instances[$role] = $this->startTemplateRole($role, $key, $templateKind);
         }
 
         return $instances;
     }
 
-    private function startTemplateRole(string $role, SshKeyPair $key): IncusInstance
+    private function startTemplateRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Control): IncusInstance
     {
-        $name = IncusTopologyTemplate::templateName(E2ETopologyKind::Control, $role);
+        $name = IncusTopologyTemplate::templateName($templateKind, $role);
 
         $start = $this->timer->measure("{$role}.start", fn () => $this->host->startInstance($name));
         if (! $start->successful()) {
@@ -454,15 +684,16 @@ class IncusTopologyBuilder
         $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
 
         if ($role === 'control') {
+            $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->controlUser, $key));
             $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->controlUser, $key));
         }
 
         return $instance;
     }
 
-    private function launchBlankRole(string $role, SshKeyPair $key): IncusInstance
+    private function launchBlankRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Control): IncusInstance
     {
-        $name = IncusTopologyTemplate::templateName(E2ETopologyKind::Control, $role);
+        $name = IncusTopologyTemplate::templateName($templateKind, $role);
         $this->timer->measure("{$role}.launch", fn () => $this->launchBlank($name));
         $instance = new IncusInstance($this->host, $name);
         $this->timer->measure("{$role}.agent.initial", fn () => $instance->waitForAgent());
@@ -502,6 +733,7 @@ PHP;
         string $host,
         string $environment,
         ?string $tld = null,
+        bool $withIngress = false,
     ): void {
         $parts = [
             'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
@@ -514,6 +746,10 @@ PHP;
 
         if ($tld !== null) {
             $parts[] = '--tld='.escapeshellarg($tld);
+        }
+
+        if ($withIngress) {
+            $parts[] = '--role=ingress';
         }
 
         E2ECommand::ssh(
@@ -579,15 +815,14 @@ PHP;
         E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
     }
 
-    private function runPrivateProductionAppNodeNew(
-        IncusInstance $control,
-        SshKeyPair $key,
+    private function runPrivateProductionAppNodeNewOnGateway(
+        IncusInstance $gateway,
         string $name,
         string $host,
         string $ingressNode,
     ): void {
         $parts = [
-            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
+            'cd '.escapeshellarg('/home/orbit/orbit').' && php artisan node:new',
             escapeshellarg($name),
             '--role=app-prod',
             '--host='.escapeshellarg($host),
@@ -596,15 +831,12 @@ PHP;
             '--json',
         ];
 
-        E2ECommand::ssh(
-            $control,
-            $this->host->config->controlUser,
-            $key,
+        E2ECommand::orbit(
+            $gateway,
             implode(' ', $parts),
+            'Could not create private production app node on gateway',
             timeoutSeconds: 900,
         );
-
-        E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
     }
 
     private function waitForGatewayWireGuard(IncusInstance $gateway): void

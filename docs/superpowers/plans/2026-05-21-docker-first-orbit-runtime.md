@@ -891,13 +891,22 @@ Go only if docs, focused tests, Docker E2E, Incus/provision E2E, and disposable
 conversion all pass. No-go means keep PHP-FPM as the current winner and do not
 merge a permanent dual-runtime compromise.
 
-## Open Questions
+## Resolved Decisions And Stop Conditions
 
-- Image strategy: local builds from checkout, versioned registry images, or
-  both.
-- Whether workspace worker mode ships with app worker mode or waits for the
-  first explicit workflow.
-- Whether `supervisor` remains a long-term process runtime for non-PHP use
-  cases or becomes a temporary compatibility option.
-- Exact low-level diagnostics command for container status/logs without making
-  every product command expose Docker internals.
+- Image strategy: v1 builds local development/test images from the Orbit
+  checkout. Versioned registry images may be added later, but implementation
+  must not block on a registry. Stop and reconcile only if deployment docs
+  require registry-published runtime images before Docker-first can merge.
+- Worker mode: app worker mode ships first. Workspace worker mode waits for a
+  separate explicit workflow unless the workspace runtime implementation needs
+  the same schema fields for consistency.
+- Process runtime: `supervisor` remains an explicit residual runtime for
+  supported non-PHP host-side cases. PHP app/workspace processes default to
+  Docker.
+- Diagnostics: low-level Docker status/log inspection belongs in doctor and
+  targeted runtime diagnostics, not every product command output.
+- E2E topology: Docker E2E uses sibling containers through the host Docker
+  socket, not Docker-in-Docker.
+- Role naming: the public edge role is `ingress`. Historical filenames may
+  still include the legacy public-edge term, but product docs, code
+  identifiers, commands, JSON fields, and tests must use `ingress`.

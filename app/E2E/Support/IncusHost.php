@@ -344,6 +344,22 @@ class IncusHost
         ), timeoutSeconds: 180);
     }
 
+    /**
+     * @param  list<string>  $names
+     */
+    public function stopInstancesIfRunning(array $names): ProcessResult
+    {
+        $lines = array_map(
+            static fn (string $name): string => sprintf(
+                'incus stop %s --force >/dev/null 2>&1 || true',
+                escapeshellarg($name),
+            ),
+            $names,
+        );
+
+        return $this->run(implode("\n", $lines), timeoutSeconds: 180);
+    }
+
     public function deleteInstance(string $name): ProcessResult
     {
         return $this->run(sprintf('incus delete %s --force', escapeshellarg($name)));

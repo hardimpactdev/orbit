@@ -39,4 +39,4 @@ it('lists the agent node from a control caller against the agent-extended topolo
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev-appprod-agent');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev_app-prod_agent');

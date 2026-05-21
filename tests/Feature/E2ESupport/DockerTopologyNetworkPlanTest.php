@@ -38,6 +38,23 @@ it('allocates a distinct docker subnet for each parallel worker token', function
     }
 });
 
+it('allocates a run-scoped docker subnet for parallel topology leases', function (): void {
+    $previous = getenv('TEST_TOKEN');
+    putenv('TEST_TOKEN=2');
+
+    try {
+        $plan = DockerTopologyNetworkPlan::fromEnvironment('run123');
+
+        expect($plan->subnet())->toBe('10.42.0.0/16')
+            ->and($plan->ipForRole('gateway'))->toBe('10.42.0.2')
+            ->and($plan->ipForRole('control'))->toBe('10.42.0.3')
+            ->and($plan->ipForRole('dev'))->toBe('10.42.0.4')
+            ->and($plan->ipForRole('prod'))->toBe('10.42.0.5');
+    } finally {
+        restoreTestToken($previous);
+    }
+});
+
 function restoreTestToken(string|false $previous): void
 {
     if ($previous === false) {

@@ -47,7 +47,7 @@ it('documents ingress host preparation without force', function (): void {
         'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2',
         'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
     ], function (): void {
-        $this->artisan('e2e:prepare-docker-hosts', ['kind' => 'operator-gateway-appprod-ingress'])
+        $this->artisan('e2e:prepare-docker-hosts', ['kind' => 'operator_gateway_app-prod_ingress'])
             ->expectsOutputToContain('Dry run')
             ->expectsOutputToContain('builder: beast')
             ->expectsOutputToContain('planned: sidecar1')
@@ -149,7 +149,7 @@ it('passes topology mode through to topology preparation', function (): void {
     $buildRuns = array_values(array_filter($runs, fn (string $command): bool => str_contains($command, 'composer e2e:prepare-docker-')));
 
     expect($buildRuns)->toHaveCount(1)
-        ->and($buildRuns[0])->toContain("composer e2e:prepare-docker-topology -- --force --topology-mode='dns-alias' 'operator-gateway'");
+        ->and($buildRuns[0])->toContain("composer e2e:prepare-docker-topology -- --force --topology-mode='dns-alias' 'operator_gateway'");
 });
 
 it('defaults host preparation to dns alias topology images', function (): void {

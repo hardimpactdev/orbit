@@ -19,22 +19,23 @@ shape is a node role:
   Reverb;
 - apps and VPN clients use `websocket.orbit`;
 - public clients use app-owned branded hosts such as `ws.example.com`;
-- public traffic enters through `public-ingress`;
+- public traffic enters through `ingress`;
 - private service routing and backend pools are owned by the `router` role;
 - Redis lives on a `database` role node and is selected by the `websocket`
   role.
 
-This design depends on the router addendum to the public-ingress plan:
-`docs/superpowers/plans/2026-05-21-public-ingress-router-addendum.md`.
+This design depends on the router addendum to the ingress plan:
+`docs/superpowers/plans/2026-05-21-ingress-router-addendum.md`.
 
 ## Product Decisions
 
 - Add a node role named `websocket`.
 - Display the role as `WebSocket`.
 - `websocket` is a private workload role. It does not expose public listeners.
-- `websocket` is exclusive in v1: it does not combine with `gateway`, `vpn`,
-  `router`, `public-ingress`, `app-development`, `app-production`, `database`,
-  or `agent`.
+- `websocket` is a dev-services-compatible private workload role in v1: it
+  can combine with `app-development`, `database`, and `s3`, but it does not
+  combine with `gateway`, `vpn`, `router`, `ingress`, `app-production`, or
+  `agent`.
 - `websocket` may be assigned through `node:new` and `node role:add` when the
   target node has no conflicting role assignments.
 - The role requires a Redis service on a node with the `database` role.
@@ -49,7 +50,7 @@ This design depends on the router addendum to the public-ingress plan:
   `https://websocket.orbit`.
 - Public clients never target a concrete websocket node. Public clients target
   app-owned public hosts such as `wss://ws.example.com`.
-- Public-ingress forwards public WebSocket hosts to router, not directly to
+- Ingress forwards public WebSocket hosts to router, not directly to
   websocket nodes.
 - Router owns websocket backend-pool selection.
 - Reverb binds only to the websocket node's WireGuard address.
@@ -65,14 +66,17 @@ This design depends on the router addendum to the public-ingress plan:
 
 ## Role Compatibility
 
-V1 role compatibility adds `websocket` as an exclusive workload role:
+V1 role compatibility adds `websocket` as a dev-services-compatible private
+workload role:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `websocket` | none | `gateway`, `vpn`, `router`, `public-ingress`, `app-development`, `app-production`, `database`, `agent` |
+| `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
 
-When merged with the router/public-ingress matrix, every other role must list
-`websocket` in its conflicts list.
+When merged with the router/ingress/S3 matrix, every other role except
+`app-development`, `database`, and `s3` must list `websocket` in its conflicts
+list. The `s3` role may co-locate with `websocket` on dev-services topology
+nodes.
 
 ## Role Settings
 
@@ -157,7 +161,7 @@ Public client subscription:
 ```text
 browser
   -> wss://ws.example.com
-  -> public-ingress
+  -> ingress
   -> router
   -> wss://ws-1.websocket.orbit:8080
   -> Reverb
@@ -246,7 +250,7 @@ VITE_REVERB_SCHEME=https
 ```
 
 Development or VPN-only usage may use `websocket.orbit` as the frontend host
-when no public-ingress route is enabled.
+when no ingress route is enabled.
 
 ## Commands
 
@@ -284,7 +288,7 @@ orbit app:websocket enable docs --host=ws.example.com
 ```
 
 The command creates or updates the app WebSocket binding, generates per-app
-credentials, registers public route intent when `public-ingress` exists, and
+credentials, registers public route intent when `ingress` exists, and
 registers router-side binding intent.
 
 ### `app:websocket credentials`
@@ -314,20 +318,20 @@ Router renders:
 
 - `websocket.orbit` service route;
 - backend-pool routes for active websocket nodes;
-- public-host relay intent received from public-ingress/app binding state;
+- public-host relay intent received from ingress/app binding state;
 - TLS trust configuration for websocket backend certificates;
 - WebSocket upgrade-compatible reverse proxy configuration.
 
 Router must not route WebSocket traffic to a direct node chosen by app config.
 Backend selection belongs to router.
 
-## Public Ingress Contract
+## Ingress Contract
 
-Public-ingress renders public WebSocket host routes such as `ws.example.com`.
+Ingress renders public WebSocket host routes such as `ws.example.com`.
 Those routes terminate public TLS and forward to router over the private
 WireGuard path.
 
-Public-ingress does not own websocket backend pools and does not route directly
+Ingress does not own websocket backend pools and does not route directly
 to websocket nodes.
 
 ## Doctor And Drift
@@ -352,7 +356,7 @@ health until a dedicated websocket family is justified:
 - Reverb scaling enabled;
 - router has `websocket.orbit` route;
 - router backend pool includes active websocket node;
-- public-ingress has public WebSocket host routes for enabled bindings.
+- ingress has public WebSocket host routes for enabled bindings.
 
 ## Failure Modes
 
@@ -363,7 +367,7 @@ health until a dedicated websocket family is justified:
 | Selected node lacks `database` role | Websocket role assignment fails validation. |
 | Redis down | Websocket role converges, but doctor reports runtime unhealthy. |
 | Backend certificate mismatch | Router route is unhealthy and doctor reports TLS drift. |
-| No public-ingress role | Private `websocket.orbit` may work; public host enable fails. |
+| No ingress role | Private `websocket.orbit` may work; public host enable fails. |
 | No active websocket node | `app:websocket enable` fails with `required_role=websocket`. |
 | Reverb binds public interface | Doctor reports security drift and restore re-renders private bind config. |
 
@@ -378,7 +382,7 @@ Unit and feature coverage should include:
 - role convergence rendering private WireGuard bind configuration;
 - role convergence rendering TLS backend certificate intent;
 - router rendering `websocket.orbit` to a websocket backend pool;
-- public-ingress forwarding app public WebSocket hosts to router;
+- ingress forwarding app public WebSocket hosts to router;
 - app WebSocket binding generating per-app credentials;
 - credentials not shared across apps;
 - Redis-backed Reverb scaling config present for one websocket backend;
@@ -388,7 +392,7 @@ Unit and feature coverage should include:
 E2E coverage should include:
 
 ```text
-browser/client connects to wss://ws.example.com through public-ingress
+browser/client connects to wss://ws.example.com through ingress
 app publishes through https://websocket.orbit
 client receives the event
 ```

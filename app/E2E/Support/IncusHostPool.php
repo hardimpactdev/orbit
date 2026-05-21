@@ -16,6 +16,13 @@ final readonly class IncusHostPool
         $hostsEnv = getenv('ORBIT_E2E_INCUS_HOSTS');
 
         if (! is_string($hostsEnv) || $hostsEnv === '') {
+            if ($config->incusHostSlots !== []) {
+                return new self(array_map(
+                    fn (string $host): IncusHost => new IncusHost($config->forHost($host)),
+                    array_keys($config->incusHostSlots),
+                ));
+            }
+
             return new self([new IncusHost($config)]);
         }
 
@@ -33,20 +40,33 @@ final readonly class IncusHostPool
     }
 
     /**
+     * @param  list<string>|null  $hostNames
      * @return array{host: IncusHost|null, reason: string|null}
      */
-    public function availabilityFor(E2ETopologyKind $kind): array
+    public function availabilityFor(E2ETopologyKind $kind, ?array $hostNames = null, bool $checkCapacity = true): array
     {
         $requiredSlots = count(IncusTopologyTemplate::rolesFor($kind));
+        $hostLookup = $hostNames === null ? null : array_fill_keys($hostNames, true);
         $reasons = [];
 
         foreach ($this->hosts as $host) {
             $hostName = $host->config->host;
 
+            if ($hostLookup !== null && ! isset($hostLookup[$hostName])) {
+                continue;
+            }
+
             if (! IncusTopologyTemplate::availableOn($host, $kind)) {
                 $reasons[] = "{$hostName} is missing prepared templates or snapshots";
 
                 continue;
+            }
+
+            if (! $checkCapacity) {
+                return [
+                    'host' => $host,
+                    'reason' => null,
+                ];
             }
 
             $running = $host->runningE2EInstanceCount();
@@ -64,8 +84,20 @@ final readonly class IncusHostPool
 
         return [
             'host' => null,
-            'reason' => $reasons === [] ? 'no Incus hosts configured' : implode('; ', $reasons),
+            'reason' => $reasons === [] ? $this->emptyReason($hostNames) : implode('; ', $reasons),
         ];
+    }
+
+    /**
+     * @param  list<string>|null  $hostNames
+     */
+    private function emptyReason(?array $hostNames): string
+    {
+        if ($hostNames === null) {
+            return 'no Incus hosts configured';
+        }
+
+        return 'no matching Incus hosts configured for '.implode(', ', $hostNames);
     }
 
     public function first(): ?IncusHost

@@ -26,7 +26,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     public function availability(E2ETopologyKind $kind): ProviderAvailability
     {
-        $selection = $this->selectHost($kind);
+        $selection = $this->selectHost(
+            $kind,
+            checkCapacity: $this->config->dockerHostSlots === [],
+        );
 
         if ($selection['host'] !== null) {
             return ProviderAvailability::available("docker prepared topology {$kind->value} is available on {$selection['host']->host}");
@@ -49,7 +52,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         }
 
         $network = "{$this->config->instancePrefix}-{$runId}";
-        $networkPlan = DockerTopologyNetworkPlan::fromEnvironment();
+        $networkPlan = DockerTopologyNetworkPlan::fromEnvironment($runId);
         $topologyMode = $this->topologyMode();
         $roles = $this->rolesFor($kind);
         $instances = [];
@@ -135,22 +138,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         $mode ??= $this->topologyMode();
 
-        return [
-            $this->imageNameFor($kind, $role, $mode),
-            ...array_map(
-                fn (string $value): string => $this->imageNameForValue($value, $role, $mode),
-                $kind->deprecatedValues(),
-            ),
-        ];
-    }
-
-    private function imageNameForValue(string $kind, string $role, string $mode): string
-    {
-        if ($mode === 'legacy-retarget') {
-            return "orbit-e2e-topology:{$kind}-{$role}-current";
-        }
-
-        return "orbit-e2e-topology:{$kind}-{$role}-{$mode}-current";
+        return [$this->imageNameFor($kind, $role, $mode)];
     }
 
     /**
@@ -175,7 +163,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      * @param  list<string>|null  $hostNames
      * @return array{host: DockerHost|null, failures: list<string>, image_names?: array<string, string>}
      */
-    private function selectHost(E2ETopologyKind $kind, ?array $hostNames = null): array
+    private function selectHost(E2ETopologyKind $kind, ?array $hostNames = null, bool $checkCapacity = true): array
     {
         $failures = [];
         $requestedContainers = count($this->rolesFor($kind));
@@ -207,6 +195,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 $failures[] = "{$hostName}: docker prepared image {$missingImage} is not available";
 
                 continue;
+            }
+
+            if (! $checkCapacity) {
+                return ['host' => $host, 'failures' => $failures, 'image_names' => $imageNames];
             }
 
             $runningContainers = $this->runningE2EContainerCount($host);

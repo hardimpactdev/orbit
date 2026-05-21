@@ -17,10 +17,10 @@ afterEach(function (): void {
 
 it('has correct enum string values', function (): void {
     expect(E2ETopologyKind::Operator->value)->toBe('operator')
-        ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator-gateway')
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator-gateway-appdev')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator-gateway-appdev-appprod')
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress')?->value)->toBe('operator-gateway-appprod-ingress')
+        ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator_gateway')
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
+        ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress')?->value)->toBe('operator_gateway_app-prod_ingress')
         ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 });

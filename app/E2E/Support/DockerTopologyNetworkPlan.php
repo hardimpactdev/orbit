@@ -17,7 +17,7 @@ final readonly class DockerTopologyNetworkPlan
         }
     }
 
-    public static function fromEnvironment(): self
+    public static function fromEnvironment(?string $runId = null): self
     {
         $token = getenv('TEST_TOKEN');
 
@@ -29,6 +29,14 @@ final readonly class DockerTopologyNetworkPlan
 
         if ($worker < 1 || $worker > 190) {
             throw new RuntimeException("Unsupported parallel test token [{$token}] for Docker E2E subnet allocation.");
+        }
+
+        if ($runId !== null && $runId !== '') {
+            if ($worker > 14) {
+                throw new RuntimeException("Unsupported parallel test token [{$token}] for run-scoped Docker E2E subnet allocation.");
+            }
+
+            return new self(20 + (($worker - 1) * 16) + ((int) sprintf('%u', crc32($runId)) % 16));
         }
 
         return new self(60 + $worker);

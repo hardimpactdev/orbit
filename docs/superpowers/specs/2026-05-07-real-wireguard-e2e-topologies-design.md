@@ -24,8 +24,8 @@ gateway host joins that VPN as a normal peer.
 Any topology containing a gateway is Incus-only and must bring up a real
 `wg-orbit` interface on every participating VM. Docker topology remains useful
 only for tests that do not involve gateway semantics. Provider selection must
-reject Docker for `operator-gateway`, `operator-gateway-appdev`, and
-`operator-gateway-appdev-appprod`. Legacy `control-*` topology selectors remain
+reject Docker for `operator_gateway`, `operator_gateway_app-dev`, and
+`operator_gateway_app-dev_app-prod`. Legacy `control-*` topology selectors remain
 deprecated aliases only while the E2E migration window is open.
 
 Prepared topology creation may be slow. The work happens rarely and the

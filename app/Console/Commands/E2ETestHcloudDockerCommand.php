@@ -20,7 +20,7 @@ use RuntimeException;
     {--location=nbg1 : hcloud location}
     {--resource-slots= : Resource slots as location/server-type/image:slots}
     {--prefix=orbit-e2e : Resource name prefix}
-    {--kind=operator-gateway-appdev-appprod : Docker topology kind to prepare}
+    {--kind=operator_gateway_app-dev_app-prod : Docker topology kind to prepare}
     {--processes=2 : Pest worker count for composer test:e2e:docker}
     {--timeout=3600 : Timeout in seconds for long hcloud Docker E2E steps}
     {--json : Output as JSON}')]
@@ -34,7 +34,7 @@ class E2ETestHcloudDockerCommand extends Command
         $kind = E2ETopologyKind::tryFromInput((string) $this->option('kind'));
 
         if ($kind === null) {
-            return $this->failCommand('Invalid --kind. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.');
+            return $this->failCommand('Invalid --kind. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod. Legacy control topology names are accepted as aliases.');
         }
 
         $processes = (int) $this->option('processes');

@@ -68,11 +68,11 @@ Expected topology rename:
 | Old | New |
 | --- | --- |
 | `control` | `operator` |
-| `control-gateway` | `operator-gateway` |
-| `control-gateway-dev` | `operator-gateway-appdev` |
-| `control-gateway-dev-prod` | `operator-gateway-appdev-appprod` |
-| `e2e-feature-control-gateway-dev` | `e2e-feature-operator-gateway-appdev` |
-| `e2e-feature-control-gateway-dev-prod` | `e2e-feature-operator-gateway-appdev-appprod` |
+| `control-gateway` | `operator_gateway` |
+| `control-gateway-dev` | `operator_gateway_app-dev` |
+| `control-gateway-dev-prod` | `operator_gateway_app-dev_app-prod` |
+| `e2e-feature-control-gateway-dev` | `e2e-feature-operator_gateway_app-dev` |
+| `e2e-feature-control-gateway-dev-prod` | `e2e-feature-operator_gateway_app-dev_app-prod` |
 
 Keep old group names and enum values as deprecated aliases for one migration window if CI or local scripts still select them.
 

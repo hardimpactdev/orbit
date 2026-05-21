@@ -48,7 +48,7 @@ it('ingests authenticated crashed events from an app node through the gateway ap
         processCrashEventCleanup($topology, $app, $eventId);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function processCrashEventSeedIntent(E2ETopologyHarness $topology, string $app, string $path, string $process): void
 {

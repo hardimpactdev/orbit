@@ -18,7 +18,7 @@ afterEach(function (): void {
 it('documents docker topology image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator-gateway-appdev-appprod'])
+    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-dev_app-prod'])
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-control-dns-alias-current')
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-gateway-dns-alias-current')
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-dev-dns-alias-current')
@@ -32,7 +32,7 @@ it('documents docker topology image preparation without force', function (): voi
 it('documents ingress docker topology image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator-gateway-appprod-ingress'])
+    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-control-dns-alias-current')
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-gateway-dns-alias-current')
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-prod-dns-alias-current')
@@ -63,7 +63,7 @@ it('outputs json for dry run with default kind', function (): void {
             'data' => [
                 'provider' => 'docker',
                 'dry_run' => true,
-                'kind' => 'operator-gateway-appdev-appprod',
+                'kind' => 'operator_gateway_app-dev_app-prod',
                 'topology_mode' => 'dns-alias',
                 'images' => [
                     ['role' => 'control', 'image' => 'orbit-e2e-topology:operator_gateway_app-dev_app-prod-control-dns-alias-current'],
@@ -82,7 +82,7 @@ it('outputs json for dry run with default kind', function (): void {
 
 it('documents dns-alias image names in dry run output', function (): void {
     $this->artisan('e2e:prepare-docker-topology', [
-        'kind' => 'operator-gateway',
+        'kind' => 'operator_gateway',
         '--topology-mode' => 'dns-alias',
     ])
         ->expectsOutputToContain('orbit-e2e-topology:operator_gateway-control-dns-alias-current')

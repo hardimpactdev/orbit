@@ -194,7 +194,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
         $topology->reset();
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');
 
 /**
  * @param  array<string, mixed>  $payload

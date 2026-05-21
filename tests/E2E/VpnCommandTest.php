@@ -257,4 +257,4 @@ it('administers VPN clients through gateway execution and control SSH forwarding
         $topology->ssh('gateway', 'rm -f '.escapeshellarg($backendPath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

@@ -12,20 +12,20 @@ use App\E2E\Support\E2ETopologyLease;
 use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 
-pest()->group('e2e-topology-contract', 'e2e-topology-contract-operator-gateway-appdev');
+pest()->group('e2e-topology-contract', 'e2e-topology-contract-operator_gateway_app-dev');
 
 it('uses operator topology names while preserving control aliases', function (): void {
     expect(E2ETopologyKind::Operator->value)->toBe('operator')
-        ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator-gateway')
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator-gateway-appdev')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator-gateway-appdev-appprod')
+        ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator_gateway')
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
         ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
         ->and(E2ETopologyKind::ControlGateway)->toBe(E2ETopologyKind::OperatorGateway)
         ->and(E2ETopologyKind::ControlGatewayDev)->toBe(E2ETopologyKind::OperatorGatewayAppdev)
         ->and(E2ETopologyKind::ControlGatewayDevProd)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())->toBe('e2e-feature-operator-gateway-appdev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())->toContain('e2e-feature-control-gateway-dev');
 });
 

@@ -31,7 +31,7 @@ it('reconfigures a managed tool on a node', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function toolReconfigureSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

@@ -34,7 +34,7 @@ it('satisfies the prepared control-gateway topology contract', function (): void
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator-gateway', 'e2e-topology-contract-control-gateway');
+})->group('e2e-topology-contract-operator_gateway', 'e2e-topology-contract-control-gateway');
 
 it('satisfies the prepared control-gateway-dev topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -45,7 +45,7 @@ it('satisfies the prepared control-gateway-dev topology contract', function (): 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator-gateway-appdev', 'e2e-topology-contract-control-gateway-dev');
+})->group('e2e-topology-contract-operator_gateway_app-dev', 'e2e-topology-contract-control-gateway-dev');
 
 it('satisfies the prepared control-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -56,7 +56,7 @@ it('satisfies the prepared control-gateway-dev-prod topology contract', function
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator-gateway-appdev-appprod', 'e2e-topology-contract-control-gateway-dev-prod');
+})->group('e2e-topology-contract-operator_gateway_app-dev_app-prod', 'e2e-topology-contract-control-gateway-dev-prod');
 
 function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
 {

@@ -38,7 +38,7 @@ it('reports missing unattended-upgrades posture on an Incus app node from the ga
         nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 it('reports reboot-required update posture without attempting an automatic reboot', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -73,7 +73,7 @@ it('reports reboot-required update posture without attempting an automatic reboo
         $topology->ssh('dev', 'sudo rm -f /var/run/reboot-required /var/run/reboot-required.pkgs', timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function nodeUpdatesDoctorPrepareGatewayRecord(E2ETopologyHarness $topology): void
 {

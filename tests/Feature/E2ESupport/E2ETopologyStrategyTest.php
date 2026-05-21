@@ -27,7 +27,7 @@ afterEach(function () use (&$envBackup): void {
 it('minimal strategy: requested kind equals resolved kind for all prepared topology kinds', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=minimal');
     $factory = E2ETopologyFactory::fromEnvironment();
-    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+    $ingressKind = E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress');
 
     expect($ingressKind)->not->toBeNull();
 
@@ -69,7 +69,7 @@ it('superset strategy: ControlGatewayDevProd resolves to ControlGatewayDevProd',
 it('superset strategy keeps ingress topology exact', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
     $factory = E2ETopologyFactory::fromEnvironment();
-    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+    $ingressKind = E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress');
 
     expect($ingressKind)->not->toBeNull()
         ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
@@ -78,7 +78,7 @@ it('superset strategy keeps ingress topology exact', function (): void {
 it('unknown strategy falls back to minimal behavior', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=foobar');
     $factory = E2ETopologyFactory::fromEnvironment();
-    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+    $ingressKind = E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress');
 
     expect($ingressKind)->not->toBeNull();
 

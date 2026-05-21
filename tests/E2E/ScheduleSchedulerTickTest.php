@@ -42,7 +42,7 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, string $scheduleKey): void
 {

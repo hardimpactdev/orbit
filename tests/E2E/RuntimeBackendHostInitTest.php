@@ -16,4 +16,4 @@ it('verifies the VM runtime backend is managed by host init', function (): void 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');

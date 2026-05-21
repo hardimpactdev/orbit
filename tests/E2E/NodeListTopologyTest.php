@@ -18,7 +18,7 @@ it('lists nodes from a prepared control and gateway topology', function (): void
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
 
 it('lists nodes from a prepared control, gateway, and dev topology', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -35,7 +35,7 @@ it('lists nodes from a prepared control, gateway, and dev topology', function ()
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 it('lists nodes from a prepared full topology', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod)
@@ -53,4 +53,4 @@ it('lists nodes from a prepared full topology', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');

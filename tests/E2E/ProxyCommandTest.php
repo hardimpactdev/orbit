@@ -85,7 +85,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
         );
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function proxyCommandPrepareAppNode(E2ETopologyHarness $topology, string $checkout): void
 {

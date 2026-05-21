@@ -35,7 +35,7 @@ it('stops a managed system service tool on an app node from the gateway', functi
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function toolStopSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

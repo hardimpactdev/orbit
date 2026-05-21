@@ -32,7 +32,7 @@ it('exports docker images from the build host and imports them on target hosts',
 
     $result = $distributor->distribute([
         ['role' => 'runtime', 'image' => 'orbit-e2e-topology-runtime:current'],
-        ['role' => 'gateway', 'image' => 'orbit-e2e-topology-operator-gateway-gateway-current'],
+        ['role' => 'gateway', 'image' => 'orbit-e2e-topology-operator_gateway-gateway-current'],
     ], ['sidecar1', 'sidecar2']);
 
     expect($result)->toBe([
@@ -45,7 +45,7 @@ it('exports docker images from the build host and imports them on target hosts',
         [
             'host' => 'sidecar1',
             'role' => 'gateway',
-            'image' => 'orbit-e2e-topology-operator-gateway-gateway-current',
+            'image' => 'orbit-e2e-topology-operator_gateway-gateway-current',
             'action' => 'imported',
         ],
         [
@@ -57,13 +57,13 @@ it('exports docker images from the build host and imports them on target hosts',
         [
             'host' => 'sidecar2',
             'role' => 'gateway',
-            'image' => 'orbit-e2e-topology-operator-gateway-gateway-current',
+            'image' => 'orbit-e2e-topology-operator_gateway-gateway-current',
             'action' => 'imported',
         ],
     ]);
 
     expect(collect($commands)->contains(fn (string $command): bool => str_contains($command, 'ssh') && str_contains($command, 'beast') && str_contains($command, 'docker save')))->toBeTrue()
-        ->and(collect($commands)->contains(fn (string $command): bool => str_contains($command, 'docker save') && str_contains($command, 'orbit-e2e-topology-runtime:current') && str_contains($command, 'orbit-e2e-topology-operator-gateway-gateway-current')))->toBeTrue()
+        ->and(collect($commands)->contains(fn (string $command): bool => str_contains($command, 'docker save') && str_contains($command, 'orbit-e2e-topology-runtime:current') && str_contains($command, 'orbit-e2e-topology-operator_gateway-gateway-current')))->toBeTrue()
         ->and(collect($commands)->contains(fn (string $command): bool => str_contains($command, 'scp') && str_contains($command, 'beast:') && str_contains($command, 'images.tar.gz')))->toBeTrue()
         ->and(collect($commands)->contains(fn (string $command): bool => str_contains($command, 'scp') && str_contains($command, 'sidecar1:') && str_contains($command, 'images.tar.gz')))->toBeTrue()
         ->and(collect($commands)->contains(fn (string $command): bool => str_contains($command, 'ssh') && str_contains($command, 'sidecar2') && str_contains($command, 'docker load')))->toBeTrue()

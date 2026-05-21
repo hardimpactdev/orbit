@@ -129,7 +129,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         processCommandCleanup($topology, $app, $appPath, $runtimeUnit);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
 function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string $path): void
 {
