@@ -97,8 +97,10 @@ Input mode behavior is split out of the canonical command contract:
 - [`5.1_node-new_input-mode_interactive.md`](5.1_node-new_input-mode_interactive.md)
 - [`5.2_node-new_input-mode_non-interactive.md`](5.2_node-new_input-mode_non-interactive.md)
 
-Role-specific companion behavior is split out into
-[`4_node-new_on-app-role.md`](4_node-new_on-app-role.md).
+Caller-path behavior is split out into:
+
+- [`2_node-new_on-client.md`](2_node-new_on-client.md)
+- [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md)
 
 ## Behavior Contract
 
