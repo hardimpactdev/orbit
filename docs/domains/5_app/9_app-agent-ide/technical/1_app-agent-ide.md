@@ -8,9 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-role callers are denied by the gateway with
-  `error.code=caller_role_not_allowed` before prompts or side effects.
-- The authenticated peer is authorized to manage the app.
+- The authenticated peer has `app:agent` on the app's owning node.
 - The target app exists in gateway configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
@@ -173,7 +171,7 @@ agent-IDE override attempts.
 | --- | --- |
 | Type | `api:POST /apps/{app}/agent-ide` |
 | Effect | `write` |
-| Subject | `App` when the app is resolved and visible; `none` for not-found, caller-role, authorization, or adapter validation failures before the target app can be logged. |
+| Subject | `App` when the app is resolved and visible; `none` for not-found, authorization, or adapter validation failures before the target app can be logged. |
 | Properties | `target_app` (string), `agent_ide` (string or null effective adapter after the write), and `action` (`set`, `cleared`, `converged`, or null before a write completes). No adapter credentials, workspace paths, raw cleanup output, or secrets. |
 | Description | derived, for example `"App docs agent IDE set to opencode"` or `"App docs agent IDE already set to opencode"`. |
 
@@ -185,7 +183,7 @@ Primary test owners:
 | --- | --- |
 | `tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php` | Action contract: setting/clearing adapter, `inherit` semantics, adapter validation, and workspace cleanup side effects. |
 | `tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php` | Command contract: signature, input resolution, destructive consent logic, success/failure reporting, JSON alignment, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Feature/Commands/Apps/AppAgentIdeCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-role caller denial before prompts or side effects, and forwarded caller authorization failure. |
+| `tests/Feature/Http/Api/AppAgentIdeControllerTest.php` | Gateway API authorization with `app:agent`, adapter validation, destructive cleanup consent, cleanup execution, and activity logging. |
 
 Input-mode-specific test mapping lives in:
 

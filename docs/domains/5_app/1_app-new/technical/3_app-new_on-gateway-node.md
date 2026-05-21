@@ -8,8 +8,8 @@ is invoked from a peer the gateway identifies as a gateway node.
 ## Behavior
 
 - **Allowed:** The gateway identifies the caller through its WireGuard peer
-  identity. When the peer's gateway-owned node role is `gateway`, the gateway
-  authorizes the request just like an operator caller.
+  identity. When the peer's gateway-owned node role is `gateway`, gateway
+  implicit authority authorizes the request.
 - **Apply:** The gateway writes app configuration to its local SQLite database
   and applies app-role artifacts over SSH to the target node via
   `RemoteShell`. The observable result is identical to the operator-caller path.

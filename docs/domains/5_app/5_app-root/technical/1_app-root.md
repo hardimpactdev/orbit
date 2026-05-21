@@ -16,8 +16,7 @@ command that writes production runtime state.
 **Prerequisites:**
 - The application record must exist in the gateway database.
 - The owning node must be reachable from the gateway via SSH.
-- The caller must be authorized to manage the target application and its node.
-- App-role callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
+- The caller has `app:root` on the app's owning node.
 
 ## Signature
 
@@ -123,7 +122,6 @@ to `success.meta.warnings[]`.
 ### Errors
 
 - `app.not_found`: The specified application could not be resolved.
-- `caller_role_not_allowed`: The gateway identifies the caller as an app-role peer.
 - `app.invalid_root`: `root` failed gateway-side string validation (resolves
   outside the app path, is empty, or is absolute).
   `error.meta.field=root`, `error.meta.root`, `error.meta.resolved_path`,
@@ -175,7 +173,7 @@ document-root updates.
 | --- | --- |
 | Type | `api:POST /apps/{app}/root` |
 | Effect | `write` |
-| Subject | `App` when the app is resolved and visible; `none` for not-found, validation, caller-role, or authorization failures before the target app can be logged. |
+| Subject | `App` when the app is resolved and visible; `none` for not-found, validation, or authorization failures before the target app can be logged. |
 | Properties | `root` (string or null), the requested document root value after static request normalization. No raw shell command text, node-side output, or secrets. |
 | Description | derived |
 

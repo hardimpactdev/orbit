@@ -1019,7 +1019,7 @@ it('reports app docs that use the old php option contract', function (): void {
         ]);
 });
 
-it('reports app write commands without app-node denial contracts', function (): void {
+it('reports app write commands without grant authorization contracts', function (): void {
     writeOrbitAppCommandDocsFamily($this->docsRoot);
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1032,9 +1032,8 @@ it('reports app write commands without app-node denial contracts', function (): 
 
     expect($exitCode)->toBe(1)
         ->and(array_column($matchingFindings, 'message'))->toContain(
-            'App write commands must document app-role denial with error.code=caller_role_not_allowed.',
-            'App write commands must explicitly state that app-role callers are denied.',
-            'App-role denial must be documented as happening before prompts or side effects.',
+            'App write commands must document the required `app:new` grant permission.',
+            'App write commands must use authorization_failed for missing app write grants.',
         );
 });
 

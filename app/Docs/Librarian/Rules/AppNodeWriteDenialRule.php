@@ -43,18 +43,24 @@ final readonly class AppNodeWriteDenialRule implements GroupedRule
                     continue;
                 }
 
+                $permission = $this->permissionForCommand($commandName);
+
+                if ($permission === null) {
+                    continue;
+                }
+
                 $contractContents = $this->combinedContractContents($commandDirectory);
 
-                if (! str_contains($contractContents, 'caller_role_not_allowed')) {
-                    $findings[] = $this->finding($canonicalFile, 'App write commands must document app-role denial with error.code=caller_role_not_allowed.');
+                if (str_contains($contractContents, 'caller_role_not_allowed')) {
+                    $findings[] = $this->finding($canonicalFile, 'App write commands must not document caller_role_not_allowed as app write authorization.');
                 }
 
-                if (! $this->documentsAppRoleDenial($contractContents)) {
-                    $findings[] = $this->finding($canonicalFile, 'App write commands must explicitly state that app-role callers are denied.');
+                if (! str_contains($contractContents, "`{$permission}`")) {
+                    $findings[] = $this->finding($canonicalFile, "App write commands must document the required `{$permission}` grant permission.");
                 }
 
-                if (! $this->documentsPreSideEffectDenial($contractContents)) {
-                    $findings[] = $this->finding($canonicalFile, 'App-role denial must be documented as happening before prompts or side effects.');
+                if (! str_contains($contractContents, 'authorization_failed')) {
+                    $findings[] = $this->finding($canonicalFile, 'App write commands must use authorization_failed for missing app write grants.');
                 }
             }
         }
@@ -86,21 +92,17 @@ final readonly class AppNodeWriteDenialRule implements GroupedRule
         return strtolower(implode("\n", $contents));
     }
 
-    private function documentsAppRoleDenial(string $contents): bool
+    private function permissionForCommand(string $commandName): ?string
     {
-        return str_contains($contents, 'app-role callers are denied')
-            || str_contains($contents, 'app callers are denied')
-            || str_contains($contents, '| `app` | denied')
-            || str_contains($contents, 'deny `app` nodes')
-            || str_contains($contents, 'caller role is `app`');
-    }
-
-    private function documentsPreSideEffectDenial(string $contents): bool
-    {
-        return (str_contains($contents, 'before prompts') && str_contains($contents, 'side effects'))
-            || str_contains($contents, 'before prompts or side effects')
-            || str_contains($contents, 'before prompts, forwarding')
-            || str_contains($contents, 'before side effects');
+        return match ($commandName) {
+            'app-new' => 'app:new',
+            'app-register' => 'app:register',
+            'app-root' => 'app:root',
+            'app-remove' => 'app:remove',
+            'app-prune' => 'app:prune',
+            'app-agent-ide' => 'app:agent',
+            default => null,
+        };
     }
 
     private function finding(string $path, string $message): Finding

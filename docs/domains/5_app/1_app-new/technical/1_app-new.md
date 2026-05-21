@@ -6,13 +6,10 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is an operator caller authorized to create apps on the
-  target node, or the gateway itself.
+- The current node identity has `app:new` on the target app node, or is the
+  gateway itself.
 - The gateway can reach the target node over SSH.
 - The resolved target node is an active `app` node.
-- App-role callers are denied by the gateway with
-  `error.code=caller_role_not_allowed` before prompts or side effects.
-  Database-only hosted-role callers are denied the same way.
 
 [Back to public page](../app-new.md)
 
@@ -142,9 +139,9 @@ If `--domain` is supplied:
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Caller Role Not Allowed:** Fails before registry reads, prompts, SSH, or
-  app writes if the gateway-known caller is neither an operator caller nor the
-  gateway itself.
+- **Authorization:** Fails with `error.code=authorization_failed` before
+  registry reads, prompts, SSH, or app writes when the caller lacks `app:new`
+  on the target app node.
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
 - **Collision:** Fails if the app name is already registered in the gateway
@@ -200,8 +197,7 @@ slice.
 | `tests/E2E/Ephemeral/AppNewProductionTest.php` | End-to-end creation of a production app with domain activation. |
 | `tests/E2E/Ephemeral/AppNewRepoTest.php` | End-to-end creation from a git repository. |
 
-Role-specific behavior and test mapping live in:
+Context-specific behavior and test mapping live in:
 
 - [`2_app-new_on-client.md`](2_app-new_on-client.md)
 - [`3_app-new_on-gateway-node.md`](3_app-new_on-gateway-node.md)
-- [`4_app-new_on-app-role.md`](4_app-new_on-app-role.md)
