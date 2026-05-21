@@ -73,7 +73,7 @@ it('allows control caller', function (): void {
         ->assertSuccessful();
 });
 
-it('defaults to control when no local node role is set', function (): void {
+it('accepts gateway identity payloads that still include legacy role keys', function (): void {
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
@@ -90,7 +90,7 @@ it('defaults to control when no local node role is set', function (): void {
         ->assertSuccessful();
 });
 
-it('rejects gateway-local callers before input prompts or side effects', function (): void {
+it('fails gateway-local hosts before input prompts or side effects', function (): void {
     config(['orbit.is_gateway' => true]);
 
     $fakeInstaller = new class implements TrustStoreInstaller
@@ -117,8 +117,8 @@ it('rejects gateway-local callers before input prompts or side effects', functio
     $payload = json_decode($output->fetch(), true);
 
     expect($exitCode)->toBe(1)
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-        ->and($payload['error']['meta'])->toBe(['caller_role' => 'gateway'])
-        ->and($payload['error']['message'])->toBe('This command may only be run from an operator node.')
+        ->and($payload['error']['code'])->toBe('validation_failed')
+        ->and($payload['error']['meta'])->toBe(['reason' => 'not_supported_on_gateway'])
+        ->and($payload['error']['message'])->toBe('This command is not supported on gateway nodes.')
         ->and($fakeInstaller->trustCalls)->toBe(0);
 });

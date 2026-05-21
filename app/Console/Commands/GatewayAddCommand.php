@@ -95,14 +95,12 @@ class GatewayAddCommand extends Command implements Loggable
 
     private function executeGatewayAdd(FetchGatewayRootCa $fetch, WireGuardGatewayAddressResolver $gatewayAddressResolver): int
     {
-        // 1. Resolve caller role before any input or side effects
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
-
-        if ($callerRole !== 'control') {
+        // 1. Gateway nodes do not onboard themselves through the client join flow.
+        if ((bool) config('orbit.is_gateway', false)) {
             return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from an operator node.',
-                meta: ['caller_role' => $callerRole],
+                code: 'validation_failed',
+                message: 'This command is not supported on gateway nodes.',
+                meta: ['reason' => 'not_supported_on_gateway'],
             );
         }
 
@@ -290,8 +288,7 @@ class GatewayAddCommand extends Command implements Loggable
         if (! $this->wantsJson()) {
             $gatewayName = $verifyResult['gateway_name'] ?? 'gateway';
             $localNodeName = $verifyResult['local_node_name'] ?? 'control';
-            $localNodeRole = $verifyResult['local_node_role'] ?? 'control';
-            $footer = "Joined '{$gatewayName}' as '{$localNodeName}' ({$localNodeRole})";
+            $footer = "Joined '{$gatewayName}' as '{$localNodeName}'";
             $this->finishStepTree("{$footer}.");
             $this->progressTreeOpen = false;
         }
@@ -408,7 +405,7 @@ class GatewayAddCommand extends Command implements Loggable
         if ($status === 403) {
             return [
                 'code' => 'node.identity_unknown',
-                'message' => "This peer is not registered on the gateway at {$gatewayIp}. Ask your admin to run `orbit node:new --role=control <name>` on the gateway first, then retry.",
+                'message' => "This peer is not registered on the gateway at {$gatewayIp}. Ask your admin to register this machine on the gateway, then retry.",
                 'meta' => ['gateway_ip' => $gatewayIp],
             ];
         }
@@ -444,11 +441,9 @@ class GatewayAddCommand extends Command implements Loggable
         return [
             'gateway_name' => (string) ($gateway['name'] ?? 'gateway'),
             'gateway_ip' => $gatewayIp,
-            'gateway_role' => (string) ($gateway['role'] ?? 'gateway'),
             'gateway_status' => (string) ($gateway['status'] ?? 'active'),
             'gateway_platform' => (string) ($gateway['platform'] ?? 'unknown'),
             'local_node_name' => (string) ($self['name'] ?? 'control'),
-            'local_node_role' => (string) ($self['role'] ?? 'control'),
             'local_node_status' => (string) ($self['status'] ?? 'active'),
             'local_node_platform' => (string) ($self['platform'] ?? 'unknown'),
             'local_node_wg_ip' => (string) ($self['wg_ip'] ?? $self['addresses']['wireguard'] ?? ''),
@@ -483,7 +478,6 @@ class GatewayAddCommand extends Command implements Loggable
             ],
             'gateway' => [
                 'name' => $verifyResult['gateway_name'],
-                'role' => $verifyResult['gateway_role'],
                 'status' => $verifyResult['gateway_status'],
                 'platform' => $verifyResult['gateway_platform'],
                 'addresses' => [
@@ -492,7 +486,6 @@ class GatewayAddCommand extends Command implements Loggable
             ],
             'local_node' => [
                 'name' => $verifyResult['local_node_name'],
-                'role' => $verifyResult['local_node_role'],
                 'status' => $verifyResult['local_node_status'],
                 'platform' => $verifyResult['local_node_platform'],
                 'addresses' => [

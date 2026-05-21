@@ -59,6 +59,9 @@ it('derives the gateway IP and joins a provisioned gateway from a provisioned co
             ->and($payload['success']['data']['local_onboarding']['gateway_config'])->toBe('stored')
             ->and($payload['success']['data']['local_onboarding']['gateway_api'])->toBe('verified');
 
+        expect($payload['success']['data']['gateway'])->not->toHaveKey('role')
+            ->and($payload['success']['data']['local_node'])->not->toHaveKey('role');
+
         $settings = gatewayAddE2EControlSettings($control, $config->controlUser, $key);
 
         expect($settings['gateway_url'])->toBe('https://10.6.0.2')
@@ -108,6 +111,9 @@ it('derives the gateway IP and joins a provisioned gateway from a provisioned co
             ->and($rerunPayload['success']['data']['local_onboarding']['gateway_api'])->toBe('verified')
             ->and($rerunSettings)->toBe($settings)
             ->and(trim($rerunLocalNodeMirrorCount->output()))->toBe('0');
+
+        expect($rerunPayload['success']['data']['gateway'])->not->toHaveKey('role')
+            ->and($rerunPayload['success']['data']['local_node'])->not->toHaveKey('role');
 
         $passed = true;
     } finally {

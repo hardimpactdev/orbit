@@ -132,17 +132,20 @@ it('emits added success envelope', function (): void {
 
     $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
 
-    expect($output['success']['data']['result']['action'])->toBe('added')
-        ->and($output['success']['data']['gateway']['name'])->toBe('gateway-1')
-        ->and($output['success']['data']['gateway']['role'])->toBe('gateway')
-        ->and($output['success']['data']['gateway']['status'])->toBe('active')
-        ->and($output['success']['data']['gateway']['addresses']['wireguard'])->toBe('10.6.0.2')
-        ->and($output['success']['data']['local_node']['name'])->toBe('control-1')
-        ->and($output['success']['data']['local_node']['role'])->toBe('control')
-        ->and($output['success']['data']['local_node']['status'])->toBe('active')
-        ->and($output['success']['data']['local_onboarding']['gateway_trust'])->toBe('trusted')
-        ->and($output['success']['data']['local_onboarding']['gateway_config'])->toBe('stored')
-        ->and($output['success']['data']['local_onboarding']['gateway_api'])->toBe('verified');
+    $data = $output['success']['data'];
+
+    expect($data['result']['action'])->toBe('added')
+        ->and($data['gateway']['name'])->toBe('gateway-1')
+        ->and($data['gateway']['status'])->toBe('active')
+        ->and($data['gateway']['addresses']['wireguard'])->toBe('10.6.0.2')
+        ->and($data['local_node']['name'])->toBe('control-1')
+        ->and($data['local_node']['status'])->toBe('active')
+        ->and($data['local_onboarding']['gateway_trust'])->toBe('trusted')
+        ->and($data['local_onboarding']['gateway_config'])->toBe('stored')
+        ->and($data['local_onboarding']['gateway_api'])->toBe('verified');
+
+    expect($data['gateway'])->not->toHaveKey('role')
+        ->and($data['local_node'])->not->toHaveKey('role');
 });
 
 it('accepts the gateway api success data envelope for identity verification', function (): void {
@@ -165,6 +168,9 @@ it('accepts the gateway api success data envelope for identity verification', fu
     expect($output['success']['data']['gateway']['name'])->toBe('gateway-1')
         ->and($output['success']['data']['local_node']['name'])->toBe('control-1')
         ->and($output['success']['data']['local_node']['addresses']['wireguard'])->toBe('10.6.0.8');
+
+    expect($output['success']['data']['gateway'])->not->toHaveKey('role')
+        ->and($output['success']['data']['local_node'])->not->toHaveKey('role');
 });
 
 it('emits converged success envelope', function (): void {
@@ -235,6 +241,7 @@ it('emits node.identity_unknown for 403 response', function (): void {
     $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
 
     expect($output['error']['code'])->toBe('node.identity_unknown')
+        ->and($output['error']['message'])->toBe('This peer is not registered on the gateway at 10.6.0.2. Ask your admin to register this machine on the gateway, then retry.')
         ->and($output['error']['meta']['gateway_ip'])->toBe('10.6.0.2');
 });
 
