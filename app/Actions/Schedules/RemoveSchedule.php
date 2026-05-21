@@ -40,8 +40,8 @@ final readonly class RemoveSchedule
 
         if (! $pickupConfirmed) {
             throw new GatewayApiException(
-                "Schedule '{$name}' was removed from gateway intent, but the Orbit Scheduler on gateway node '{$node}' could not be confirmed reachable.",
-                'schedule.scheduler_unreachable',
+                "Schedule '{$name}' was removed from gateway intent, but schedule dispatch through gateway node '{$node}' could not be confirmed reachable.",
+                'schedule.target_unreachable',
                 ['next_command' => 'doctor --family=schedule'],
                 errorData: ['schedule' => $serialized],
             );

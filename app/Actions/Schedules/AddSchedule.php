@@ -58,8 +58,8 @@ final readonly class AddSchedule
             $node = $schedulerNode->name ?? 'gateway';
 
             throw new GatewayApiException(
-                "Schedule '{$name}' was recorded, but the Orbit Scheduler on gateway node '{$node}' could not be confirmed reachable.",
-                'schedule.scheduler_unreachable',
+                "Schedule '{$name}' was recorded, but schedule dispatch through gateway node '{$node}' could not be confirmed reachable.",
+                'schedule.target_unreachable',
                 [
                     'node' => $node,
                     'next_command' => 'doctor --family=schedule',

@@ -135,7 +135,7 @@ it('returns not found before side effects', function (): void {
         ->and($payload['error']['meta']['name'])->toBe('missing');
 });
 
-it('removes gateway intent and reports scheduler unreachable when pickup cannot be confirmed', function (): void {
+it('removes gateway intent and reports target unreachable when pickup cannot be confirmed', function (): void {
     createScheduleRemoveLocalNode('gateway', withSchedulerHeartbeat: false);
     $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
@@ -153,7 +153,8 @@ it('removes gateway intent and reports scheduler unreachable when pickup cannot 
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(1)
-        ->and($payload['error']['code'])->toBe('schedule.scheduler_unreachable')
+        ->and($payload['error']['code'])->toBe('schedule.target_unreachable')
+        ->and($payload['error']['message'])->toBe("Schedule 'laravel-scheduler' was removed from gateway intent, but schedule dispatch through gateway node 'local-gateway' could not be confirmed reachable.")
         ->and($payload['error']['data']['schedule']['status'])->toBe('removed_pending_pickup')
         ->and(Schedule::query()->where('schedule_key', 'app:docs:laravel-scheduler')->exists())->toBeFalse();
 });

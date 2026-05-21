@@ -60,7 +60,7 @@ it('creates an app scoped schedule on the gateway', function (): void {
         ->and(Schedule::query()->where('schedule_key', 'app:docs:laravel-scheduler')->exists())->toBeTrue();
 });
 
-it('records intent and returns scheduler unreachable when pickup cannot be confirmed', function (): void {
+it('records intent and returns target unreachable when pickup cannot be confirmed', function (): void {
     createScheduleAddLocalNode('gateway', withSchedulerHeartbeat: false);
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
@@ -75,7 +75,8 @@ it('records intent and returns scheduler unreachable when pickup cannot be confi
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(1)
-        ->and($payload['error']['code'])->toBe('schedule.scheduler_unreachable')
+        ->and($payload['error']['code'])->toBe('schedule.target_unreachable')
+        ->and($payload['error']['message'])->toBe("Schedule 'laravel-scheduler' was recorded, but schedule dispatch through gateway node 'local-gateway' could not be confirmed reachable.")
         ->and($payload['error']['data']['schedule']['status'])->toBe('scheduler_unreachable')
         ->and(Schedule::query()->where('schedule_key', 'app:docs:laravel-scheduler')->exists())->toBeTrue();
 });
