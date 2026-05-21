@@ -78,7 +78,7 @@ describe('ActivityListController', function (): void {
         expect($activities[0]['type'])->toBe('app.removed');
         expect($activities[0]['effect'])->toBe('destructive');
         expect($activities[0]['subject'])->toBe(['type' => 'app', 'name' => 'docs']);
-        expect($activities[0]['actor'])->toBe(['node' => 'caller', 'role' => 'gateway']);
+        expect($activities[0]['actor'])->toBe(['node' => 'caller']);
         expect($activities[0]['command'])->toBe('app:removed');
         expect($activities[0]['summary'])->toBe('Recorded app.removed');
     });

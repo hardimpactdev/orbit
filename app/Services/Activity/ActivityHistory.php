@@ -209,7 +209,7 @@ final class ActivityHistory
     }
 
     /**
-     * @return array{node: string|null, role: string|null}|null
+     * @return array{node: string|null}|null
      */
     private function actorPayload(?Model $causer): ?array
     {
@@ -219,7 +219,6 @@ final class ActivityHistory
 
         return [
             'node' => $causer->name,
-            'role' => $causer->role,
         ];
     }
 }

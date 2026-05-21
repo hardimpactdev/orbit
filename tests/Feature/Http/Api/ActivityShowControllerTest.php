@@ -59,7 +59,7 @@ describe('ActivityShowController', function (): void {
             ->assertJsonPath('success.data.activity.id', $selected->id)
             ->assertJsonPath('success.data.activity.type', 'node.created')
             ->assertJsonPath('success.data.activity.effect', 'write')
-            ->assertJsonPath('success.data.activity.actor', ['node' => 'caller', 'role' => 'gateway'])
+            ->assertJsonPath('success.data.activity.actor', ['node' => 'caller'])
             ->assertJsonPath('success.data.activity.command', 'node:created')
             ->assertJsonPath('success.data.activity.details.node', 'caller')
             ->assertJsonPath('success.meta.related_count', 2);

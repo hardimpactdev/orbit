@@ -94,7 +94,7 @@ describe('activity:list command', function (): void {
                                 'type' => 'node.removed',
                                 'effect' => 'destructive',
                                 'subject' => ['type' => 'node', 'name' => 'app-1'],
-                                'actor' => ['node' => 'control-1', 'role' => 'control'],
+                                'actor' => ['node' => 'control-1'],
                                 'command' => 'node:remove',
                                 'summary' => 'Removed node app-1.',
                             ],
