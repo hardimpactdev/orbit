@@ -160,11 +160,12 @@ it('documents the e2e docker benchmark protocol', function (): void {
         ->toContain('2>&1 | tee /tmp/e2e-canary.log | awk -f bin/e2e-timings.awk')
         ->toContain('composer test:e2e:docker \\')
         ->toContain('2>&1 | tee /tmp/e2e-full.log | awk -f bin/e2e-timings.awk')
-        ->toContain('## Recommended local SSH tuning')
+        ->toContain('## Required SSH multiplexing for measured Docker baselines')
         ->toContain('ControlMaster auto')
         ->toContain('ControlPath ~/.ssh/cm-%r@%h:%p.sock')
-        ->toContain('time ssh sidecar1 true')
-        ->toContain('drop below `10 ms`');
+        ->toContain('ssh -G sidecar1')
+        ->toContain('time ssh -o BatchMode=yes sidecar1 true')
+        ->toContain('10-20 ms');
 });
 
 it('keeps active testing and orchestration docs on current e2e script names', function (): void {
