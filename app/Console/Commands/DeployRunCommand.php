@@ -39,10 +39,6 @@ class DeployRunCommand extends Command
         $detach = $this->option('detach') === true;
         $callerRole = $roles->resolve();
 
-        if (in_array($callerRole, ['app', 'unknown'], true)) {
-            return $this->failCommand('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => $callerRole]);
-        }
-
         $app = $this->stringArgument('app');
 
         if ($app === null) {

@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\ProgressReporter;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\DeployStep;
-use App\Models\Node;
 use App\Services\Deploy\DeployManager;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -19,18 +20,9 @@ final readonly class DeployController
 {
     public function __construct(private DeployManager $deploy) {}
 
+    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppOwning)]
     public function storeStep(Request $request): JsonResponse
     {
-        $caller = $this->caller($request);
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         $app = $this->stringInput($request, 'app');
         $command = $this->stringInput($request, 'command');
 
@@ -48,12 +40,6 @@ final readonly class DeployController
             }
         }
 
-        $authorized = $this->authorize($caller, $app);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
-        }
-
         try {
             $result = $this->deploy->addStep($app, $command, $this->stringInput($request, 'title'), $order, $timeout, $retention);
 
@@ -63,24 +49,13 @@ final readonly class DeployController
         }
     }
 
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppOwning)]
     public function listSteps(Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
 
         if ($app === null) {
             return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
-        }
-
-        $caller = $this->caller($request);
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        $authorized = $this->authorize($caller, $app);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
         }
 
         try {
@@ -92,18 +67,9 @@ final readonly class DeployController
         }
     }
 
+    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppOwning)]
     public function removeStep(string $step, Request $request): JsonResponse
     {
-        $caller = $this->caller($request);
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         if ($request->boolean('destructive_consent') !== true) {
             return $this->error('destructive_consent_required', 'Use --force to remove this deployment step.', ['field' => 'force'], 400);
         }
@@ -112,12 +78,6 @@ final readonly class DeployController
 
         if ($app === null) {
             return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
-        }
-
-        $authorized = $this->authorize($caller, $app);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
         }
 
         try {
@@ -129,28 +89,13 @@ final readonly class DeployController
         }
     }
 
+    #[RequiresPermission('deploy:run', servingNode: ServingNode::AppOwning)]
     public function run(Request $request, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
     {
-        $caller = $this->caller($request);
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         $app = $this->stringInput($request, 'app');
 
         if ($app === null) {
             return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
-        }
-
-        $authorized = $this->authorize($caller, $app);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
         }
 
         $detach = $request->boolean('detach');
@@ -211,6 +156,7 @@ final readonly class DeployController
         return $data;
     }
 
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppOwning)]
     public function history(Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
@@ -225,18 +171,6 @@ final readonly class DeployController
             return $this->error('validation_failed', 'Invalid value for --limit: must be a positive integer.', ['field' => 'limit'], 400);
         }
 
-        $caller = $this->caller($request);
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        $authorized = $this->authorize($caller, $app);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
-        }
-
         try {
             $result = $this->deploy->history($app, $limit);
 
@@ -246,6 +180,7 @@ final readonly class DeployController
         }
     }
 
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppOwning)]
     public function log(string $run, Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
@@ -263,18 +198,6 @@ final readonly class DeployController
             }
         }
 
-        $caller = $this->caller($request);
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        $authorized = $this->authorize($caller, $app);
-
-        if ($authorized instanceof JsonResponse) {
-            return $authorized;
-        }
-
         try {
             $result = $this->deploy->log($app, (int) $run, $step, $lines);
 
@@ -285,29 +208,6 @@ final readonly class DeployController
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
         }
-    }
-
-    private function caller(Request $request): ?Node
-    {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        return $caller instanceof Node ? $caller : null;
-    }
-
-    private function authorize(Node $caller, string $app): ?JsonResponse
-    {
-        try {
-            $model = $this->deploy->productionApp($app);
-        } catch (GatewayApiException $exception) {
-            return $this->exception($exception);
-        }
-
-        if (! $this->deploy->canAccess($caller, $model)) {
-            return $this->error('authorization_failed', "You are not authorized to access deployment data for '{$model->name}'.", ['app' => $model->name], 403);
-        }
-
-        return null;
     }
 
     private function stringInput(Request $request, string $key): ?string
@@ -355,7 +255,7 @@ final readonly class DeployController
     {
         $status = match ($exception->errorCode()) {
             'app.not_found', 'deploy.step_not_found', 'deploy.run_not_found' => 404,
-            'authorization_failed', 'caller_role_not_allowed' => 403,
+            'authorization_failed' => 403,
             default => 400,
         };
 
