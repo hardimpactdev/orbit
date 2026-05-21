@@ -151,7 +151,7 @@ describe('activity:show command', function (): void {
                             'type' => 'node.created',
                             'effect' => 'write',
                             'subject' => ['type' => 'node', 'name' => 'app-1'],
-                            'actor' => ['node' => 'control-1', 'role' => 'control'],
+                            'actor' => ['node' => 'control-1'],
                             'command' => 'node:new',
                             'summary' => 'Recorded node.created',
                             'details' => ['node' => 'app-1'],
