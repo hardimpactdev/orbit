@@ -2,20 +2,19 @@
 
 [Back to `gateway:add` technical contract.](1_gateway-add.md)
 
-This page describes caller-role behavior when `orbit gateway:add` is invoked from
-a gateway node.
+This page describes behavior when `orbit gateway:add` is invoked from a gateway
+host.
 
-**Effects:** `none`. The gateway rejects the caller when its WireGuard peer
-identity resolves to a `gateway` node, before any local prompts or side effects.
+**Effects:** `none`. The command rejects gateway-local execution before any
+local prompts or side effects.
 
 **Prerequisites:**
-- The gateway has identified the caller's WireGuard peer identity as a
-  `gateway` node and rejected the `gateway:add` request.
+- The local process is running in gateway context.
 
 ## Behavior
 
-The gateway rejects gateway callers. The CLI surfaces the rejection before
-running any local prompts or side effects.
+The CLI rejects gateway-host execution before running any local prompts or side
+effects.
 
 The gateway is the operator capability layer and the source of its own CA. It does not need
 to fetch, trust, or store its own CA through the `gateway:add` flow. Gateway
@@ -27,14 +26,14 @@ verified through `doctor --family=node`.
 Fail before prompts or side effects with:
 
 ```
-This command may only be run from a client.
+This command is not supported on gateway nodes.
 ```
 
 The JSON renderer returns the same message with `error.code:
-"caller_role_not_allowed"` and `error.meta.caller_role: "gateway"`.
+"validation_failed"` and `error.meta.reason: "not_supported_on_gateway"`.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway caller denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-host denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |

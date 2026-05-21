@@ -14,9 +14,9 @@
   active Orbit WireGuard network.
 - The gateway can expose its root CA or trust bundle through the Orbit network
   before this machine has local OS-level trust installed.
-- Only `control` callers may run `gateway:add`. The local gateway context
-  rejects `gateway` callers with `This command may only be run from a control
-  node.`
+- The command is run from a non-gateway host that needs local gateway endpoint
+  and trust configuration. Gateway hosts already own that runtime context and do
+  not onboard themselves through `gateway:add`.
 
 ## Signature
 
@@ -85,8 +85,8 @@ certificate lifecycle belongs to the route-owning domain and its doctor family.
 - Verify the `/api/me` response carries a valid node identity.
 - Confirm the local WireGuard identity is known to the gateway and accepted by
   gateway-owned access policy.
-- A 403 response from `/api/me` means the peer is not registered; fail with a
-  clear message pointing to `node:new --role=control`.
+- A 403 response from `/api/me` means the peer is not registered; fail with
+  guidance to have an administrator register this machine on the gateway.
 
 ### Local Configuration Rules
 
@@ -121,6 +121,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Gateway host unsupported | The local process is running in gateway context. | Failure |
 | Invalid gateway IP | Supplied or derived value is not a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`. | Failure |
 | Identity unknown | `/api/me` returns 403; the local peer is not registered. | Failure |
 | Gateway API error | `/api/me` returns a successful HTTP response with an invalid identity payload. | Failure |
@@ -164,15 +165,14 @@ Required split contract tests:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Gateway/GatewayAddInputContractTest.php` | Command contract: input resolution, side-effect boundaries, local settings persistence, CA trust installation, no local node registry mirror creation, idempotent convergence, and gateway API verification. |
-| `tests/Feature/Commands/Gateway/GatewayAddInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, gateway IP derivation, prompt when derivation is ambiguous, prompt validation and retry, and caller-role denial rules. |
-| `tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures, and caller-role denial rules. |
-| `tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, node-shaped verified references, `added` and `converged` success payloads, error codes, and enum values. |
+| `tests/Feature/Commands/Gateway/GatewayAddInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, gateway IP derivation, prompt when derivation is ambiguous, prompt validation and retry. |
+| `tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures. |
+| `tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, verified gateway and local-node references without role fields, `added` and `converged` success payloads, error codes, and enum values. |
 | `tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Authorization by caller role: operator callers proceed through onboarding, and gateway-local callers are rejected before prompts or side effects. No local app-role rejection point exists for `gateway:add`. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-local host rejection before prompts or side effects, and non-gateway local onboarding behavior. |
 | `tests/E2E/GatewayAddTest.php` | Real-node end-to-end client join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |
 
-Role-specific behavior and test mapping live in:
+Context-specific behavior and test mapping live in:
 
 - [`2_gateway-add_on-client.md`](2_gateway-add_on-client.md)
 - [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md)
-- [`4_gateway-add_on-app-role.md`](4_gateway-add_on-app-role.md)
