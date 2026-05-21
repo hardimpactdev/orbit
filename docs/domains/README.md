@@ -68,9 +68,11 @@ These rules govern every command contract in this directory.
   durable Orbit state. The CLI gathers input, calls the gateway, and renders the
   response.
 - Authorization is the gateway's responsibility. The CLI does not gate or scope
-  commands by caller role locally. A command may be denied by the gateway based
-  on the authenticated peer's role, but that decision is made server-side and
-  returned to the CLI as a structured failure.
+  commands by caller role locally. The gateway authorizes every request through
+  the grant edge from the authenticated WireGuard peer to the command's resource
+  and the scoped permission set stored on that grant. There is no built-in
+  caller role; denials are surfaced as `error.code=authorization_failed` with
+  `error.meta.missing_permission` identifying the required permission.
 - `Effects` describe command behavior, not authorization scopes. Authorization
   is node-grant based and belongs in `Prerequisites` and failure semantics.
 - Commands must state how they interact with `orbit doctor`.

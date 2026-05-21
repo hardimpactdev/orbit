@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | `Firewall rule name unique on the target node.` |
-| `node` | `--node` | `Required when no local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible active Ubuntu node with role `gateway` or `app`. |
+| `node` | `--node` | `Required when no local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible active Ubuntu node with at least one active role assignment from `gateway`, `app-development`, `app-production`, `database`, or `agent`. |
 | `direction` | `--direction` | `Optional.` | `Never.` | `incoming` | `incoming` or `outgoing`. |
 | `source` | `--from` | `Optional.` | `Never.` | `any` | CIDR or `any`. |
 | `destination` | `--to` | `Optional.` | `Never.` | `None.` | CIDR when supported by the backend. |
