@@ -10,9 +10,7 @@ use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
-use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
@@ -58,25 +56,23 @@ class NodeDefaultCommand extends Command
             );
         }
 
+        if ((bool) config('orbit.is_gateway', false)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'node:default is not supported on gateway nodes.',
+                meta: ['reason' => 'not_supported_on_gateway'],
+            );
+        }
+
         if ($clear) {
             return $this->clearDefault();
         }
 
         if ($name !== null) {
-            $preflightFailure = $this->preflightGatewayMutationCaller();
-            if ($preflightFailure !== null) {
-                return $preflightFailure;
-            }
-
             return $this->setDefault($name);
         }
 
         if ($this->isInteractiveInput()) {
-            $preflightFailure = $this->preflightGatewayMutationCaller();
-            if ($preflightFailure !== null) {
-                return $preflightFailure;
-            }
-
             return $this->chooseDefault();
         }
 
@@ -369,64 +365,6 @@ class NodeDefaultCommand extends Command
             message: $exception->getMessage(),
             meta: $exception->errorMeta(),
         );
-    }
-
-    private function preflightGatewayMutationCaller(): ?int
-    {
-        if ((bool) config('orbit.is_gateway', false)) {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control node.',
-                meta: ['caller_role' => 'gateway'],
-            );
-        }
-
-        if (! $this->hasConfiguredGateway()) {
-            return null;
-        }
-
-        try {
-            $this->assertGatewayCallerIsControl();
-        } catch (GatewayApiException $e) {
-            return $this->failGatewayException($e);
-        } catch (Throwable) {
-            return $this->failGatewayUnavailable();
-        }
-
-        return null;
-    }
-
-    /**
-     * @throws GatewayApiException
-     */
-    private function assertGatewayCallerIsControl(): void
-    {
-        $request = new ShowGatewayIdentityRequest;
-        $response = app(GatewayConnector::class)->send($request);
-
-        if ($response->clientError() || $response->serverError()) {
-            $exception = $request->getRequestException($response, null);
-
-            if ($exception instanceof GatewayApiException) {
-                throw $exception;
-            }
-
-            throw new GatewayApiException("Gateway request failed with HTTP status {$response->status()}");
-        }
-
-        /** @var GatewayIdentityResponse $identity */
-        $identity = $response->dto();
-        $callerRole = is_string($identity->self['role'] ?? null)
-            ? $identity->self['role']
-            : 'unknown';
-
-        if ($callerRole !== 'control') {
-            throw new GatewayApiException(
-                'This command may only be run from a control node.',
-                'caller_role_not_allowed',
-                ['caller_role' => $callerRole],
-            );
-        }
     }
 
     private function readDefaultNode(): ?string

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -62,46 +61,17 @@ function setupNodeDefaultControlContractGateway(): void
 /**
  * @param  list<array<string, mixed>>  $nodes
  */
-function nodeDefaultControlGatewayMock(array $nodes, string $role = 'control'): MockClient
+function nodeDefaultControlGatewayMock(array $nodes): MockClient
 {
-    $identityRequested = false;
-
     return MockClient::global([
-        ShowGatewayIdentityRequest::class => function () use (&$identityRequested, $role): MockResponse {
-            $identityRequested = true;
-
-            return MockResponse::make(nodeDefaultControlIdentityEnvelope($role), 200);
-        },
-        ListNodesRequest::class => function () use (&$identityRequested, $nodes): MockResponse {
-            expect($identityRequested)->toBeTrue();
-
-            return MockResponse::make([
-                'success' => [
-                    'data' => [
-                        'nodes' => $nodes,
-                    ],
-                ],
-            ], 200);
-        },
-    ]);
-}
-
-function nodeDefaultControlIdentityEnvelope(string $role): array
-{
-    return [
-        'success' => [
-            'data' => [
-                'self' => [
-                    'name' => 'control-1',
-                    'role' => $role,
-                ],
-                'gateway' => [
-                    'name' => 'gateway-1',
-                    'role' => 'gateway',
+        ListNodesRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'nodes' => $nodes,
                 ],
             ],
-        ],
-    ];
+        ], 200),
+    ]);
 }
 
 describe('node:default on control node contract', function (): void {
@@ -145,7 +115,7 @@ describe('node:default on control node contract', function (): void {
         $mock->assertNothingSent();
     });
 
-    it('preflights gateway identity before setting a local default', function (): void {
+    it('sets a local default without gateway identity preflight', function (): void {
         setupNodeDefaultControlContractGateway();
 
         $mock = nodeDefaultControlGatewayMock([
@@ -162,11 +132,10 @@ describe('node:default on control node contract', function (): void {
             ->and($payload['success']['data']['action'])->toBe('set')
             ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app');
 
-        $mock->assertSent(ShowGatewayIdentityRequest::class);
         $mock->assertSent(ListNodesRequest::class);
     });
 
-    it('preflights gateway identity before interactive choose lists nodes', function (): void {
+    it('lists nodes for interactive choose without gateway identity preflight', function (): void {
         setupNodeDefaultControlContractGateway();
 
         $mock = nodeDefaultControlGatewayMock([
@@ -181,11 +150,10 @@ describe('node:default on control node contract', function (): void {
 
         expect(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app-2');
 
-        $mock->assertSent(ShowGatewayIdentityRequest::class);
         $mock->assertSent(ListNodesRequest::class);
     });
 
-    it('preserves the gateway-local rejection shortcut before local mutation', function (): void {
+    it('preserves gateway-host rejection before local mutation', function (): void {
         config(['orbit.is_gateway' => true]);
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'existing-app',
@@ -200,8 +168,8 @@ describe('node:default on control node contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta'])->toBe(['caller_role' => 'gateway'])
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta'])->toBe(['reason' => 'not_supported_on_gateway'])
             ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBe('existing-app');
     });
 });

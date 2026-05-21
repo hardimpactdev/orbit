@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -46,22 +47,25 @@ function createAgentIdeCallerNode(string $role = 'control'): int
     ]));
 }
 
-function createAgentIdeGatewayNode(): int
+function assignAgentIdeNodeRole(int $nodeId, string $role): void
 {
-    return (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow([
-        'name' => 'gateway-1',
-        'role' => 'gateway',
-        'host' => '10.6.0.2',
-        'environment' => null,
-        'wireguard_address' => '10.6.0.2',
-    ]));
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+    ]);
 }
 
-function grantAgentIdeGatewayAccess(int $callerId, int $gatewayId): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAgentIdeNodeAccess(int $consumerId, int $servingId, array $permissions): void
 {
     DB::table('node_access')->insert([
-        'consumer_node_id' => $callerId,
-        'serving_node_id' => $gatewayId,
+        'consumer_node_id' => $consumerId,
+        'serving_node_id' => $servingId,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -90,9 +94,8 @@ function postNodeAgentIdeJson(string $uri, array $data, array $server = []): Tes
 describe('NodeAgentIdeController', function (): void {
     it('sets a node agent IDE default for an authorized control caller', function (): void {
         $callerId = createAgentIdeCallerNode();
-        $gatewayId = createAgentIdeGatewayNode();
-        grantAgentIdeGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiNodeAgentIdeRow());
+        $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
+        grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
         $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
             'agent_ide' => 'opencode',
@@ -118,7 +121,7 @@ describe('NodeAgentIdeController', function (): void {
     });
 
     it('clears a node agent IDE default with none', function (): void {
-        createAgentIdeCallerNode('gateway');
+        assignAgentIdeNodeRole(createAgentIdeCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow([
             'agent_ide_config' => json_encode(['adapter' => 'opencode'], JSON_THROW_ON_ERROR),
         ]));
@@ -136,7 +139,7 @@ describe('NodeAgentIdeController', function (): void {
     });
 
     it('returns converged when the requested adapter already matches', function (): void {
-        createAgentIdeCallerNode('gateway');
+        assignAgentIdeNodeRole(createAgentIdeCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow([
             'agent_ide_config' => json_encode(['adapter' => 'polyscope'], JSON_THROW_ON_ERROR),
         ]));
@@ -152,9 +155,8 @@ describe('NodeAgentIdeController', function (): void {
 
     it('logs activity for a successful node agent IDE write', function (): void {
         $callerId = createAgentIdeCallerNode();
-        $gatewayId = createAgentIdeGatewayNode();
-        grantAgentIdeGatewayAccess($callerId, $gatewayId);
         $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
+        grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
         $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
             'agent_ide' => 'opencode',
@@ -175,25 +177,23 @@ describe('NodeAgentIdeController', function (): void {
         expect($entry->properties->get('action'))->toBe('set');
     });
 
-    it('rejects app callers before mutation', function (): void {
-        createAgentIdeCallerNode('app');
-        DB::table('nodes')->insert(apiNodeAgentIdeRow());
+    it('sets node agent IDE defaults for app callers with explicit grants', function (): void {
+        $callerId = createAgentIdeCallerNode('app');
+        $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
+        grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
         $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
             'agent_ide' => 'opencode',
         ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+        $response->assertOk()
+            ->assertJsonPath('success.data.agent_ide.adapter', 'opencode');
 
-        expect(DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'))->toBeNull();
+        expect(DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'))->not->toBeNull();
     });
 
-    it('rejects control callers without gateway access', function (): void {
+    it('rejects callers without node agent grants', function (): void {
         createAgentIdeCallerNode();
-        createAgentIdeGatewayNode();
         DB::table('nodes')->insert(apiNodeAgentIdeRow());
 
         $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
@@ -202,13 +202,14 @@ describe('NodeAgentIdeController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This operator node is not authorized to update node configuration.')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.message', "This node is not authorized for 'node:agent' on 'app-1'.")
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:agent')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
     });
 
     it('returns validation errors for missing and unsupported adapters', function (array $data, string $code, string $message, string $field): void {
-        createAgentIdeCallerNode('gateway');
+        assignAgentIdeNodeRole(createAgentIdeCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow());
 
         $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', $data, ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);

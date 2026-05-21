@@ -13,7 +13,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 final readonly class NodeDefaultController implements Loggable
 {
@@ -23,10 +22,10 @@ final readonly class NodeDefaultController implements Loggable
 
     public function show(Request $request): JsonResponse
     {
-        $caller = $this->controlCaller($request);
+        $error = $this->deploymentContextError($request);
 
-        if ($caller instanceof JsonResponse) {
-            return $caller;
+        if ($error instanceof JsonResponse) {
+            return $error;
         }
 
         return $this->success(
@@ -37,10 +36,10 @@ final readonly class NodeDefaultController implements Loggable
 
     public function set(SetDefaultNodeApiRequest $request): JsonResponse
     {
-        $caller = $this->controlCaller($request);
+        $error = $this->deploymentContextError($request);
 
-        if ($caller instanceof JsonResponse) {
-            return $caller;
+        if ($error instanceof JsonResponse) {
+            return $error;
         }
 
         $name = $request->defaultNodeName();
@@ -72,16 +71,6 @@ final readonly class NodeDefaultController implements Loggable
             );
         }
 
-        if (! $this->callerCanAccessNode($caller, $node)) {
-            return $this->authorizationFailed(
-                message: "This node is not authorized to operate on '{$name}'.",
-                meta: [
-                    'name' => $name,
-                    'caller_role' => $caller->role,
-                ],
-            );
-        }
-
         $this->writeDefaultNode($name);
 
         return $this->success(
@@ -92,10 +81,10 @@ final readonly class NodeDefaultController implements Loggable
 
     public function clear(Request $request): JsonResponse
     {
-        $caller = $this->controlCaller($request);
+        $error = $this->deploymentContextError($request);
 
-        if ($caller instanceof JsonResponse) {
-            return $caller;
+        if ($error instanceof JsonResponse) {
+            return $error;
         }
 
         $wasSet = $this->readDefaultNode() !== null;
@@ -109,8 +98,17 @@ final readonly class NodeDefaultController implements Loggable
         );
     }
 
-    private function controlCaller(Request $request): Node|JsonResponse
+    private function deploymentContextError(Request $request): ?JsonResponse
     {
+        if ((bool) config('orbit.is_gateway', false)) {
+            return $this->error(
+                code: 'validation_failed',
+                message: 'node:default is not supported on gateway nodes.',
+                meta: ['reason' => 'not_supported_on_gateway'],
+                status: 422,
+            );
+        }
+
         /** @var mixed $resolvedUser */
         $resolvedUser = $request->user();
         $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
@@ -119,24 +117,7 @@ final readonly class NodeDefaultController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if ($caller->role !== 'control') {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from an operator node.',
-                meta: ['caller_role' => $caller->role],
-                status: 403,
-            );
-        }
-
-        return $caller;
-    }
-
-    private function callerCanAccessNode(Node $caller, Node $node): bool
-    {
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
+        return null;
     }
 
     private function readDefaultNode(): ?string
