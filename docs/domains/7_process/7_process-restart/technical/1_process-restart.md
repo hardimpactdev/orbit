@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer to operate process runtime state for the target app or workspace context. `unknown` callers are denied.
+- The gateway authorizes the authenticated peer for `process:restart` on the target app's owning node.
 - Runtime lifecycle actions require gateway reachability to the owning node.
 
 ## Signature
@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Optional. | Never. | None. | Existing process slug within the owning app when supplied. Omit to restart all process definitions in process order. |
-| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may operate. |
-| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace of the selected app that the caller may operate. |
+| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:restart`. |
+| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:restart`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -75,7 +75,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:POST /processes/restart` |
 | Effect | `write` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
 | Properties | `app` (string or null), `workspace` (string or null), and `name` (string or null). No runtime output, backend command text, or secrets. |
 | Description | derived |
 
@@ -85,11 +85,11 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, caller-role acceptance and denial, process selection, runtime-unit derivation, successful restart, durable event recording, partial bulk failure, and authorization failure (full scope below). |
+| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, grant authorization, process selection, runtime-unit derivation, successful restart, durable event recording, partial bulk failure, and authorization failure (full scope below). |
 | `tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
-`ProcessRestartCommandTest` covers context resolution, app-role caller
-allowance, unknown-role denial, named and all-process selection, process-order
+`ProcessRestartCommandTest` covers context resolution, grant authorization,
+missing-grant denial, named and all-process selection, process-order
 execution, runtime-unit derivation, successful restart, durable lifecycle
 event recording, partial bulk failure reporting, no configuration mutation, no
 direct process-manager operation, runtime action failure, and authorization

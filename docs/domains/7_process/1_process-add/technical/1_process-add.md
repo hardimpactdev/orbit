@@ -8,8 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
-- `control` and `gateway` callers may proceed when authorized.
+- The gateway authorizes the authenticated peer for `process:add` on the target app's owning node.
 - Runtime artifact rendering requires gateway reachability to the owning node.
 
 ## Signature
@@ -26,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the owning app. |
 | `command` | `[command]` | Always. | Never. | None. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
-| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may manage. |
+| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
@@ -86,7 +85,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:POST /processes` |
 | Effect | `write` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
 | Properties | `app` (string or null) and `name` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 
@@ -96,7 +95,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Process creation contract, caller-role denial, app resolution, default append behavior, defaults, duplicate-name failure, runtime-unit rendering, optional start behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, runtime rendering, optional start, repairable warnings, and no write on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

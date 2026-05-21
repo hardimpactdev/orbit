@@ -44,9 +44,9 @@ Process definitions may opt in to crash notification. When the policy is enabled
 
 These rules describe the narrow internal path that delivers crash events from nodes to the gateway.
 
-- Crash events come from a narrow internal app-role-to-gateway intake path
+- Crash events come from a narrow internal app-host-to-gateway intake path
   emitted by Orbit-managed runtime hooks.
-- Crash intake accepts only authenticated active app-role identities and only
+- Crash intake accepts only authenticated active app-host identities and only
   `crashed` events.
 - The intake is idempotent by event id.
 - The intake path is not a CLI command contract.
@@ -88,18 +88,21 @@ Implementation-shape details for Supervisor and the Orbit Scheduler live in [tec
 Process commands are authorized by the gateway against the authenticated
 WireGuard peer and the scoped permission set stored on the grant that
 connects the caller to the app's owning node. The CLI
-does not detect or branch on caller role locally.
+does not detect or branch on the legacy node-role column locally.
 
-- Read commands (`process:list`, `process:logs`) require `process:read` on a
-  grant to the resolved app's owning node.
+- `process:list` requires `process:read` on a grant to the resolved app's
+  owning node.
+- `process:logs` requires `process:logs`, which is covered by `process:read`.
 - Runtime-lifecycle commands (`process:start`, `process:stop`,
-  `process:restart`) require `process:restart` on a grant to that node.
-  Self-targeting calls from the owning app-role node are authorized by its
+  `process:restart`) require their matching `process:start`, `process:stop`,
+  or `process:restart` permission on a grant to that node. Self-targeting
+  calls from the owning app-host node are authorized by its
   self-grant — see [Architecture: Self-grants and
   self-serving](../../architecture.md#self-grants-and-self-serving).
 - Configuration mutation commands (`process:add`, `process:edit`,
-  `process:remove`) require `process:write` and are typically reserved for
-  admin-class presets.
+  `process:remove`) require their matching `process:add`, `process:edit`, or
+  `process:remove` permission and are typically reserved for admin-class
+  presets.
 
 Every process command is a request to the gateway typed API. The CLI never writes process configuration, reads Supervisor logs directly, or operates the process manager directly.
 

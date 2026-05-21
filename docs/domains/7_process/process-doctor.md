@@ -9,7 +9,7 @@ The process family owns these facts:
 - gateway-owned process definitions: app, name, command, restart policy, and crash-notification policy;
 - derived runtime-unit identity for the main app instance and every workspace: `orbit_<app>_<workspace|main>_<process>`;
 - Supervisor programs rendered from process, app, workspace, and node configuration, including command, working directory, restart policy, and runtime environment;
-- lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-role units whose process definitions require crash event reporting;
+- lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
 - stale Supervisor programs owned by Orbit whose identity no longer maps to an active app, workspace, or process definition.
 
 Node reachability belongs to `node`. App source, PHP runtime, and app-owned runtime configuration belong to `app`. Workspace source directories and setup state belong to `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside the process family.
