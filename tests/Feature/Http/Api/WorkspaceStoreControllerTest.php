@@ -15,7 +15,7 @@ uses(RefreshDatabase::class);
 const WORKSPACE_STORE_CALLER_WG_IP = '10.6.0.99';
 
 beforeEach(function (): void {
-    Node::factory()->create([
+    createTestGatewayNode([
         'name' => 'gateway',
         'role' => 'gateway',
         'host' => 'gateway',
@@ -58,7 +58,7 @@ it('creates a workspace for an authorized gateway caller', function (): void {
     expect($workspace)->not->toBeNull();
 });
 
-it('rejects app-node callers', function (): void {
+it('rejects callers without workspace creation permission', function (): void {
     Node::factory()->create([
         'name' => 'beast',
         'role' => 'app',
@@ -73,7 +73,9 @@ it('rejects app-node callers', function (): void {
     ], [], [], ['REMOTE_ADDR' => '10.6.0.7']);
 
     $response->assertStatus(403);
-    $response->assertJsonPath('error.code', 'caller_role_not_allowed');
+    $response->assertJsonPath('error.code', 'authorization_failed');
+    $response->assertJsonPath('error.meta.reason', 'missing_permission');
+    $response->assertJsonPath('error.meta.missing_permission', 'workspace:new');
 });
 
 it('rejects reserved name main', function (): void {

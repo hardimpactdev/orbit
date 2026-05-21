@@ -132,7 +132,7 @@ describe('workspace step remove commands', function (): void {
             ->and(WorkspaceStep::query()->count())->toBe(1);
     });
 
-    it('forwards control callers through the typed gateway request', function (): void {
+    it('forwards non-gateway callers through the typed gateway request', function (): void {
         createWorkspaceStepRemoveLocalNode('control');
 
         LocalGatewaySettings::current()->fill([

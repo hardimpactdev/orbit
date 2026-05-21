@@ -460,7 +460,7 @@ it('uses the app context resolved from the current workspace directory', functio
         ->and(Workspace::query()->where('app_id', $admin->id)->where('name', 'feature-api')->exists())->toBeTrue();
 });
 
-it('forwards configured control callers through the typed gateway request', function (): void {
+it('forwards configured non-gateway callers through the typed gateway request', function (): void {
     config(['orbit.is_gateway' => false]);
 
     Node::factory()->create([

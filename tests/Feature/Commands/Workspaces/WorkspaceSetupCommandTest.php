@@ -150,7 +150,7 @@ it('rejects generic workspace paths outside the app worktrees directory', functi
     expect($payload['error']['meta']['field'])->toBe('path');
 });
 
-it('forwards control callers to gateway', function (): void {
+it('forwards non-gateway callers to gateway', function (): void {
     config(['orbit.is_gateway' => false]);
 
     $mock = MockClient::global([

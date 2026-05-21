@@ -164,7 +164,10 @@ describe('workspace:list base contract', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read the workspace registry.',
-                    'meta' => ['caller_role' => 'app'],
+                    'meta' => [
+                        'reason' => 'missing_permission',
+                        'missing_permission' => 'workspace:read',
+                    ],
                 ],
             ], 403),
         ]);
@@ -174,7 +177,7 @@ describe('workspace:list base contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
+            ->and($payload['error']['meta']['missing_permission'])->toBe('workspace:read');
     });
 
     it('renders gateway unavailable failures', function (): void {

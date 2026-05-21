@@ -34,6 +34,8 @@ function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['workspace:write'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -62,8 +64,10 @@ describe('WorkspaceStepStoreController', function (): void {
             ->assertJsonPath('success.data.step.order', 1);
     });
 
-    it('rejects app-node callers', function (): void {
+    it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepStoreCallerNode(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('POST', '/api/workspaces/steps/setup', [], [], [], [
             'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
@@ -71,7 +75,9 @@ describe('WorkspaceStepStoreController', function (): void {
         ], json_encode(['app' => 'docs', 'command' => 'composer install'], JSON_THROW_ON_ERROR));
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'workspace:write');
     });
 
     it('validates bad timeout and unknown anchors', function (): void {

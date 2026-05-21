@@ -35,6 +35,8 @@ function grantWorkspaceStepDeleteAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['workspace:write'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -110,15 +112,19 @@ describe('WorkspaceStepDeleteController', function (): void {
         expect(WorkspaceStep::query()->whereKey($step->id)->exists())->toBeTrue();
     });
 
-    it('rejects app-node callers', function (): void {
+    it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepDeleteCallerNode(['role' => 'app']);
+        $node = createTestAppHostNode(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('DELETE', '/api/workspaces/steps/setup/12', ['app' => 'docs'], [], [], [
             'REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
         ]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'workspace:write');
     });
 
     it('returns phase-scoped step-not-found errors', function (): void {

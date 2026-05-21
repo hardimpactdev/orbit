@@ -188,7 +188,12 @@ describe('workspace:show base contract', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => "This caller is not authorized to inspect 'feature-docs'.",
-                    'meta' => ['name' => 'feature-docs', 'app' => 'docs', 'caller_role' => 'app'],
+                    'meta' => [
+                        'name' => 'feature-docs',
+                        'app' => 'docs',
+                        'reason' => 'missing_permission',
+                        'missing_permission' => 'workspace:read',
+                    ],
                 ],
             ], 403),
         ]);
@@ -198,7 +203,7 @@ describe('workspace:show base contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
+            ->and($payload['error']['meta']['missing_permission'])->toBe('workspace:read');
     });
 
     it('does not mutate workspace registry state or run processes', function (): void {

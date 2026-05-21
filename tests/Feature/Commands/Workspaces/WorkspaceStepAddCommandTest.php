@@ -155,7 +155,7 @@ describe('workspace step add commands', function (): void {
             ->and($payload['error']['meta']['phase'])->toBe('setup');
     });
 
-    it('forwards control callers through the typed gateway request', function (): void {
+    it('forwards non-gateway callers through the typed gateway request', function (): void {
         createWorkspaceStepAddLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
