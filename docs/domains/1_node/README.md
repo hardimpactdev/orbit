@@ -203,10 +203,13 @@ These rules apply to all node commands and define the invariants the family enfo
   interactive selection, `--preset`, `--permissions`, or `--add`. Read-only
   `node:permissions` and `--remove` require an existing grant and fail with
   `node.grant_not_found` otherwise.
-- Role settings live on the role assignment. In v1, `app-development` and
-  `agent` each store a `tld` (the `agent` default is `agent`); `vpn` stores
-  `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip`;
-  `app-production`, `database`, and `gateway` have no assignment settings.
+- Role-assignment settings live on the role assignment when they are
+  role-specific. `tld` is a shared node-level field that both `app-development`
+  and `agent` require, so it lives on the node row and a node holds at most
+  one `tld` value at a time (the `agent` default during interactive `node:new`
+  is `agent`). `vpn` stores `public_endpoint`, `wireguard_cidr`,
+  `wireguard_port`, and `dns_ip` as role-assignment settings; `app-production`,
+  `database`, and `gateway` have no role-assignment settings.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.

@@ -41,10 +41,12 @@ Each term below has a precise meaning in the node command family.
 - **Role settings:** Assignment-local configuration for a role. Role-local
   desired configuration lives on the role assignment, not on the generic node
   record.
-- **Agent role TLD setting:** Role-assignment setting on the `agent` role.
-  Default `agent`. Drives the DNS mapping the gateway owns for that TLD and
-  the agent tool internal HTTPS hostnames such as `openclaw.agent` and
-  `hermes.agent`.
+- **Node TLD:** Node-level setting required by the `app-development` and
+  `agent` roles. A node holds at most one `tld` value at a time; roles that
+  depend on it read and write the same node-level field. Default `agent` when
+  selected through interactive `node:new --role=agent`. Drives the DNS mapping
+  the gateway owns for that TLD and the agent tool internal HTTPS hostnames
+  such as `openclaw.agent` and `hermes.agent`.
 - **Agent role baseline:** Code-defined desired state for a node with the
   `agent` role: Caddy, Supervisor, WireGuard/node identity and trust material,
   and the shared unprivileged `agent` runtime user.

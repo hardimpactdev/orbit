@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `node` | `--node` | `Optional.` | `Never.` | `None.` | `Visible active Ubuntu node with role `gateway` or `app`. |
+| `node` | `--node` | `Optional.` | `Never.` | `None.` | `Visible active Ubuntu node with at least one active role assignment from `gateway`, `app-development`, `app-production`, `database`, or `agent`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 ## Behavior Contract

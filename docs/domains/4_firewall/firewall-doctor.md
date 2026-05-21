@@ -23,7 +23,7 @@ Node reachability belongs to `node`. Proxy routes, apps, workspaces, processes, 
 The firewall probe reads gateway firewall rules and checks these layers:
 
 1. **Registry configuration:** every selected rule has a valid node reference, rule name, direction, action, source, protocol, and port.
-2. **Node eligibility:** the node reference resolves to a visible active Ubuntu node with role `gateway` or `app`.
+2. **Node eligibility:** the node reference resolves to a visible active Ubuntu node with at least one active role assignment from `gateway`, `app-development`, `app-production`, `database`, or `agent`.
 3. **Baseline policy boundary:** the rule does not attempt to mutate node bootstrap policy owned by the node family.
 4. **Ownership boundary:** protected rows are reported read-only in the
    firewall family unless the firewall family owns the representation drift.
