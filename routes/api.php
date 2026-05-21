@@ -92,13 +92,14 @@ use App\Http\Controllers\Api\WorkspaceStepStoreController;
 use App\Http\Controllers\Api\WorkspaceStoreController;
 use App\Http\Middleware\CorrelationHeader;
 use App\Http\Middleware\LogActivity;
+use App\Http\Middleware\RequireGrantPermission;
 use App\Http\Middleware\WireGuardIdentity;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::get('/ca/root', CaRootController::class);
 
-    Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
+    Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class, LogActivity::class])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
