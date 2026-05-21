@@ -5,11 +5,12 @@ declare(strict_types=1);
 use App\Enums\Nodes\NodeRoleName;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Http\Authorization\ServingNodeResolver;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
+use App\Services\Authorization\ServingNodeResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -92,6 +93,19 @@ describe('ServingNodeResolver', function (): void {
 
         $resolved = (new ServingNodeResolver)->resolve(
             servingNodeRequest(['app' => 'docs']),
+            ServingNode::AppOwning,
+        );
+
+        expect($resolved?->is($node))->toBeTrue();
+    });
+
+    it('resolves app-owning nodes from process identity', function (): void {
+        $node = Node::factory()->create(['name' => 'process-node']);
+        $app = OrbitApp::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        OrbitProcess::factory()->create(['app_id' => $app->id, 'name' => 'queue']);
+
+        $resolved = (new ServingNodeResolver)->resolve(
+            servingNodeRequest(['name' => 'queue']),
             ServingNode::AppOwning,
         );
 

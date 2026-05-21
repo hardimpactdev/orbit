@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Authorization;
+namespace App\Services\Authorization;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -50,12 +52,29 @@ final class ServingNodeResolver
 
     private function resolveAppOwning(Request $request): ?Node
     {
-        foreach (['app', 'name'] as $parameter) {
+        foreach (['app'] as $parameter) {
             $app = $this->appFromValue($this->requestValue($request, $parameter));
 
             if ($app instanceof OrbitApp) {
                 return $app->node;
             }
+        }
+
+        foreach (['process', 'process_name', 'name'] as $parameter) {
+            $process = $this->processFromValue(
+                value: $this->requestValue($request, $parameter),
+                app: $this->appFromValue($this->requestValue($request, 'app')),
+            );
+
+            if ($process instanceof OrbitProcess) {
+                return $process->app->node;
+            }
+        }
+
+        $app = $this->appFromValue($this->requestValue($request, 'name'));
+
+        if ($app instanceof OrbitApp) {
+            return $app->node;
         }
 
         return null;
@@ -144,6 +163,29 @@ final class ServingNodeResolver
         return OrbitApp::query()
             ->with('node')
             ->where('name', $value)
+            ->first();
+    }
+
+    private function processFromValue(mixed $value, ?OrbitApp $app = null): ?OrbitProcess
+    {
+        if ($value instanceof OrbitProcess) {
+            $value->loadMissing('app.node');
+
+            return $value;
+        }
+
+        if (! is_int($value) && (! is_string($value) || $value === '')) {
+            return null;
+        }
+
+        return OrbitProcess::query()
+            ->with('app.node')
+            ->when($app instanceof OrbitApp, fn ($query) => $query->where('app_id', $app->id))
+            ->when(
+                is_int($value) || ctype_digit((string) $value),
+                fn ($query) => $query->whereKey($value),
+                fn ($query) => $query->where('name', $value),
+            )
             ->first();
     }
 
