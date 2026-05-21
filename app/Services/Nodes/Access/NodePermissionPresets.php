@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Access;
 
+use App\Enums\Nodes\NodeRoleName;
 use InvalidArgumentException;
 
 final class NodePermissionPresets
@@ -15,6 +16,10 @@ final class NodePermissionPresets
     {
         return match ($name) {
             'agent-self' => $this->agentSelf(),
+            'vpn-self' => $this->vpnSelf(),
+            'app-development-self' => $this->appDevelopmentSelf(),
+            'app-production-self' => $this->appProductionSelf(),
+            'database-self' => $this->databaseSelf(),
             'operator' => $this->operator(),
             'read-only' => $this->readOnly(),
             'developer' => $this->developer(),
@@ -31,12 +36,30 @@ final class NodePermissionPresets
     {
         return [
             'agent-self',
+            'vpn-self',
+            'app-development-self',
+            'app-production-self',
+            'database-self',
             'operator',
             'read-only',
             'developer',
             'admin',
             'gateway-admin',
         ];
+    }
+
+    public function selfPresetNameForRole(string|NodeRoleName $role): ?string
+    {
+        $roleName = $role instanceof NodeRoleName ? $role->value : $role;
+
+        return match ($roleName) {
+            NodeRoleName::Vpn->value => 'vpn-self',
+            NodeRoleName::AppDevelopment->value => 'app-development-self',
+            NodeRoleName::AppProduction->value => 'app-production-self',
+            NodeRoleName::Database->value => 'database-self',
+            NodeRoleName::Agent->value => 'agent-self',
+            default => null,
+        };
     }
 
     /**
@@ -53,6 +76,42 @@ final class NodePermissionPresets
             'tool:restart',
             'tool:update:agent-tools',
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function vpnSelf(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function appDevelopmentSelf(): array
+    {
+        return [
+            'workspace:setup',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function appProductionSelf(): array
+    {
+        return [
+            'workspace:setup',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function databaseSelf(): array
+    {
+        return [];
     }
 
     /**

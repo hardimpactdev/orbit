@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Access\NodePermissionRegistry;
@@ -12,6 +13,10 @@ describe('node permission presets', function (): void {
 
         expect($presets->names())->toBe([
             'agent-self',
+            'vpn-self',
+            'app-development-self',
+            'app-production-self',
+            'database-self',
             'operator',
             'read-only',
             'developer',
@@ -58,6 +63,34 @@ describe('node permission presets', function (): void {
                 ->and($permissions)->not->toContain('firewall_rule:write')
                 ->and($permissions)->not->toContain('doctor:restore')
                 ->and($permissions)->not->toContain('doctor:adopt');
+        });
+    });
+
+    describe('role self presets', function (): void {
+        it('maps role names to self preset names', function (): void {
+            $presets = new NodePermissionPresets;
+
+            expect($presets->selfPresetNameForRole(NodeRoleName::Gateway))->toBeNull()
+                ->and($presets->selfPresetNameForRole(NodeRoleName::Vpn))->toBe('vpn-self')
+                ->and($presets->selfPresetNameForRole(NodeRoleName::AppDevelopment))->toBe('app-development-self')
+                ->and($presets->selfPresetNameForRole(NodeRoleName::AppProduction))->toBe('app-production-self')
+                ->and($presets->selfPresetNameForRole(NodeRoleName::Database))->toBe('database-self')
+                ->and($presets->selfPresetNameForRole(NodeRoleName::Agent))->toBe('agent-self')
+                ->and($presets->selfPresetNameForRole('unknown'))->toBeNull();
+        });
+
+        it('defines empty self presets for vpn and database roles', function (): void {
+            $presets = new NodePermissionPresets;
+
+            expect($presets->permissions('vpn-self'))->toBe([])
+                ->and($presets->permissions('database-self'))->toBe([]);
+        });
+
+        it('defines workspace setup self presets for app roles', function (): void {
+            $presets = new NodePermissionPresets;
+
+            expect($presets->permissions('app-development-self'))->toBe(['workspace:setup'])
+                ->and($presets->permissions('app-production-self'))->toBe(['workspace:setup']);
         });
     });
 
