@@ -57,12 +57,12 @@ function createUpdateGatewayNode(): int
         'wireguard_address' => '10.6.0.2',
     ]));
 
-    assignUpdateNodeRole($gatewayId, 'gateway');
+    assignNodeUpdateRole($gatewayId, 'gateway');
 
     return $gatewayId;
 }
 
-function assignUpdateNodeRole(int $nodeId, string $role, string $status = 'active'): void
+function assignNodeUpdateRole(int $nodeId, string $role, string $status = 'active'): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $nodeId,
@@ -179,7 +179,7 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('updates a node directly for a gateway caller', function (): void {
-        assignUpdateNodeRole(createUpdateCallerNode('gateway'), 'gateway');
+        assignNodeUpdateRole(createUpdateCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiUpdateNodeRow());
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
@@ -289,7 +289,7 @@ describe('NodeUpdateController', function (): void {
 
     it('updates for database callers with gateway admin grants even when the legacy role shadow is control', function (): void {
         $callerId = createUpdateCallerNode();
-        assignUpdateNodeRole($callerId, 'database');
+        assignNodeUpdateRole($callerId, 'database');
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
         DB::table('nodes')->insert(apiUpdateNodeRow());

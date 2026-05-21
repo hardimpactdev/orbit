@@ -34,7 +34,6 @@ use App\Http\Controllers\Api\NodeRevokeController;
 use App\Http\Controllers\Api\NodeRoleAddController;
 use App\Http\Controllers\Api\NodeRoleListController;
 use App\Http\Controllers\Api\NodeRoleRemoveController;
-use App\Http\Controllers\Api\NodeRoleUpdateController;
 use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
@@ -207,7 +206,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/nodes/revoke', NodeRevokeController::class);
         Route::get('/nodes/{name}/roles', NodeRoleListController::class);
         Route::post('/nodes/{name}/roles', NodeRoleAddController::class);
-        Route::patch('/nodes/{name}/roles/{role}', NodeRoleUpdateController::class);
         Route::delete('/nodes/{name}/roles/{role}', NodeRoleRemoveController::class);
         Route::post('/nodes/{name}/agent-ide', NodeAgentIdeController::class);
         Route::delete('/nodes/{name}', NodeRemoveController::class);
