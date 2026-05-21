@@ -93,6 +93,28 @@ describe('NodeAccessAuthorizer', function (): void {
             ->and($this->authorizer->allows($control, $app, 'node:read'))->toBeFalse();
     });
 
+    it('returns authorization metadata for gateway implicit access', function (): void {
+        $gateway = createGatewayNode();
+        $app = createAppNode();
+
+        $result = $this->authorizer->authorize($gateway, $app, 'tool:read');
+
+        expect($result->allowed)->toBeTrue()
+            ->and($result->missingPermission)->toBeNull()
+            ->and($result->reason)->toBe('gateway_node');
+    });
+
+    it('returns authorization metadata for denied access', function (): void {
+        $control = createControlNode();
+        $app = createAppNode();
+
+        $result = $this->authorizer->authorize($control, $app, 'tool:read');
+
+        expect($result->allowed)->toBeFalse()
+            ->and($result->missingPermission)->toBe('tool:read')
+            ->and($result->reason)->toBe('missing_permission');
+    });
+
     it('allows consumer->gateway with wildcard to access any node and permission', function (): void {
         $gateway = createGatewayNode();
         $control = createControlNode();
@@ -103,6 +125,20 @@ describe('NodeAccessAuthorizer', function (): void {
         expect($this->authorizer->allows($control, $app, 'tool:read'))->toBeTrue()
             ->and($this->authorizer->allows($control, $app, 'firewall_rule:write'))->toBeTrue()
             ->and($this->authorizer->allows($control, $gateway, 'node:new'))->toBeTrue();
+    });
+
+    it('returns authorization metadata for gateway-admin grants', function (): void {
+        $gateway = createGatewayNode();
+        $control = createControlNode();
+        $app = createAppNode();
+
+        grantAccess($control, $gateway, ['*']);
+
+        $result = $this->authorizer->authorize($control, $app, 'tool:read');
+
+        expect($result->allowed)->toBeTrue()
+            ->and($result->missingPermission)->toBeNull()
+            ->and($result->reason)->toBe('gateway_admin_grant');
     });
 
     it('denies consumer->gateway without wildcard for unrelated nodes', function (): void {
@@ -129,6 +165,19 @@ describe('NodeAccessAuthorizer', function (): void {
             ->and($this->authorizer->allows($control, $app, 'tool:list'))->toBeTrue();
     });
 
+    it('returns authorization metadata for direct grants', function (): void {
+        $control = createControlNode();
+        $app = createAppNode();
+
+        grantAccess($control, $app, ['tool:read']);
+
+        $result = $this->authorizer->authorize($control, $app, 'tool:logs');
+
+        expect($result->allowed)->toBeTrue()
+            ->and($result->missingPermission)->toBeNull()
+            ->and($result->reason)->toBe('direct_grant');
+    });
+
     it('denies consumer->serving grants without covering permission', function (): void {
         $control = createControlNode();
         $app = createAppNode();
@@ -148,6 +197,18 @@ describe('NodeAccessAuthorizer', function (): void {
         expect($this->authorizer->allows($app, $app, 'tool:read'))->toBeTrue()
             ->and($this->authorizer->allows($app, $app, 'tool:restart'))->toBeTrue()
             ->and($this->authorizer->allows($app, $app, 'tool:logs'))->toBeTrue();
+    });
+
+    it('returns authorization metadata for self-grants', function (): void {
+        $app = createAppNode();
+
+        grantAccess($app, $app, ['tool:read']);
+
+        $result = $this->authorizer->authorize($app, $app, 'tool:show');
+
+        expect($result->allowed)->toBeTrue()
+            ->and($result->missingPermission)->toBeNull()
+            ->and($result->reason)->toBe('direct_grant');
     });
 
     it('denies implicit self-access without a self-grant', function (): void {
