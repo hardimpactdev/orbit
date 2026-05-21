@@ -14,7 +14,7 @@ use RuntimeException;
 
 #[Signature('e2e:reap-docker
     {--force : Delete stale Docker E2E containers and networks}
-    {--older-than=6h : Only include resources older than this when creation time is available}
+    {--older-than=30m : Only include resources older than this when creation time is available}
     {--json : Output as JSON}')]
 #[Description('Reap stale Docker resources created by ephemeral E2E tests')]
 class E2EReapDockerCommand extends Command

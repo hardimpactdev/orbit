@@ -15,7 +15,7 @@ it('is hidden', function (): void {
     expect($command->isHidden())->toBeTrue();
 });
 
-it('defaults to older-than=6h', function (): void {
+it('defaults to older-than=30m', function (): void {
     Process::fake(function ($process) {
         if (str_contains($process->command, 'incus list')) {
             return Process::result(output: json_encode([
@@ -34,7 +34,7 @@ it('defaults to older-than=6h', function (): void {
                 'data' => [
                     'provider' => 'incus',
                     'dry_run' => true,
-                    'older_than_minutes' => 360,
+                    'older_than_minutes' => 30,
                     'resources' => [
                         [
                             'type' => 'instance',
@@ -254,7 +254,7 @@ it('returns structured json output', function (): void {
                 'data' => [
                     'provider' => 'incus',
                     'dry_run' => true,
-                    'older_than_minutes' => 360,
+                    'older_than_minutes' => 30,
                     'resources' => [
                         [
                             'type' => 'instance',

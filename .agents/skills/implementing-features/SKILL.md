@@ -16,12 +16,17 @@ tests, and code consistent.
 - Relevant docs have been updated or confirmed current.
 - Acceptance criteria and verification commands are known.
 - Owned files or domains are explicit enough to avoid unrelated edits.
-- A dedicated worktree exists for the change (see Worktree Setup below).
+- A dedicated worktree exists for the change (see Workspace Setup below).
 
-## Worktree Setup
+## Workspace Setup
 
 Implementation happens in an isolated worktree, never directly on `main` or a
 shared branch. Use the `using-git-worktrees` skill to create one.
+
+A new worktree starts empty — Orbit ignores `.env`, `vendor/`, and `.env.e2e`,
+so the worktree must be bootstrapped before any test or quality-check command
+will pass. Skip any of these and `php artisan test` fails at boot
+(encrypted-cast tests need `APP_KEY`; E2E composer scripts source `.env.e2e`).
 
 Orbit conventions:
 
@@ -29,13 +34,86 @@ Orbit conventions:
   is already gitignored.
 - Name the branch and worktree directory after the feature or fix in kebab-case
   (e.g. `.worktrees/app-node-security-foundations`).
-- After creation, run `composer install` and confirm the baseline is clean with
-  `php artisan test --compact` before writing any new code.
 - Do all editing, test runs, and verification from inside the worktree path.
+
+Run these from inside the new worktree, in order:
+
+1. `composer install` — install dependencies.
+2. `cp .env.example .env && php artisan key:generate --force --no-interaction`
+   — application bootstrap. Without `APP_KEY` set, encrypted-cast Pest tests
+   fail to boot.
+3. `cp ../../.env.e2e .env.e2e` (only if E2E lanes will be run in this
+   worktree) — copy the project-local E2E env from the primary checkout.
+   `.env.e2e` is gitignored and carries sidecar / Incus host config that
+   `composer test:e2e*` and `composer e2e:*` source automatically.
+4. `php artisan test --compact` — baseline Pest suite must pass before any
+   new code lands. If this fails on a fresh worktree, the bootstrap above is
+   incomplete.
+5. (Only when this change needs the E2E lane.) Run the E2E readiness checks
+   below before the first `composer test:e2e*` run.
+
+## E2E Readiness And Resource Pool
+
+The E2E Docker lane uses a shared slot pool across the configured sidecar
+hosts (e.g. `ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4`). The same
+sidecars also serve every other worktree on the machine, so the pool is
+shared infrastructure, not per-worktree. Two situations cause "no slots
+available" surprises:
+
+1. Another worktree is running E2E right now and has the pool leased.
+2. A previous run was interrupted and orphaned containers are still on the
+   sidecars consuming slots.
+
+Before running E2E in a worktree:
+
+1. `composer e2e:preflight` — verifies the configured Incus host is
+   reachable. Required for the Incus lane; safe to skip if only Docker
+   lanes are exercised.
+
+2. Capacity probe per sidecar. Run this **first**, before any reap:
+
+   ```bash
+   for host in sidecar1 sidecar2; do
+     count=$(DOCKER_HOST=ssh://$host docker ps --filter "name=orbit-e2e" --format '{{.Names}}' | wc -l)
+     echo "$host: $count active orbit-e2e containers"
+   done
+   ```
+
+   - 0 containers per sidecar → pool is free, proceed.
+   - A few containers younger than your E2E runtime → another worktree is
+     mid-run; do not reap. Either wait for it to finish or reduce this
+     worktree's slot allocation (e.g.
+     `ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2` with
+     `ORBIT_E2E_PARALLEL_PROCESSES=4`) so the pool is not fully booked by a
+     single worktree.
+   - Many containers older than ~6 hours → stale leftovers; safe to reap.
+
+3. Only reap when the probe surfaced confirmed stale containers:
+
+   ```bash
+   composer e2e:reap-docker -- --force
+   ```
+
+   The reap command's `--older-than=30m` default means in-flight runs from
+   other worktrees are not touched — only orphaned containers older than
+   thirty minutes (comfortable headroom over the typical ~1-2 minute lane
+   and ~10-20 minute longest realistic run). Without `--force` the command
+   reports without deleting. **Do not** routinely run reap as a pre-run
+   hygiene step; it shares the same providers across worktrees, and the
+   age default is the only thing protecting concurrent runs.
+
+4. For the Incus lane, the same shape applies. `composer e2e:reap-incus`
+   reaps stale VMs (also age-gated) and `e2e:preflight` reports
+   reachability.
+
+The slot pool is a blocking lease pool: workers that cannot lease a slot
+wait, they do not fail loudly. A long hang at the start of `composer
+test:e2e:docker` usually means the pool is fully booked by another
+worktree, not a real failure.
 
 ## Workflow
 
-1. Set up the worktree per the section above.
+1. Set up the workspace per the section above (worktree + bootstrap + E2E readiness if needed).
 2. Read the handoff, updated product docs, relevant `docs/domains/**`, and `AGENTS.md`.
 3. Confirm owned files or domains and existing dirty work before editing.
 4. Follow TDD (see Test-Driven Development below): write or update failing Pest

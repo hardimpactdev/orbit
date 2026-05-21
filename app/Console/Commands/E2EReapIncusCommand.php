@@ -17,7 +17,7 @@ use RuntimeException;
 
 #[Signature('e2e:reap-incus
     {--force : Delete stale instances instead of reporting a dry run}
-    {--older-than=6h : Only include instances older than this (e.g. 30m, 2h, 1d)}
+    {--older-than=30m : Only include instances older than this (e.g. 30m, 2h, 1d)}
     {--json : Output as JSON}')]
 #[Description('Reap stale Incus instances created by ephemeral E2E tests')]
 class E2EReapIncusCommand extends Command
