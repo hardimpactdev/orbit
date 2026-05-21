@@ -98,7 +98,7 @@ it('registers an existing app path from a control caller through the gateway api
             'app' => true,
         ]);
     } finally {
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');

@@ -120,6 +120,36 @@ describe('FirewallRuleIntent', function (): void {
             ->and($again['data']['rule']['status'])->toBe('already_absent');
     });
 
+    it('defers backend enactment failures only in the Docker E2E feature lane', function (): void {
+        $previousProvider = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+        putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
+        app()->instance(RemoteShell::class, new FirewallRuleIntentFailingRemoteShell);
+
+        try {
+            createFirewallRuleIntentAppHostNode();
+
+            $result = app(FirewallRuleIntent::class)->store(
+                action: 'allow',
+                name: 'local-vite',
+                nodeName: 'app-1',
+                direction: 'incoming',
+                source: '10.6.0.0/24',
+                destination: null,
+                port: '5173',
+                protocol: 'tcp',
+                reason: 'local development',
+            );
+
+            expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeTrue()
+                ->and($result['meta']['backend_enacted'])->toBeFalse()
+                ->and($result['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
+        } finally {
+            $previousProvider === false
+                ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+                : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previousProvider}");
+        }
+    });
+
     it('rejects protected firewall rules from user-facing removal', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create([
@@ -149,5 +179,17 @@ final class FirewallRuleIntentRecordingRemoteShell implements RemoteShell
         $this->scripts[] = $script;
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class FirewallRuleIntentFailingRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (($options['throw'] ?? false) === true) {
+            throw new RuntimeException('sudo: ufw: command not found');
+        }
+
+        return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'sudo: ufw: command not found', durationMs: 1);
     }
 }

@@ -59,7 +59,7 @@ PHP;
             'dev',
             sprintf(
                 <<<'SH'
-rm -rf %1$s && mkdir -p %1$s/public && cd %1$s
+sudo rm -rf %1$s && mkdir -p %1$s/public && cd %1$s
 git init -b main
 git config user.email orbit@example.test
 git config user.name Orbit
@@ -127,7 +127,7 @@ it('creates and sets up a workspace from a control caller through the gateway ap
             'route_count' => 1,
         ]);
     } finally {
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

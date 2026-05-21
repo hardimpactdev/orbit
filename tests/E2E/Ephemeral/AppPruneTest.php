@@ -104,7 +104,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
             ->and($payload['success']['data'])->toHaveKey('stale_workspaces')
             ->and($payload['success']['data']['dry_run'])->toBeTrue();
     } finally {
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
 });
@@ -177,7 +177,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
                 ->and($workspace['database'])->toBe('skipped');
         }
     } finally {
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
 });

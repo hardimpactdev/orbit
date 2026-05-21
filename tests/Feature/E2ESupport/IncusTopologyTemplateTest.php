@@ -238,6 +238,19 @@ it('returns null when every host with templates is at capacity', function (): vo
     expect($pool->firstAvailableFor(E2ETopologyKind::Control))->toBeNull();
 });
 
+it('reports capacity details when every prepared Incus host is full', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('run')->andReturn(successfulProcessResult());
+    $host->shouldReceive('runningE2EInstanceCount')->andReturn(4);
+
+    $availability = (new IncusHostPool([$host]))->availabilityFor(E2ETopologyKind::ControlGateway);
+
+    expect($availability['host'])->toBeNull()
+        ->and($availability['reason'])->toBe('beast has 0/2 free VM slots (4/4 Orbit E2E VMs running)');
+});
+
 it('builds a batch script that copies all roles in parallel, applies limits, then starts in parallel', function (): void {
     $config = makeIncusTopologyTemplateTestConfig('1', '2GiB');
     $host = m::mock(IncusHost::class, [$config])->makePartial();

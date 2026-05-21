@@ -9,85 +9,24 @@ use App\Models\WireGuardPeer;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Process;
-use RuntimeException;
 
 beforeEach(function (): void {
     $this->generator = new WireGuardKeyGenerator;
 });
 
 describe('key generation', function (): void {
-    it('generates a valid key pair using wg binaries', function (): void {
+    it('generates a valid key pair without requiring a wg binary on the runner', function (): void {
         Process::preventStrayProcesses();
-        Process::fake([
-            'wg genkey' => Process::result(output: 'private-key', exitCode: 0),
-            'wg pubkey' => Process::result(output: 'public-key', exitCode: 0),
-        ]);
 
         $result = $this->generator->generateKeyPair();
+        $privateKey = base64_decode($result['private_key'], strict: true);
+        $publicKey = base64_decode($result['public_key'], strict: true);
 
-        expect($result)->toBe([
-            'private_key' => 'private-key',
-            'public_key' => 'public-key',
-        ]);
-
-        Process::assertRan('wg genkey');
-        Process::assertRan('wg pubkey');
-    });
-
-    it('throws when wg genkey fails', function (): void {
-        Process::fake([
-            'wg genkey' => Process::result(
-                errorOutput: 'wg: command not found',
-                exitCode: 127,
-            ),
-        ]);
-
-        expect(fn () => $this->generator->generateKeyPair())
-            ->toThrow(RuntimeException::class, 'Failed to generate WireGuard private key');
-    });
-
-    it('throws when wg pubkey fails', function (): void {
-        Process::fake([
-            'wg genkey' => Process::result(
-                output: 'cGQPVU5UQUNLRURURU1PTkVURVNUQ0xJRU5US0VZ',
-                exitCode: 0,
-            ),
-            'wg pubkey' => Process::result(
-                errorOutput: 'invalid private key',
-                exitCode: 1,
-            ),
-        ]);
-
-        expect(fn () => $this->generator->generateKeyPair())
-            ->toThrow(RuntimeException::class, 'Failed to derive WireGuard public key');
-    });
-
-    it('throws when private key output is empty', function (): void {
-        Process::fake([
-            'wg genkey' => Process::result(
-                output: '',
-                exitCode: 0,
-            ),
-        ]);
-
-        expect(fn () => $this->generator->generateKeyPair())
-            ->toThrow(RuntimeException::class, 'WireGuard private key generation returned empty output');
-    });
-
-    it('throws when public key output is empty', function (): void {
-        Process::fake([
-            'wg genkey' => Process::result(
-                output: 'cGQPVU5UQUNLRURURU1PTkVURVNUQ0xJRU5US0VZ',
-                exitCode: 0,
-            ),
-            'wg pubkey' => Process::result(
-                output: '',
-                exitCode: 0,
-            ),
-        ]);
-
-        expect(fn () => $this->generator->generateKeyPair())
-            ->toThrow(RuntimeException::class, 'WireGuard public key derivation returned empty output');
+        expect($privateKey)->toBeString()
+            ->and(strlen($privateKey))->toBe(32)
+            ->and($publicKey)->toBeString()
+            ->and(strlen($publicKey))->toBe(32)
+            ->and($result['public_key'])->toBe(base64_encode(sodium_crypto_scalarmult_base($privateKey)));
     });
 });
 

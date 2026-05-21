@@ -97,7 +97,7 @@ it('creates a real app source directory from a control caller through the gatewa
             'app' => true,
         ]);
     } finally {
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg("/home/orbit/apps/{$name}"), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg("/home/orbit/apps/{$name}"), timeoutSeconds: 60);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator-gateway-appdev-appprod', 'e2e-feature-control-gateway-dev-prod');

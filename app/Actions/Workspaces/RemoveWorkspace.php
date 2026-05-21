@@ -119,7 +119,7 @@ final readonly class RemoveWorkspace
             }
 
             if (! $keepFiles) {
-                $worktreeResult = $this->remoteShell->run($node, 'rm -rf '.escapeshellarg($workspace->path));
+                $worktreeResult = $this->remoteShell->run($node, 'sudo rm -rf '.escapeshellarg($workspace->path));
                 $worktreeRemoved = $worktreeResult->successful();
 
                 if (! $worktreeRemoved) {

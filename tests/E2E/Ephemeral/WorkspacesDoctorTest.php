@@ -15,7 +15,7 @@ it('reports workspace source drift from gateway intent', function (): void {
 
     try {
         workspacesDoctorSeedGatewayIntent($topology, $workspaceName, $workspacePath);
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
 
         $result = $topology->instance('gateway')->ssh(
             'orbit',

@@ -65,6 +65,8 @@ if (! \$gateway instanceof \App\Models\Node) {
     \$gateway = new \App\Models\Node(['name' => 'gateway-1']);
 }
 
+\$hostKey = app(\App\Services\Security\SshHostKeyPinner::class)->pin('gateway');
+
 \$gateway->forceFill([
     'role' => 'gateway',
     'host' => 'gateway',
@@ -72,6 +74,11 @@ if (! \$gateway instanceof \App\Models\Node) {
     'user' => 'orbit',
     'orbit_path' => {$gatewayCheckoutValue},
     'status' => 'active',
+    'host_key_type' => \$hostKey->type,
+    'host_key_fingerprint' => \$hostKey->fingerprint,
+    'host_key_public' => \$hostKey->publicKey,
+    'host_key_pin_mode' => \$hostKey->pinMode,
+    'host_key_pinned_at' => now(),
 ])->save();
 
 \App\Models\NodeRoleAssignment::query()->updateOrCreate(

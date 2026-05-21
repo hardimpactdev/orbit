@@ -37,6 +37,11 @@ final class E2ECurrentCheckout
 
         foreach ($roles as $role) {
             [$instance, $user, $seedFrom] = self::topologyRoleTarget($topology, $role, $users);
+            $refreshGatewayHostKeys = $role === 'gateway'
+                ? function (string $remotePath) use ($instance, $user, $topology, $timer): void {
+                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer);
+                }
+            : null;
 
             $paths[$role] = self::install(
                 $instance,
@@ -44,20 +49,18 @@ final class E2ECurrentCheckout
                 $topology->sshKeyPair(),
                 seedFrom: $seedFrom,
                 timer: $timer,
+                afterBaseInstall: $refreshGatewayHostKeys,
+                afterInstall: $refreshGatewayHostKeys,
             );
-
-            if ($role === 'gateway') {
-                self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $paths[$role], $timer);
-            }
         }
 
         return $paths;
     }
 
-    public static function install(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom = null, ?E2EPhaseTimer $timer = null): string
+    public static function install(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom = null, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null): string
     {
         if (self::checkoutCacheEnabled()) {
-            return self::installFromCachedBase($instance, $user, $keyPair, $seedFrom, $timer);
+            return self::installFromCachedBase($instance, $user, $keyPair, $seedFrom, $timer, $afterBaseInstall);
         }
 
         $remotePath = "/home/{$user}/orbit-current";
@@ -66,6 +69,7 @@ final class E2ECurrentCheckout
         try {
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
             self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer);
+            $afterInstall?->__invoke($remotePath);
 
             return $remotePath;
         } finally {
@@ -100,7 +104,7 @@ final class E2ECurrentCheckout
             && in_array(strtolower($value), ['1', 'true', 'yes', 'process'], true);
     }
 
-    private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null): string
+    private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null): string
     {
         $cacheKey = implode('|', [$instance->name(), $user, $seedFrom ?? '']);
         $basePath = "/home/{$user}/orbit-current-base-".substr(sha1($cacheKey), 0, 10);
@@ -112,6 +116,7 @@ final class E2ECurrentCheckout
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
 
             self::runInstallPhases($instance, $user, $keyPair, $basePath, $seedFrom, $timer);
+            $afterBaseInstall?->__invoke($basePath);
 
             self::$cachedBasePaths[$cacheKey] = $basePath;
         }

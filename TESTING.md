@@ -68,31 +68,34 @@ with per-topology clean snapshots:
    + bootstrap user + sshd. Used by the provisioning lane's blank-VM
    lifecycle test and as the source for prepared topology roles.
 2. **Role templates** (`orbit-template-control`, `orbit-template-gateway`,
-   `orbit-template-dev`, `orbit-template-prod`). Built by
+   `orbit-template-dev`, `orbit-template-prod`, `orbit-template-agent`). Built by
    `composer e2e:prepare-topology -- --force <kind>`. The command tars the
    current checkout, ships it plus `bin/install-orbit` and
    `bin/e2e-provision-node` to the host, installs Orbit on the control
-   template from the blank image, snapshots `clean-control`, then starts that
+   template from the blank image, snapshots `clean-operator`, then starts that
    template and provisions the gateway through real `node:new`. It repeats
-   the chain for dev and prod app nodes. Each topology kind is a snapshot set
-   such as `clean-control-gateway-dev`, not a separate copy of every role
-   template. Tests clone the requested role templates from the matching
-   snapshot per run.
+   the chain for gateway, dev, prod, and agent roles as required by the target
+   kind. Each topology kind is a snapshot set such as
+   `clean-operator-gateway-appdev`, not a separate copy of every role template.
+   Tests clone the requested role templates from the matching snapshot per run.
 
 Source code lives in the per-run bundle, not in any image. Topology snapshots
 get rebuilt each time `e2e:prepare-topology --force` runs. Rebuild the blank
 image only when the bootstrap image shape changes.
 
-Latest Beast prepared-topology measurement (May 5, 2026):
+Latest Beast prepared-topology measurement (May 21, 2026):
 
-- First successful `control-gateway-dev-prod` rebuild completed in roughly
-  3m03s after harness blockers were fixed.
-- Timed warm rebuild with `/usr/bin/time -p` completed in `real 205.71s`.
-  This passes the cold target (≤ 8 min) but misses the warm target (≤ 3 min)
-  by about 26s. Follow-up: Solo todo 298
-  (`E2E-TOPOLOGY-WARM-OPT-1`).
-- `composer test:e2e:topology-contract` passed after the rebuild
-  (1 test, 28 assertions).
+- Full `operator-gateway-appdev-appprod-agent` rebuild completed in
+  `real 607.63s`. This is an explicit preparation/provisioning command and is
+  not part of `composer test:e2e`.
+- The rebuild used `ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e`; all
+  `orbit-template-*` instances must have root disk `pool: orbit-e2e` on Beast.
+  If templates are on `default` while feature clones request `orbit-e2e`, Incus
+  falls back to slow cross-pool copies and `batch.copy-start` regresses from
+  about 2s to about 100s per worker.
+- After the rebuild, `composer test:e2e:incus` passed with 10 tests /
+  85 assertions in `real 100.50s`, with two cached superset workers and
+  `batch.copy-start` around 2s per worker.
 
 Use the following overrides to source the per-run bundle from a non-default
 location:
@@ -223,8 +226,9 @@ Use `composer test:e2e:docker:canary` to run the representative Docker canary
 subset tagged `e2e-feature-canary`.
 
 `composer test:e2e:incus` selects the Incus lane: only `e2e-provider-incus`
-feature tests, using Incus prepared topology clones. If Incus or the required
-prepared topology is unavailable, those tests mark themselves skipped.
+feature tests, using Incus prepared topology clones and a process-local topology
+cache per Pest worker. If Incus or the required prepared topology is
+unavailable, those tests mark themselves skipped.
 
 Provision tests are intentionally on demand because they run real
 installer/provisioning paths and are much slower than prepared-topology feature
@@ -430,9 +434,18 @@ with `SIGKILL` or the host dies, run the reaper commands manually.
 topology per Pest worker process.
 
 `composer test:e2e:incus` runs only `e2e-provider-incus` feature tests against
-Incus prepared topology clones. The local Beast baseline runs three workers:
-three maximum-size prepared topologies use up to 12 VMs, with each disposable
-topology VM capped at 1 vCPU through `ORBIT_E2E_TOPOLOGY_CPUS=1`.
+Incus prepared topology clones. It uses `ORBIT_E2E_TOPOLOGY_CACHE=process` and
+`ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so each Pest worker acquires one
+maximum prepared topology and reuses it for all Incus feature tests assigned to
+that worker. The lane caps Pest workers by `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`
+so cached superset leases cannot exhaust Beast. With the recommended local cap
+of 12 VMs and the five-node agent topology, the Incus feature lane runs two
+workers. Each disposable topology VM is capped at 1 vCPU through
+`ORBIT_E2E_TOPOLOGY_CPUS=1`. A healthy local Beast run should be near the
+May 21, 2026 baseline: 10 tests / 85 assertions in `real 100.50s`, with
+`batch.copy-start` around 2s per cached superset worker. If wall time moves back
+toward several minutes, first check stale `orbit-e2e-*` VMs and the prepared
+template storage pool before moving tests into or out of the lane.
 
 Use `composer test:e2e:topology-contract` when you want to prove the prepared
 Docker topology itself. Provisioning E2E leases Incus slots and remains
@@ -538,14 +551,15 @@ containers, so a host with
 `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16` can safely run four full-topology
 workers.
 
-Measured on 2026-05-19 with the tarball-only DNS-alias checkout path: the
+Historical measurement on 2026-05-19 with the tarball-only DNS-alias checkout path: the
 canary passed with `sidecar1:4,sidecar2:4`,
 `ORBIT_E2E_PARALLEL_PROCESSES=8`, and
 `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16` in `47.55s` real time.
 The full Docker lane passed three consecutive runs with 81 tests / 727
 assertions in `113.45s`, `112.49s`, and `114.88s` real time
-(`113.61s` mean, `1.20s` sample stdev), so the current measured baseline is
-below the original `130s` target. The checkout tarball is built from tracked
+(`113.61s` mean, `1.20s` sample stdev). A post-regression repair spot-check on
+2026-05-21 passed with 94 tests / 779 assertions in `137.24s` real time. The
+checkout tarball is built from tracked
 and unignored files only, with ignored worktrees, build output, generated E2E
 test copies, vendor, node_modules, and runtime state excluded from the archive
 and its cache hash.
@@ -707,7 +721,7 @@ ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16  # Docker topology capacity per daem
 ORBIT_E2E_PARALLEL_PROCESSES=8        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism
-ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Pest workers for composer test:e2e:incus
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Requested Pest workers for composer test:e2e:incus; lane caps to safe superset capacity
 ORBIT_E2E_HCLOUD_LOCATION_SLOTS=nbg1:2,fsn1:1  # Hetzner provisioning-test lease pool
 ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04:1  # Hetzner location/type/image pool
 ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1  # Pest workers for composer test:e2e:provision
@@ -717,8 +731,8 @@ ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files afte
 ORBIT_E2E_LEASE_DIRECTORY=            # Optional override; default is shared across repo worktrees
 ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast # Build Incus images once here, then import to Incus hosts
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
-ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12   # VM quota per host; 3 max-size 4-node topologies
-ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
+ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12   # VM quota per host; Incus superset lane caps to 2 five-node workers
+ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Default direct Pest/artisan topology selection; composer lanes override as needed
 ORBIT_E2E_TOPOLOGY_CACHE=process      # Reuse acquired topologies for the current PHP process
 ORBIT_E2E_CHECKOUT_CACHE=process      # Reuse branch checkout installs within one PHP process
 ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR= # Optional shared checkout archive cache directory
@@ -847,22 +861,28 @@ Prepared Incus feature tests do not use `ORBIT_E2E_INCUS_HOST_SLOTS`.
 `ORBIT_E2E_INCUS_HOST_SLOTS` is for provisioning/image-prep leases, where a
 test mutates Incus host state by creating new blank or base VMs. Prepared
 feature tests clone existing topology snapshots and choose a host through
-`ORBIT_E2E_INCUS_HOSTS` plus `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`. Their
+`ORBIT_E2E_INCUS_HOSTS` plus `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`.
+`composer test:e2e:incus` uses process-local cached superset topologies, so it
+caps the requested Pest worker count to the number of five-node superset leases
+that fit within the host VM cap. Direct Pest/artisan runs that bypass
+`php artisan e2e:test` do not get that lane cap automatically. Their
 concurrency is bounded by:
 
-- `ORBIT_E2E_INCUS_PARALLEL_PROCESSES`, the Pest worker count for the Incus
-  lane.
+- `ORBIT_E2E_INCUS_PARALLEL_PROCESSES`, the requested Pest worker count for the
+  Incus lane.
 - `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, the maximum number of Orbit-owned
   prepared-topology VMs allowed on an Incus host.
-- The topology size requested by each test, e.g. three VMs for
-  `control-gateway-dev` and four VMs for `control-gateway-dev-prod`.
+- The cached topology size selected by the lane. The Incus feature lane uses
+  the five-node `operator-gateway-appdev-appprod-agent` superset so all Incus
+  feature tests assigned to a worker can share one lease.
 
 For example, `ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3`,
 `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12`, and
-`ORBIT_E2E_TOPOLOGY_CPUS=1` allow Beast to run three 4-node prepared
-topologies at once. `composer test:e2e` starts Docker and Incus lanes together;
-it is normal for Docker to finish first and for only the Incus lane to remain
-visible afterward.
+`ORBIT_E2E_TOPOLOGY_CPUS=1` request three Incus workers, but
+`composer test:e2e:incus` caps the lane to two workers because two five-node
+superset leases use 10 of the 12 allowed VMs. `composer test:e2e` starts Docker
+and Incus lanes together; it is normal for Docker to finish first and for only
+the Incus lane to remain visible afterward.
 
 `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST` is enforced by the host pool. When a feature
 test asks for a topology, the pool walks the configured hosts and picks the
@@ -876,7 +896,7 @@ ORBIT_E2E_INCUS_HOSTS=beast
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # provisioning only
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12
-ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # requested; composer test:e2e:incus caps to 2 with five-node superset leases
 ORBIT_E2E_TOPOLOGY_CPUS=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ```
@@ -884,7 +904,25 @@ ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 `ORBIT_E2E_INCUS_STORAGE_POOL` is optional. Leave it empty to use each host's
 Incus default pool. Set it when a host has a faster CoW-capable pool, e.g. a
 dedicated ZFS-backed `orbit-e2e` pool, so template builds and feature clones use
-that pool explicitly.
+that pool explicitly. When this value is set, prepared templates must be built
+on the same pool. Verify with:
+
+```bash
+ssh beast 'for name in orbit-template-control orbit-template-gateway orbit-template-dev orbit-template-prod orbit-template-agent; do echo "--- $name"; incus config show "$name" --expanded | sed -n "/root:/,/^[^ ]/p" | head -n 4; done'
+```
+
+Every listed template should show `pool: orbit-e2e`. If the templates show
+`pool: default` while `ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e`, rebuild the full
+prepared topology before trusting Incus feature-lane timings:
+
+```bash
+composer e2e:prepare-topology -- --force operator-gateway-appdev-appprod-agent
+```
+
+The regression signature for a storage-pool mismatch is
+`ORBIT_E2E_TIMINGS=1 composer test:e2e:incus` reporting
+`batch.copy-start` near 100s per worker. The expected local Beast value after a
+healthy rebuild on `orbit-e2e` is about 2s per worker.
 
 `ORBIT_E2E_TOPOLOGY_RESET` controls how `E2ETopologyLease::reset()` returns a
 clone to a known-clean state between sub-scenarios in the same test:

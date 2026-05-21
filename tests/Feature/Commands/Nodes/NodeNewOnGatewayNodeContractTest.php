@@ -44,7 +44,7 @@ it('enrolls operator nodes locally and writes gateway-owned node state', functio
 
     expect($exitCode)->toBe(0)
         ->and(DB::table('nodes')->where('name', 'control-2')->where('role', 'control')->exists())->toBeTrue()
-        ->and(DB::table('wireguard_peers')->where('public_key', 'control-public-key')->exists())->toBeTrue();
+        ->and(DB::table('wireguard_peers')->where('node_id', DB::table('nodes')->where('name', 'control-2')->value('id'))->exists())->toBeTrue();
 
     Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
 });

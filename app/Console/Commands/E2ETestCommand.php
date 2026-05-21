@@ -8,6 +8,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyCapabilities;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyProviderPool;
+use App\E2E\Support\IncusTopologyTemplate;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -245,7 +246,7 @@ class E2ETestCommand extends Command
             '--exclude-group=e2e-feature-reachability',
         ];
 
-        $processes = $this->envInt('ORBIT_E2E_INCUS_PARALLEL_PROCESSES', 1);
+        $processes = $this->incusCachedWorkerCount(E2EConfig::fromEnvironment());
 
         if ($processes > 1 && ! $this->hasListTestsArgument($passThroughArguments)) {
             $command[] = '--parallel';
@@ -266,9 +267,9 @@ class E2ETestCommand extends Command
                 'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
                 'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'incus',
                 'ORBIT_E2E_GATEWAY_API' => '1',
-                'ORBIT_E2E_TOPOLOGY_CACHE' => '0',
+                'ORBIT_E2E_TOPOLOGY_CACHE' => 'process',
                 'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
-                'ORBIT_E2E_TOPOLOGY_STRATEGY' => 'minimal',
+                'ORBIT_E2E_TOPOLOGY_STRATEGY' => 'superset',
             ],
         ];
 
@@ -283,6 +284,15 @@ class E2ETestCommand extends Command
     private function incusTestRunDirectory(): string
     {
         return 'run_'.getmypid().'_'.bin2hex(random_bytes(4));
+    }
+
+    private function incusCachedWorkerCount(E2EConfig $config): int
+    {
+        $requested = $this->envInt('ORBIT_E2E_INCUS_PARALLEL_PROCESSES', 1);
+        $supersetSize = count(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent));
+        $capacityBound = intdiv($config->incusMaxVmsPerHost, $supersetSize);
+
+        return max(1, min($requested, $capacityBound));
     }
 
     /**

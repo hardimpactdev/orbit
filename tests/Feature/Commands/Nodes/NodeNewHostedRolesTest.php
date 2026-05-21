@@ -208,7 +208,7 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->and($node->roleAssignments->first()?->role)->toBe('app-development')
         ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value)
         ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test'])
-        ->and(WireGuardPeer::query()->where('node_id', $node->id)->where('public_key', 'node-public-key-1')->exists())->toBeTrue()
+        ->and(WireGuardPeer::query()->where('node_id', $node->id)->exists())->toBeTrue()
         ->and(FirewallRule::query()->where('node_id', $node->id)->where('owner', 'node-security')->count())->toBe(3);
 
     $commands = implode("\n", $this->processCommands);

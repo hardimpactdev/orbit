@@ -46,6 +46,10 @@ user explicitly provides additional source material for a specific task.
 
 ## Verification
 
+Before adding, changing, debugging, or running E2E tests, read `TESTING.md`.
+It is the authoritative lane map for prepared-topology feature tests,
+provisioning tests, host pools, cache strategy, and performance baselines.
+
 Run the narrowest useful check while developing:
 
 ```bash

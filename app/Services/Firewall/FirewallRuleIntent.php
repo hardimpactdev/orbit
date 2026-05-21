@@ -62,6 +62,9 @@ class FirewallRuleIntent
             ],
         );
 
+        $backendEnacted = true;
+        $warnings = [];
+
         try {
             $this->fixer->fix($rule->refresh(), new DriftEntry(
                 family: 'firewall_rule',
@@ -69,12 +72,17 @@ class FirewallRuleIntent
                 kind: DriftKind::Missing,
                 summary: "Apply firewall rule {$rule->name}.",
             ));
-        } catch (\Throwable $e) {
-            throw new GatewayApiException('Firewall rule intent was saved, but backend enactment failed.', 'firewall_rule.enactment_failed', [
-                'node' => $node->name,
-                'rule' => $name,
-                'reason' => $e->getMessage(),
-            ]);
+        } catch (\Throwable $exception) {
+            if (! $this->shouldDeferBackendMutation()) {
+                throw new GatewayApiException('Firewall rule intent was saved, but backend enactment failed.', 'firewall_rule.enactment_failed', [
+                    'node' => $node->name,
+                    'rule' => $name,
+                    'reason' => $exception->getMessage(),
+                ]);
+            }
+
+            $backendEnacted = false;
+            $warnings[] = $this->runtimeWarning($node->name);
         }
 
         return [
@@ -83,8 +91,8 @@ class FirewallRuleIntent
             ],
             'meta' => [
                 'action' => $existing instanceof FirewallRule ? 'converged' : 'created',
-                'backend_enacted' => true,
-                'warnings' => [],
+                'backend_enacted' => $backendEnacted,
+                'warnings' => $warnings,
             ],
         ];
     }
@@ -136,14 +144,22 @@ class FirewallRuleIntent
         $entity = $this->query->toRuleEntity($rule, 'removed_with_drift');
         $rule->delete();
 
+        $backendRemoved = true;
+        $warnings = [];
+
         try {
             $this->fixer->remove($rule);
-        } catch (\Throwable $e) {
-            throw new GatewayApiException('Firewall rule intent was removed, but backend cleanup failed.', 'firewall_rule.cleanup_failed', [
-                'node' => $node->name,
-                'rule' => $name,
-                'reason' => $e->getMessage(),
-            ]);
+        } catch (\Throwable $exception) {
+            if (! $this->shouldDeferBackendMutation()) {
+                throw new GatewayApiException('Firewall rule intent was removed, but backend cleanup failed.', 'firewall_rule.cleanup_failed', [
+                    'node' => $node->name,
+                    'rule' => $name,
+                    'reason' => $exception->getMessage(),
+                ]);
+            }
+
+            $backendRemoved = false;
+            $warnings[] = $this->cleanupWarning($node->name);
         }
 
         return [
@@ -151,8 +167,8 @@ class FirewallRuleIntent
                 'rule' => $entity,
             ],
             'meta' => [
-                'backend_removed' => true,
-                'warnings' => [],
+                'backend_removed' => $backendRemoved,
+                'warnings' => $warnings,
             ],
         ];
     }
@@ -263,5 +279,40 @@ class FirewallRuleIntent
             'shape' => $shape,
             'reason' => $reason,
         ], JSON_THROW_ON_ERROR));
+    }
+
+    private function shouldDeferBackendMutation(): bool
+    {
+        return getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker'
+            || ($_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null) === 'dns-alias'
+            || ($_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null) === 'dns-alias';
+    }
+
+    /**
+     * @return array{code: string, family: string, node: string, message: string, next_command: string}
+     */
+    private function runtimeWarning(string $nodeName): array
+    {
+        return [
+            'code' => 'firewall_rule.enactment_deferred',
+            'family' => 'firewall_rule',
+            'node' => $nodeName,
+            'message' => 'Firewall rule intent was saved, but backend enactment is deferred in this runtime.',
+            'next_command' => 'doctor --fix --family=firewall_rule --restore',
+        ];
+    }
+
+    /**
+     * @return array{code: string, family: string, node: string, message: string, next_command: string}
+     */
+    private function cleanupWarning(string $nodeName): array
+    {
+        return [
+            'code' => 'firewall_rule.cleanup_deferred',
+            'family' => 'firewall_rule',
+            'node' => $nodeName,
+            'message' => 'Firewall rule intent was removed, but backend cleanup is deferred in this runtime.',
+            'next_command' => 'doctor --fix --family=firewall_rule --restore',
+        ];
     }
 }

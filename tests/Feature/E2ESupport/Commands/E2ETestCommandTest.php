@@ -166,18 +166,25 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
 });
 
 it('includes the agent topology coverage in the incus lane', function (): void {
-    $exitCode = Artisan::call('e2e:test', [
-        '--dry-run' => true,
-        '--json' => true,
-        '--lanes' => 'incus',
-    ]);
-    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-    $lane = $payload['success']['data']['lanes'][0];
+    withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
+        'ORBIT_E2E_INCUS_MAX_VMS_PER_HOST' => '12',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '3',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'incus',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $lane = $payload['success']['data']['lanes'][0];
 
-    expect($exitCode)->toBe(0)
-        ->and($lane['test_files'])->toContain('tests/E2E/NodeListAgentTopologyTest.php')
-        ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_CACHE'])->toBe('0')
-        ->and($lane['environment']['ORBIT_E2E_CHECKOUT_CACHE'])->toBe('process');
+        expect($exitCode)->toBe(0)
+            ->and($lane['test_files'])->toContain('tests/E2E/NodeListAgentTopologyTest.php')
+            ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_CACHE'])->toBe('process')
+            ->and($lane['environment']['ORBIT_E2E_CHECKOUT_CACHE'])->toBe('process')
+            ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_STRATEGY'])->toBe('superset')
+            ->and($lane['command'])->toContain('--processes=2');
+    });
 });
 
 it('uses a unique generated docker test directory per plan', function (): void {

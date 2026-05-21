@@ -54,7 +54,7 @@ final readonly class FirewallRuleFixer
     {
         $rule->loadMissing('node');
 
-        $this->remoteShell->run($rule->node, $this->deleteCommand($this->expectedShape($rule)), ['throw' => false]);
+        $this->remoteShell->run($rule->node, $this->deleteCommand($this->expectedShape($rule)), ['throw' => true]);
         $this->remoteShell->run($rule->node, 'sudo ufw reload', ['throw' => false]);
     }
 

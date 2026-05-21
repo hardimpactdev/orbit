@@ -34,22 +34,24 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     public function availability(E2ETopologyKind $kind): ProviderAvailability
     {
-        $host = IncusHostPool::fromEnvironment($this->config)->firstAvailableFor($kind);
+        $availability = IncusHostPool::fromEnvironment($this->config)->availabilityFor($kind);
+        $host = $availability['host'];
 
         if ($host === null) {
-            return ProviderAvailability::unavailable("prepared topology {$kind->value} is not available on any Incus host");
+            return ProviderAvailability::unavailable("prepared topology {$kind->value} is not available on any Incus host: {$availability['reason']}");
         }
 
-        return ProviderAvailability::available("prepared topology {$kind->value} is available");
+        return ProviderAvailability::available("prepared topology {$kind->value} is available on {$host->config->host}");
     }
 
     public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
     {
         $pool = IncusHostPool::fromEnvironment($this->config);
-        $host = $timer->measure('availability', fn () => $pool->firstAvailableFor($kind));
+        $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind));
+        $host = $availability['host'];
 
         if ($host === null) {
-            throw new \RuntimeException("Prepared topology {$kind->value} is not available on any Incus host");
+            throw new \RuntimeException("Prepared topology {$kind->value} is not available on any Incus host: {$availability['reason']}");
         }
 
         $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer);

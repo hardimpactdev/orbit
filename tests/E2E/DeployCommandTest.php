@@ -119,7 +119,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
             ->and($logPayload['success']['data']['steps'][0]['output']['stdout'])->toBe('deployed')
             ->and($removePayload['success']['meta']['history_preserved'])->toBeTrue();
     } finally {
-        $topology->ssh('dev', 'rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator-gateway-appdev', 'e2e-feature-control-gateway-dev');

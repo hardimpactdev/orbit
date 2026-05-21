@@ -29,21 +29,43 @@ final readonly class IncusHostPool
 
     public function firstAvailableFor(E2ETopologyKind $kind): ?IncusHost
     {
+        return $this->availabilityFor($kind)['host'];
+    }
+
+    /**
+     * @return array{host: IncusHost|null, reason: string|null}
+     */
+    public function availabilityFor(E2ETopologyKind $kind): array
+    {
         $requiredSlots = count(IncusTopologyTemplate::rolesFor($kind));
+        $reasons = [];
 
         foreach ($this->hosts as $host) {
+            $hostName = $host->config->host;
+
             if (! IncusTopologyTemplate::availableOn($host, $kind)) {
+                $reasons[] = "{$hostName} is missing prepared templates or snapshots";
+
                 continue;
             }
 
-            $freeSlots = $host->config->incusMaxVmsPerHost - $host->runningE2EInstanceCount();
+            $running = $host->runningE2EInstanceCount();
+            $freeSlots = $host->config->incusMaxVmsPerHost - $running;
 
             if ($freeSlots >= $requiredSlots) {
-                return $host;
+                return [
+                    'host' => $host,
+                    'reason' => null,
+                ];
             }
+
+            $reasons[] = "{$hostName} has {$freeSlots}/{$requiredSlots} free VM slots ({$running}/{$host->config->incusMaxVmsPerHost} Orbit E2E VMs running)";
         }
 
-        return null;
+        return [
+            'host' => null,
+            'reason' => $reasons === [] ? 'no Incus hosts configured' : implode('; ', $reasons),
+        ];
     }
 
     public function first(): ?IncusHost

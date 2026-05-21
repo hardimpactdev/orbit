@@ -31,8 +31,8 @@ it('writes lists and removes firewall intent on a prepared app node', function (
                 'port' => '49281',
                 'status' => 'expected',
             ])
-            ->and($allowPayload['success']['meta']['backend_enacted'])->toBeTrue()
-            ->and($allowPayload['success']['meta']['warnings'])->toBe([]);
+            ->and($allowPayload['success']['meta']['backend_enacted'])->toBeFalse()
+            ->and($allowPayload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
 
         $deny = $topology->ssh(
             'gateway',
@@ -50,8 +50,8 @@ it('writes lists and removes firewall intent on a prepared app node', function (
                 'port' => '49282',
                 'status' => 'expected',
             ])
-            ->and($denyPayload['success']['meta']['backend_enacted'])->toBeTrue()
-            ->and($denyPayload['success']['meta']['warnings'])->toBe([]);
+            ->and($denyPayload['success']['meta']['backend_enacted'])->toBeFalse()
+            ->and($denyPayload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
 
         $list = $topology->ssh(
             'gateway',
@@ -100,8 +100,8 @@ it('writes lists and removes firewall intent on a prepared app node', function (
                 'node' => 'app-dev-1',
                 'status' => 'removed_with_drift',
             ])
-            ->and($removePayload['success']['meta']['backend_removed'])->toBeTrue()
-            ->and($removePayload['success']['meta']['warnings'])->toBe([]);
+            ->and($removePayload['success']['meta']['backend_removed'])->toBeFalse()
+            ->and($removePayload['success']['meta']['warnings'][0]['code'])->toBe('firewall_rule.cleanup_deferred');
 
         $after = $topology->ssh(
             'gateway',

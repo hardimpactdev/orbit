@@ -68,7 +68,7 @@ it('reports unavailable topology when requiring a topology', function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
-            ->toThrow(E2ETopologyUnavailable::class, 'incus: prepared topology operator is not available on any Incus host');
+            ->toThrow(E2ETopologyUnavailable::class, 'incus: prepared topology operator is not available on any Incus host: orbit-e2e-nonexistent.invalid is missing prepared templates or snapshots');
     });
 });
 

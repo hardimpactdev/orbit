@@ -112,7 +112,7 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
             'VITE_VALET_HOST' => 'feature-api.docs.test',
         ])
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature-api.conf')
-        ->and($remoteShell->scripts[3])->toContain("rm -rf '/home/orbit/apps/docs/.worktrees/feature-api'")
+        ->and($remoteShell->scripts[3])->toContain("sudo rm -rf '/home/orbit/apps/docs/.worktrees/feature-api'")
         ->and($payload['success']['data'])->toMatchArray([
             'name' => 'feature-api',
             'app' => 'docs',

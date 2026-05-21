@@ -45,6 +45,13 @@ function nodeNewExpectedLocalPlatform(): string
     };
 }
 
+function expectNodeNewWireGuardKey(?string $key): void
+{
+    expect($key)->toBeString()->not->toBeEmpty()
+        ->and(base64_decode($key, strict: true))->toBeString()
+        ->and(strlen((string) base64_decode($key, strict: true)))->toBe(32);
+}
+
 /**
  * @param  array<string, mixed>|string  $body
  */
@@ -368,31 +375,35 @@ describe('node:new', function (): void {
 
         expect(WireGuardPeer::query()->where('node_id', $gateway->id)->exists())->toBeFalse()
             ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
-            ->and($controlPeer->public_key)->toBe('control-public-key')
-            ->and($controlPeer->private_key)->toBe('control-private-key')
             ->and($controlPeer->pre_shared_key)->toBeString()->not->toBeEmpty()
             ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32');
+
+        expectNodeNewWireGuardKey($controlPeer->public_key);
+        expectNodeNewWireGuardKey($controlPeer->private_key);
 
         $identity = json_decode((string) $bootstrapInput, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($identity)->toMatchArray([
             'gateway' => [
-                'public_key' => 'gateway-public-key',
-                'private_key' => 'gateway-private-key',
+                'public_key' => $identity['gateway']['public_key'],
+                'private_key' => $identity['gateway']['private_key'],
                 'pre_shared_key' => $identity['gateway']['pre_shared_key'],
             ],
             'control' => [
                 'name' => 'mini',
                 'wireguard_address' => '10.6.0.3',
-                'public_key' => 'control-public-key',
-                'private_key' => 'control-private-key',
+                'public_key' => $controlPeer->public_key,
+                'private_key' => $controlPeer->private_key,
                 'pre_shared_key' => $identity['control']['pre_shared_key'],
             ],
         ]);
 
+        expectNodeNewWireGuardKey($identity['gateway']['public_key']);
+        expectNodeNewWireGuardKey($identity['gateway']['private_key']);
+
         expect($identity['gateway']['pre_shared_key'])->toBeString()->not->toBeEmpty()
             ->and($identity['control']['pre_shared_key'])->toBeString()->not->toBeEmpty()
-            ->and($localWireGuardConfig)->toContain('PrivateKey = control-private-key')
+            ->and($localWireGuardConfig)->toContain("PrivateKey = {$controlPeer->private_key}")
             ->and($localWireGuardConfig)->toContain('PublicKey = wg-easy-public-key')
             ->and($localWireGuardConfig)->toContain('PresharedKey = '.$identity['control']['pre_shared_key'])
             ->and($localWireGuardConfig)->toContain('AllowedIPs = 10.6.0.0/24')
@@ -881,8 +892,9 @@ describe('node:new', function (): void {
         $peer = DB::table('wireguard_peers')->where('node_id', $node->id)->first();
 
         expect($peer)->not->toBeNull()
-            ->and($peer->public_key)->toBe('app-public-key')
             ->and($peer->allowed_ips)->toBe('10.6.0.3/32');
+
+        expectNodeNewWireGuardKey($peer->public_key);
 
         expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
             ->toContain('orbit-managed=node-development-dns')
@@ -1950,7 +1962,6 @@ describe('node:new', function (): void {
                 'host' => null,
                 'status' => 'enrolled',
             ])
-            ->and($payload['success']['data']['wireguard']['config'])->toContain('PrivateKey = control-private-key')
             ->and($payload['success']['data']['wireguard']['config'])->toContain('PublicKey = gateway-public-key')
             // Duplicated by NodeNewJsonRendererTest; kept here as supplemental broad command coverage for this pass.
             ->and($payload['success']['data']['next_steps'])->toBe([
@@ -1965,9 +1976,11 @@ describe('node:new', function (): void {
         $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
 
         expect($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
-            ->and($controlPeer->public_key)->toBe('control-public-key')
-            ->and($controlPeer->private_key)->toBe('control-private-key')
             ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32');
+
+        expectNodeNewWireGuardKey($controlPeer->public_key);
+        expectNodeNewWireGuardKey($controlPeer->private_key);
+        expect($payload['success']['data']['wireguard']['config'])->toContain("PrivateKey = {$controlPeer->private_key}");
 
         Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
     });
