@@ -7,10 +7,11 @@
 **Effects:** `write`, `stream`.
 
 **Prerequisites:**
-- The gateway authorizes `node:new` for callers whose authenticated node record
-  has role `control` or `gateway`. App-role callers are rejected by the
-  gateway. First-gateway bootstrap is the one no-gateway path: an unconfigured
-  CLI runs the SSH bootstrap directly.
+- The gateway authorizes `node:new` with the `node:new` permission on the
+  active gateway node. Gateway callers are implicitly authorized; non-gateway
+  callers require a covering grant to the gateway node. First-gateway bootstrap
+  is the one no-gateway path: an unconfigured CLI runs the SSH bootstrap
+  directly.
 - Role-specific network, platform, topology, and authorization prerequisites
   are applied as post-input path eligibility in the role companion contracts
   once the requested role and required fields are known.
@@ -18,7 +19,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=<hosted-role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
 ```
 
 ## Input Contract
@@ -32,21 +33,21 @@ This command follows the shared
 | `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-development`, or `app-production`. | Client/control identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `environment` | `--environment` | Only when legacy `--role=app` is used. | Canonical hosted-role input, gateway bootstrap, and client/control identity. | None. | Legacy compatibility mapper: `development` => `app-development`; `production` => `app-production`. |
+| `environment` | `--environment` | Only when legacy `--role=app` is used. | Canonical role input, gateway bootstrap, and client/control identity. | None. | Legacy compatibility mapper: `development` => `app-development`; `production` => `app-production`. |
 | `tld` | `--tld` | `app-development`, or legacy `--role=app --environment=development`. | Client/control identity, gateway bootstrap, `database`, `app-production`, or legacy `--role=app --environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client/control identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 Canonical role values are `app-development`, `app-production`, and `database`.
 Legacy compatibility values `control`, `app`, and `gateway` are accepted; the
-`gateway` value remains a bootstrap path, not a public hosted-role assignment.
+`gateway` value remains a bootstrap path, not a public role assignment.
 
 ## Input Resolution
 
 1. Resolve `node_new.name` from `[name]`. Validate it immediately.
 2. Resolve all `node_new.role` values from repeatable `--role`.
 3. Normalize the requested role set before side effects.
-   - No `--role` values means a client/control identity with no hosted
+   - No `--role` values means a client/control identity with no assigned
      roles.
    - Legacy `control` maps to no roles.
    - Legacy `app` requires `--environment`; it maps to `app-development` or
@@ -70,10 +71,9 @@ Legacy compatibility values `control`, `app`, and `gateway` are accepted; the
      Otherwise they stop the command before asking for later inputs that cannot
      affect the blocker.
 6. Send the typed request to the gateway. The gateway authenticates the
-   presented WireGuard identity and applies the authorization rules described
-   in [`2_node-new_on-client.md`](2_node-new_on-client.md),
-   [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md), or
-   [`4_node-new_on-app-role.md`](4_node-new_on-app-role.md) before any
+   presented WireGuard identity and applies the grant authorization rules
+   described in [`2_node-new_on-client.md`](2_node-new_on-client.md) or
+   [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
    described in [`2_node-new_on-client.md`](2_node-new_on-client.md).
 7. Select the output renderer and begin the side-effect flow. Renderer-specific
@@ -133,7 +133,7 @@ Input mode behavior is split out of the canonical command contract:
 
 ### Workload Role Provisioning
 
-- Provision host-capable identities over SSH before initial hosted-role
+- Provision host-capable identities over SSH before initial role
   assignments are created.
 - Validate conflicts before side effects where possible. For example,
   `app-development` plus `app-production` must fail before node creation or
@@ -276,4 +276,3 @@ Role-specific and E2E test mapping lives in:
 
 - [`2_node-new_on-client.md`](2_node-new_on-client.md#test-mapping)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md#test-mapping)
-- [`4_node-new_on-app-role.md`](4_node-new_on-app-role.md#test-mapping)

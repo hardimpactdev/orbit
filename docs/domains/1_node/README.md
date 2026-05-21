@@ -38,8 +38,8 @@ Orbit distinguishes three concepts:
   `app-production`, `database`, and `agent`. `agent` is exclusive and
   selectable only during `node:new`; `node role:add` rejects it.
 - **Client identity:** a CLI installation that has gateway configuration
-  and a gateway-issued WireGuard identity. A client may have no hosted
-  roles. It can request self-scoped actions and can operate other nodes only
+  and a gateway-issued WireGuard identity. A client may have no workload role
+  assignments. It can request self-scoped actions and can operate other nodes only
   through explicit gateway grants.
 
 Roles are code-defined bundles, not open-ended labels. Orbit stores role
@@ -136,7 +136,7 @@ directly.
                              | HTTPS over WireGuard
                              v
 +-----------+   SSH   +------+-------+   SSH   +-----------+
-| hosted    | <------ |   gateway    | ------> | hosted    |
+| workload  | <------ |   gateway    | ------> | workload  |
 | node      |         |              |         | node      |
 +-----+-----+         +------+-------+         +-----+-----+
                              ^
@@ -193,7 +193,7 @@ These rules apply to all node commands and define the invariants the family enfo
   rejected, and wildcards `node:*` or `*` include future permissions that
   belong to the matched namespace.
 - Self-grants are explicit. A node does not implicitly have access to itself.
-  Role baseline self-grants are created during `node:new` from each hosted
+  Role baseline self-grants are created during `node:new` from each assigned
   role's self preset.
 - `node:grant` creates the initial grant edge and the initial permissions on
   it. It does not edit an existing grant's permission set.
@@ -408,7 +408,7 @@ repair only local gateway CA trust without re-running identity verification or
 changing gateway settings.
 
 When a node is already provisioned and can prove compatible node identity,
-`node:new` may adopt that hosted identity into gateway configuration. When a gateway is
+`node:new` may adopt that existing identity into gateway configuration. When a gateway is
 already known to the gateway registry, `node:new --role=gateway` converges that
 gateway-owned identity instead of minting a duplicate node. Missing gateway-row
 materialization belongs to first-gateway bootstrap or a future explicit recovery

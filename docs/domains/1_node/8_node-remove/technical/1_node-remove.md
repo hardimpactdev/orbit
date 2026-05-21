@@ -7,19 +7,20 @@
 **Effects:** `destructive`, `write`.
 
 **Prerequisites:**
-- The gateway authenticates the CLI and authorizes `node:remove` only when the
-  caller's gateway-known role is `control` or `gateway`. App-role callers are
-  rejected.
-- Gateway callers can read and write gateway-owned node configuration.
-- Operator callers have configured gateway access as defined in
-  [`2_node-remove_on-client.md`](2_node-remove_on-client.md).
+- The gateway authenticates the CLI and authorizes `node:remove` with the
+  `node:remove` permission on the target node. Gateway callers are implicitly
+  authorized. A grant using the `gateway-admin` preset also authorizes the
+  write.
+- Non-gateway callers have configured gateway access as defined in
+  [`2_node-remove_on-client.md`](2_node-remove_on-client.md) and a covering
+  node access grant for this operation.
 
 **Post-input path eligibility:**
 - Destructive consent is resolved by interactive confirmation or `--force`.
 - The target node name resolves to an existing active node record.
 - The resolved node record's role is not `gateway`. No gateway node is
   removable by `node:remove`, regardless of gateway count.
-- The target node may be the current operator caller's own node record.
+- The target node may be the current caller's own node record.
 
 ## Signature
 
@@ -124,7 +125,7 @@ node that owns them. This is operational guidance, not a blocking precondition:
 `node:remove` remains scoped to node identity, grants, and WireGuard peer
 detach.
 
-When an operator caller removes its own node record, the command removes the
+When a caller removes its own node record, the command removes the
 gateway-owned node record, access grants, and WireGuard peer like any other
 client removal. The command does not require an extra flag beyond the
 shared destructive consent model. After success, future Orbit commands from
@@ -197,11 +198,11 @@ Primary test owners:
 | `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract for `node:remove` lifecycle; see detail below. |
 | `tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded client rendering paths. |
 | `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Client-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require a covering grant, and no SSH-to-gateway path is used. |
 
 `NodeRemoveCommandTest.php` covers node removal, grant cleanup, WireGuard peer
 teardown, warning payload shape for partial detach, DNS mapping cleanup,
-operator-caller forwarding, self-removal, app-role denial, node-not-found as
+client forwarding, self-removal, grant denial, node-not-found as
 validation failure, gateway-node refusal, interactive confirmation,
 non-interactive missing-`--force` failure, `--force` success, and downstream
 state non-blocking.
@@ -220,4 +221,3 @@ Role-specific test mapping lives in:
 
 - [`2_node-remove_on-client.md`](2_node-remove_on-client.md#test-mapping)
 - [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md#test-mapping)
-- [`4_node-remove_on-app-role.md`](4_node-remove_on-app-role.md#test-mapping)

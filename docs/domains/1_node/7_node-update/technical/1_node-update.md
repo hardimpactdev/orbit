@@ -7,12 +7,13 @@
 **Effects:** `write`.
 
 **Prerequisites:**
-- The gateway authenticates the CLI and authorizes `node:update` only when the
-  caller's gateway-known role is `control` or `gateway`. App-role callers are
-  rejected.
-- Gateway callers can read and write gateway-owned node configuration.
-- Operator callers have configured gateway access as defined in
-  [`2_node-update_on-client.md`](2_node-update_on-client.md).
+- The gateway authenticates the CLI and authorizes `node:update` with the
+  `node:update` permission on the target node. Gateway callers are implicitly
+  authorized. A grant using the `gateway-admin` preset also authorizes the
+  write.
+- Non-gateway callers have configured gateway access as defined in
+  [`2_node-update_on-client.md`](2_node-update_on-client.md) and a covering
+  node access grant for this operation.
 
 **Post-input path eligibility:**
 - The target node name resolves to an existing active node record.
@@ -33,7 +34,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Caller role = `control` or `gateway`. | Never. | None. | Must match an existing active node record. |
+| `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
 | `host` | `--host` | Optional. | Target node role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
 | `environment` | `--environment` | Optional. | Target node role ≠ `app`. | None. | One of `development`, `production`. |
 | `tld` | `--tld` | Optional. | Target node role ≠ `app`, or target effective environment ≠ `development`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. Effective environment is supplied `--environment` when present, otherwise the node's current environment. |
@@ -257,9 +258,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, operator-caller forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Operator-caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, structured errors, unconfigured caller failures, gateway-node access, and no SSH-to-gateway path. |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnAppNodeContractTest.php` | App-caller behavior: app-role callers forward through the CLI gateway client, receive gateway-owned `caller_role_not_allowed`, and are not locally pre-rejected. |
+| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, client forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Client-caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, structured errors, unconfigured caller failures, grant authorization failures, and no SSH-to-gateway path. |
 | `tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD role and effective-environment rejection, production-to-development plus `--tld` success, duplicate TLD conflict, and invalid TLD syntax. |
 
 Input-mode-specific test mapping lives in:
@@ -276,4 +276,3 @@ Role-specific and E2E test mapping lives in:
 
 - [`2_node-update_on-client.md`](2_node-update_on-client.md#test-mapping)
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md#test-mapping)
-- [`4_node-update_on-app-role.md`](4_node-update_on-app-role.md#test-mapping)

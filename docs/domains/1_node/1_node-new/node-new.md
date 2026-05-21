@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<hosted-role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -43,7 +43,7 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
 - `--role`: repeatable initial role assignment. Supported roles:
-  `app-development`, `app-production`, `database`, and `agent`. No hosted
+  `app-development`, `app-production`, `database`, and `agent`. No assigned
   role means a client/control identity. `gateway` remains an internal
   bootstrap path. `agent` is exclusive and may only be selected during
   `node:new`; combining it with another role fails before side effects.
@@ -91,7 +91,7 @@ Creates a joined node identity with no roles by default. This is the new
 baseline meaning of `node:new <name>` with no `--role` values.
 
 Legacy `--role=control` is accepted for one compatibility cycle and maps to the
-same no-hosted-role identity. Human output warns when a legacy mapping is used.
+same no-role identity. Human output warns when a legacy mapping is used.
 
 **`app-development`**
 
@@ -180,8 +180,8 @@ gateway endpoint used in generated WireGuard peer configs. It is also passed to
 wg-easy as `INIT_HOST`. As a result, it must be an IP address or dotted DNS
 name reachable by the nodes that will join the fleet.
 
-Gateway bootstrap internally creates coupled `gateway` and `vpn` hosted-role
-assignments on the same node. Public hosted-role assignment does not accept
+Gateway bootstrap internally creates coupled `gateway` and `vpn` role
+assignments on the same node. Public role assignment does not accept
 `gateway` or `vpn`.
 
 If the requested gateway is already provisioned and active, and the supplied host is
@@ -197,7 +197,7 @@ and requires a future explicit reset contract.
 role assignment. Development app bootstrap includes the node TLD and the
 gateway development DNS mapping for that TLD.
 
-If initial hosted-role validation fails, the command stops before provisioning
+If initial role validation fails, the command stops before provisioning
 or writing the node identity. If an initial role is persisted but its
 first convergence fails, the command fails and leaves that role assignment in
 `error` for later doctor recovery.
