@@ -7,8 +7,8 @@ namespace App\Services\Proxy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Support\Facades\DB;
 
 class ProxyRouteIntent
 {
@@ -22,7 +22,7 @@ class ProxyRouteIntent
      */
     public function add(string $domain, string $nodeName, ?string $upstream, ?string $redirect, ?int $code, bool $force, ?Node $caller = null): array
     {
-        $node = $this->resolveServingNode($nodeName, $caller);
+        $node = $this->resolveServingNode($nodeName, $caller, 'proxy:add');
         $this->validateAddTarget($upstream, $redirect, $code);
 
         $existing = ProxyRoute::query()
@@ -100,7 +100,7 @@ class ProxyRouteIntent
         }
 
         $node = $route->node;
-        $this->authorizeServingNode($node, $caller);
+        $this->authorizeServingNode($node, $caller, 'proxy:remove');
 
         $entity = $this->query->toRouteEntity($route, 'removed_with_drift');
         $route->delete();
@@ -117,7 +117,7 @@ class ProxyRouteIntent
         ];
     }
 
-    private function resolveServingNode(string $nodeName, ?Node $caller): Node
+    private function resolveServingNode(string $nodeName, ?Node $caller, string $permission): Node
     {
         $node = Node::query()
             ->where('name', $nodeName)
@@ -131,7 +131,7 @@ class ProxyRouteIntent
             ]);
         }
 
-        $this->authorizeServingNode($node, $caller);
+        $this->authorizeServingNode($node, $caller, $permission);
 
         return $node;
     }
@@ -141,24 +141,23 @@ class ProxyRouteIntent
         return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
-    private function authorizeServingNode(Node $node, ?Node $caller): void
+    private function authorizeServingNode(Node $node, ?Node $caller, string $permission): void
     {
         if (! $caller instanceof Node || app(NodeRoleAssignments::class)->nodeIsGateway($caller)) {
             return;
         }
 
-        $authorized = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
+        $result = app(NodeAccessAuthorizer::class)->authorize($caller, $node, $permission);
 
-        if ($authorized) {
+        if ($result->allowed) {
             return;
         }
 
         throw new GatewayApiException('This node is not authorized to manage custom proxy routes for the selected serving node.', 'authorization_failed', [
             'node' => $node->name,
-            'caller_role' => $caller->role,
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $node->name,
         ]);
     }
 

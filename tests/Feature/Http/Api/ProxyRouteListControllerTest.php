@@ -108,7 +108,8 @@ describe('ProxyRouteListController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'proxy:read');
     });
 
     it('returns authorization failure when the caller has no route visibility', function (): void {
@@ -119,6 +120,7 @@ describe('ProxyRouteListController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'proxy:read');
     });
 });
