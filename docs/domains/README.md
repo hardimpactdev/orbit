@@ -205,6 +205,19 @@ Prerequisites and surface authorization failures as
 `error.code=authorization_failed` with `error.meta` describing the missing
 permission. Family READMEs may document family-wide permission rules.
 
+### Authorization Metadata
+
+Gateway API controllers declare command authorization with the
+`App\Http\Authorization\RequiresPermission` PHP attribute. The attribute names
+the required permission and the serving-node resolution mode:
+`Gateway`, `Target`, `AppOwning`, `WorkspaceOwning`, or `Caller`.
+
+This metadata is an implementation hook for gateway middleware. It does not
+change command documentation structure and does not turn deployment-context
+companion files into authorization gates. Routes without the attribute are
+handled as bootstrap, deployment-context, authenticated-ungated, or not yet
+migrated routes according to the authorization matrix.
+
 ### Technical Slot Map
 
 When a command uses a `technical/` directory, reserve these slots. The
