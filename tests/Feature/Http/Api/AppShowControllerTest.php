@@ -27,11 +27,16 @@ function createAppShowCallerNode(array $overrides = []): Node
     return Node::factory()->create($attributes);
 }
 
-function grantAppShowAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppShowAccess(Node $caller, Node $appNode, array $permissions = ['app:read']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -97,16 +102,42 @@ describe('AppShowController', function (): void {
             ->assertJsonPath('success.data.app.name', 'docs.example.com');
     });
 
-    it('returns not found for hidden apps', function (): void {
-        createAppShowCallerNode();
+    it('rejects hidden apps when the caller lacks app:read on the owning node', function (): void {
+        $caller = createAppShowCallerNode();
         $node = createTestAppHostNode(['role' => 'app']);
+        grantAppShowAccess($caller, $node, ['node:read']);
         App::factory()->create(['name' => 'hidden', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/apps/hidden', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:read')
+            ->assertJsonPath('error.meta.serving_node', $node->name);
+    });
+
+    it('authorizes hostname selectors against the owning node', function (): void {
+        $caller = createAppShowCallerNode();
+        $node = createTestAppHostNode(['role' => 'app']);
+        grantAppShowAccess($caller, $node, ['node:read']);
+        App::factory()->create(['name' => 'hidden', 'node_id' => $node->id, 'domain' => 'hidden.example.com']);
+
+        $response = $this->call('GET', '/api/apps/hidden.example.com', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:read')
+            ->assertJsonPath('error.meta.serving_node', $node->name);
+    });
+
+    it('returns not found for absent apps', function (): void {
+        createAppShowCallerNode();
+
+        $response = $this->call('GET', '/api/apps/missing', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+
         $response->assertNotFound()
             ->assertJsonPath('error.code', 'app.not_found')
-            ->assertJsonPath('error.message', "App 'hidden' not found or not visible.");
+            ->assertJsonPath('error.message', "App 'missing' not found.");
     });
 
     it('lets gateway callers inspect any app', function (): void {

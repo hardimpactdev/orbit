@@ -27,11 +27,16 @@ function createAppStoreCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function grantAppStoreAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppStoreAccess(Node $caller, Node $appNode, array $permissions = ['app:new']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -62,6 +67,7 @@ describe('AppStoreController', function (): void {
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $response = $this->call('POST', '/api/apps', [
             'name' => 'docs',
@@ -80,14 +86,15 @@ describe('AppStoreController', function (): void {
             ->and($remoteShell->runs)->toHaveCount(6);
     });
 
-    it('rejects app creation when the caller cannot access the target app node', function (): void {
-        createAppStoreCallerNode();
+    it('rejects app creation when the caller lacks app:new on the target app node', function (): void {
+        $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',
         ]);
         assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode, ['app:read']);
 
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
@@ -98,13 +105,15 @@ describe('AppStoreController', function (): void {
         ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:new')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(App::query()->count())->toBe(0)
             ->and($remoteShell->runs)->toBe([]);
     });
 
-    it('rejects database callers before remote work even when the legacy role shadow is control', function (): void {
+    it('allows database-role callers when app:new is granted on the target app node', function (): void {
         $caller = createAppStoreCallerNode();
         assignAppStoreRole($caller, 'database');
         $targetNode = Node::factory()->create([
@@ -122,14 +131,16 @@ describe('AppStoreController', function (): void {
         $response = $this->call('POST', '/api/apps', [
             'name' => 'docs',
             'node' => 'app-1',
+            'root' => 'public',
+            'php_version' => '8.5',
         ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+        $response->assertOk()
+            ->assertJsonPath('success.data.result.action', 'created')
+            ->assertJsonPath('success.data.app.name', 'docs');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
+            ->and($remoteShell->runs)->not->toBe([]);
     });
 
     it('rejects app creation before remote work when the proxy route domain is already registered', function (): void {

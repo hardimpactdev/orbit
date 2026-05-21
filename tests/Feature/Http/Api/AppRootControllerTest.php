@@ -23,11 +23,16 @@ function createAppRootCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function grantAppRootAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppRootAccess(Node $caller, Node $appNode, array $permissions = ['app:root']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -74,18 +79,19 @@ describe('AppRootController', function (): void {
         expect(App::query()->where('name', 'docs')->value('document_root'))->toBe('web');
     });
 
-    it('rejects root updates when the caller cannot access the app node', function (): void {
+    it('rejects root updates when the caller lacks app:root on the app node', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
             'role' => 'gateway',
         ]);
 
-        createAppRootCallerNode();
+        $caller = createAppRootCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',
         ]);
+        grantAppRootAccess($caller, $targetNode, ['app:read']);
 
         App::factory()->create([
             'name' => 'docs',
@@ -99,7 +105,9 @@ describe('AppRootController', function (): void {
         ], [], [], ['REMOTE_ADDR' => APP_ROOT_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:root')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(App::query()->where('name', 'docs')->value('document_root'))->toBe('public');
     });
