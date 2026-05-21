@@ -24,6 +24,7 @@ class AddNodeRoleApiRequest extends FormRequest
         return [
             'role' => ['required', 'string', 'filled', 'max:255'],
             'settings' => ['nullable', 'array'],
+            'ingress_node' => ['nullable', 'string'],
         ];
     }
 
@@ -42,15 +43,23 @@ class AddNodeRoleApiRequest extends FormRequest
         return is_array($settings) ? $settings : [];
     }
 
+    public function ingressNode(): ?string
+    {
+        $value = $this->validated('ingress_node');
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     protected function validationFailureFields(): array
     {
-        return ['role', 'settings'];
+        return ['role', 'settings', 'ingress_node'];
     }
 
     protected function validationMessageFor(string $field): string
     {
         return match ($field) {
             'settings' => 'Settings must be an object.',
+            'ingress_node' => 'Ingress node must be a string.',
             default => 'Role is required.',
         };
     }

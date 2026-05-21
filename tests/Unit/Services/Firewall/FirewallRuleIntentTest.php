@@ -53,6 +53,26 @@ function createFirewallRuleIntentAppHostNode(array $attributes = []): Node
     return $node;
 }
 
+function createFirewallRuleIntentRoleNode(string $role, array $attributes = []): Node
+{
+    $node = Node::factory()->create([
+        'name' => "{$role}-1",
+        'role' => 'control',
+        'platform' => 'ubuntu',
+        'status' => 'active',
+        ...$attributes,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
+}
+
 describe('FirewallRuleIntent', function (): void {
     it('creates idempotent firewall intent and enacts it immediately', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
@@ -167,6 +187,22 @@ describe('FirewallRuleIntent', function (): void {
 
         app(FirewallRuleIntent::class)->store('allow', 'ssh-public', 'app-1', 'incoming', 'any', null, '22', 'tcp', null);
     })->throws(GatewayApiException::class, 'The requested rule would mutate node bootstrap policy.');
+
+    it('allows firewall rules for every active Ubuntu role target', function (string $role): void {
+        $node = createFirewallRuleIntentRoleNode($role, ['name' => "{$role}-node"]);
+
+        app(FirewallRuleIntent::class)->store('deny', 'block-test', $node->name, 'incoming', 'any', null, '8080', 'tcp', null);
+
+        expect(FirewallRule::query()->where('node_id', $node->id)->where('name', 'block-test')->exists())->toBeTrue();
+    })->with([
+        'gateway',
+        'router',
+        'app-development',
+        'app-production',
+        'database',
+        'agent',
+        'ingress',
+    ]);
 });
 
 final class FirewallRuleIntentRecordingRemoteShell implements RemoteShell

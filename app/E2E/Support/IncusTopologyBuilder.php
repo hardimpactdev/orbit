@@ -94,6 +94,10 @@ class IncusTopologyBuilder
 
     private function resolveBuildTarget(E2ETopologyKind $kind, bool $replaceExisting): E2ETopologyKind
     {
+        if ($kind === E2ETopologyKind::OperatorGatewayAppprodIngress) {
+            return $kind;
+        }
+
         if (! $replaceExisting) {
             return $kind;
         }
@@ -174,6 +178,7 @@ class IncusTopologyBuilder
                 E2ETopologyKind::ControlGatewayDev => $this->buildDevelopmentAppStage($key),
                 E2ETopologyKind::ControlGatewayDevProd => $this->buildProductionAppStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildAgentStage($key),
+                E2ETopologyKind::OperatorGatewayAppprodIngress => $this->buildIngressProductionStage($key),
             };
 
             $manifests[$stage->value] = $this->finalizeInstances($stage, $instances);
@@ -187,6 +192,14 @@ class IncusTopologyBuilder
      */
     private function stagesThrough(E2ETopologyKind $target): array
     {
+        if ($target === E2ETopologyKind::OperatorGatewayAppprodIngress) {
+            return [
+                E2ETopologyKind::Control,
+                E2ETopologyKind::ControlGateway,
+                E2ETopologyKind::OperatorGatewayAppprodIngress,
+            ];
+        }
+
         $stages = $this->stageOrder();
 
         $targetIndex = array_search($target, $stages, true);
@@ -370,6 +383,50 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildIngressProductionStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['control', 'gateway'], $key);
+
+        $this->timer->measure('ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-ingress'));
+        $this->timer->measure('ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
+        $this->timer->measure('ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+
+        $ingress = $this->launchBlankRole('ingress', $key);
+        $ingressIp = $this->timer->measure('ingress.ipv4', fn (): string => $ingress->waitForIpv4());
+        $instances['ingress'] = $ingress;
+
+        $this->timer->measure('ingress.node-new', fn () => $this->runIngressNodeNew(
+            $instances['control'],
+            $key,
+            'edge-1',
+            $ingressIp,
+        ));
+
+        $prod = $this->launchBlankRole('prod', $key);
+        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
+        $instances['prod'] = $prod;
+
+        $this->timer->measure('prod.node-new-private', fn () => $this->runPrivateProductionAppNodeNew(
+            $instances['control'],
+            $key,
+            'app-prod-1',
+            $prodIp,
+            'edge-1',
+        ));
+        $this->timer->measure('ingress.real-wireguard', fn () => $this->installRealWireGuard($instances));
+
+        return [
+            'control' => $instances['control'],
+            'gateway' => $instances['gateway'],
+            'prod' => $instances['prod'],
+            'ingress' => $instances['ingress'],
+        ];
+    }
+
+    /**
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
@@ -449,9 +506,8 @@ PHP;
         $parts = [
             'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
             escapeshellarg($name),
-            '--role=app',
+            '--role='.($environment === 'development' ? 'app-dev' : 'app-prod'),
             '--host='.escapeshellarg($host),
-            '--environment='.escapeshellarg($environment),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--json',
         ];
@@ -483,6 +539,60 @@ PHP;
             '--role=agent',
             '--host='.escapeshellarg($host),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--json',
+        ];
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            implode(' ', $parts),
+            timeoutSeconds: 900,
+        );
+
+        E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
+    }
+
+    private function runIngressNodeNew(
+        IncusInstance $control,
+        SshKeyPair $key,
+        string $name,
+        string $host,
+    ): void {
+        $parts = [
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
+            escapeshellarg($name),
+            '--role=ingress',
+            '--host='.escapeshellarg($host),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--json',
+        ];
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            implode(' ', $parts),
+            timeoutSeconds: 900,
+        );
+
+        E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
+    }
+
+    private function runPrivateProductionAppNodeNew(
+        IncusInstance $control,
+        SshKeyPair $key,
+        string $name,
+        string $host,
+        string $ingressNode,
+    ): void {
+        $parts = [
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
+            escapeshellarg($name),
+            '--role=app-prod',
+            '--host='.escapeshellarg($host),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--ingress='.escapeshellarg($ingressNode),
             '--json',
         ];
 
@@ -663,7 +773,7 @@ PHP;
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod', 'agent'] as $role) {
+        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -676,6 +786,7 @@ PHP;
             isset($instances['dev']) ? 'dev' : null,
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
+            isset($instances['ingress']) ? 'ingress' : null,
         ])));
     }
 
@@ -690,6 +801,7 @@ PHP;
         $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
+        $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -705,6 +817,8 @@ PHP;
             prodPublicKey: $prod['public_key'] ?? null,
             agentPrivateKey: $agent['private_key'] ?? null,
             agentPublicKey: $agent['public_key'] ?? null,
+            ingressPrivateKey: $ingress['private_key'] ?? null,
+            ingressPublicKey: $ingress['public_key'] ?? null,
         );
     }
 

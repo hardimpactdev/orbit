@@ -73,11 +73,16 @@ function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string 
 }
 
 it('maps each topology kind to expected roles', function (): void {
+    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+
+    expect($ingressKind)->not->toBeNull();
+
     expect(IncusTopologyTemplate::rolesFor(E2ETopologyKind::Control))->toBe(['control'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway))->toBe(['control', 'gateway'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDev))->toBe(['control', 'gateway', 'dev'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDevProd))->toBe(['control', 'gateway', 'dev', 'prod'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['control', 'gateway', 'dev', 'prod', 'agent']);
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['control', 'gateway', 'dev', 'prod', 'agent'])
+        ->and(IncusTopologyTemplate::rolesFor($ingressKind))->toBe(['control', 'gateway', 'prod', 'ingress']);
 });
 
 it('generates correct template and clone names', function (): void {

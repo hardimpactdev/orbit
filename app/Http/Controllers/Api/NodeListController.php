@@ -21,7 +21,7 @@ use Illuminate\Http\Request;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'app', 'app-development', 'app-production', 'database', 'control'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 

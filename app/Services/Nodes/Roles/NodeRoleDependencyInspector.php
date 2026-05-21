@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 class NodeRoleDependencyInspector
@@ -43,6 +44,10 @@ class NodeRoleDependencyInspector
             return $this->databaseDependentSummaries($node);
         }
 
+        if ($assignment->role === NodeRoleName::Ingress->value) {
+            return $this->ingressDependentSummaries($node);
+        }
+
         return [];
     }
 
@@ -56,6 +61,12 @@ class NodeRoleDependencyInspector
 
         if ($assignment->role === NodeRoleName::Database->value) {
             $this->removeDatabaseDependents($node);
+
+            return;
+        }
+
+        if ($assignment->role === NodeRoleName::Ingress->value) {
+            $this->removeIngressDependents($node);
         }
     }
 
@@ -125,5 +136,45 @@ class NodeRoleDependencyInspector
             ->where('node_id', $node->id)
             ->whereIn('name', self::DatabaseTools)
             ->delete();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function ingressDependentSummaries(Node $node): array
+    {
+        $count = $this->ingressProxyRouteQuery($node)->count();
+
+        if ($count === 0) {
+            return [];
+        }
+
+        return ["{$count} public proxy route ".($count === 1 ? 'record' : 'records')];
+    }
+
+    private function removeIngressDependents(Node $node): void
+    {
+        $this->ingressProxyRouteQuery($node)->delete();
+    }
+
+    private function ingressProxyRouteQuery(Node $node): Builder
+    {
+        return ProxyRoute::query()
+            ->where('node_id', $node->id)
+            ->where('config->placement', 'ingress')
+            ->whereHas('app', fn (Builder $query): Builder => $query->where('environment', 'production'))
+            ->where(function (Builder $query): void {
+                $query
+                    ->where(function (Builder $query): void {
+                        $query
+                            ->where('owner_type', 'app')
+                            ->where('kind', 'app');
+                    })
+                    ->orWhere(function (Builder $query): void {
+                        $query
+                            ->where('owner_type', 'workspace')
+                            ->where('kind', 'workspace');
+                    });
+            });
     }
 }

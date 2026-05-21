@@ -33,14 +33,22 @@ Each firewall rule is defined by the following fields.
 
 This term defines which nodes firewall commands may target.
 
-- **Eligible firewall target:** Registered active Ubuntu managed node with role `gateway`, `app-development`, `app-production`, `database`, or `agent`. Clients, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
-- **Database-only ingress:** A node carrying only `database` has an empty public ingress baseline. Operator-managed firewall rules may still be configured on it, e.g. to allow inbound TCP from specific app-role nodes.
+- **Eligible firewall target:** Registered active Ubuntu managed node with role
+  `gateway`, `router`, `app-development`, `app-production`, `database`,
+  `agent`, or `ingress`. Clients, unsupported platforms, inactive nodes,
+  and unmanaged roles are not firewall-rule targets.
+- **Database-only ingress:** A node carrying only `database` has an empty ingress baseline. Operator-managed firewall rules may still be configured on it, e.g. to allow inbound TCP from specific app-role nodes.
 
 ## Policy Boundaries
 
 These terms define what firewall commands may and may not change.
 
-- **Bootstrap policy:** Role-baseline firewall policy applied during node provisioning, including Orbit/WireGuard management access and public ingress decisions specific to each node role. Owned by the node domain.
+- **Bootstrap policy:** Role-baseline firewall policy applied during node
+  provisioning, including Orbit/WireGuard management access and ingress
+  decisions defined by the node role. Only nodes with active `ingress` expose
+  public production HTTP/HTTPS. `app-production` backend port `80` is private
+  backend traffic and must be reachable only through the Orbit/WireGuard
+  network. Owned by the node domain.
 - **Operator preset firewall boundary:** Authorization rule that the `operator` permission preset includes `firewall_rule:read` (firewall list/show plus `doctor --family=firewall_rule` findings) but excludes every `firewall_rule:write` permission. Firewall writes require an `admin`-class preset or an explicit `firewall_rule:write` permission on the grant.
 - **Firewall-family boundaries:** Firewall commands own editable rule configuration on eligible nodes.
   - They do not edit bootstrap policy.

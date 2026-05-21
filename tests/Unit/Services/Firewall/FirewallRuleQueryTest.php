@@ -38,6 +38,16 @@ function assignFirewallRuleQueryAppHostRole(Node $node, string $role = 'app-deve
     ]);
 }
 
+function assignFirewallRuleQueryRole(Node $node, string $role): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => [],
+    ]);
+}
+
 describe('FirewallRuleQuery', function (): void {
     it('normalizes firewall rule entities and sorts them by node then name', function (): void {
         $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'control', 'platform' => 'ubuntu']);
@@ -131,6 +141,26 @@ describe('FirewallRuleQuery', function (): void {
         $result = app(FirewallRuleQuery::class)->list();
 
         expect(array_column($result['rules'], 'name'))->toBe(['visible']);
+    });
+
+    it('lists firewall rules for every active Ubuntu role target', function (): void {
+        foreach (['gateway', 'router', 'app-development', 'app-production', 'database', 'agent', 'ingress'] as $role) {
+            $node = Node::factory()->create(['name' => "{$role}-node", 'role' => 'control', 'platform' => 'ubuntu', 'status' => 'active']);
+            assignFirewallRuleQueryRole($node, $role);
+            FirewallRule::factory()->create(['node_id' => $node->id, 'name' => "{$role}-rule"]);
+        }
+
+        $result = app(FirewallRuleQuery::class)->list();
+
+        expect(array_column($result['rules'], 'name'))->toBe([
+            'agent-rule',
+            'app-development-rule',
+            'app-production-rule',
+            'database-rule',
+            'gateway-rule',
+            'ingress-rule',
+            'router-rule',
+        ]);
     });
 
     it('fails authorization when non-gateway callers have no visible firewall nodes', function (): void {

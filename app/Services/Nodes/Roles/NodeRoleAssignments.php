@@ -76,6 +76,16 @@ class NodeRoleAssignments
         return $this->nodeHasActiveRole($node, NodeRoleName::Vpn->value);
     }
 
+    public function nodeHasActiveRouterRole(Node $node): bool
+    {
+        return $this->nodeHasActiveRole($node, NodeRoleName::Router->value);
+    }
+
+    public function nodeHasActiveIngressRole(Node $node): bool
+    {
+        return $this->nodeHasActiveRole($node, NodeRoleName::Ingress->value);
+    }
+
     public function nodeHasActiveAgentRole(Node $node): bool
     {
         return $this->nodeHasActiveRole($node, NodeRoleName::Agent->value);
@@ -95,10 +105,36 @@ class NodeRoleAssignments
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Vpn->value));
     }
 
+    public function activeRouterNodeQuery(): Builder
+    {
+        return Node::query()
+            ->where('status', 'active')
+            ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Router->value));
+    }
+
+    public function activeIngressNodeQuery(): Builder
+    {
+        return Node::query()
+            ->where('status', 'active')
+            ->whereIn('id', $this->activeIngressNodeIds());
+    }
+
     public function nodeIsGateway(Node $node): bool
     {
         return $node->status === 'active'
             && $this->nodeHasActiveGatewayRole($node);
+    }
+
+    public function nodeCanServeIngress(Node $node): bool
+    {
+        return $node->status === 'active'
+            && $this->nodeHasActiveIngressRole($node);
+    }
+
+    public function nodeCanServeRouter(Node $node): bool
+    {
+        return $node->status === 'active'
+            && $this->nodeHasActiveRouterRole($node);
     }
 
     public function nodeHasActiveAppHostRole(Node $node): bool
@@ -204,6 +240,14 @@ class NodeRoleAssignments
     public function activeAgentNodeIds(): array
     {
         return $this->activeNodeIdsForRole(NodeRoleName::Agent->value);
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeIngressNodeIds(): array
+    {
+        return $this->activeNodeIdsForRole(NodeRoleName::Ingress->value);
     }
 
     /**

@@ -222,7 +222,7 @@ class DockerImageDistributor
 
     private function sshOptions(): string
     {
-        return '-o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
+        return '-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null';
     }
 
     private function sameHost(string $first, string $second): bool

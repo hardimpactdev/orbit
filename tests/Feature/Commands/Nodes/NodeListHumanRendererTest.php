@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,6 +53,17 @@ function assignNodeListHumanRole(string $nodeName, string $role): void
         'status' => 'active',
         'settings' => [],
     ]);
+}
+
+function markNodeListHumanAppProductionToolsInstalled(Node $node): void
+{
+    foreach (['caddy', 'php', 'supervisor'] as $tool) {
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => $tool,
+            'expected_state' => 'running',
+        ]);
+    }
 }
 
 describe('node:list human renderer contract', function (): void {
@@ -283,6 +295,7 @@ describe('node:list human renderer contract', function (): void {
             'wireguard_address' => null,
         ]), 'app-production');
         markNodeSecurityBaselineClean($node);
+        markNodeListHumanAppProductionToolsInstalled($node);
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,

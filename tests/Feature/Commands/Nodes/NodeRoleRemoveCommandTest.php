@@ -146,6 +146,30 @@ describe('node role:remove', function (): void {
             ->and($node->roleAssignments()->where('role', 'vpn')->exists())->toBeTrue();
     });
 
+    it('rejects router role removal before force validation and side effects', function (): void {
+        setupNodeRoleGatewayCaller();
+        $node = createHostedNode([
+            'name' => 'gateway-2',
+            'role' => 'gateway',
+            'environment' => null,
+        ]);
+
+        assignNodeRole($node, 'router');
+
+        $exitCode = Artisan::call('node role:remove', [
+            'node' => 'gateway-2',
+            'role' => 'router',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe("Role 'router' is gateway-coupled and cannot be assigned independently.")
+            ->and($node->roleAssignments()->where('role', 'router')->exists())->toBeTrue();
+    });
+
     it('force removes Orbit-owned role dependents without reporting data purge', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([

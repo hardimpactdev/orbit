@@ -83,6 +83,51 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
+    it('includes ingress placement and router backend pool metadata for production routes', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1']);
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $backend = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $backend->id, 'environment' => 'production']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    ['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80'],
+                ],
+                'backend_artifacts' => [
+                    ['node_id' => $backend->id, 'bind' => '10.6.0.21'],
+                ],
+            ],
+        ]);
+
+        $route = app(ProxyRouteQuery::class)->list()['routes'][0];
+
+        expect($route)->toMatchArray([
+            'domain' => 'docs.test',
+            'node' => 'edge-1',
+            'placement' => 'ingress',
+            'router' => [
+                'node' => 'gateway-1',
+                'url' => 'http://10.6.0.2:80',
+                'backend_pool' => [
+                    ['node' => 'web-1', 'url' => 'http://10.6.0.21:80'],
+                ],
+            ],
+        ])
+            ->and($route['router']['backend_pool'][0])->not->toHaveKey('node_id');
+    });
+
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);

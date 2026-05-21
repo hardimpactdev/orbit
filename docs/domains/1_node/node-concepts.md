@@ -14,9 +14,10 @@ Each term below has a precise meaning in the node command family.
   configuration and WireGuard identity material. Any node can act as a client
   when it runs the Orbit CLI; the term emphasizes the CLI-caller perspective.
 - **Node role:** A fixed code-defined bundle attached through a role
-  assignment. The six roles are `gateway` (singleton authority), `vpn`
-  (gateway-coupled infrastructure), `app-development`, `app-production`,
-  `database`, and `agent`. The latter four are workload roles.
+  assignment. The eight roles are `gateway` (singleton authority), `vpn` and
+  `router` (gateway-coupled infrastructure), `app-development`,
+  `app-production`, `database`, `agent`, and `ingress`. The latter five
+  are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
   durable Orbit state, the typed API, root CA material, node access policy, and
   doctor convergence. It is stored as a role assignment, but normal
@@ -27,15 +28,27 @@ Each term below has a precise meaning in the node command family.
   role assignment, shown separately in role output, assigned together with
   `gateway` during first gateway bootstrap, and not independently mutable
   through normal role commands.
+- **Router role:** Gateway-coupled infrastructure role. The `router` role owns
+  private `.orbit` DNS/service hostnames, private HTTP route selection, and
+  backend pools for production routes. In v1 it is assigned together with
+  `gateway` and `vpn` during first gateway bootstrap and is not independently
+  mutable through normal role commands.
 - **Gateway-coupled infrastructure role:** Separate role assignment that is
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
-  workloads. Conflicts with `gateway`, `vpn`, `app-development`,
-  `app-production`, and `database`. Selectable only during `node:new`.
+  workloads. Conflicts with `gateway`, `vpn`, `router`, `app-development`,
+  `app-production`, `database`, and `ingress`. Selectable only during
+  `node:new`.
+- **Ingress role:** Workload role that owns public production HTTP
+  ingress, public Caddy route artifacts, public TLS, and public edge
+  hardening. It forwards public routes to `router` and may coexist with
+  `app-production`, but conflicts with `gateway`, `vpn`, `router`,
+  `app-development`, `database`, and `agent`.
 - **Role assignability:** Flag on a role that decides whether it may be
   selected by `node:new`, by `node role:add`, or by both. `agent` is
-  assignable through `node:new` only; `node role:add` rejects it.
+  assignable through `node:new` only; gateway-coupled infrastructure roles
+  are assigned by gateway bootstrap only. `node role:add` rejects them.
 - **Role assignment:** Gateway-owned record that attaches one role to one
   node, carries any role-specific settings, and tracks convergence status.
 - **Role settings:** Assignment-local configuration for a role. Role-local
@@ -76,19 +89,21 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn` | `app-development`, `app-production`, `database`, `agent` |
-| `vpn` | `gateway` | `app-development`, `app-production`, `database`, `agent` |
-| `app-development` | `database` | `gateway`, `vpn`, `app-production`, `agent` |
-| `app-production` | `database` | `gateway`, `vpn`, `app-development`, `agent` |
-| `database` | `app-development`, `app-production` | `gateway`, `vpn`, `agent` |
-| `agent` | none | `gateway`, `vpn`, `app-development`, `app-production`, `database` |
+| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
+| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
+| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
+| `app-development` | `database` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
+| `database` | `app-development` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress` |
+| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
 
-In this version, `gateway` and `vpn` are gateway-coupled infrastructure roles.
-They are stored as separate role assignments and shown separately in role
-output, but first gateway bootstrap assigns them together and normal
+In this version, `gateway`, `vpn`, and `router` are gateway-coupled
+infrastructure roles. They are stored as separate role assignments and shown
+separately in role output, but first gateway bootstrap assigns them together and normal
 `node role:*` commands cannot add, update, or remove them independently.
 
 ## Role Settings
@@ -101,11 +116,13 @@ require, read, and write.
 | Role | Role-assignment settings | Node-level settings the role requires |
 | --- | --- | --- |
 | `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` | — |
+| `router` | — | — |
 | `app-development` | — | `tld` |
-| `app-production` | — | — |
+| `app-production` | `ingress_node_id` | — |
 | `database` | — | — |
 | `gateway` | — | — |
 | `agent` | — | `tld` (default `agent` during interactive `node:new` setup) |
+| `ingress` | — | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and write the same node-level field. This shared field keeps the data
@@ -135,10 +152,12 @@ Role baselines are code-defined desired state, not editable package lists.
 | Role | Baseline intent |
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
+| `router` | Private Caddy router for `.orbit` DNS/service hostnames and private app/backend pool routing |
 | `app-development` | Development DNS mapping |
-| `app-production` | `caddy`, `php`, and `supervisor` running |
+| `app-production` | Private Caddy backend, PHP, and Supervisor running |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `ingress` | Caddy running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -168,11 +187,13 @@ Each role is supported on a specific set of host platforms.
 | --- | --- |
 | `gateway` | Ubuntu |
 | `vpn` | Ubuntu |
+| `router` | Ubuntu |
 | client (no role assignments) | macOS, Ubuntu |
 | `app-development` | Ubuntu |
 | `app-production` | Ubuntu |
 | `database` | Ubuntu |
 | `agent` | Ubuntu |
+| `ingress` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's gateway role assignment or
@@ -304,6 +325,11 @@ These terms describe how grants are created and what shape they take.
 
 These terms describe how the gateway maintains DNS resolution for nodes with
 the `app-development` role.
+
+The `router` role is gateway-coupled in v1. It owns stable private `.orbit`
+service hostnames and private service routing. The development and agent TLD
+mappings below remain node-family desired state, but they are not the public
+`dns:*` command surface.
 
 - **Development DNS mapping owned by the gateway:** Node-family gateway configuration
   and desired DNS mappings and policy owned by the gateway. They map `*.{tld}`

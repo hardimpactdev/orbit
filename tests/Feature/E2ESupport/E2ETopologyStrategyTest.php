@@ -24,14 +24,18 @@ afterEach(function () use (&$envBackup): void {
     putenv("ORBIT_E2E_TOPOLOGY_STRATEGY={$value}");
 });
 
-it('minimal strategy: requested kind equals resolved kind for all four kinds', function (): void {
+it('minimal strategy: requested kind equals resolved kind for all prepared topology kinds', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=minimal');
     $factory = E2ETopologyFactory::fromEnvironment();
+    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+
+    expect($ingressKind)->not->toBeNull();
 
     expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::Control)
         ->and($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGateway)
         ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::ControlGatewayDev)
-        ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+        ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd)
+        ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
 });
 
 it('superset strategy: Control resolves to ControlGatewayDevProd', function (): void {
@@ -62,14 +66,27 @@ it('superset strategy: ControlGatewayDevProd resolves to ControlGatewayDevProd',
     expect($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 });
 
+it('superset strategy keeps ingress topology exact', function (): void {
+    putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
+    $factory = E2ETopologyFactory::fromEnvironment();
+    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+
+    expect($ingressKind)->not->toBeNull()
+        ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
+});
+
 it('unknown strategy falls back to minimal behavior', function (): void {
     putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=foobar');
     $factory = E2ETopologyFactory::fromEnvironment();
+    $ingressKind = E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress');
+
+    expect($ingressKind)->not->toBeNull();
 
     expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::Control)
         ->and($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGateway)
         ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::ControlGatewayDev)
-        ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd);
+        ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd)
+        ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
 });
 
 it('empty ORBIT_E2E_TOPOLOGY_STRATEGY uses minimal default', function (): void {

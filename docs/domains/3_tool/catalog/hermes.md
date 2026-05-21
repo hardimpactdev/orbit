@@ -57,7 +57,7 @@ include `tool:credentials`. The default agent self-grant does not include
 `hermes` exposes an internal HTTPS proxy route owned by the tool at
 `https://hermes.<agent-tld>` (default `https://hermes.agent`). The route
 is internal: it is reachable only over the Orbit/WireGuard network and
-has no public ingress baseline.
+has no ingress baseline.
 
 ## Orbit Notes
 

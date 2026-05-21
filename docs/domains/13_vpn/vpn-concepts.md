@@ -99,6 +99,7 @@ These boundaries define what the VPN command domain owns and what it must not to
 - **VPN-domain boundaries:** VPN commands own VPN-role runtime administration
   for human/operator clients and the VPN web UI credential. They do not own a
   state family, create `doctor --family=vpn`, manage Orbit node identity or
-  node peer drift, create node access grants, create app routes, proxy routes,
-  Cloudflare records, gateway development DNS mappings, or caller-local
-  resolver overrides.
+  node peer drift, or create node access grants. They also do not create app
+  routes, proxy routes, Cloudflare records, gateway development DNS mappings,
+  private `.orbit` service names owned by the router, or caller-local resolver
+  overrides.

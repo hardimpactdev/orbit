@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -30,8 +30,10 @@ to authenticate against.
 
 ```bash
 orbit node:new client-1
-orbit node:new dev-1 --role=app-development --host=app-1.ssh.example.com --tld=test
-orbit node:new web-1 --role=app-production --role=database --host=203.0.113.20
+orbit node:new dev-1 --role=app-dev --host=app-1.ssh.example.com --tld=test
+orbit node:new edge-1 --role=ingress --host=203.0.113.20
+orbit node:new web-1 --role=app-prod --role=ingress --host=203.0.113.21
+orbit node:new web-2 --role=app-prod --ingress=edge-1 --host=203.0.113.22
 orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=control-1
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --tld=agent --self-grant=default
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
@@ -43,8 +45,10 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
 - `--role`: repeatable initial role assignment. Supported roles:
-  `app-development`, `app-production`, `database`, and `agent`. No assigned
-  role means a client/control identity. `gateway` remains an internal
+  `app-dev`, `app-prod`, `app-development`, `app-production`, `database`,
+  `agent`, and `ingress`. `app-dev` maps to `app-development`;
+  `app-prod` maps to `app-production`. No assigned role means a client/control identity.
+  `gateway` remains an internal
   bootstrap path. `agent` is exclusive and may only be selected during
   `node:new`; combining it with another role fails before side effects.
 - `--host`: required for gateway bootstrap and for any initial role that
@@ -54,9 +58,9 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   (a client with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
-- `--environment`: legacy compatibility input only. `--role=app` with
-  `--environment=development` maps to `--role=app-development`; `--role=app`
-  with `--environment=production` maps to `--role=app-production`.
+- `--environment`: deprecated legacy compatibility input only. Prefer
+  `--role=app-dev` or `--role=app-prod`; `--role=app --environment=...` is
+  retained only while old automation is migrated.
 - `--tld`: required for `app-development`. Used by `agent` as the agent
   TLD (default `agent`). Must be a single lowercase DNS label without a
   leading dot.
@@ -66,6 +70,9 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   After provisioning, `nodes.user` is `orbit`, and operator SSH access is
   through that gateway-managed user; root SSH login and password login are
   disabled.
+- `--ingress`: existing active `ingress` node to use when
+  creating a private `app-production` backend node that does not serve public
+  traffic itself.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
@@ -95,31 +102,42 @@ baseline meaning of `node:new <name>` with no `--role` values.
 Legacy `--role=control` is accepted for one compatibility cycle and maps to the
 same no-role identity. Human output warns when a legacy mapping is used.
 
-**`app-development`**
+**`app-dev` / `app-development`**
 
 Provisions a host-capable node identity and creates an active role
 assignment with settings that include `tld`.
 
 Requires `--host` and non-empty `--tld`.
 
-**`app-production`**
+**`app-prod` / `app-production`**
 
-Provisions a host-capable node identity and creates an active role
-assignment with no extra settings.
+Provisions a host-capable node identity and creates an active role assignment
+whose settings point at the selected ingress node.
 
 Requires `--host`.
+
+Interactive `node:new --role=app-prod` asks:
+
+```text
+Serve public traffic from this node? [yes]
+```
+
+Answering `yes` creates a colocated production node with both
+`app-production` and `ingress`. Answering `no` creates a private backend
+node and requires an existing active `ingress` node.
 
 **`database`**
 
 Creates an active role assignment for database responsibilities. It may
-be combined with `app-development` or `app-production` on the same provisioned
-host.
+be combined with `app-development` on the same provisioned host.
 
 `app-development` and `app-production` are mutually exclusive. In v1,
 `gateway` is gateway-coupled with `vpn` and conflicts with
-`app-development`, `app-production`, `database`, and `agent`. The `agent`
+`app-development`, `app-production`, `database`, `agent`, and
+`ingress`. The `agent`
 role conflicts with `gateway`, `vpn`, `app-development`, `app-production`,
-and `database`.
+`database`, and `ingress`. `ingress` may combine only with
+`app-production`.
 `gateway` is not command-assignable through the public role flow.
 
 **`agent`**
@@ -254,6 +272,14 @@ The normal way to grant that authority is the `gateway-admin` preset.
 It does not configure tools, user apps, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands
 and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt`.
+
+For `--role=app-prod` / `--role=app-production`, non-interactive input must choose placement
+explicitly:
+
+- `--role=app-prod --role=ingress` serves public traffic from the
+  same node.
+- `--role=app-prod --ingress=<node>` creates a private backend
+  app-production node that uses an existing active ingress node.
 
 ## Output
 

@@ -19,10 +19,26 @@ it('documents docker topology image preparation without force', function (): voi
     Process::fake();
 
     $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator-gateway-appdev-appprod'])
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-control-dns-alias-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-dns-alias-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-dev-dns-alias-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-appdev-appprod-prod-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-control-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-gateway-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-dev-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-dev_app-prod-prod-dns-alias-current')
+        ->expectsOutputToContain('Dry run')
+        ->assertSuccessful();
+
+    Process::assertNothingRan();
+});
+
+it('documents ingress docker topology image preparation without force', function (): void {
+    Process::fake();
+
+    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator-gateway-appprod-ingress'])
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-control-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-gateway-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-prod-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-ingress-dns-alias-current')
+        ->doesntExpectOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-dev-dns-alias-current')
+        ->doesntExpectOutputToContain('orbit-e2e-topology:operator_gateway_app-prod_ingress-agent-dns-alias-current')
         ->expectsOutputToContain('Dry run')
         ->assertSuccessful();
 
@@ -50,10 +66,10 @@ it('outputs json for dry run with default kind', function (): void {
                 'kind' => 'operator-gateway-appdev-appprod',
                 'topology_mode' => 'dns-alias',
                 'images' => [
-                    ['role' => 'control', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-control-dns-alias-current'],
-                    ['role' => 'gateway', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-dns-alias-current'],
-                    ['role' => 'dev', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-dev-dns-alias-current'],
-                    ['role' => 'prod', 'image' => 'orbit-e2e-topology:operator-gateway-appdev-appprod-prod-dns-alias-current'],
+                    ['role' => 'control', 'image' => 'orbit-e2e-topology:operator_gateway_app-dev_app-prod-control-dns-alias-current'],
+                    ['role' => 'gateway', 'image' => 'orbit-e2e-topology:operator_gateway_app-dev_app-prod-gateway-dns-alias-current'],
+                    ['role' => 'dev', 'image' => 'orbit-e2e-topology:operator_gateway_app-dev_app-prod-dev-dns-alias-current'],
+                    ['role' => 'prod', 'image' => 'orbit-e2e-topology:operator_gateway_app-dev_app-prod-prod-dns-alias-current'],
                 ],
             ],
         ],
@@ -69,8 +85,8 @@ it('documents dns-alias image names in dry run output', function (): void {
         'kind' => 'operator-gateway',
         '--topology-mode' => 'dns-alias',
     ])
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-control-dns-alias-current')
-        ->expectsOutputToContain('orbit-e2e-topology:operator-gateway-gateway-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway-control-dns-alias-current')
+        ->expectsOutputToContain('orbit-e2e-topology:operator_gateway-gateway-dns-alias-current')
         ->assertSuccessful();
 });
 

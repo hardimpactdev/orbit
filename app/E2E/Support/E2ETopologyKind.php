@@ -11,6 +11,7 @@ enum E2ETopologyKind: string
     case OperatorGatewayAppdev = 'operator-gateway-appdev';
     case OperatorGatewayAppdevAppprod = 'operator-gateway-appdev-appprod';
     case OperatorGatewayAppdevAppprodAgent = 'operator-gateway-appdev-appprod-agent';
+    case OperatorGatewayAppprodIngress = 'operator-gateway-appprod-ingress';
 
     #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
     public const self Control = self::Operator;
@@ -46,6 +47,19 @@ enum E2ETopologyKind: string
             self::OperatorGatewayAppdev => ['control-gateway-dev'],
             self::OperatorGatewayAppdevAppprod => ['control-gateway-dev-prod'],
             self::OperatorGatewayAppdevAppprodAgent => [],
+            self::OperatorGatewayAppprodIngress => [],
+        };
+    }
+
+    public function dockerImageSlug(): string
+    {
+        return match ($this) {
+            self::Operator => 'operator',
+            self::OperatorGateway => 'operator_gateway',
+            self::OperatorGatewayAppdev => 'operator_gateway_app-dev',
+            self::OperatorGatewayAppdevAppprod => 'operator_gateway_app-dev_app-prod',
+            self::OperatorGatewayAppdevAppprodAgent => 'operator_gateway_app-dev_app-prod_agent',
+            self::OperatorGatewayAppprodIngress => 'operator_gateway_app-prod_ingress',
         };
     }
 

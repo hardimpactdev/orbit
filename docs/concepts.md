@@ -25,7 +25,10 @@ owning family concept document.
 - **Node TLD** — node-level setting required by the `app-development` and `agent` roles. A node holds at most one `tld` value at a time, shared by every role that depends on it; drives the gateway-owned DNS mapping for that TLD. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent role** — exclusive workload role for autonomous agent runtimes; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN role** — gateway-coupled infrastructure role that owns the WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns both together and normal `node role:*` commands cannot manage either independently. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Router role** — gateway-coupled infrastructure role that owns private `.orbit` DNS/service hostnames, private HTTP route selection, and backend pools for production routes. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Ingress role** — workload role that owns public production HTTP ingress, public Caddy route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-production` nodes are production runtime backends: they own app files, PHP-FPM, Supervisor, and a private Caddy HTTP listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
 - **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 - **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on every node that runs processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
@@ -72,6 +75,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway role**
 - **VPN role**
 - **Agent role**
+- **Ingress role**
 - **Gateway-coupled infrastructure role**
 - **Role assignability**
 - **Role assignment**
@@ -217,6 +221,9 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Custom route**
 - **Redirect route**
 - **Tool-owned route**
+- **Public route artifact**
+- **Private backend artifact**
+- **Backend pool**
 - **Orbit-managed TLS**
 - **Route leaf certificate**
 - **Intermediate CA certificate**

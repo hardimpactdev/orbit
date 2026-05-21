@@ -69,6 +69,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
+        $this->guardAppProductionIngressNode($node, $role, $settingsData);
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
         $assignment = $node->roleAssignments()->create([
@@ -105,6 +106,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
+        $this->guardAppProductionIngressNode($node, $role, $settingsData);
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
         $previousAssignment = $assignment->replicate();
@@ -189,7 +191,7 @@ class NodeRoleAssignmentService
 
     private function guardNotGatewayCoupledInfrastructureRole(string $role): void
     {
-        if (! in_array($role, [NodeRoleName::Gateway->value, NodeRoleName::Vpn->value], true)) {
+        if (! in_array($role, [NodeRoleName::Gateway->value, NodeRoleName::Vpn->value, NodeRoleName::Router->value], true)) {
             return;
         }
 
@@ -308,6 +310,49 @@ class NodeRoleAssignmentService
         }
 
         throw new InvalidArgumentException("Role '{$definition->name}' conflicts with {$conflict->status} role '{$conflict->role}'.");
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function guardAppProductionIngressNode(Node $node, string $role, array $settings): void
+    {
+        if ($role !== NodeRoleName::AppProduction->value) {
+            return;
+        }
+
+        $ingressNodeId = $settings['ingress_node_id'] ?? null;
+
+        if (! is_int($ingressNodeId) || $ingressNodeId <= 0) {
+            throw new InvalidArgumentException('The app-production role requires an active ingress node.');
+        }
+
+        if ($ingressNodeId === $node->id && $this->nodeHasActiveIngressAssignment($node)) {
+            return;
+        }
+
+        $ingressNode = Node::query()->find($ingressNodeId);
+
+        if (! $ingressNode instanceof Node || ! $this->nodeCanServeIngress($ingressNode)) {
+            throw new InvalidArgumentException('The app-production role requires an active ingress node.');
+        }
+    }
+
+    private function nodeCanServeIngress(Node $node): bool
+    {
+        if ($node->status !== Node::STATUS_ACTIVE) {
+            return false;
+        }
+
+        return $this->nodeHasActiveIngressAssignment($node);
+    }
+
+    private function nodeHasActiveIngressAssignment(Node $node): bool
+    {
+        return $node->roleAssignments()
+            ->where('role', NodeRoleName::Ingress->value)
+            ->where('status', NodeRoleStatus::Active->value)
+            ->exists();
     }
 
     /**

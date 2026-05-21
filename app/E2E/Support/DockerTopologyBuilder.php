@@ -42,7 +42,7 @@ final readonly class DockerTopologyBuilder
                 $container = "{$network}-{$role}";
                 $containers[$role] = new DockerBuildInstance($container, $network);
 
-                $this->mustRun($this->runCommand($container, $network, $this->ipForRole($role)), "Could not start {$container}");
+                $this->mustRun($this->runCommand($container, $network, $role, $this->containerIpForRole($role), $mode), "Could not start {$container}");
                 $this->migrate($containers[$role], $role);
             }
 
@@ -109,18 +109,20 @@ final readonly class DockerTopologyBuilder
             E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
         };
     }
 
     public static function imageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'legacy-retarget'): string
     {
         $effectiveKind = self::imageKindFor($kind, $role);
+        $imageSlug = $effectiveKind->dockerImageSlug();
 
         if ($mode === 'legacy-retarget') {
-            return "orbit-e2e-topology:{$effectiveKind->value}-{$role}-current";
+            return "orbit-e2e-topology:{$imageSlug}-{$role}-current";
         }
 
-        return "orbit-e2e-topology:{$effectiveKind->value}-{$role}-{$mode}-current";
+        return "orbit-e2e-topology:{$imageSlug}-{$role}-{$mode}-current";
     }
 
     private static function imageKindFor(E2ETopologyKind $kind, string $role): E2ETopologyKind
@@ -138,12 +140,17 @@ final readonly class DockerTopologyBuilder
         return self::imageKindFor($kind, $role) === $kind;
     }
 
-    private function runCommand(string $container, string $network, string $ip): string
+    private function runCommand(string $container, string $network, string $role, string $ip, string $mode): string
     {
+        $networkAlias = $mode === 'dns-alias'
+            ? ' --network-alias '.escapeshellarg($role)
+            : '';
+
         return sprintf(
-            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name %s --network %s --ip %s %s',
+            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name %s --network %s%s --ip %s %s',
             escapeshellarg($container),
             escapeshellarg($network),
+            $networkAlias,
             escapeshellarg($ip),
             escapeshellarg(self::RuntimeImage),
         );
@@ -171,7 +178,7 @@ final readonly class DockerTopologyBuilder
 
         $key = new SshKeyPair('/dev/null', '/dev/null');
 
-        E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install', timeoutSeconds: 120);
+        E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install', timeoutSeconds: 120);
         E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan doctor --node=gateway --family=schedule --restore --json', timeoutSeconds: 120);
         E2EGatewayApi::seedControlIdentity($gateway, '10.6.0.3', 'control');
         if ($mode === 'dns-alias') {
@@ -203,26 +210,39 @@ final readonly class DockerTopologyBuilder
 
         $this->seedRemoteShellSshAccess($gateway, $containers);
         $this->seedRemoteShellAgentSshAccess($gateway, $containers);
+        $this->waitForManagedSshHostKeys($gateway, $containers, $mode);
 
         if (isset($containers['dev'])) {
             $host = $mode === 'dns-alias' ? 'dev' : '10.6.0.4';
             $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
+            $hostKeyHost = $this->hostKeyHostOption('dev', $mode);
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host={$host} --wireguard-address=10.6.0.4 --environment=development --tld=test --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.4 --tld=test --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+        }
+
+        if (isset($containers['ingress'])) {
+            $host = $mode === 'dns-alias' ? 'ingress' : '10.6.0.7';
+            $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
+            $hostKeyHost = $this->hostKeyHostOption('ingress', $mode);
+
+            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-ingress-node edge-1 --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.7 --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
         }
 
         if (isset($containers['prod'])) {
             $host = $mode === 'dns-alias' ? 'prod' : '10.6.0.5';
             $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
+            $hostKeyHost = $this->hostKeyHostOption('prod', $mode);
+            $ingress = isset($containers['ingress']) ? ' --ingress-node=edge-1' : '';
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host={$host} --wireguard-address=10.6.0.5 --environment=production --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.5 --gateway-endpoint={$gatewayEndpoint} --user=orbit{$ingress}", timeoutSeconds: 120);
         }
 
         if (isset($containers['agent'])) {
             $host = $mode === 'dns-alias' ? 'agent' : '10.6.0.6';
             $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
+            $hostKeyHost = $this->hostKeyHostOption('agent', $mode);
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-agent-node agent-1 --host={$host} --wireguard-address=10.6.0.6 --tld=agent --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && php artisan orbit:internal:bake-agent-node agent-1 --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.6 --tld=agent --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
         }
     }
 
@@ -231,13 +251,13 @@ final readonly class DockerTopologyBuilder
      */
     private function seedRemoteShellSshAccess(DockerBuildInstance $gateway, array $containers): void
     {
-        if (! isset($containers['dev']) && ! isset($containers['prod'])) {
+        if (! isset($containers['dev']) && ! isset($containers['prod']) && ! isset($containers['ingress'])) {
             return;
         }
 
         $publicKey = $this->gatewayPublicKey($gateway);
 
-        foreach (['dev', 'prod'] as $role) {
+        foreach (['dev', 'prod', 'ingress'] as $role) {
             if (! isset($containers[$role])) {
                 continue;
             }
@@ -292,6 +312,50 @@ final readonly class DockerTopologyBuilder
         );
     }
 
+    /**
+     * @param  array<string, DockerBuildInstance>  $containers
+     */
+    private function waitForManagedSshHostKeys(DockerBuildInstance $gateway, array $containers, string $mode): void
+    {
+        $targets = [];
+
+        foreach (['dev', 'prod', 'ingress', 'agent'] as $role) {
+            if (! isset($containers[$role])) {
+                continue;
+            }
+
+            $targets[] = $this->containerIpForRole($role);
+        }
+
+        if ($targets === []) {
+            return;
+        }
+
+        $targetList = implode(' ', array_map(escapeshellarg(...), $targets));
+        $command = <<<SH
+for target in {$targetList}; do
+  attempt=1
+  while ! ssh-keyscan -T 2 -t ed25519,ecdsa,rsa "\$target" >/dev/null 2>&1; do
+    if [ "\$attempt" -ge 30 ]; then
+      ssh-keyscan -T 10 -t ed25519,ecdsa,rsa "\$target"
+      exit 1
+    fi
+
+    attempt=\$((attempt + 1))
+    sleep 1
+  done
+done
+SH;
+
+        E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            new SshKeyPair('/dev/null', '/dev/null'),
+            $command,
+            timeoutSeconds: 120,
+        );
+    }
+
     private function ipForRole(string $role): string
     {
         return match ($role) {
@@ -300,8 +364,25 @@ final readonly class DockerTopologyBuilder
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',
+            'ingress' => '10.6.0.7',
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
+    }
+
+    private function hostKeyHostOption(string $role, string $mode): string
+    {
+        return $mode === 'dns-alias'
+            ? ' --host-key-host='.escapeshellarg($this->containerIpForRole($role))
+            : '';
+    }
+
+    private function containerIpForRole(string $role): string
+    {
+        if ($role === 'ingress') {
+            return '10.6.0.8';
+        }
+
+        return $this->ipForRole($role);
     }
 
     private function composerLockHash(): string

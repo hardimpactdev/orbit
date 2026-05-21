@@ -52,9 +52,9 @@ it('uses operator topology names for docker images while preserving control role
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
     expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdev, 'control'))
-        ->toBe('orbit-e2e-topology:operator-gateway-appdev-control-current')
+        ->toBe('orbit-e2e-topology:operator_gateway_app-dev-control-current')
         ->and($provider->imageNameFor(E2ETopologyKind::OperatorGatewayAppdevAppprod, 'gateway'))
-        ->toBe('orbit-e2e-topology:operator-gateway-appdev-appprod-gateway-current')
+        ->toBe('orbit-e2e-topology:operator_gateway_app-dev_app-prod-gateway-current')
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdev))
         ->toBe(['control', 'gateway', 'dev']);
 });

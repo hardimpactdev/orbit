@@ -90,11 +90,28 @@ describe('AppStore node role eligibility', function (): void {
 
     it('accepts a node with active app-production for production app creation', function (): void {
         $caller = createAppStoreRoleCallerNode();
+        $router = createEligibleAppStoreTargetNode('router-1', [
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'wireguard_address' => '10.6.0.2',
+            'host' => '10.6.0.2',
+        ]);
+        $ingress = createEligibleAppStoreTargetNode('edge-1', [
+            'environment' => null,
+            'tld' => null,
+            'wireguard_address' => '10.6.0.7',
+            'host' => '10.6.0.7',
+        ]);
         $target = createEligibleAppStoreTargetNode(overrides: [
             'environment' => 'production',
             'tld' => null,
+            'wireguard_address' => '10.6.0.5',
+            'host' => '10.6.0.5',
         ]);
-        assignRole($target, 'app-production');
+        assignRole($router, 'router');
+        assignRole($ingress, 'ingress');
+        assignRole($target, 'app-production', settings: ['ingress_node_id' => $ingress->id]);
         grantAppStoreRoleAccess($caller, $target);
 
         $response = $this->call('POST', '/api/apps', [

@@ -70,6 +70,17 @@ it('supports operator-gateway-appdev kind', function (): void {
         ->assertSuccessful();
 });
 
+it('supports operator-gateway-appprod-ingress kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator-gateway-appprod-ingress'])
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator-gateway-appprod-ingress)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator-gateway-appprod-ingress)')
+        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-operator-gateway-appprod-ingress)')
+        ->expectsOutputToContain('planned: orbit-template-ingress (snapshot: clean-operator-gateway-appprod-ingress)')
+        ->doesntExpectOutputToContain('planned: orbit-template-dev')
+        ->doesntExpectOutputToContain('planned: orbit-template-agent')
+        ->assertSuccessful();
+});
+
 it('rejects invalid kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'invalid'])
         ->expectsOutputToContain('Invalid topology kind')
@@ -146,6 +157,7 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
     ['operator-gateway', 2],
     ['operator-gateway-appdev', 3],
     ['operator-gateway-appdev-appprod', 4],
+    ['operator-gateway-appprod-ingress', 4],
     ['control', 1],
     ['control-gateway', 2],
     ['control-gateway-dev', 3],
@@ -156,7 +168,7 @@ it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent. Legacy control topology names are accepted as aliases.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent, operator-gateway-appprod-ingress. Legacy control topology names are accepted as aliases.',
         ],
     ], JSON_THROW_ON_ERROR);
 

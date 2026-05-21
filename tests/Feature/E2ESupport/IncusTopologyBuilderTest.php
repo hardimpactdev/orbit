@@ -336,3 +336,86 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain('10.201.0.13')
         ->and($commandOutput)->not->toContain('orbit:internal:bake-app-node');
 });
+
+it('builds ingress topology without development or agent stages', function (): void {
+    $config = incusTopologyBuilderConfig();
+    $commands = [];
+
+    Process::fake([
+        'wg genkey' => Process::result(output: "private-key\n"),
+        'wg pubkey' => Process::result(output: "public-key\n"),
+    ]);
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->with($config->blankImage)->andReturn(true);
+    $host->shouldReceive('instanceExists')->andReturn(false);
+    $host->shouldReceive('waitForCloudInit')->times(4);
+    $host->shouldReceive('provisionInstance')->with('orbit-template-control', 'control', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('stopInstance')->times(7)->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('snapshotInstance')->times(7)->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $commands[] = $command;
+
+        if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
+            return incusTopologyBuilderProcessResult("wg-easy-public-key\n");
+        }
+
+        if (str_starts_with($command, 'mktemp -d ')) {
+            return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
+        }
+
+        if (str_contains($command, 'orbit-template-ingress')) {
+            return incusTopologyBuilderProcessResult("10.201.0.14\n");
+        }
+
+        if (str_contains($command, 'orbit-template-prod')) {
+            return incusTopologyBuilderProcessResult("10.201.0.13\n");
+        }
+
+        if (str_contains($command, 'orbit-template-gateway')) {
+            return incusTopologyBuilderProcessResult("10.201.0.11\n");
+        }
+
+        if (str_contains($command, 'orbit-template-control')) {
+            return incusTopologyBuilderProcessResult("10.201.0.10\n");
+        }
+
+        return incusTopologyBuilderProcessResult();
+    });
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppprodIngress);
+    $commandOutput = implode("\n", $commands);
+
+    expect($manifest)->toBe([
+        [
+            'role' => 'control',
+            'name' => 'orbit-template-control',
+            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+        ],
+        [
+            'role' => 'gateway',
+            'name' => 'orbit-template-gateway',
+            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+        ],
+        [
+            'role' => 'prod',
+            'name' => 'orbit-template-prod',
+            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+        ],
+        [
+            'role' => 'ingress',
+            'name' => 'orbit-template-ingress',
+            'snapshot' => 'clean-operator-gateway-appprod-ingress',
+        ],
+    ])->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-ingress'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prod'")
+        ->and($commandOutput)->toContain('edge-1')
+        ->and($commandOutput)->toContain('--role=ingress')
+        ->and($commandOutput)->toContain('--role=app-prod')
+        ->and($commandOutput)->toContain('--ingress=')
+        ->and($commandOutput)->not->toContain('app-dev-1')
+        ->and($commandOutput)->not->toContain('agent-1');
+});

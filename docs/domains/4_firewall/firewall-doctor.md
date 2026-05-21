@@ -61,7 +61,7 @@ This table shows what `doctor --restore` does for each fixable issue code.
 
 `doctor --restore` does not handle `firewall_rule.record_incomplete`, `firewall_rule.node_invalid`, `firewall_rule.baseline_conflict`, or `firewall_rule.rule_extra`.
 
-`doctor --restore` re-applies or replaces only gateway-configured managed rules. It does not delete unmanaged backend rules, role bootstrap policy, WireGuard interface policy, or public-ingress policy owned by the node/proxy/app domains.
+`doctor --restore` re-applies or replaces only gateway-configured managed rules. It does not delete unmanaged backend rules, role bootstrap policy, WireGuard interface policy, or ingress policy owned by the node/proxy/app domains.
 
 ## Firewall Adopt Map
 

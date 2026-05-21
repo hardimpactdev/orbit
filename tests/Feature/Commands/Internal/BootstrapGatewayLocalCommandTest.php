@@ -135,7 +135,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                 ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
                 ->orderBy('role')
                 ->pluck('role')
-                ->all())->toBe(['gateway', 'vpn'])
+                ->all())->toBe(['gateway', 'router', 'vpn'])
             ->and(NodeRoleAssignment::query()
                 ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
                 ->where('role', 'vpn')

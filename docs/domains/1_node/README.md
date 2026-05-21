@@ -30,13 +30,16 @@ Orbit distinguishes three concepts:
   but normal role commands cannot add, update, or remove it independently.
 - **VPN role:** the gateway-coupled infrastructure role. It owns the WireGuard
   server runtime, public WireGuard endpoint settings, VPN peer defaults, and
-  the VPN-facing DNS runtime. In v1, first gateway bootstrap assigns `gateway`
-  and `vpn` together, and normal role commands cannot add, update, or remove
-  either role independently.
+  the VPN-facing DNS runtime. In v1, first gateway bootstrap assigns `gateway`,
+  `vpn`, and `router` together, and normal role commands cannot add, update, or
+  remove those roles independently.
+- **Router role:** the gateway-coupled private routing role. It owns stable
+  private `.orbit` service hostnames, private HTTP/WebSocket routing, and
+  backend-pool selection for production routes.
 - **Node roles:** composable roles that prepare a node to serve a kind of
   workload. The initial workload roles are `app-development`,
-  `app-production`, `database`, and `agent`. `agent` is exclusive and
-  selectable only during `node:new`; `node role:add` rejects it.
+  `app-production`, `database`, `agent`, and `ingress`. `agent` is
+  exclusive and selectable only during `node:new`; `node role:add` rejects it.
 - **Client identity:** a CLI installation that has gateway configuration
   and a gateway-issued WireGuard identity. A client may have no workload role
   assignments. It can request self-scoped actions and can operate other nodes only
@@ -67,16 +70,18 @@ Active role assignments must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn` | `app-development`, `app-production`, `database`, `agent` |
-| `vpn` | `gateway` | `app-development`, `app-production`, `database`, `agent` |
-| `app-development` | `database` | `gateway`, `vpn`, `app-production`, `agent` |
-| `app-production` | `database` | `gateway`, `vpn`, `app-development`, `agent` |
-| `database` | `app-development`, `app-production` | `gateway`, `vpn`, `agent` |
-| `agent` | none | `gateway`, `vpn`, `app-development`, `app-production`, `database` |
+| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
+| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
+| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
+| `app-development` | `database` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
+| `database` | `app-development` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress` |
+| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
 
-In this version, `gateway` and `vpn` are gateway-coupled infrastructure roles.
-They are stored as separate role assignments and shown separately in role
-output, but first gateway bootstrap assigns them together and normal
+In this version, `gateway`, `vpn`, and `router` are gateway-coupled
+infrastructure roles. They are stored as separate role assignments and shown
+separately in role output, but first gateway bootstrap assigns them together and normal
 `node role:*` commands cannot add, update, or remove them independently.
 
 ### Role baselines
@@ -86,10 +91,12 @@ Roles materialize baseline tool intent when a role assignment converges.
 | Role | Baseline intent |
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
+| `router` | Private Caddy router for `.orbit` DNS/service hostnames and private app/backend pool routing |
 | `app-development` | Development DNS mapping |
-| `app-production` | `caddy`, `php`, and `supervisor` running |
+| `app-production` | Private Caddy backend, PHP, and Supervisor running |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `ingress` | Caddy running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -208,8 +215,9 @@ These rules apply to all node commands and define the invariants the family enfo
   and `agent` require, so it lives on the node row and a node holds at most
   one `tld` value at a time (the `agent` default during interactive `node:new`
   is `agent`). `vpn` stores `public_endpoint`, `wireguard_cidr`,
-  `wireguard_port`, and `dns_ip` as role-assignment settings; `app-production`,
-  `database`, and `gateway` have no role-assignment settings.
+  `wireguard_port`, and `dns_ip` as role-assignment settings.
+  `app-production` stores `ingress_node_id`; `database` and `gateway`
+  have no role-assignment settings.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.
@@ -269,8 +277,9 @@ is role-aware:
   ingress is an Orbit-network service bound to the gateway's WireGuard address;
 - nodes with `app-development` do not expose app routes publicly by baseline. Their
   Orbit-managed HTTPS routes are reachable through the Orbit network;
-- nodes with `app-production` expose public HTTP/HTTPS ingress for production domains
-  only. SSH and other node-management access stay on the Orbit network.
+- only nodes with active `ingress` expose public production HTTP/HTTPS;
+- `app-production` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
+- SSH and other node-management access stay on the Orbit network.
 
 Node bootstrap applies this baseline with rollback and reachability checks so a
 failed policy change does not silently strand a node. Operator-managed firewall

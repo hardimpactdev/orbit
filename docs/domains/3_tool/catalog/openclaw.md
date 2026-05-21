@@ -58,7 +58,7 @@ credentials from its own CLI.
 `openclaw` exposes an internal HTTPS proxy route owned by the tool at
 `https://openclaw.<agent-tld>` (default `https://openclaw.agent`). The
 route is internal: it is reachable only over the Orbit/WireGuard network
-and has no public ingress baseline.
+and has no ingress baseline.
 
 ## Orbit Notes
 

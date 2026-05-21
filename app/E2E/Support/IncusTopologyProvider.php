@@ -18,6 +18,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private const string AgentWireGuardIp = '10.6.0.6';
 
+    private const string IngressWireGuardIp = '10.6.0.7';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -81,6 +83,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             snapshotReset: $snapshotReset,
             gatewayApiIp: self::GatewayWireGuardIp,
             agent: $instances['agent'] ?? null,
+            ingress: $instances['ingress'] ?? null,
         );
     }
 
@@ -273,7 +276,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod', 'agent'] as $role) {
+        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -286,6 +289,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             isset($instances['dev']) ? 'dev' : null,
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
+            isset($instances['ingress']) ? 'ingress' : null,
         ])));
     }
 
@@ -300,6 +304,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
+        $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -315,6 +320,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             prodPublicKey: $prod['public_key'] ?? null,
             agentPrivateKey: $agent['private_key'] ?? null,
             agentPublicKey: $agent['public_key'] ?? null,
+            ingressPrivateKey: $ingress['private_key'] ?? null,
+            ingressPublicKey: $ingress['public_key'] ?? null,
         );
     }
 
@@ -340,19 +347,29 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=%s --wireguard-address=%s --environment=development --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 120);
         }
 
+        if (isset($instances['ingress'])) {
+            E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                escapeshellarg(self::IngressWireGuardIp),
+                escapeshellarg(self::IngressWireGuardIp),
+                escapeshellarg(self::GatewayWireGuardIp),
+            ), timeoutSeconds: 120);
+        }
+
         if (isset($instances['prod'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=%s --wireguard-address=%s --environment=production --gateway-endpoint=%s --user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
+                isset($instances['ingress']) ? ' --ingress-node=edge-1' : '',
             ), timeoutSeconds: 120);
         }
 
@@ -415,7 +432,7 @@ PHP;
             return;
         }
 
-        foreach (['dev', 'prod'] as $role) {
+        foreach (['dev', 'prod', 'ingress'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -471,6 +488,7 @@ PHP;
             'control' => self::ControlWireGuardIp,
             'dev' => self::DevWireGuardIp,
             'prod' => self::ProdWireGuardIp,
+            'ingress' => self::IngressWireGuardIp,
             default => throw new \RuntimeException("Unknown topology role [{$role}]."),
         };
     }

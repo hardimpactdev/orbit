@@ -68,7 +68,7 @@ The other four are workload roles applied to nodes in the fleet.
 
 `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate role.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no public ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose when compatible. In v1, `gateway` and `vpn` appear together and
 combine only with each other. `app-development` and `app-production` may each
@@ -95,16 +95,20 @@ current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
 
 ### DNS responsibilities
 
-Orbit splits DNS responsibility across four concerns and three families. These do not overlap.
+Orbit splits DNS responsibility across distinct owner concerns. These do not
+overlap.
 
 | Concern | Owner | Verified by |
 |---|---|---|
 | Gateway-owned development/agent DNS mappings (which TLD points at which WireGuard IP) | node family | `doctor --family=node` |
+| Router-owned private `.orbit` service names and private route selection | gateway-coupled `router` role | `doctor --family=proxy` for HTTP routes; router service checks for TCP service contracts are future work |
 | VPN-facing DNS runtime (the dnsmasq + wg-easy substrate that serves those mappings) | `vpn` role baseline | `doctor --family=tool` for the `dns` tool row; `doctor --family=node --restore` re-applies the baseline wholesale |
 | Caller-local resolver overrides on an operator's own machine | `dns:*` command family | — |
 | Public DNS / CDN for production domains | Cloudflare integration | `cf-*` command family |
 
-The `dns:*` command family does not edit gateway DNS; the tool family does not own DNS records.
+The `dns:*` command family does not edit gateway-owned development DNS or
+router-owned private `.orbit` service names; the tool family does not own DNS
+records.
 
 ### CLI
 

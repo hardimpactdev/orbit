@@ -37,15 +37,15 @@ same blocker. All path eligibility must complete before side effects begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local client onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| omitted `--role` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
-| `control` | Legacy compatibility alias for the no-role client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
-| `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
-| `app-production` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-production']`. Requires `node_new.host` and `node_new.user`. |
+| omitted `--role` | Forward a joined/client identity request with no roles to the configured gateway over HTTPS. |
+| `control` | Legacy compatibility alias for the no-role joined/client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
+| `app-dev` / `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
+| `app-prod` / `app-production` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-production', 'ingress']` or private `roles: ['app-production']` plus `ingress_node=<node>`. Requires `node_new.host` and `node_new.user`; private placement also requires selecting an active `ingress` node. |
 | `database` | Forward a canonical role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
-| repeated roles | Forward compatible canonical role arrays, such as `roles: ['app-production', 'database']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
+| repeated roles | Forward compatible canonical role arrays, such as `roles: ['app-production', 'ingress']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
 | `app` | Legacy compatibility path. See app-role forwarding below. |
 
-For `--role=app`, resolve app-role inputs, then forward to the gateway over
+For deprecated legacy `--role=app`, resolve app-role inputs, then forward to the gateway over
 HTTPS using the legacy app contract with `node_new.environment`. Human mode
 warns that `app` now maps to app role assignments after the environment is resolved
 interactively or from flags.

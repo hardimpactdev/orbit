@@ -317,6 +317,12 @@ describe('node:new', function (): void {
                     ],
                     'last_error' => null,
                 ],
+                [
+                    'role' => 'router',
+                    'status' => 'active',
+                    'settings' => [],
+                    'last_error' => null,
+                ],
             ])
             ->and($payload['success']['data']['provisioning'])->toBe([
                 'transport' => 'ssh',
@@ -366,7 +372,7 @@ describe('node:new', function (): void {
                 ->where('node_id', $gateway->id)
                 ->orderBy('role')
                 ->pluck('role')
-                ->all())->toBe(['gateway', 'vpn'])
+                ->all())->toBe(['gateway', 'router', 'vpn'])
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
             ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform());
@@ -797,7 +803,7 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('provisions a development app node from a gateway caller', function (): void {
+    it('provisions an app-dev node from a gateway caller', function (): void {
         config(['orbit.is_gateway' => true]);
 
         DB::table('nodes')->insert([
@@ -850,9 +856,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-dev-1',
-            '--role' => 'app',
+            '--role' => 'app-dev',
             '--host' => '192.0.2.20',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -909,7 +914,7 @@ describe('node:new', function (): void {
             && str_contains($process->command, 'orbit'));
     });
 
-    it('provisions a production app node without a development tld from a gateway caller', function (): void {
+    it('provisions an app-prod node with colocated ingress from a gateway caller', function (): void {
         config(['orbit.is_gateway' => true]);
 
         DB::table('nodes')->insert([
@@ -962,9 +967,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-prod-1',
-            '--role' => 'app',
+            '--role' => ['app-prod', 'ingress'],
             '--host' => '192.0.2.21',
-            '--environment' => 'production',
             '--user' => 'provisioner',
             '--json' => true,
         ]);

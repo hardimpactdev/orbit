@@ -3,19 +3,22 @@
 [Back to tool catalog.](catalog/README.md)
 [Back to tool family.](README.md)
 
-This contract spells out how Orbit's gateway-side DNS infrastructure
-(`wg-easy` + `orbit-dns` + `dnsmasq.conf`) is provisioned, kept in sync with
-fleet state, and verified by `doctor`. It is referenced from
+This contract spells out how Orbit provisions DNS for development names over
+the VPN. The runtime shape is `wg-easy` + `orbit-dns` + `dnsmasq.conf`, kept in
+sync with fleet state and verified by `doctor`. It is referenced from
 [`catalog/dns.md`](catalog/dns.md) and from the gateway bootstrap path
 (`orbit:internal:bootstrap-gateway-local`).
 
 DNS *commands* — `dns:resolve-tld`, `dns:list` — stay caller-local and are
-covered by `docs/domains/16_dns/**`. Gateway DNS infrastructure is owned here by
-the **tool family** + **node family** + **bootstrap**.
+covered by `docs/domains/16_dns/**`. The **tool family**, **node family**, and
+**bootstrap** own development and agent TLD DNS here. Stable private `.orbit`
+service names are service contracts owned by the router, not by this `dns`
+tool contract.
 
 ## Ownership
 
-This table maps each gateway DNS responsibility to the service or command that owns it.
+This table maps each responsibility for development DNS over the VPN to the
+service or command that owns it.
 
 | Concern                                         | Owner                                                                 |
 | ----------------------------------------------- | --------------------------------------------------------------------- |

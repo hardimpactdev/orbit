@@ -247,8 +247,8 @@ it('reuses image resolution from host selection when starting docker containers'
 
     $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
 
-    expect($imageInspectCounts["docker image inspect 'orbit-e2e-topology:operator-gateway-control-current' >/dev/null"])->toBe(1)
-        ->and($imageInspectCounts["docker image inspect 'orbit-e2e-topology:operator-gateway-gateway-current' >/dev/null"])->toBe(1);
+    expect($imageInspectCounts["docker image inspect 'orbit-e2e-topology:operator_gateway-control-current' >/dev/null"])->toBe(1)
+        ->and($imageInspectCounts["docker image inspect 'orbit-e2e-topology:operator_gateway-gateway-current' >/dev/null"])->toBe(1);
 });
 
 it('uses the parallel worker token to create a non-overlapping docker network', function (): void {
@@ -458,8 +458,8 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
         Process::fake([
             'command -v docker >/dev/null' => Process::result(),
             'docker info >/dev/null' => Process::result(),
-            "docker image inspect 'orbit-e2e-topology:operator-gateway-control-current' >/dev/null" => Process::result(),
-            "docker image inspect 'orbit-e2e-topology:operator-gateway-gateway-current' >/dev/null" => Process::result(),
+            "docker image inspect 'orbit-e2e-topology:operator_gateway-control-current' >/dev/null" => Process::result(),
+            "docker image inspect 'orbit-e2e-topology:operator_gateway-gateway-current' >/dev/null" => Process::result(),
             "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
             "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
             "docker run -d --name 'orbit-e2e-run123-control' *" => Process::result(exitCode: 1, errorOutput: "control failed\n"),
@@ -473,7 +473,7 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
         expect(fn () => $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
             ->toThrow(RuntimeException::class, 'Could not start container orbit-e2e-run123-control');
 
-        Process::assertRan("docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.6.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator-gateway-gateway-current'");
+        Process::assertRan("docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.6.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator_gateway-gateway-current'");
         Process::assertRan("docker rm -f 'orbit-e2e-run123-control' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true");
     });
 });
@@ -503,12 +503,12 @@ it('uses dns aliases and primes the gateway api in dns-alias mode', function ():
     Process::fake([
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:operator-gateway-control-dns-alias-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:operator-gateway-gateway-dns-alias-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:operator_gateway-control-dns-alias-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:operator_gateway-gateway-dns-alias-current' >/dev/null" => Process::result(),
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
-        "docker run -d --name 'orbit-e2e-run123-control' --network 'orbit-e2e-run123' --network-alias 'control' --ip '10.6.0.3' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator-gateway-control-dns-alias-current'" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --network-alias 'gateway' --ip '10.6.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator-gateway-gateway-dns-alias-current'" => Process::result(output: "gateway-id\n"),
+        "docker run -d --name 'orbit-e2e-run123-control' --network 'orbit-e2e-run123' --network-alias 'control' --ip '10.6.0.3' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator_gateway-control-dns-alias-current'" => Process::result(output: "control-id\n"),
+        "docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --network-alias 'gateway' --ip '10.6.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:operator_gateway-gateway-dns-alias-current'" => Process::result(output: "gateway-id\n"),
         'docker exec *' => Process::result(),
     ]);
 

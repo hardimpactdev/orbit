@@ -87,6 +87,18 @@ Document-root policy is part of the route contract. Apps or workspaces that serv
 
 Custom, redirect, and tool routes are separate route kinds. They may share TLS, DNS, and inventory behavior with app/workspace routes, but they do not inherit the PHP document-root contract unless their own command docs say so.
 
+- **Public route artifact:** Caddy site rendered on a `ingress` node.
+  It terminates public HTTPS and reverse proxies to the active `router` over
+  WireGuard.
+- **Private router artifact:** Caddy site rendered on the gateway-coupled
+  `router` node. It owns private HTTP route selection and reverse proxies to
+  the backend pool.
+- **Private backend artifact:** Caddy site rendered on an `app-production`
+  node. It listens on HTTP port `80` bound to the node's WireGuard address and
+  serves the app/workspace PHP ingress contract.
+- **Router backend pool:** Ordered list of URLs for app-production backends.
+  The router owns this pool. V1 creates one target but stores a list.
+
 ## TLS Authority Model
 
 The gateway is the only Orbit certificate authority. For each managed route, it issues a leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures Caddy with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.

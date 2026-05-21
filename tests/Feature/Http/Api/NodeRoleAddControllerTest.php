@@ -38,7 +38,7 @@ describe('NodeRoleAddController', function (): void {
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The gateway role cannot be managed through node role commands.')
+            ->assertJsonPath('error.message', "Role 'gateway' is gateway-coupled and cannot be assigned independently.")
             ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.meta.role', 'gateway')
             ->assertJsonMissingPath('success');

@@ -40,6 +40,24 @@ it('documents host preparation without force using docker host slots', function 
     Process::assertNothingRan();
 });
 
+it('documents ingress host preparation without force', function (): void {
+    Process::fake();
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
+    ], function (): void {
+        $this->artisan('e2e:prepare-docker-hosts', ['kind' => 'operator-gateway-appprod-ingress'])
+            ->expectsOutputToContain('Dry run')
+            ->expectsOutputToContain('builder: beast')
+            ->expectsOutputToContain('planned: sidecar1')
+            ->expectsOutputToContain('planned: sidecar2')
+            ->assertSuccessful();
+    });
+
+    Process::assertNothingRan();
+});
+
 it('builds docker images once on the build host and distributes them to runner hosts', function (): void {
     $runs = [];
     $distributions = [];

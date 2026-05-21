@@ -119,6 +119,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             gatewayApiIp: $networkPlan->ipForRole('gateway'),
             resourceLease: $resourceLease,
             agent: $instances['agent'] ?? null,
+            ingress: $instances['ingress'] ?? null,
         );
     }
 
@@ -163,6 +164,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
         };
     }
 
@@ -415,6 +417,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             'control' => '10.6.0.3',
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
+            'ingress' => '10.6.0.7',
         ];
 
         $map = [];
@@ -514,19 +517,29 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=%s --wireguard-address=%s --environment=development --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($gatewayIp),
             ), timeoutSeconds: 120);
         }
 
+        if (isset($instances['ingress'])) {
+            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                escapeshellarg($networkPlan->ipForRole('ingress')),
+                escapeshellarg($networkPlan->ipForRole('ingress')),
+                escapeshellarg($gatewayIp),
+            ), timeoutSeconds: 120);
+        }
+
         if (isset($instances['prod'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=%s --wireguard-address=%s --environment=production --gateway-endpoint=%s --user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 escapeshellarg($networkPlan->ipForRole('prod')),
                 escapeshellarg($networkPlan->ipForRole('prod')),
                 escapeshellarg($gatewayIp),
+                isset($instances['ingress']) ? ' --ingress-node=edge-1' : '',
             ), timeoutSeconds: 120);
         }
     }

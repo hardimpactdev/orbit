@@ -52,6 +52,7 @@ required arguments.
 - Query or mutate gateway configuration, node records, app routes, proxy routes,
   Cloudflare records, or public DNS.
 - Inspect the development DNS mappings that the gateway owns.
+- Inspect private `.orbit` service names owned by the router.
 - Repair local resolver drift.
 
 ## Renderer Contracts

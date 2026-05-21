@@ -1,15 +1,19 @@
 # DNS Commands
 
-DNS commands manage the resolver overrides that Orbit sets on the caller machine for development DNS.
+DNS commands manage the resolver overrides that Orbit sets on the caller
+machine for development DNS.
 
 The DNS command domain is intentionally local. It helps an operator machine route
 development hostnames to Orbit-managed targets for browser and CLI use. It does
-not create gateway configuration, app routes, proxy routes, Cloudflare records, public
-DNS records, or development DNS mappings owned by the gateway.
+not create gateway configuration, app routes, proxy routes, Cloudflare records,
+public DNS records, development DNS mappings owned by the gateway, or
+private `.orbit` service names owned by the router.
 
-Development DNS mappings owned by the gateway are created by node/app provisioning and
-verified through node-family doctor behavior. The DNS command family only owns
-caller-local resolver overrides.
+Development DNS mappings owned by the gateway are created by node/app
+provisioning and verified through node-family doctor behavior. The router owns
+stable private `.orbit` service names as service contracts; they are not
+caller-local DNS entries. The DNS command family only owns caller-local resolver
+overrides.
 
 Gateway development DNS infrastructure is deliberately WireGuard-scoped. It
 exists so Orbit nodes and configured clients can resolve development
@@ -24,14 +28,16 @@ only the resolver configuration on the caller machine.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns development TLD readiness
 as provisioned by the gateway, and app-role resolver drift. DNS commands must not
-create DNS doctor issues, gateway DNS configuration, or proxy route configuration.
+create DNS doctor issues, gateway DNS configuration, service names owned by the
+router, or proxy route configuration.
 
 ## Domain Rules
 
 These rules govern all DNS commands in this family.
 
 - DNS commands affect only the caller machine.
-- DNS commands must not create or mutate gateway-owned DNS configuration.
+- DNS commands must not create or mutate gateway-owned development DNS
+  configuration or private `.orbit` service names owned by the router.
 - DNS commands must not create proxy routes, app domains, Cloudflare records, or
   public DNS records.
 - DNS write commands require the local OS privileges needed to update resolver

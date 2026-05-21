@@ -54,6 +54,8 @@ final readonly class DoctorReportRunner
 
     private const array AGENT_CATEGORIES = ['node', 'tool'];
 
+    private const array INGRESS_CATEGORIES = ['node', 'proxy', 'firewall_rule', 'tool'];
+
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
@@ -96,6 +98,7 @@ final readonly class DoctorReportRunner
             NodeRoleName::AppProduction->value => self::APP_PRODUCTION_CATEGORIES,
             NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
             NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
+            NodeRoleName::Ingress->value => self::INGRESS_CATEGORIES,
             default => [],
         };
     }
@@ -123,6 +126,10 @@ final readonly class DoctorReportRunner
 
         if ($this->nodeRoleAssignments->nodeHasActiveAgentRole($node)) {
             return self::AGENT_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Ingress->value)) {
+            return self::INGRESS_CATEGORIES;
         }
 
         return self::CONTROL_CATEGORIES;
@@ -996,6 +1003,12 @@ final readonly class DoctorReportRunner
         $restorableKeys = [
             'proxy.route_missing',
             'proxy.route_mismatch',
+            'proxy.public_route_missing',
+            'proxy.public_route_mismatch',
+            'proxy.router_route_missing',
+            'proxy.router_route_mismatch',
+            'proxy.backend_route_missing',
+            'proxy.backend_route_mismatch',
             'proxy.tls_missing',
             'proxy.tls_mismatch',
             'workspace.fpm_config_missing',

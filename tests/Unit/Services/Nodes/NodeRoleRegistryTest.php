@@ -21,6 +21,7 @@ describe('node role registry', function (): void {
             'app-production',
             'database',
             'agent',
+            'ingress',
         ]);
 
         expect($registry->definition('vpn')->conflictsWith)->toBe([
@@ -28,34 +29,61 @@ describe('node role registry', function (): void {
             'app-production',
             'database',
             'agent',
+            'ingress',
+        ]);
+
+        expect($registry->definition('router')->conflictsWith)->toBe([
+            'app-development',
+            'app-production',
+            'database',
+            'agent',
+            'ingress',
         ]);
 
         expect($registry->definition('app-development')->conflictsWith)->toBe([
             'gateway',
             'vpn',
+            'router',
             'app-production',
             'agent',
+            'ingress',
         ]);
 
         expect($registry->definition('app-production')->conflictsWith)->toBe([
             'gateway',
             'vpn',
+            'router',
             'app-development',
+            'database',
             'agent',
         ]);
 
         expect($registry->definition('database')->conflictsWith)->toBe([
             'gateway',
             'vpn',
+            'router',
+            'app-production',
             'agent',
+            'ingress',
         ]);
 
         expect($registry->definition('agent')->conflictsWith)->toBe([
             'gateway',
             'vpn',
+            'router',
             'app-development',
             'app-production',
             'database',
+            'ingress',
+        ]);
+
+        expect($registry->definition('ingress')->conflictsWith)->toBe([
+            'gateway',
+            'vpn',
+            'router',
+            'app-development',
+            'database',
+            'agent',
         ]);
     });
 
@@ -65,6 +93,9 @@ describe('node role registry', function (): void {
         expect($registry->definition('gateway')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('gateway')->assignableByRoleCommand)->toBeFalse()
             ->and($registry->definition('gateway')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('router')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('router')->assignableByRoleCommand)->toBeFalse()
+            ->and($registry->definition('router')->assignableByNodeNew)->toBeFalse()
             ->and($registry->definition('app-development')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('app-development')->assignableByRoleCommand)->toBeTrue()
             ->and($registry->definition('app-development')->assignableByNodeNew)->toBeTrue()
@@ -77,12 +108,26 @@ describe('node role registry', function (): void {
             ->and($registry->definition('agent')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('agent')->assignableByRoleCommand)->toBeFalse()
             ->and($registry->definition('agent')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('ingress')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('ingress')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('ingress')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('vpn')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('vpn')->assignableByRoleCommand)->toBeFalse()
             ->and($registry->definition('vpn')->assignableByNodeNew)->toBeFalse();
     });
 
     it('hydrates role-specific settings dtos', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('app-production')
+            ->settingsFromArray(['ingress_node_id' => 12]);
+
+        expect($settings)
+            ->toBeInstanceOf(AppProductionRoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe(['ingress_node_id' => 12]);
+    });
+
+    it('hydrates app development settings dtos', function (): void {
         $settings = (new NodeRoleRegistry)
             ->definition('app-development')
             ->settingsFromArray(['tld' => 'test']);
@@ -163,8 +208,9 @@ describe('node role registry', function (): void {
             ->toBe([]);
     })->with([
         ['gateway', EmptyRoleSettings::class],
-        ['app-production', AppProductionRoleSettings::class],
+        ['router', EmptyRoleSettings::class],
         ['database', DatabaseRoleSettings::class],
+        ['ingress', EmptyRoleSettings::class],
     ]);
 
     it('rejects invalid app development settings', function (): void {
@@ -241,7 +287,29 @@ describe('node role registry', function (): void {
             ->definition($role)
             ->settingsFromArray(['unexpected' => 'value']))
             ->toThrow(InvalidArgumentException::class, 'This role does not accept settings.');
-    })->with(['gateway', 'app-production', 'database']);
+    })->with(['gateway', 'router', 'database', 'ingress']);
+
+    it('accepts empty app production settings for compatibility with existing rows', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('app-production')
+            ->settingsFromArray([]);
+
+        expect($settings)
+            ->toBeInstanceOf(AppProductionRoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe([]);
+    });
+
+    it('rejects invalid app production settings', function (array $settings, string $message): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('app-production')
+            ->settingsFromArray($settings))
+            ->toThrow(InvalidArgumentException::class, $message);
+    })->with([
+        'unknown key' => [['ingress_node_id' => 12, 'unexpected' => true], 'The app-production role does not accept unknown settings.'],
+        'not integer' => [['ingress_node_id' => '12'], 'The app-production role requires a positive ingress_node_id setting when provided.'],
+        'not positive' => [['ingress_node_id' => 0], 'The app-production role requires a positive ingress_node_id setting when provided.'],
+    ]);
 
     it('rejects unknown roles', function (): void {
         expect(fn () => (new NodeRoleRegistry)->definition('queue'))
@@ -255,10 +323,12 @@ describe('node role registry', function (): void {
         ))->toBe([
             'gateway',
             'vpn',
+            'router',
             'app-development',
             'app-production',
             'database',
             'agent',
+            'ingress',
         ]);
     });
 

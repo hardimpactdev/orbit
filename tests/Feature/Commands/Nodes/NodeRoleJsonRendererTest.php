@@ -109,6 +109,11 @@ describe('node role json renderer', function (): void {
 
     it('uses exactly one top-level error key on validation failure', function (): void {
         setupNodeRoleGatewayCaller();
+        createHostedNode([
+            'name' => 'client-1',
+            'role' => 'control',
+            'environment' => null,
+        ]);
 
         Artisan::call('node role:add', [
             'node' => 'client-1',

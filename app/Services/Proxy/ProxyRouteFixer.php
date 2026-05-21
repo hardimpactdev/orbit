@@ -25,7 +25,18 @@ final readonly class ProxyRouteFixer
      */
     public function fix(ProxyRoute $route, DriftEntry $entry): ?array
     {
-        if (! in_array($entry->key, ['proxy.route_missing', 'proxy.route_mismatch', 'proxy.tls_missing', 'proxy.tls_mismatch'], true)) {
+        if (! in_array($entry->key, [
+            'proxy.route_missing',
+            'proxy.route_mismatch',
+            'proxy.public_route_missing',
+            'proxy.public_route_mismatch',
+            'proxy.router_route_missing',
+            'proxy.router_route_mismatch',
+            'proxy.backend_route_missing',
+            'proxy.backend_route_mismatch',
+            'proxy.tls_missing',
+            'proxy.tls_mismatch',
+        ], true)) {
             return null;
         }
 
@@ -34,6 +45,14 @@ final readonly class ProxyRouteFixer
         }
 
         $route->loadMissing('node');
+
+        if (in_array($entry->key, ['proxy.backend_route_missing', 'proxy.backend_route_mismatch'], true)) {
+            return $this->repairBackendRoute($route, $entry);
+        }
+
+        if (in_array($entry->key, ['proxy.router_route_missing', 'proxy.router_route_mismatch'], true)) {
+            return $this->repairRouterRoute($route, $entry);
+        }
 
         if (in_array($entry->key, ['proxy.tls_missing', 'proxy.tls_mismatch'], true)) {
             $this->repairTls($route);
@@ -67,9 +86,80 @@ final readonly class ProxyRouteFixer
             'key' => $entry->key,
             'mode' => 'fix',
             'status' => 'completed',
-            'summary' => "Re-applied proxy route {$route->domain} from gateway intent.",
+            'summary' => $this->publicRouteSummary($route, $entry),
             'details' => [
                 'route' => $route->domain,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function repairRouterRoute(ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        $artifact = $this->routerArtifact($route);
+        $nodeId = $artifact['node_id'] ?? null;
+        $routerNode = is_int($nodeId) ? Node::query()->find($nodeId) : null;
+
+        if (! $routerNode instanceof Node) {
+            return null;
+        }
+
+        $content = $this->renderer->renderRouterRoute($route);
+        $this->remoteShell->run($routerNode, $this->installScript($route->domain, $content), ['throw' => true]);
+
+        $this->updateRouterArtifactHash($route, hash('sha256', $content));
+
+        return [
+            'family' => 'proxy',
+            'node' => $routerNode->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Re-applied private router route {$route->domain} from gateway intent.",
+            'details' => [
+                'route' => $route->domain,
+                'router_node_id' => $nodeId,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function repairBackendRoute(ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        $artifact = $this->backendArtifactForEntry($route, $entry);
+
+        if ($artifact === null) {
+            return null;
+        }
+
+        $nodeId = $artifact['node_id'] ?? null;
+        $backendNode = is_int($nodeId) ? Node::query()->find($nodeId) : null;
+
+        if (! $backendNode instanceof Node) {
+            return null;
+        }
+
+        $content = $this->renderer->renderPrivateBackend($route, $artifact);
+        $this->remoteShell->run($backendNode, $this->installScript($route->domain, $content, backend: true), ['throw' => true]);
+
+        $this->updateBackendArtifactHash($route, $nodeId, hash('sha256', $content));
+
+        return [
+            'family' => 'proxy',
+            'node' => $backendNode->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Re-applied private backend route {$route->domain} on {$backendNode->name} from gateway intent.",
+            'details' => [
+                'route' => $route->domain,
+                'backend_node_id' => $nodeId,
             ],
         ];
     }
@@ -104,9 +194,10 @@ final readonly class ProxyRouteFixer
         return true;
     }
 
-    private function installScript(string $domain, string $content): string
+    private function installScript(string $domain, string $content, bool $backend = false): string
     {
-        $sitePath = "/etc/caddy/sites/{$domain}.caddy";
+        $suffix = $backend ? '.backend' : '';
+        $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
 
         return sprintf(
             <<<'SH'
@@ -117,6 +208,98 @@ SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
         );
+    }
+
+    private function publicRouteSummary(ProxyRoute $route, DriftEntry $entry): string
+    {
+        if (in_array($entry->key, ['proxy.public_route_missing', 'proxy.public_route_mismatch'], true)) {
+            return "Re-applied public proxy route {$route->domain} from gateway intent.";
+        }
+
+        return "Re-applied proxy route {$route->domain} from gateway intent.";
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function backendArtifactForEntry(ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        $backendNodeId = $entry->detail['backend_node_id'] ?? null;
+
+        if (! is_int($backendNodeId)) {
+            return null;
+        }
+
+        foreach ($this->backendArtifacts($route) as $artifact) {
+            if (($artifact['node_id'] ?? null) === $backendNodeId) {
+                return $artifact;
+            }
+        }
+
+        return null;
+    }
+
+    private function updateBackendArtifactHash(ProxyRoute $route, int $nodeId, string $hash): void
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifacts = $config['backend_artifacts'] ?? [];
+
+        if (! is_array($artifacts)) {
+            return;
+        }
+
+        foreach ($artifacts as $index => $artifact) {
+            if (! is_array($artifact) || ($artifact['node_id'] ?? null) !== $nodeId) {
+                continue;
+            }
+
+            $artifacts[$index]['source_hash'] = $hash;
+        }
+
+        $config['backend_artifacts'] = $artifacts;
+
+        $route->forceFill(['config' => $config])->save();
+    }
+
+    private function updateRouterArtifactHash(ProxyRoute $route, string $hash): void
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifact = $config['router_artifact'] ?? null;
+
+        if (! is_array($artifact)) {
+            return;
+        }
+
+        $artifact['source_hash'] = $hash;
+        $config['router_artifact'] = $artifact;
+
+        $route->forceFill(['config' => $config])->save();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function backendArtifacts(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifacts = $config['backend_artifacts'] ?? null;
+
+        if (! is_array($artifacts)) {
+            return [];
+        }
+
+        return array_values(array_filter($artifacts, is_array(...)));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function routerArtifact(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifact = $config['router_artifact'] ?? null;
+
+        return is_array($artifact) ? $artifact : [];
     }
 
     private function tlsInstallScript(string $domain, string $cert, string $key): string

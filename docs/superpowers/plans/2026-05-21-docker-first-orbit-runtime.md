@@ -272,7 +272,7 @@ Add or link these concepts to their owning docs:
 Apply the spec decisions to each affected domain:
 
 ```text
-node: Docker baseline, role prerequisites, Dockerized Caddy, public-ingress backend split
+node: Docker baseline, role prerequisites, Dockerized Caddy, ingress backend split
 gateway: API and scheduler live in orbit-runtime
 tool: Caddy/PHP/Composer shift from host tools to container capabilities; VitePlus remains host
 firewall: orbit-caddy owns listeners; app containers are Docker-network backends
@@ -826,7 +826,7 @@ Expected coverage:
 ```text
 gateway API through orbit-caddy/orbit-runtime
 app-development PHP workspace through FrankenPHP container
-app-production PHP app through public-ingress/app-production route
+app-production PHP app through ingress/app-production route
 static app without FrankenPHP container
 process runtime docker sidecar
 app:exec and workspace:exec
@@ -860,7 +860,7 @@ composer test:e2e:provision
 
 - [ ] **Step 3: Rehearse conversion on disposable nodes**
 
-Use disposable gateway, app-development, app-production, public-ingress, and
+Use disposable gateway, app-development, app-production, ingress, and
 database nodes. Verify:
 
 ```text

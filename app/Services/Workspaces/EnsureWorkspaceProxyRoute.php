@@ -10,6 +10,9 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\ProxyRouteRenderer;
 use RuntimeException;
 use Throwable;
 
@@ -19,6 +22,9 @@ final readonly class EnsureWorkspaceProxyRoute
         private RemoteShell $remoteShell,
         private WorkspaceFpmPoolRenderer $fpmPoolRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
+        private CaddyGlobalConfig $caddyGlobalConfig,
+        private IngressResolver $ingressResolver,
+        private ProxyRouteRenderer $proxyRouteRenderer,
     ) {}
 
     /**
@@ -41,21 +47,12 @@ final readonly class EnsureWorkspaceProxyRoute
         }
 
         $domain = $this->domain($workspace, $app, $node);
-        $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($node, $domain);
-        $config = [
-            'document_root' => $this->documentRoot($workspace, $app),
-            'php_socket' => $this->socketPath($workspace),
-            'tls' => [
-                'cert_path' => $certificatePaths['cert'],
-                'key_path' => $certificatePaths['key'],
-            ],
-        ];
-        $content = $this->renderCaddySite($workspace, $app, $domain, $config);
+        [$servingNode, $config, $content] = $this->routeArtifact($workspace, $app, $node, $domain);
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
             [
-                'node_id' => $node->id,
+                'node_id' => $servingNode->id,
                 'app_id' => $app->id,
                 'workspace_id' => $workspace->id,
                 'owner_type' => 'workspace',
@@ -66,7 +63,8 @@ final readonly class EnsureWorkspaceProxyRoute
         );
 
         try {
-            $this->siteCertificateInstaller->ensureFor($node, $domain);
+            $this->siteCertificateInstaller->ensureFor($servingNode, $domain);
+            $this->ensureGlobalCaddyfile($servingNode);
         } catch (Throwable) {
             return [[
                 'code' => 'proxy.enactment_failed',
@@ -76,18 +74,109 @@ final readonly class EnsureWorkspaceProxyRoute
             ]];
         }
 
-        $result = $this->remoteShell->run($node, $this->renderInstallScript($domain, $content));
+        $result = $this->remoteShell->run($servingNode, $this->renderInstallScript($domain, $content));
 
-        if ($result->successful()) {
-            return [];
+        if (! $result->successful()) {
+            return [[
+                'code' => 'proxy.enactment_failed',
+                'family' => 'proxy',
+                'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
+                'next_command' => 'doctor --fix --family=proxy --restore',
+            ]];
         }
 
-        return [[
-            'code' => 'proxy.enactment_failed',
-            'family' => 'proxy',
-            'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-            'next_command' => 'doctor --fix --family=proxy --restore',
-        ]];
+        if (($config['placement'] ?? null) === 'ingress') {
+            $routerArtifact = $config['router_artifact'] ?? null;
+
+            if (! is_array($routerArtifact)) {
+                throw new RuntimeException("Proxy route '{$domain}' is missing a router artifact.");
+            }
+
+            $routerNodeId = $routerArtifact['node_id'] ?? null;
+            $routerNode = is_int($routerNodeId) ? Node::query()->find($routerNodeId) : null;
+
+            if (! $routerNode instanceof Node) {
+                throw new RuntimeException("Proxy route '{$domain}' points at an unavailable router node.");
+            }
+
+            $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
+                'node_id' => $routerNode->id,
+                'domain' => $domain,
+                'kind' => 'workspace',
+                'owner_type' => 'workspace',
+                'app_id' => $app->id,
+                'workspace_id' => $workspace->id,
+                'config' => $config,
+            ]));
+
+            $this->ensureGlobalCaddyfile($routerNode);
+            $routerResult = $this->remoteShell->run($routerNode, $this->renderInstallScript($domain, $routerContent));
+
+            if (! $routerResult->successful()) {
+                return [[
+                    'code' => 'proxy.enactment_failed',
+                    'family' => 'proxy',
+                    'message' => "Proxy route '{$domain}' was recorded, but router enactment failed. Run doctor to converge proxy artifacts.",
+                    'next_command' => 'doctor --fix --family=proxy --restore',
+                ]];
+            }
+
+            $backendArtifact = $config['backend_artifacts'][0] ?? null;
+
+            if (! is_array($backendArtifact)) {
+                throw new RuntimeException("Proxy route '{$domain}' is missing a backend artifact.");
+            }
+
+            $backendContent = $this->proxyRouteRenderer->renderPrivateBackend(
+                new ProxyRoute([
+                    'domain' => $domain,
+                    'kind' => 'workspace',
+                    'owner_type' => 'workspace',
+                    'app_id' => $app->id,
+                    'workspace_id' => $workspace->id,
+                    'config' => $config,
+                ]),
+                $backendArtifact,
+            );
+
+            $this->ensureGlobalCaddyfile($node);
+            $backendResult = $this->remoteShell->run($node, $this->renderInstallScript($domain, $backendContent, backend: true));
+
+            if (! $backendResult->successful()) {
+                return [[
+                    'code' => 'proxy.enactment_failed',
+                    'family' => 'proxy',
+                    'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
+                    'next_command' => 'doctor --fix --family=proxy --restore',
+                ]];
+            }
+        }
+
+        return [];
+    }
+
+    private function ensureGlobalCaddyfile(Node $node): void
+    {
+        $readResult = $this->remoteShell->run(
+            $node,
+            'sudo test -f /etc/caddy/Caddyfile && sudo cat /etc/caddy/Caddyfile || true',
+            ['throw' => true],
+        );
+
+        $updated = $this->caddyGlobalConfig->ensure($readResult->stdout);
+
+        if ($updated === $readResult->stdout) {
+            return;
+        }
+
+        $this->remoteShell->run(
+            $node,
+            sprintf(
+                'sudo install -d -m 0755 /etc/caddy && printf %%s %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null',
+                escapeshellarg(base64_encode($updated)),
+            ),
+            ['throw' => true],
+        );
     }
 
     /**
@@ -121,13 +210,14 @@ final readonly class EnsureWorkspaceProxyRoute
 CADDY;
     }
 
-    private function renderInstallScript(string $domain, string $content): string
+    private function renderInstallScript(string $domain, string $content, bool $backend = false): string
     {
-        $sitePath = "/etc/caddy/sites/{$domain}.caddy";
+        $suffix = $backend ? '.backend' : '';
+        $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
 
         return sprintf(
             <<<'SH'
-sudo mkdir -p /etc/caddy/sites
+sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo systemctl reload caddy
 SH,
@@ -138,6 +228,10 @@ SH,
 
     private function domain(Workspace $workspace, App $app, Node $node): string
     {
+        if ($app->environment === 'production' && is_string($app->domain) && $app->domain !== '') {
+            return "{$workspace->name}.{$app->domain}";
+        }
+
         $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
 
         if ($tld === '') {
@@ -161,5 +255,97 @@ SH,
     private function socketPath(Workspace $workspace): string
     {
         return $this->fpmPoolRenderer->socketPath($workspace);
+    }
+
+    /**
+     * @return array{0: Node, 1: array<string, mixed>, 2: string}
+     */
+    private function routeArtifact(Workspace $workspace, App $app, Node $node, string $domain): array
+    {
+        if ($app->environment !== 'production') {
+            $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($node, $domain);
+            $config = [
+                'document_root' => $this->documentRoot($workspace, $app),
+                'php_socket' => $this->socketPath($workspace),
+                'tls' => [
+                    'cert_path' => $certificatePaths['cert'],
+                    'key_path' => $certificatePaths['key'],
+                ],
+            ];
+
+            return [$node, $config, $this->renderCaddySite($workspace, $app, $domain, $config)];
+        }
+
+        $ingressNode = $this->ingressResolver->forAppNode($node);
+        $routerNode = $this->ingressResolver->router();
+        $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($ingressNode, $domain);
+        $backendArtifact = [
+            'node_id' => $node->id,
+            'domain' => $domain,
+            'bind' => $node->wireguard_address,
+            'document_root' => $this->documentRoot($workspace, $app),
+            'php_socket' => $this->socketPath($workspace),
+        ];
+        $config = [
+            'placement' => 'ingress',
+            'ingress_node_id' => $ingressNode->id,
+            'router_upstream' => [
+                'node_id' => $routerNode->id,
+                'node' => $routerNode->name,
+                'url' => $this->ingressResolver->routerUrl($routerNode),
+            ],
+            'router_backend_pool' => [
+                [
+                    'node_id' => $node->id,
+                    'node' => $node->name,
+                    'url' => $this->ingressResolver->backendUrl($node),
+                ],
+            ],
+            'backend_artifacts' => [$backendArtifact],
+            'tls' => [
+                'cert_path' => $certificatePaths['cert'],
+                'key_path' => $certificatePaths['key'],
+            ],
+        ];
+
+        $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
+            'node_id' => $routerNode->id,
+            'domain' => $domain,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'config' => $config,
+        ]));
+        $config['router_artifact'] = [
+            'node_id' => $routerNode->id,
+            'node' => $routerNode->name,
+            'source_hash' => hash('sha256', $routerContent),
+        ];
+
+        $content = $this->proxyRouteRenderer->renderIngress(new ProxyRoute([
+            'node_id' => $ingressNode->id,
+            'domain' => $domain,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'config' => $config,
+        ]));
+
+        $backendArtifact['source_hash'] = hash('sha256', $this->proxyRouteRenderer->renderPrivateBackend(
+            new ProxyRoute([
+                'domain' => $domain,
+                'app_id' => $app->id,
+                'workspace_id' => $workspace->id,
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'config' => ['placement' => 'ingress'],
+            ]),
+            $backendArtifact,
+        ));
+        $config['backend_artifacts'] = [$backendArtifact];
+
+        return [$ingressNode, $config, $content];
     }
 }

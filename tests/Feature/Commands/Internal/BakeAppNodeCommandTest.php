@@ -39,8 +39,7 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('writes an app node row with the same shape as node:new produces', function (): void {
         $this->artisan('orbit:internal:bake-app-node', [
             'name' => 'app-dev-1',
-            '--role' => 'app',
-            '--environment' => 'development',
+            '--role' => 'app-dev',
             '--host' => '10.6.0.4',
             '--wireguard-address' => '10.6.0.4',
             '--gateway-endpoint' => '10.6.0.2',
@@ -72,8 +71,7 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('writes the matching active composable role assignment', function (): void {
         $this->artisan('orbit:internal:bake-app-node', [
             'name' => 'app-dev-1',
-            '--role' => 'app',
-            '--environment' => 'development',
+            '--role' => 'app-dev',
             '--host' => 'dev',
             '--wireguard-address' => '10.6.0.4',
             '--gateway-endpoint' => 'gateway',
@@ -95,8 +93,7 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('is idempotent across repeated runs', function (): void {
         $args = [
             'name' => 'app-prod-1',
-            '--role' => 'app',
-            '--environment' => 'production',
+            '--role' => 'app-prod',
             '--host' => '10.6.0.5',
             '--wireguard-address' => '10.6.0.5',
             '--gateway-endpoint' => '10.6.0.2',
@@ -115,5 +112,58 @@ describe('orbit:internal:bake-app-node', function (): void {
                 ->where('node_id', $node->id)
                 ->where('role', NodeRoleName::AppProduction->value)
                 ->count())->toBe(1);
+    });
+
+    it('stores the selected ingress node for production placement', function (): void {
+        $edge = Node::factory()->create([
+            'name' => 'edge-1',
+            'role' => 'control',
+            'host' => '10.6.0.7',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $edge->id,
+            'role' => NodeRoleName::Ingress->value,
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-prod-1',
+            '--role' => 'app-prod',
+            '--host' => '10.6.0.5',
+            '--wireguard-address' => '10.6.0.5',
+            '--gateway-endpoint' => '10.6.0.2',
+            '--user' => 'orbit',
+            '--ingress-node' => 'edge-1',
+        ])->assertSuccessful();
+
+        $node = Node::query()->where('name', 'app-prod-1')->firstOrFail();
+        $assignment = NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', NodeRoleName::AppProduction->value)
+            ->first();
+
+        expect($assignment)->not->toBeNull()
+            ->and($assignment?->settings)->toBe(['ingress_node_id' => $edge->id]);
+    });
+
+    it('requires the selected ingress node to have an active ingress assignment', function (): void {
+        Node::factory()->create([
+            'name' => 'edge-1',
+            'role' => 'control',
+            'host' => '10.6.0.7',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+
+        expect(fn () => $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-prod-1',
+            '--role' => 'app-prod',
+            '--host' => '10.6.0.5',
+            '--wireguard-address' => '10.6.0.5',
+            '--gateway-endpoint' => '10.6.0.2',
+            '--user' => 'orbit',
+            '--ingress-node' => 'edge-1',
+        ])->run())->toThrow(RuntimeException::class, 'Active ingress node [edge-1] was not found.');
     });
 });

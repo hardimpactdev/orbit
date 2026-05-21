@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Process;
 use Throwable;
 
 #[Signature('e2e:prepare-docker-hosts
-    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod)}
+    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod|operator-gateway-appdev-appprod-agent|operator-gateway-appprod-ingress)}
     {--force : Build the Docker runtime and topology images}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
@@ -34,7 +34,7 @@ class E2EPrepareDockerHostsCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.");
+            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent, operator-gateway-appprod-ingress. Legacy control topology names are accepted as aliases.");
         }
 
         if ((bool) $this->option('runtime-only') && (bool) $this->option('topology-only')) {

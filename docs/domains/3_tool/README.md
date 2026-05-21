@@ -87,11 +87,12 @@ a future tool definition explicitly changes their support model. Installable
 tools are provisioned by `tool:install`, removed by `tool:remove`, and verified
 by `doctor --family=tool`.
 
-The `dns` tool is the runtime capability behind the gateway's VPN-facing DNS
-substrate; its container, port, and config lifecycle are verified by
-`doctor --family=tool`. DNS mapping records — which TLD points at which
-WireGuard IP — are owned by the node family. The `dns:*` command family owns
-only caller-local resolver overrides on operator machines. See
+The `dns` tool is the runtime capability behind the VPN-facing DNS substrate;
+its container, port, and config lifecycle are verified by `doctor --family=tool`.
+Development/agent DNS mapping records — which TLD points at which WireGuard
+IP — are owned by the node family. Stable private `.orbit` service names and
+private route selection are router-owned service contracts. The `dns:*` command
+family owns only caller-local resolver overrides on operator machines. See
 [Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)
 for the full split.
 

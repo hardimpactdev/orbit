@@ -265,7 +265,7 @@ it('rolls back the provisional node row when host provisioning fails', function 
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'rollback-1',
-        '--role' => ['app-production'],
+        '--role' => ['ingress'],
         '--host' => '192.0.2.51',
         '--json' => true,
     ]);
@@ -387,7 +387,7 @@ it('adopts a compatible existing app node for canonical app-development', functi
     Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
 });
 
-it('creates compatible app-production and database hosted roles', function (): void {
+it('rejects app-production and database hosted roles before provisioning side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'web-1',
         '--role' => ['app-production', 'database'],
@@ -395,17 +395,22 @@ it('creates compatible app-production and database hosted roles', function (): v
         '--json' => true,
     ]);
 
-    $roles = NodeRoleAssignment::query()
-        ->whereHas('node', fn ($query) => $query->where('name', 'web-1'))
-        ->orderBy('role')
-        ->get();
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($roles->pluck('role')->all())->toBe(['app-production', 'database'])
-        ->and($roles->pluck('status')->unique()->all())->toBe([NodeRoleStatus::Active->value]);
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'validation_failed',
+            'message' => 'Hosted roles app-production and database cannot be combined.',
+            'meta' => [
+                'field' => 'role',
+                'conflicts' => ['app-production', 'database'],
+            ],
+        ])
+        ->and(Node::query()->where('name', 'web-1')->exists())->toBeFalse()
+        ->and($this->fakeInstaller->calls)->toBe(0);
 });
 
-it('adopts a compatible existing app node for canonical app-production plus database', function (): void {
+it('rejects adopting app-production plus database before touching the existing node', function (): void {
     $node = Node::factory()->create([
         'name' => 'web-adopt-1',
         'role' => 'app',
@@ -447,26 +452,20 @@ it('adopts a compatible existing app node for canonical app-production plus data
     ]);
 
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-    $roles = $node->fresh()->roleAssignments->sortBy('role')->values();
 
-    expect($exitCode)->toBe(0);
-    expect($payload['success']['data']['result']['action'])->toBe('adopted');
-    expect($payload['success']['data']['node'])->toMatchArray([
-        'name' => 'web-adopt-1',
-        'role' => 'app',
-        'environment' => 'production',
-        'tld' => null,
-        'addresses' => [
-            'wireguard' => '10.6.0.11',
-            'gateway_endpoint' => '10.6.0.2',
+    expect($exitCode)->toBe(1);
+    expect($payload['error'])->toMatchArray([
+        'code' => 'validation_failed',
+        'message' => 'Hosted roles app-production and database cannot be combined.',
+        'meta' => [
+            'field' => 'role',
+            'conflicts' => ['app-production', 'database'],
         ],
-        'status' => 'active',
     ]);
     expect($this->fakeInstaller->calls)->toBe(0);
-    expect($node->fresh()->status)->toBe('active');
-    expect($node->fresh()->wireguard_address)->toBe('10.6.0.11');
-    expect($roles->pluck('role')->all())->toBe(['app-production', 'database']);
-    expect($roles->pluck('status')->unique()->all())->toBe([NodeRoleStatus::Active->value]);
+    expect($node->fresh()->status)->toBe('decommissioned');
+    expect($node->fresh()->wireguard_address)->toBe('10.6.0.10');
+    expect($node->fresh()->roleAssignments)->toHaveCount(0);
 
     Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
 });
@@ -503,7 +502,7 @@ it('rejects host input for database-only hosted roles before side effects', func
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'validation_failed',
-            'message' => 'Only app-development, app-production, agent, and gateway use host provisioning.',
+            'message' => 'Only app-development, app-production, ingress, agent, and gateway use host provisioning.',
             'meta' => ['field' => 'host'],
         ])
         ->and(Node::query()->where('name', 'db-with-host')->exists())->toBeFalse()

@@ -405,6 +405,10 @@ final class E2ECurrentCheckout
             $roles[] = 'agent';
         }
 
+        if ($topology->ingress() !== null) {
+            $roles[] = 'ingress';
+        }
+
         return $roles;
     }
 
@@ -423,6 +427,7 @@ final class E2ECurrentCheckout
             'dev' => self::requiredRole($topology->devApp(), $role, $users['dev'] ?? 'orbit'),
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),
             'agent' => self::requiredRole($topology->agent(), $role, $users['agent'] ?? 'orbit'),
+            'ingress', 'ingress' => self::requiredRole($topology->ingress(), $role, $users[$role] ?? 'orbit'),
             default => throw new RuntimeException("Unknown topology role [{$role}]."),
         };
     }

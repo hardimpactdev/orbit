@@ -262,18 +262,22 @@ it('uses a visible control-mode default node based on active app-development pay
 });
 
 it('accepts active app-production nodes for production app creation on the gateway', function (): void {
-    Node::factory()->create([
+    $router = Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
     ]);
+    assignAppNewRole($router, 'router');
 
     $targetNode = Node::factory()->create([
         'name' => 'prod-1',
         'role' => 'app',
         'status' => 'active',
         'tld' => null,
+        'wireguard_address' => '10.6.0.5',
     ]);
-    assignAppNewRole($targetNode, 'app-production');
+    assignAppNewRole($targetNode, 'ingress');
+    assignAppNewRole($targetNode, 'app-production', settings: ['ingress_node_id' => $targetNode->id]);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -288,7 +292,7 @@ it('accepts active app-production nodes for production app creation on the gatew
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(6)
+        ->and(collect($remoteShell->runs)->pluck('node')->all())->toContain($router->id, $targetNode->id)
         ->and($payload['success']['data']['app']['environment'])->toBe('production')
         ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com');
 });
@@ -626,18 +630,22 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
 });
 
 it('uses the production domain as the app-owned proxy route domain', function (): void {
-    Node::factory()->create([
+    $router = Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
     ]);
+    assignAppNewRole($router, 'router');
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
+        'wireguard_address' => '10.6.0.5',
     ]);
-    assignAppNewRole($targetNode, 'app-production');
+    assignAppNewRole($targetNode, 'ingress');
+    assignAppNewRole($targetNode, 'app-production', settings: ['ingress_node_id' => $targetNode->id]);
 
     app()->instance(RemoteShell::class, new RecordingRemoteShell);
 

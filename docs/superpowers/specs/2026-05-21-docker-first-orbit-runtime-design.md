@@ -34,11 +34,11 @@ this design. Implementation must therefore start by aligning product docs before
 code changes. The current PHP-FPM/Caddy wording must not be silently left as the
 product contract while the code moves to Docker.
 
-This design also amends the public-ingress direction:
+This design also amends the ingress direction:
 
-- `public-ingress` remains the role that owns public production traffic;
+- `ingress` remains the role that owns public production traffic;
 - `app-production` remains a private backend role unless co-located with
-  `public-ingress`;
+  `ingress`;
 - Caddy is no longer a host-native service in either role;
 - PHP-FPM is replaced by FrankenPHP app containers for PHP apps.
 
@@ -137,7 +137,7 @@ host
   │    └─ scheduler when node has gateway role
   ├─ orbit-caddy
   │    ├─ gateway API proxy when node has gateway role
-  │    ├─ public ingress routes when node has public-ingress role
+  │    ├─ ingress routes when node has ingress role
   │    ├─ private backend routes when node has app-production role
   │    └─ development routes when node has app-development role
   ├─ orbit-app-<app-or-workspace>
@@ -148,7 +148,7 @@ host
 
 Containers are connected to an Orbit-managed Docker network on the node.
 `orbit-caddy` can route to `orbit-runtime` and app containers by Docker network
-name. Public ingress can still route to remote app-production backends over
+name. Ingress can still route to remote app-production backends over
 WireGuard when the app-production node is separate.
 
 ## Orbit Runtime Container
@@ -189,7 +189,7 @@ One node may have zero or one `orbit-caddy` container. It owns the same route
 families Caddy owns today, but from Docker:
 
 - internal Orbit routes such as the gateway API;
-- public-ingress routes;
+- ingress routes;
 - private app-production backend routes;
 - app-development and workspace routes;
 - static app routes;
@@ -224,11 +224,11 @@ workspace PHP version re-creates the affected container from the corresponding
 FrankenPHP image instead of re-rendering a PHP-FPM pool.
 
 Classic mode is the baseline. Request flow for a production app on separate
-public ingress and app-production nodes is:
+ingress and app-production nodes is:
 
 ```text
 browser
-  -> public-ingress orbit-caddy
+  -> ingress orbit-caddy
   -> app-production orbit-caddy over WireGuard HTTP
   -> app FrankenPHP container over Docker network HTTP
 ```
@@ -410,7 +410,7 @@ contract. The following docs need explicit alignment before implementation code
 starts:
 
 - `docs/architecture.md` - Docker-first component model, CLI launcher, runtime
-  topology, public ingress to app backend flow, and removal of host PHP-FPM as
+  topology, ingress to app backend flow, and removal of host PHP-FPM as
   a state-family artifact.
 - `docs/tech-stack.md` - host contract, `orbit-runtime`, `orbit-caddy`,
   FrankenPHP app runtime, Docker process runtime, scheduler/API runtime, and
@@ -419,7 +419,7 @@ starts:
   `orbit-runtime`, `orbit-caddy`, app runtime container, worker mode, process
   runtime, and Docker-first host contract.
 - `docs/domains/1_node/**` - role baselines, platform prerequisites, Docker
-  baseline, public-ingress/app-production boundaries, and node doctor drift.
+  baseline, ingress/app-production boundaries, and node doctor drift.
 - `docs/domains/2_gateway/**` - gateway API and scheduler running inside
   `orbit-runtime`.
 - `docs/domains/3_tool/**` - tool catalog changes for Docker, Caddy,
@@ -482,7 +482,7 @@ Incus/provision E2E remains necessary for real host behavior:
 - firewall behavior;
 - WireGuard and SSH paths;
 - Caddy certificate trust;
-- public ingress/private backend reachability;
+- ingress/private backend reachability;
 - live-node conversion rehearsal.
 
 Actual E2E validation starts after docs, focused tests, and product
@@ -546,7 +546,7 @@ permanent dual-runtime system.
 - Automatically installing or configuring Laravel Octane in user apps.
 - Giving FrankenPHP app containers Orbit root CA authority.
 - Running Docker-in-Docker for topology E2E.
-- Replacing the public-ingress role split.
+- Replacing the ingress role split.
 
 ## Open Questions
 

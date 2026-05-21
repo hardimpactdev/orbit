@@ -13,7 +13,7 @@ uses(RefreshDatabase::class);
 require_once __DIR__.'/NodeRoleCommandTestHelpers.php';
 
 describe('node role:add', function (): void {
-    it('adds database to an app-production node on gateway', function (): void {
+    it('rejects adding database to an app-production node on gateway', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'prod-1',
@@ -30,11 +30,10 @@ describe('node role:add', function (): void {
 
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node'])->toBe('prod-1')
-            ->and($payload['success']['data']['assignment']['role'])->toBe('database')
-            ->and($payload['success']['data']['assignment']['status'])->toBe('active')
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeTrue();
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe("Role 'database' conflicts with active role 'app-production'.")
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse();
     });
 
     it('adds app-development with a required tld to a joined client node', function (): void {
@@ -105,6 +104,27 @@ describe('node role:add', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['message'])->toBe("Role 'vpn' is gateway-coupled and cannot be assigned independently.");
+    });
+
+    it('rejects adding router through the command surface', function (): void {
+        setupNodeRoleGatewayCaller();
+        createHostedNode([
+            'name' => 'gateway-router-1',
+            'role' => 'gateway',
+            'environment' => null,
+        ]);
+
+        $exitCode = Artisan::call('node role:add', [
+            'node' => 'gateway-router-1',
+            'role' => 'router',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['message'])->toBe("Role 'router' is gateway-coupled and cannot be assigned independently.");
     });
 
     it('rejects adding agent through the command surface', function (): void {

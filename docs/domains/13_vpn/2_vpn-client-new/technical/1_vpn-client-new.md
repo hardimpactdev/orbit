@@ -51,8 +51,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - The generated admin-client config must not use the gateway node peer IP, such
   as `10.6.0.2`, as DNS, and must not include public fallback resolvers such as
   `1.1.1.1`.
-- The gateway owns desired DNS mappings and DNS policy behind that endpoint. In
-  v1 the `vpn` role DNS runtime serves and materializes those mappings.
+- The gateway owns desired development/agent DNS mappings and DNS policy behind
+  that endpoint. In v1 the `vpn` role DNS runtime serves and materializes those
+  mappings. Stable private `.orbit` service names are router-owned service
+  contracts and are not created by `vpn-client:new`.
 
 ### Node Identity Boundary
 

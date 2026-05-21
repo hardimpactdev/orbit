@@ -67,7 +67,8 @@ use function Laravel\Prompts\text;
 
 #[Signature('node:new
     {name? : Registry name for the node}
-    {--role=* : Initial hosted role. Repeatable: app-development, app-production, database, agent. Gateway bootstrap uses gateway internally.}
+    {--role=* : Initial hosted role. Repeatable: app-dev, app-prod, app-development, app-production, ingress, database, agent. Gateway bootstrap uses gateway internally.}
+    {--ingress= : Existing ingress node for private app-production placement}
     {--host= : SSH/bootstrap endpoint for gateway or app nodes}
         {--control-name= : Initiating operator-node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
@@ -139,6 +140,12 @@ class NodeNewCommand extends Command
                 return $inputs;
             }
 
+            $placement = $this->resolveIngressPlacement($requestedRoles['hosted']);
+
+            if (is_int($placement)) {
+                return $placement;
+            }
+
             if (! $gatewayConfigured) {
                 return $this->failCommand(
                     code: 'gateway_unavailable',
@@ -148,10 +155,10 @@ class NodeNewCommand extends Command
             }
 
             if ($executionContext === 'control') {
-                return $this->forwardHostedRoleNodeCreation($name, $requestedRoles['hosted'], $inputs);
+                return $this->forwardHostedRoleNodeCreation($name, $placement['roles'], $inputs, $placement['ingress_node_name']);
             }
 
-            if ($this->containsAppHostingRole($requestedRoles['hosted'])) {
+            if ($this->containsAppHostingRole($placement['roles'])) {
                 return $this->provisionAppNode(
                     installer: $installer,
                     registryWriter: $registryWriter,
@@ -166,7 +173,8 @@ class NodeNewCommand extends Command
                         'sshUser' => $inputs['sshUser'] ?? 'root',
                         'hostKeyFingerprint' => $inputs['hostKeyFingerprint'],
                     ],
-                    initialHostedRoles: $requestedRoles['hosted'],
+                    initialHostedRoles: $placement['roles'],
+                    appProductionIngressNodeId: $placement['ingress_node_id'],
                 );
             }
 
@@ -176,8 +184,9 @@ class NodeNewCommand extends Command
                 roleAssignmentService: $nodeRoleAssignmentService,
                 wireGuardKeyGenerator: $wireGuardKeyGenerator,
                 name: $name,
-                roles: $requestedRoles['hosted'],
+                roles: $placement['roles'],
                 inputs: $inputs,
+                appProductionIngressNodeId: $placement['ingress_node_id'],
             );
         }
 
@@ -418,7 +427,7 @@ class NodeNewCommand extends Command
     /**
      * @param  array{host: string, environment: ?string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}  $inputs
      */
-    private function forwardHostedRoleNodeCreation(string $name, array $roles, array $inputs): int
+    private function forwardHostedRoleNodeCreation(string $name, array $roles, array $inputs, ?string $ingressNodeName): int
     {
         try {
             /** @var NodeCreateResponse $dto */
@@ -441,6 +450,7 @@ class NodeNewCommand extends Command
                     grantFromPreset: $this->stringOption('grant-from-preset'),
                     grantFromPermissions: $this->stringOption('grant-from-permissions'),
                     agentTools: $this->arrayOption('agent-tool'),
+                    ingressNode: $ingressNodeName,
                 ))
                 ->dto();
         } catch (GatewayApiException $exception) {
@@ -483,6 +493,7 @@ class NodeNewCommand extends Command
         string $name,
         array $roles,
         array $inputs,
+        ?int $appProductionIngressNodeId = null,
     ): int {
         $existing = Node::query()->where('name', $name)->first();
 
@@ -508,6 +519,7 @@ class NodeNewCommand extends Command
         $requiresHostProvisioning = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
         ]) !== [];
 
@@ -646,8 +658,12 @@ class NodeNewCommand extends Command
 
         $failedAssignment = null;
 
-        foreach ($roles as $role) {
-            $assignment = $roleAssignmentService->addDuringCreation($node, $role, $this->settingsForRole($role, $inputs['tld']));
+        foreach ($this->orderHostedRoles($roles) as $role) {
+            $settings = $role === NodeRoleName::AppProduction->value
+                ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
+                : $this->settingsForRole($role, $inputs['tld']);
+
+            $assignment = $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
             if ($assignment->status === NodeRoleStatus::Error->value) {
                 $failedAssignment = $assignment;
@@ -1453,6 +1469,7 @@ SH;
         string $name,
         array $inputs,
         array $initialHostedRoles = [],
+        ?int $appProductionIngressNodeId = null,
     ): int {
         $existing = Node::query()->where('name', $name)->first();
 
@@ -1462,7 +1479,7 @@ SH;
             && $existing->role === 'app'
             && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
         ) {
-            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles);
+            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
         }
 
         if ($existing instanceof Node && $existing->status === 'active') {
@@ -1474,7 +1491,7 @@ SH;
         }
 
         if ($existing instanceof Node) {
-            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles);
+            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
         }
 
         if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
@@ -1488,7 +1505,7 @@ SH;
             );
         }
 
-        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $name, $inputs, $roleAssignmentService, $initialHostedRoles);
+        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $name, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
 
         if (is_int($adoption)) {
             return $adoption;
@@ -1587,7 +1604,7 @@ SH;
                 return $wireGuardProvisioning;
             }
 
-            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
 
             if (is_int($roleAssignmentFailure)) {
                 $this->rollbackProvisioningNode($node, 'role_assignment_failed', [
@@ -1681,6 +1698,7 @@ SH;
         array $inputs,
         NodeRoleAssignmentService $roleAssignmentService,
         array $initialHostedRoles = [],
+        ?int $appProductionIngressNodeId = null,
     ): ?int {
         $candidate = new Node([
             'name' => $name,
@@ -1773,7 +1791,7 @@ SH;
             'platform' => $artifact->platform,
         ]);
 
-        return $this->adoptExistingAppNode($nodesProbe, $node->refresh(), $inputs, $roleAssignmentService, $initialHostedRoles);
+        return $this->adoptExistingAppNode($nodesProbe, $node->refresh(), $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
     }
 
     private function identityArtifactMatchesAppRequest(NodeIdentityArtifact $artifact, string $name): bool
@@ -1796,6 +1814,7 @@ SH;
         array $inputs,
         NodeRoleAssignmentService $roleAssignmentService,
         array $initialHostedRoles = [],
+        ?int $appProductionIngressNodeId = null,
     ): int {
         $incompatibleFields = [];
 
@@ -1828,7 +1847,7 @@ SH;
         }
 
         if ($node->status === 'active') {
-            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
 
             if (is_int($roleAssignmentFailure)) {
                 return $roleAssignmentFailure;
@@ -1869,7 +1888,7 @@ SH;
             );
         }
 
-        $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld']);
+        $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
 
         if (is_int($roleAssignmentFailure)) {
             return $roleAssignmentFailure;
@@ -2458,6 +2477,16 @@ SCRIPT,
                 ],
             );
 
+            $gateway->roleAssignments()->updateOrCreate(
+                ['role' => NodeRoleName::Router->value],
+                [
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => [],
+                    'last_error' => null,
+                    'converged_at' => now(),
+                ],
+            );
+
             $control = Node::query()->updateOrCreate(
                 ['name' => $controlName],
                 [
@@ -2723,6 +2752,12 @@ SCRIPT,
                     'role' => NodeRoleName::Vpn->value,
                     'status' => NodeRoleStatus::Active->value,
                     'settings' => $this->vpnRoleSettings($host),
+                    'last_error' => null,
+                ],
+                [
+                    'role' => NodeRoleName::Router->value,
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => [],
                     'last_error' => null,
                 ],
             ],
@@ -3046,14 +3081,33 @@ SCRIPT,
         $value = $this->option('role');
 
         if (is_string($value) && $value !== '') {
-            return [$value];
+            return [$this->canonicalRoleOption($value)];
         }
 
         if (! is_array($value)) {
             return [];
         }
 
-        return array_values(array_filter($value, fn ($role): bool => is_string($role) && $role !== ''));
+        $roles = [];
+
+        foreach ($value as $role) {
+            if (! is_string($role) || $role === '') {
+                continue;
+            }
+
+            $roles[] = $this->canonicalRoleOption($role);
+        }
+
+        return $roles;
+    }
+
+    private function canonicalRoleOption(string $role): string
+    {
+        return match ($role) {
+            'app-dev' => NodeRoleName::AppDevelopment->value,
+            'app-prod' => NodeRoleName::AppProduction->value,
+            default => $role,
+        };
     }
 
     /**
@@ -3110,13 +3164,14 @@ SCRIPT,
         $canonicalRoles = [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Ingress->value,
             NodeRoleName::Database->value,
             NodeRoleName::Agent->value,
         ];
 
         foreach ($roles as $role) {
             if (! in_array($role, $canonicalRoles, true)) {
-                return $this->validationFailed('role', 'Node role must be one of gateway, operator, control, app-development, app-production, database, agent, or legacy app.');
+                return $this->validationFailed('role', 'Node role must be one of gateway, operator, control, app-dev, app-prod, app-development, app-production, ingress, database, agent, or legacy app.');
             }
         }
 
@@ -3138,6 +3193,28 @@ SCRIPT,
                 meta: [
                     'field' => 'role',
                     'role' => NodeRoleName::Agent->value,
+                ],
+            );
+        }
+
+        if (in_array(NodeRoleName::AppProduction->value, $roles, true) && in_array(NodeRoleName::Database->value, $roles, true)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Hosted roles app-production and database cannot be combined.',
+                meta: [
+                    'field' => 'role',
+                    'conflicts' => [NodeRoleName::AppProduction->value, NodeRoleName::Database->value],
+                ],
+            );
+        }
+
+        if (in_array(NodeRoleName::Ingress->value, $roles, true) && in_array(NodeRoleName::Database->value, $roles, true)) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Hosted roles ingress and database cannot be combined.',
+                meta: [
+                    'field' => 'role',
+                    'conflicts' => [NodeRoleName::Ingress->value, NodeRoleName::Database->value],
                 ],
             );
         }
@@ -3361,15 +3438,16 @@ SCRIPT,
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
-            return $this->validationFailed('host', 'Only app-development, app-production, agent, and gateway use host provisioning.');
+            return $this->validationFailed('host', 'Only app-development, app-production, ingress, agent, and gateway use host provisioning.');
         }
 
         if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
-            return $this->validationFailed('host_key_fingerprint', 'Only app-development, app-production, agent, and gateway use host-key fingerprint pinning.');
+            return $this->validationFailed('host_key_fingerprint', 'Only app-development, app-production, ingress, agent, and gateway use host-key fingerprint pinning.');
         }
 
         $host = $needsHost ? $this->resolveHost($this->containsAppHostingRole($roles) ? 'app' : 'agent') : null;
@@ -3464,13 +3542,17 @@ SCRIPT,
         NodeRoleAssignmentService $roleAssignmentService,
         array $roles,
         ?string $tld,
+        ?int $appProductionIngressNodeId = null,
     ): ?int {
-        foreach ($roles as $role) {
+        foreach ($this->orderHostedRoles($roles) as $role) {
             $existingAssignment = $node->roleAssignments()->where('role', $role)->first();
+            $settings = $role === NodeRoleName::AppProduction->value
+                ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
+                : $this->settingsForRole($role, $tld);
 
             $assignment = $existingAssignment instanceof NodeRoleAssignment
-                ? $roleAssignmentService->update($node, $role, $this->settingsForRole($role, $tld))
-                : $roleAssignmentService->addDuringCreation($node, $role, $this->settingsForRole($role, $tld));
+                ? $roleAssignmentService->update($node, $role, $settings)
+                : $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
             if ($assignment->status !== NodeRoleStatus::Error->value) {
                 continue;
@@ -3490,6 +3572,144 @@ SCRIPT,
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array{roles: list<string>, ingress_node_id: ?int, ingress_node_name: ?string}|int
+     */
+    private function resolveIngressPlacement(array $roles): array|int
+    {
+        $roles = array_values(array_unique($roles));
+        $ingressNodeName = $this->stringOption('ingress');
+
+        if ($ingressNodeName !== null && (! in_array(NodeRoleName::AppProduction->value, $roles, true) || in_array(NodeRoleName::Ingress->value, $roles, true))) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: '--ingress is only supported for private app-production placement.',
+                meta: ['field' => 'ingress_node'],
+            );
+        }
+
+        if (! in_array(NodeRoleName::AppProduction->value, $roles, true)) {
+            return [
+                'roles' => $roles,
+                'ingress_node_id' => null,
+                'ingress_node_name' => null,
+            ];
+        }
+
+        if (in_array(NodeRoleName::Ingress->value, $roles, true)) {
+            return [
+                'roles' => $this->orderHostedRoles($roles),
+                'ingress_node_id' => null,
+                'ingress_node_name' => null,
+            ];
+        }
+
+        if ($ingressNodeName !== null) {
+            $ingressNode = $this->findActiveIngressNodeByName($ingressNodeName);
+
+            if (! $ingressNode instanceof Node) {
+                return $this->missingIngressPlacement();
+            }
+
+            return [
+                'roles' => $this->orderHostedRoles($roles),
+                'ingress_node_id' => $ingressNode->id,
+                'ingress_node_name' => $ingressNode->name,
+            ];
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->missingIngressPlacement('App-production requires explicit ingress placement.');
+        }
+
+        if (confirm(label: 'Serve public traffic from this node?', default: true)) {
+            return [
+                'roles' => $this->orderHostedRoles([...$roles, NodeRoleName::Ingress->value]),
+                'ingress_node_id' => null,
+                'ingress_node_name' => null,
+            ];
+        }
+
+        $ingressNodes = $this->activeIngressNodes();
+
+        if ($ingressNodes === []) {
+            return $this->missingIngressPlacement();
+        }
+
+        $selectedNodeName = select(
+            label: 'Ingress node',
+            options: $ingressNodes,
+            required: true,
+        );
+
+        $ingressNode = $this->findActiveIngressNodeByName($selectedNodeName);
+
+        if (! $ingressNode instanceof Node) {
+            return $this->missingIngressPlacement();
+        }
+
+        return [
+            'roles' => $this->orderHostedRoles($roles),
+            'ingress_node_id' => $ingressNode->id,
+            'ingress_node_name' => $ingressNode->name,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return list<string>
+     */
+    private function orderHostedRoles(array $roles): array
+    {
+        return collect($roles)
+            ->sortBy(fn (string $role): int => match ($role) {
+                NodeRoleName::Ingress->value => 10,
+                NodeRoleName::AppProduction->value => 20,
+                default => 30,
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function activeIngressNodes(): array
+    {
+        return Node::query()
+            ->where('status', Node::STATUS_ACTIVE)
+            ->whereHas('roleAssignments', fn (Builder $query) => $query
+                ->where('role', NodeRoleName::Ingress->value)
+                ->where('status', NodeRoleStatus::Active->value))
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+    }
+
+    private function findActiveIngressNodeByName(string $name): ?Node
+    {
+        return Node::query()
+            ->where('name', $name)
+            ->where('status', Node::STATUS_ACTIVE)
+            ->whereHas('roleAssignments', fn (Builder $query) => $query
+                ->where('role', NodeRoleName::Ingress->value)
+                ->where('status', NodeRoleStatus::Active->value))
+            ->first();
+    }
+
+    private function missingIngressPlacement(string $message = 'Private app-production nodes require an active ingress node. Create one first with: orbit node:new edge-1 --role=ingress'): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: $message,
+            meta: [
+                'field' => 'ingress_node',
+                'required_role' => NodeRoleName::Ingress->value,
+            ],
+        );
     }
 
     private function setupAgentSelfGrant(Node $node): ?int

@@ -52,7 +52,7 @@ describe('node role:list', function (): void {
             ]);
     });
 
-    it('lists gateway-coupled vpn role assignments in json', function (): void {
+    it('lists gateway-coupled vpn and router role assignments in json', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'gateway-vpn-1',
@@ -61,6 +61,7 @@ describe('node role:list', function (): void {
         ]);
 
         assignNodeRole($node, 'gateway');
+        assignNodeRole($node, 'router');
         assignNodeRole($node, 'vpn', settings: [
             'public_endpoint' => 'vpn.example.test',
             'wireguard_cidr' => '10.44.0.0/24',
@@ -77,7 +78,13 @@ describe('node role:list', function (): void {
         $roles = collect($payload['success']['data']['roles'])->keyBy('role');
 
         expect($exitCode)->toBe(0)
-            ->and($roles->keys()->all())->toBe(['gateway', 'vpn'])
+            ->and($roles->keys()->all())->toBe(['gateway', 'router', 'vpn'])
+            ->and($roles['router'])->toMatchArray([
+                'role' => 'router',
+                'status' => 'active',
+                'settings' => [],
+                'last_error' => null,
+            ])
             ->and($roles['vpn'])->toMatchArray([
                 'role' => 'vpn',
                 'status' => 'active',

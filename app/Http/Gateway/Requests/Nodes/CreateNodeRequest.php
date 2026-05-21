@@ -35,6 +35,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $grantFromPreset = null,
         public readonly ?string $grantFromPermissions = null,
         public readonly array $agentTools = [],
+        public readonly ?string $ingressNode = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -95,6 +96,10 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
 
         if ($this->agentTools !== []) {
             $body['agent_tools'] = $this->agentTools;
+        }
+
+        if ($this->ingressNode !== null) {
+            $body['ingress_node'] = $this->ingressNode;
         }
 
         return $body;

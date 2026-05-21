@@ -61,7 +61,7 @@ metadata is valid only for gateway and nodes. Concretely:
 | `--public-ipv6` | `gateway`, `app` | Target node role = `control`. |
 
 Clients are CLI callers reached through WireGuard. They have no SSH
-bootstrap endpoint and no public ingress, so `--host`, `--public-ipv4`, and
+bootstrap endpoint and no ingress, so `--host`, `--public-ipv4`, and
 `--public-ipv6` are all forbidden on control targets. Public IPv4 and IPv6
 metadata is supported on `gateway` and `app` target nodes; the gateway
 endpoint used in WireGuard peer configs lives on a separate field and is not

@@ -33,6 +33,7 @@ final class E2ETopologyLease
         private readonly string $gatewayApiIp = '10.6.0.2',
         private readonly ?E2EResourceLease $resourceLease = null,
         private ?E2EInstance $agent = null,
+        private ?E2EInstance $ingress = null,
     ) {}
 
     public function kind(): E2ETopologyKind
@@ -70,6 +71,11 @@ final class E2ETopologyLease
         return $this->agent;
     }
 
+    public function ingress(): ?E2EInstance
+    {
+        return $this->ingress;
+    }
+
     public function sshKeyPair(): SshKeyPair
     {
         return $this->sshKeyPair;
@@ -94,7 +100,7 @@ final class E2ETopologyLease
                 if ($this->bulkCleanup !== null) {
                     ($this->bulkCleanup)($timer);
                 } else {
-                    foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod, 'agent' => $this->agent] as $role => $instance) {
+                    foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod, 'agent' => $this->agent, 'ingress' => $this->ingress] as $role => $instance) {
                         if ($instance !== null) {
                             $timer->measure("cleanup.{$role}", fn () => $instance->delete());
                         }
@@ -143,6 +149,7 @@ final class E2ETopologyLease
             $this->dev = $instances['dev'] ?? null;
             $this->prod = $instances['prod'] ?? null;
             $this->agent = $instances['agent'] ?? null;
+            $this->ingress = $instances['ingress'] ?? null;
             $this->snapshotReset = $payload['snapshotReset'];
             $this->cleaned = false;
             $this->finalized = false;
@@ -162,6 +169,7 @@ final class E2ETopologyLease
             $this->dev?->name(),
             $this->prod?->name(),
             $this->agent?->name(),
+            $this->ingress?->name(),
         ]));
     }
 }

@@ -19,7 +19,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--json]
 ```
 
 ## Input Contract
@@ -30,17 +30,20 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values below). |
-| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-development`, or `app-production`. | Client/control identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values and aliases below). |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-development`, `app-production`, or `ingress`. | Client/control identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `environment` | `--environment` | Only when legacy `--role=app` is used. | Canonical role input, gateway bootstrap, and client/control identity. | None. | Legacy compatibility mapper: `development` => `app-development`; `production` => `app-production`. |
-| `tld` | `--tld` | `app-development`, or legacy `--role=app --environment=development`. | Client/control identity, gateway bootstrap, `database`, `app-production`, or legacy `--role=app --environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
+| `environment` | `--environment` | Only when deprecated legacy `--role=app` is used. | Canonical role input, gateway bootstrap, and client/control identity. | None. | Legacy compatibility mapper retained for old automation. Prefer `app-dev` or `app-prod`. |
+| `tld` | `--tld` | `app-dev`, `app-development`, or legacy `--role=app --environment=development`. | Client/control identity, gateway bootstrap, `database`, `app-prod`, `app-production`, or legacy `--role=app --environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client/control identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
+| `ingress_node` | `--ingress` | Private `app-production` placement. | Every path other than private `app-production` placement. | None. | Must match an active node with the `ingress` role. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-Canonical role values are `app-development`, `app-production`, and `database`.
-Legacy compatibility values `control`, `app`, and `gateway` are accepted; the
-`gateway` value remains a bootstrap path, not a public role assignment.
+Canonical stored role values are `app-development`, `app-production`,
+`database`, and `ingress`. Input aliases `app-dev` and `app-prod` map to
+`app-development` and `app-production`. Legacy compatibility values `control`,
+`app`, and `gateway` are accepted; the `gateway` value remains a bootstrap path,
+not a public role assignment.
 
 ## Input Resolution
 
@@ -50,13 +53,17 @@ Legacy compatibility values `control`, `app`, and `gateway` are accepted; the
    - No `--role` values means a client/control identity with no assigned
      roles.
    - Legacy `control` maps to no roles.
-   - Legacy `app` requires `--environment`; it maps to `app-development` or
+   - `app-dev` maps to `app-development`; `app-prod` maps to
      `app-production`.
+   - Deprecated legacy `app` requires `--environment`; it maps to
+     `app-development` or `app-production`.
    - Gateway bootstrap/convergence remains the special `gateway` path.
 4. Resolve role-specific inputs.
    - For `app-development`, resolve `node_new.host`, `node_new.tld`, and
      `node_new.user`.
-   - For `app-production`, resolve `node_new.host` and `node_new.user`.
+   - For `app-production`, resolve `node_new.host`, `node_new.user`, and the
+     production placement choice.
+   - For `ingress`, resolve `node_new.host` and `node_new.user`.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
@@ -89,6 +96,9 @@ Input mode behavior is split out of the canonical command contract:
 
 - [`5.1_node-new_input-mode_interactive.md`](5.1_node-new_input-mode_interactive.md)
 - [`5.2_node-new_input-mode_non-interactive.md`](5.2_node-new_input-mode_non-interactive.md)
+
+Role-specific companion behavior is split out into
+[`4_node-new_on-app-role.md`](4_node-new_on-app-role.md).
 
 ## Behavior Contract
 
@@ -138,12 +148,15 @@ Input mode behavior is split out of the canonical command contract:
 - Validate conflicts before side effects where possible. For example,
   `app-development` plus `app-production` must fail before node creation or
   provisioning.
-- Create the node identity first, then add each requested role.
-- Role settings are minimal: `app-development` assignments store
-  `settings.tld`, while `app-production` and `database` assignments use empty
-  settings.
-- `database` may be combined with `app-development` or `app-production` on the
-  same provisioned host.
+- Create the node identity first, then add each requested role. Role settings
+  stay minimal: `app-development` assignments store `settings.tld`,
+  `app-production` assignments store `settings.ingress_node_id`, and
+  `database` assignments use empty settings.
+- `app-production` placement must be explicit. The command's public and
+  companion contracts own the exact prompt, placement choices, and failure
+  shape for missing ingress.
+- `database` may be combined only with `app-development` on the same
+  provisioned host.
 - If an initial role is persisted with `status=error` because its first
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available

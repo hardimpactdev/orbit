@@ -140,6 +140,116 @@ function e2eProvisionAppThroughNodeNew(
     return [$app, json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR)];
 }
 
+/**
+ * @param  list<string>  $roles
+ * @return array{0: E2EInstance, 1: array<string, mixed>}
+ */
+function e2eProvisionIngressAppThroughNodeNew(
+    IncusProvider $provider,
+    E2ERun $run,
+    E2EConfig $config,
+    E2EInstance $control,
+    SshKeyPair $key,
+    string $name,
+    array $roles,
+    ?string $ingress = null,
+): array {
+    $app = e2eProvisionStep("launch blank {$name}", fn () => $run->launchBlank($name));
+
+    e2eProvisionStep("wait for {$name} cloud-init", fn () => $provider->host->waitForCloudInit($app->name()));
+    $app->authorizeSsh($config->bootstrapUser, $key);
+    $app->waitForSsh($config->bootstrapUser, $key);
+
+    $parts = [
+        "cd /home/{$config->controlUser}/orbit && orbit node:new",
+        escapeshellarg($name),
+        '--host='.escapeshellarg($app->waitForIpv4()),
+        '--user='.escapeshellarg($config->bootstrapUser),
+        '--json',
+    ];
+
+    foreach ($roles as $role) {
+        $parts[] = '--role='.escapeshellarg($role);
+    }
+
+    if ($ingress !== null) {
+        $parts[] = '--ingress='.escapeshellarg($ingress);
+    }
+
+    $nodeNew = e2eProvisionStep("run node:new {$name}", fn () => E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        implode(' ', $parts),
+        timeoutSeconds: 1800,
+    ));
+
+    return [$app, json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR)];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function e2eCreateProductionApp(
+    E2EInstance $control,
+    E2EConfig $config,
+    SshKeyPair $key,
+    string $node,
+    string $domain,
+): array {
+    $parts = [
+        "cd /home/{$config->controlUser}/orbit && orbit app:new docs",
+        '--node='.escapeshellarg($node),
+        '--domain='.escapeshellarg($domain),
+        '--root=public',
+        '--php-version=8.5',
+        '--json',
+    ];
+
+    $appNew = e2eProvisionStep('run app:new docs', fn () => E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        implode(' ', $parts),
+        timeoutSeconds: 600,
+    ));
+
+    return json_decode(trim($appNew->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @param  list<string>  $families
+ */
+function e2eAssertDoctorHealthy(
+    E2EInstance $control,
+    E2EConfig $config,
+    SshKeyPair $key,
+    string $node,
+    array $families,
+): void {
+    $parts = [
+        "cd /home/{$config->controlUser}/orbit && orbit doctor",
+        '--node='.escapeshellarg($node),
+        '--json',
+    ];
+
+    foreach ($families as $family) {
+        $parts[] = '--family='.escapeshellarg($family);
+    }
+
+    $doctor = e2eProvisionStep("run doctor {$node}", fn () => E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        implode(' ', $parts),
+        timeoutSeconds: 600,
+    ));
+
+    $payload = json_decode(trim($doctor->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['success']['data']['doctor']['healthy'])->toBeTrue();
+}
+
 function e2eInstallPrivateSshKey(E2EInstance $instance, SshKeyPair $key, string $user): void
 {
     $home = $user === 'root' ? '/root' : "/home/{$user}";
@@ -282,6 +392,7 @@ function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
         'control' => '10.6.0.3',
         'dev' => '10.6.0.4',
         'prod' => '10.6.0.5',
+        'ingress' => '10.6.0.7',
     ];
 
     $lease = $topology->lease();
@@ -290,6 +401,7 @@ function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
         'control' => $lease->control(),
         'dev' => $lease->devApp(),
         'prod' => $lease->prodApp(),
+        'ingress' => $lease->ingress(),
     ];
 
     $map = [];

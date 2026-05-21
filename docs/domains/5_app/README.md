@@ -16,8 +16,8 @@ These rules govern all app family commands.
 - Apps may be development or production apps.
 - App hostnames are represented in `proxy` as app-owned route records.
   App commands create, update, and remove the app configuration that owns those
-  routes; proxy route registry and backend artifact convergence belong to the
-  `proxy` family.
+  routes; proxy route registry, router route convergence, and backend artifact
+  convergence belong to the `proxy` family.
 - Commands that create or set up apps use explicit `--node` first, then the
   local `node:default` development node when configured.
 - `app:new` creates or clones app source/path and then uses `app:register`
@@ -42,6 +42,11 @@ belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
 gateway-to-node application and process managers live in
 [tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node) and
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager).
+
+Production app routes enter through `ingress`, are forwarded over
+WireGuard to the gateway-coupled `router`, and only then fan out to private
+`app-production` backend artifacts. App commands choose the ingress
+placement; the router owns private route selection and backend-pool targeting.
 
 ## App Identity Arguments
 

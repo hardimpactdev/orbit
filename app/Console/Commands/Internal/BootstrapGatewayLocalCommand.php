@@ -31,7 +31,8 @@ use RuntimeException;
     {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
     {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
     {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
-    {--skip-runtime-install : Skip PHP-FPM, Caddy, wg-easy, and orbit-dns installation for container-only E2E topology preparation}')]
+    {--skip-runtime-install : Skip PHP-FPM, Caddy, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
+    {--skip-wireguard-install : Skip gateway WireGuard interface installation for Docker E2E topology preparation}')]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
 {
@@ -88,6 +89,19 @@ class BootstrapGatewayLocalCommand extends Command
                 [
                     'status' => NodeRoleStatus::Active->value,
                     'settings' => $this->vpnRoleSettings($publicHost),
+                    'last_error' => null,
+                    'converged_at' => now(),
+                ],
+            );
+
+            NodeRoleAssignment::query()->updateOrCreate(
+                [
+                    'node_id' => $gateway->id,
+                    'role' => NodeRoleName::Router->value,
+                ],
+                [
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => [],
                     'last_error' => null,
                     'converged_at' => now(),
                 ],
@@ -184,7 +198,7 @@ class BootstrapGatewayLocalCommand extends Command
             }
         }
 
-        if ($enrollment !== null) {
+        if ($enrollment !== null && ! (bool) $this->option('skip-wireguard-install')) {
             $wireGuard->install($wireguardServerPublicKey !== null && $publicHost !== null
                 ? $this->gatewayClientWireGuardConfig(
                     gatewayPrivateKey: $enrollment['gateway_private_key'],

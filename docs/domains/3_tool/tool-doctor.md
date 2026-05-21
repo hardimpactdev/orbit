@@ -84,9 +84,9 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
 
-The three `tool.dns_*` codes are owned by the gateway DNS bootstrap contract; see
-[`dns-bootstrap-contract.md`](dns-bootstrap-contract.md) for the runtime layout
-they probe.
+The three `tool.dns_*` codes are owned by the VPN-facing development DNS
+bootstrap contract; see [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md)
+for the runtime layout they probe.
 
 ## Tool Fix Map
 

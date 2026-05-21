@@ -12,7 +12,9 @@ use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\IngressRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\RouterRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\VpnRoleBaseline;
 use InvalidArgumentException;
 
@@ -24,6 +26,8 @@ class NodeRoleBaselineConverger
         private readonly AppProductionRoleBaseline $appProductionRoleBaseline,
         private readonly DatabaseRoleBaseline $databaseRoleBaseline,
         private readonly AgentRoleBaseline $agentRoleBaseline,
+        private readonly ?RouterRoleBaseline $routerRoleBaseline = null,
+        private readonly ?IngressRoleBaseline $ingressRoleBaseline = null,
         private readonly ?VpnRoleBaseline $vpnRoleBaseline = null,
     ) {}
 
@@ -42,12 +46,24 @@ class NodeRoleBaselineConverger
         return match ($role) {
             NodeRoleName::Gateway->value => $this->gatewayRoleBaseline,
             NodeRoleName::Vpn->value => $this->vpnRoleBaseline(),
+            NodeRoleName::Router->value => $this->routerRoleBaseline(),
             NodeRoleName::AppDevelopment->value => $this->appDevelopmentRoleBaseline,
             NodeRoleName::AppProduction->value => $this->appProductionRoleBaseline,
             NodeRoleName::Database->value => $this->databaseRoleBaseline,
             NodeRoleName::Agent->value => $this->agentRoleBaseline,
+            NodeRoleName::Ingress->value => $this->ingressRoleBaseline(),
             default => throw new InvalidArgumentException("Unsupported node role baseline [{$role}]."),
         };
+    }
+
+    protected function ingressRoleBaseline(): IngressRoleBaseline
+    {
+        return $this->ingressRoleBaseline ?? app(IngressRoleBaseline::class);
+    }
+
+    protected function routerRoleBaseline(): RouterRoleBaseline
+    {
+        return $this->routerRoleBaseline ?? app(RouterRoleBaseline::class);
     }
 
     protected function vpnRoleBaseline(): VpnRoleBaseline

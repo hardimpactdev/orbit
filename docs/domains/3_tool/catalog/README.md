@@ -69,7 +69,7 @@ create them from scratch unless the tool file says otherwise.
 | [`php-cli`](php-cli.md) | PHP command-line runtime |
 | [`gh`](gh.md) | GitHub CLI utility |
 | [`composer`](composer.md) | PHP dependency manager |
-| [`dns`](dns.md) | Gateway DNS infrastructure |
+| [`dns`](dns.md) | VPN-facing development DNS runtime |
 
 ## Installable Tools
 

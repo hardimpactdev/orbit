@@ -100,6 +100,24 @@ function createRoleAwareProductionAppHostNode(string $name): Node
     return $node;
 }
 
+function createRoleAwareIngressNode(string $name): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'role' => 'control',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'ingress',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
+}
+
 /**
  * @param  array<string, mixed>  $payload
  * @return array<string, mixed>
@@ -156,6 +174,12 @@ describe('doctor role-aware categories', function (): void {
             ]);
     });
 
+    it('exposes ingress-specific categories for ingress target roles', function (): void {
+        $runner = app(DoctorReportRunner::class);
+
+        expect($runner->categoriesForRole('ingress'))->toBe(['node', 'proxy', 'firewall_rule', 'tool']);
+    });
+
     it('derives hosted category sets from active role assignments instead of legacy app shadows', function (): void {
         $runner = app(DoctorReportRunner::class);
         $appHost = createRoleAwareAppHostNode('app-host');
@@ -188,6 +212,13 @@ describe('doctor role-aware categories', function (): void {
         ]);
 
         expect($runner->categoriesForNode($databaseNode))->toBe(['node', 'tool']);
+    });
+
+    it('derives ingress targets as node proxy firewall and tool categories', function (): void {
+        $runner = app(DoctorReportRunner::class);
+        $ingressNode = createRoleAwareIngressNode('edge-1');
+
+        expect($runner->categoriesForNode($ingressNode))->toBe(['node', 'proxy', 'firewall_rule', 'tool']);
     });
 
     it('runs node and schedule families for a local gateway target', function (): void {

@@ -42,10 +42,61 @@ final readonly class ProxyRouteProbe
             return new ProbeSnapshot([]);
         }
 
+        $public = $this->inspectRouteFile($route->node, $route->domain);
+
+        if (! $this->usesIngressPlacement($route)) {
+            return new ProbeSnapshot([
+                $route->domain => $public,
+            ]);
+        }
+
+        $router = [];
+        $routerArtifact = $this->routerArtifact($route);
+        $routerNodeId = $routerArtifact['node_id'] ?? null;
+        $routerNode = is_int($routerNodeId) ? Node::query()->find($routerNodeId) : null;
+
+        if ($routerNode instanceof Node) {
+            $router = $this->inspectRouteFile($routerNode, $route->domain);
+        }
+
+        $backends = [];
+
+        foreach ($this->backendArtifacts($route) as $artifact) {
+            $nodeId = $artifact['node_id'] ?? null;
+
+            if (! is_int($nodeId)) {
+                continue;
+            }
+
+            $backendNode = Node::query()->find($nodeId);
+
+            if (! $backendNode instanceof Node) {
+                continue;
+            }
+
+            $backends[$nodeId] = $this->inspectRouteFile($backendNode, $route->domain, backend: true);
+        }
+
+        return new ProbeSnapshot([
+            $route->domain => [
+                ...$public,
+                'public' => $public,
+                'router' => $router,
+                'backends' => $backends,
+            ],
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function inspectRouteFile(Node $node, string $domain, bool $backend = false): array
+    {
         $script = <<<'BASH'
 set -euo pipefail
 domain="$ORBIT_PROXY_DOMAIN"
-path="/etc/caddy/sites/${domain}.caddy"
+suffix="${ORBIT_PROXY_SUFFIX:-}"
+path="/etc/caddy/sites/${domain}${suffix}.caddy"
 exists=0
 hash=""
 cert=""
@@ -65,31 +116,30 @@ fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
 BASH;
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($route->node, $script, [
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
             'throw' => true,
             'metadata' => [
-                'ORBIT_PROXY_DOMAIN' => $route->domain,
+                'ORBIT_PROXY_DOMAIN' => $domain,
+                'ORBIT_PROXY_SUFFIX' => $backend ? '.backend' : '',
             ],
         ]);
 
         $parts = explode("\t", trim($result->stdout), 6);
 
         if (count($parts) !== 6) {
-            return new ProbeSnapshot([]);
+            return [];
         }
 
         [$exists, $hash, $cert, $key, $certExists, $keyExists] = $parts;
 
-        return new ProbeSnapshot([
-            $route->domain => [
-                'route_exists' => $exists === '1',
-                'route_hash' => $hash,
-                'cert_path' => $cert,
-                'key_path' => $key,
-                'cert_exists' => $certExists === '1',
-                'key_exists' => $keyExists === '1',
-            ],
-        ]);
+        return [
+            'route_exists' => $exists === '1',
+            'route_hash' => $hash,
+            'cert_path' => $cert,
+            'key_path' => $key,
+            'cert_exists' => $certExists === '1',
+            'key_exists' => $keyExists === '1',
+        ];
     }
 
     public function introspectNode(Node $node): ProbeSnapshot
@@ -215,7 +265,12 @@ BASH;
 
             if (! in_array($route->domain, $observedDomains, true)) {
                 $hasBackendDrift = collect($routeDrift)->contains(
-                    fn (DriftEntry $entry): bool => $entry->key === 'proxy.route_missing' || $entry->key === 'proxy.route_mismatch'
+                    fn (DriftEntry $entry): bool => in_array($entry->key, [
+                        'proxy.route_missing',
+                        'proxy.route_mismatch',
+                        'proxy.public_route_missing',
+                        'proxy.public_route_mismatch',
+                    ], true)
                 );
 
                 if (! $hasBackendDrift) {
@@ -315,13 +370,13 @@ BASH;
             ];
         }
 
-        if ($route->node->status !== 'active' || ! $this->canServeProxyRoutes($route->node)) {
+        if ($route->node->status !== 'active' || ! $this->canServeProxyRoutes($route, $route->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'proxy.node_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Proxy route {$route->domain} is served by node {$route->node->name}, which is not an active gateway or app node.",
+                    summary: "Proxy route {$route->domain} is served by node {$route->node->name}, which is not an eligible active serving node.",
                     detail: [
                         'node' => $route->node->name,
                         'role' => $route->node->role,
@@ -334,8 +389,12 @@ BASH;
         return [];
     }
 
-    private function canServeProxyRoutes(Node $node): bool
+    private function canServeProxyRoutes(ProxyRoute $route, Node $node): bool
     {
+        if ($this->usesIngressPlacement($route)) {
+            return app(NodeRoleAssignments::class)->nodeCanServeIngress($node);
+        }
+
         return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
@@ -392,7 +451,17 @@ BASH;
         $observed = $snapshot->get($route->domain);
 
         if ($observed === null) {
-            return [];
+            return $this->checkBackendArtifactNodes($route);
+        }
+
+        if ($this->usesIngressPlacement($route)) {
+            return [
+                ...$this->checkPublicRouteReality($route, $observed),
+                ...$this->checkRouterArtifactNode($route),
+                ...$this->checkRouterRouteReality($route, $observed),
+                ...$this->checkBackendArtifactNodes($route),
+                ...$this->checkBackendArtifactReality($route, $observed),
+            ];
         }
 
         if (($observed['route_exists'] ?? null) === false) {
@@ -425,6 +494,191 @@ BASH;
     }
 
     /**
+     * @param  array<string, mixed>  $observed
+     * @return list<DriftEntry>
+     */
+    private function checkPublicRouteReality(ProxyRoute $route, array $observed): array
+    {
+        $public = $this->publicObservation($observed);
+
+        if (($public['route_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.public_route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Public proxy route {$route->domain} is missing on the ingress node.",
+                ),
+            ];
+        }
+
+        if (($public['route_hash'] ?? null) !== $route->source_hash) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.public_route_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Public proxy route {$route->domain} differs from gateway proxy intent.",
+                    detail: [
+                        'expected_hash' => $route->source_hash,
+                        'observed_hash' => $public['route_hash'] ?? null,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRouterArtifactNode(ProxyRoute $route): array
+    {
+        $artifact = $this->routerArtifact($route);
+        $nodeId = $artifact['node_id'] ?? null;
+        $node = is_int($nodeId) ? Node::query()->find($nodeId) : null;
+
+        if ($node instanceof Node && app(NodeRoleAssignments::class)->nodeCanServeRouter($node)) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.router_node_invalid',
+                kind: DriftKind::Divergent,
+                summary: "Router route {$route->domain} points at an invalid router node.",
+                detail: [
+                    'router_node_id' => $nodeId,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @return list<DriftEntry>
+     */
+    private function checkRouterRouteReality(ProxyRoute $route, array $observed): array
+    {
+        $router = $this->routerObservation($observed);
+
+        if (($router['route_exists'] ?? false) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.router_route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Private router route {$route->domain} is missing on the router node.",
+                ),
+            ];
+        }
+
+        $expectedHash = $this->routerArtifact($route)['source_hash'] ?? null;
+
+        if (($router['route_hash'] ?? null) !== $expectedHash) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.router_route_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Private router route {$route->domain} differs from gateway proxy intent.",
+                    detail: [
+                        'expected_hash' => $expectedHash,
+                        'observed_hash' => $router['route_hash'] ?? null,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkBackendArtifactNodes(ProxyRoute $route): array
+    {
+        $drift = [];
+
+        foreach ($this->backendArtifacts($route) as $artifact) {
+            $nodeId = $artifact['node_id'] ?? null;
+            $node = is_int($nodeId) ? Node::query()->find($nodeId) : null;
+
+            if ($node instanceof Node && $node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-production')) {
+                continue;
+            }
+
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.backend_node_invalid',
+                kind: DriftKind::Divergent,
+                summary: "Private backend route {$route->domain} points at an invalid backend node.",
+                detail: [
+                    'backend_node_id' => $nodeId,
+                ],
+            );
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @return list<DriftEntry>
+     */
+    private function checkBackendArtifactReality(ProxyRoute $route, array $observed): array
+    {
+        $drift = [];
+        $backends = is_array($observed['backends'] ?? null) ? $observed['backends'] : [];
+
+        foreach ($this->backendArtifacts($route) as $artifact) {
+            $nodeId = $artifact['node_id'] ?? null;
+
+            if (! is_int($nodeId)) {
+                continue;
+            }
+
+            $backend = $backends[$nodeId] ?? null;
+
+            if (! is_array($backend)) {
+                continue;
+            }
+
+            if (($backend['route_exists'] ?? null) === false) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.backend_route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Private backend route {$route->domain} is missing on backend node.",
+                    detail: [
+                        'backend_node_id' => $nodeId,
+                    ],
+                );
+
+                continue;
+            }
+
+            if (($backend['route_hash'] ?? null) !== ($artifact['source_hash'] ?? null)) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.backend_route_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Private backend route {$route->domain} differs from gateway proxy intent.",
+                    detail: [
+                        'backend_node_id' => $nodeId,
+                        'expected_hash' => $artifact['source_hash'] ?? null,
+                        'observed_hash' => $backend['route_hash'] ?? null,
+                    ],
+                );
+            }
+        }
+
+        return $drift;
+    }
+
+    /**
      * @return list<DriftEntry>
      */
     private function checkTlsReality(ProxyRoute $route, ProbeSnapshot $snapshot): array
@@ -434,6 +688,8 @@ BASH;
         if ($observed === null || ! $this->expectsOrbitTls($route)) {
             return [];
         }
+
+        $observed = $this->usesIngressPlacement($route) ? $this->publicObservation($observed) : $observed;
 
         if (($observed['route_exists'] ?? null) === false) {
             return [];
@@ -532,5 +788,60 @@ BASH;
         }
 
         return true;
+    }
+
+    private function usesIngressPlacement(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+
+        return ($config['placement'] ?? null) === 'ingress';
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function backendArtifacts(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifacts = $config['backend_artifacts'] ?? null;
+
+        if (! is_array($artifacts)) {
+            return [];
+        }
+
+        return array_values(array_filter($artifacts, is_array(...)));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function routerArtifact(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifact = $config['router_artifact'] ?? null;
+
+        return is_array($artifact) ? $artifact : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @return array<string, mixed>
+     */
+    private function publicObservation(array $observed): array
+    {
+        $public = $observed['public'] ?? null;
+
+        return is_array($public) ? $public : $observed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @return array<string, mixed>
+     */
+    private function routerObservation(array $observed): array
+    {
+        $router = $observed['router'] ?? null;
+
+        return is_array($router) ? $router : [];
     }
 }

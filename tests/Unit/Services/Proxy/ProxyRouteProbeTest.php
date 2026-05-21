@@ -38,6 +38,16 @@ function createProxyProbeGatewayAssignmentNode(): Node
     return $node;
 }
 
+function assignProxyProbeRole(Node $node, string $role): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => [],
+    ]);
+}
+
 describe('ProxyRouteProbe interface', function (): void {
     it('has key and label', function (): void {
         $probe = new ProxyRouteProbe;
@@ -223,6 +233,178 @@ describe('proxy backend and TLS reality', function (): void {
         ])
             ->and($shell->nodes[0]->is($node))->toBeTrue()
             ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test');
+    });
+
+    it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($router, 'router');
+        assignProxyProbeRole($backend, 'app-production');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'docs.test' => [
+                'public' => ['route_exists' => false],
+                'router' => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
+                'backends' => [
+                    $backend->id => ['route_exists' => true, 'route_hash' => str_repeat('b', 64)],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.public_route_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_missing'))->toBeNull();
+    });
+
+    it('detects mismatched router artifacts for ingress routes', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($router, 'router');
+        assignProxyProbeRole($backend, 'app-production');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'docs.test' => [
+                'public' => ['route_exists' => true, 'route_hash' => str_repeat('a', 64)],
+                'router' => ['route_exists' => true, 'route_hash' => str_repeat('d', 64)],
+                'backends' => [
+                    $backend->id => ['route_exists' => true, 'route_hash' => str_repeat('b', 64)],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.router_route_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch'))->toBeNull();
+    });
+
+    it('detects mismatched backend artifacts for ingress routes', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($router, 'router');
+        assignProxyProbeRole($backend, 'app-production');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'docs.test' => [
+                'public' => ['route_exists' => true, 'route_hash' => str_repeat('a', 64)],
+                'router' => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
+                'backends' => [
+                    $backend->id => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail)->toMatchArray([
+                'backend_node_id' => $backend->id,
+                'expected_hash' => str_repeat('b', 64),
+                'observed_hash' => str_repeat('c', 64),
+            ]);
+    });
+
+    it('detects invalid backend artifact nodes for ingress routes', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'inactive']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($router, 'router');
+        assignProxyProbeRole($backend, 'app-production');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.backend_node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
     it('detects missing backend route reality', function (): void {

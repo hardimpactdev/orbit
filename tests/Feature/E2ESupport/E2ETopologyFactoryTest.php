@@ -20,6 +20,7 @@ it('has correct enum string values', function (): void {
         ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator-gateway')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator-gateway-appdev')
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator-gateway-appdev-appprod')
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-appprod-ingress')?->value)->toBe('operator-gateway-appprod-ingress')
         ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 });

@@ -10,6 +10,7 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\AddNodeRoleApiRequest;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use Illuminate\Database\Eloquent\Model;
@@ -25,11 +26,11 @@ final class NodeRoleAddController implements Loggable
 
     public function __invoke(AddNodeRoleApiRequest $request, string $name): JsonResponse
     {
-        if ($request->role() === 'gateway') {
+        if (in_array($request->role(), ['gateway', 'vpn', 'router'], true)) {
             return $this->error(
                 'validation_failed',
-                'The gateway role cannot be managed through node role commands.',
-                ['field' => 'role', 'role' => 'gateway'],
+                "Role '{$request->role()}' is gateway-coupled and cannot be assigned independently.",
+                ['field' => 'role', 'role' => $request->role()],
                 422,
             );
         }
@@ -41,8 +42,28 @@ final class NodeRoleAddController implements Loggable
 
         $this->activitySubject = $node;
 
+        $settings = $request->settings();
+        $ingressNode = $request->ingressNode();
+
+        if ($request->role() !== 'app-production' && $ingressNode !== null) {
+            return $this->error(
+                'validation_failed',
+                "Role '{$request->role()}' does not accept ingress_node.",
+                ['field' => 'ingress_node', 'role' => $request->role()],
+                422,
+            );
+        }
+
+        if ($request->role() === 'app-production') {
+            $settings = $this->resolveAppProductionSettings($node, $ingressNode, $settings);
+
+            if ($settings instanceof JsonResponse) {
+                return $settings;
+            }
+        }
+
         try {
-            $assignment = $this->service->add($node, $request->role(), $request->settings());
+            $assignment = $this->service->add($node, $request->role(), $settings);
         } catch (InvalidArgumentException $exception) {
             return $this->error('validation_failed', $exception->getMessage(), ['role' => $request->role()], 422);
         }
@@ -55,6 +76,63 @@ final class NodeRoleAddController implements Loggable
                 ],
             ],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return array<string, mixed>|JsonResponse
+     */
+    private function resolveAppProductionSettings(Node $node, ?string $ingressNodeName, array $settings): array|JsonResponse
+    {
+        $ingressAssignment = $node->roleAssignments()
+            ->where('role', 'ingress')
+            ->where('status', 'active')
+            ->first();
+
+        if ($ingressAssignment instanceof NodeRoleAssignment) {
+            if ($ingressNodeName !== null) {
+                return $this->error(
+                    'validation_failed',
+                    'The app-production role does not accept ingress_node when the target node already hosts ingress.',
+                    ['field' => 'ingress_node', 'role' => 'app-production'],
+                    422,
+                );
+            }
+
+            $settings['ingress_node_id'] = $node->id;
+
+            return $settings;
+        }
+
+        if ($ingressNodeName === null) {
+            return $this->error(
+                'validation_failed',
+                'The app-production role requires an active ingress node.',
+                ['field' => 'ingress_node', 'required_role' => 'ingress'],
+                422,
+            );
+        }
+
+        $ingressNode = Node::query()
+            ->where('name', $ingressNodeName)
+            ->where('status', 'active')
+            ->whereHas('roleAssignments', fn ($query) => $query
+                ->where('role', 'ingress')
+                ->where('status', 'active'))
+            ->first();
+
+        if (! $ingressNode instanceof Node) {
+            return $this->error(
+                'validation_failed',
+                'The app-production role requires an active ingress node.',
+                ['field' => 'ingress_node', 'required_role' => 'ingress'],
+                422,
+            );
+        }
+
+        $settings['ingress_node_id'] = $ingressNode->id;
+
+        return $settings;
     }
 
     /**

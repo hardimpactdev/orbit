@@ -169,7 +169,8 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.incompatible');
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'ingress_node');
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });
@@ -209,6 +210,74 @@ describe('NodeStoreController', function (): void {
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.incompatible')
             ->assertJsonPath('error.message', "Node 'gateway' already exists.");
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('rejects ingress node for ingress node creation requests', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'edge-1',
+                'role' => 'ingress',
+                'ingress_node' => 'other-edge-1',
+                'host' => '192.0.2.21',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'ingress_node');
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('rejects ingress node for colocated app-production and ingress create-node requests', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'web-1',
+                'roles' => ['app-production', 'ingress'],
+                'ingress_node' => 'edge-1',
+                'host' => '192.0.2.21',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'ingress_node');
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });

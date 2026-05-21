@@ -10,10 +10,13 @@ use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
+use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -91,18 +94,20 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    $fpmPool = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $fpmScript = collect($shell->scripts)
+        ->first(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf'));
+    $fpmPool = base64_decode((string) str((string) $fpmScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
     $runtimeUser = app(WorkspaceFpmPoolRenderer::class)->runtimeUser($workspace);
 
-    expect($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')
-        ->and($shell->scripts[1])->toContain("/home/{$runtimeUser}/.config/orbit/php")
-        ->and($shell->scripts[1])->toContain("/home/{$runtimeUser}/.config/orbit/logs")
+    expect($fpmScript)->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')
+        ->and($fpmScript)->toContain("/home/{$runtimeUser}/.config/orbit/php")
+        ->and($fpmScript)->toContain("/home/{$runtimeUser}/.config/orbit/logs")
         ->and($fpmPool)->toBe(app(WorkspaceFpmPoolRenderer::class)->content($workspace))
         ->and($fpmPool)->toContain('clear_env = yes')
         ->and($fpmPool)->toContain('php_admin_value[open_basedir]')
-        ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
-        ->and($shell->scripts[1])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
-        ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
+        ->and($fpmScript)->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
+        ->and($fpmScript)->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
+        ->and($fpmScript)->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
 });
 
 it('registers workspace proxy routes against the rendered workspace PHP-FPM socket', function (): void {
@@ -122,7 +127,9 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $siteScript = collect($shell->scripts)
+        ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.caddy'));
+    $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
     $route = $workspace->proxyRoutes()->first();
     $socket = app(WorkspaceFpmPoolRenderer::class)->socketPath($workspace);
 
@@ -135,6 +142,100 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
         ])
         ->and($certificates->hosts)->toBe(['feature-a.demo'])
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite));
+});
+
+it('registers production workspace routes on ingress with a private backend site', function (): void {
+    Node::factory()->create([
+        'name' => 'edge-1',
+        'role' => 'app',
+        'status' => 'active',
+        'user' => 'orbit',
+    ]);
+
+    $router = Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'status' => 'active',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => 2,
+        'role' => 'ingress',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $router->id,
+        'role' => 'router',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => 1,
+        'role' => 'app-production',
+        'status' => 'active',
+        'settings' => ['ingress_node_id' => 2],
+    ]);
+
+    App::query()->whereKey(1)->update([
+        'domain' => 'demo.example.com',
+        'environment' => 'production',
+    ]);
+
+    Node::query()->whereKey(1)->update([
+        'wireguard_address' => '10.6.0.21',
+        'user' => 'orbit',
+    ]);
+
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    $app = App::query()->with('node')->firstOrFail();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
+
+    app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
+
+    $route = ProxyRoute::query()->where('workspace_id', $workspace->id)->firstOrFail();
+
+    expect($route->node_id)->toBe(2)
+        ->and($route->config['placement'])->toBe('ingress')
+        ->and($route->config['router_upstream'])->toBe([
+            'node_id' => $router->id,
+            'node' => 'gateway-1',
+            'url' => 'http://10.6.0.2:80',
+        ])
+        ->and($route->config['router_artifact']['node_id'])->toBe($router->id)
+        ->and($route->config['router_artifact']['source_hash'])->toHaveLength(64)
+        ->and($route->config['router_backend_pool'])->toBe([
+            [
+                'node_id' => 1,
+                'node' => 'gateway',
+                'url' => 'http://10.6.0.21:80',
+            ],
+        ])
+        ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')
+        ->and($route->config['backend_artifacts'][0]['source_hash'])->toHaveLength(64)
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 2 && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 2 && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 2 && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.caddy')))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy')))->toBeTrue()
+        ->and($certificates->hosts)->toBe(['feature-a.demo.example.com']);
 });
 
 it('starts configured app processes for the workspace after rendering runtime units', function (): void {
@@ -377,8 +478,18 @@ final class SetupWorkspaceActionTestShell implements RemoteShell
      */
     public array $scripts = [];
 
+    /**
+     * @var list<array{node: int|null, script: string, options: array<string, mixed>}>
+     */
+    public array $runs = [];
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->runs[] = [
+            'node' => $node->id,
+            'script' => $script,
+            'options' => $options,
+        ];
         $this->scripts[] = $script;
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

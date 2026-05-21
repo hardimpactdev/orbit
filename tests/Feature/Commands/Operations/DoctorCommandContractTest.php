@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Doctor\FixDoctorRequest;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
@@ -25,6 +26,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
 
@@ -93,6 +95,69 @@ function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = [
         'role' => 'app-development',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
+    ]);
+
+    return $node;
+}
+
+function createDoctorIngressNode(string $name = 'edge-1'): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'role' => 'control',
+        'status' => 'active',
+        'host' => '10.6.0.10',
+        'wireguard_address' => '10.6.0.10',
+        'platform' => 'ubuntu_24-04',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'ingress',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
+}
+
+function createDoctorRouterNode(string $name = 'gateway-1'): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'role' => 'gateway',
+        'status' => 'active',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'platform' => 'ubuntu_24-04',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'router',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    return $node;
+}
+
+function createDoctorProductionBackendNode(string $name = 'web-1'): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'role' => 'control',
+        'status' => 'active',
+        'host' => '10.6.0.21',
+        'wireguard_address' => '10.6.0.21',
+        'platform' => 'ubuntu_24-04',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-production',
+        'status' => 'active',
+        'settings' => [],
     ]);
 
     return $node;
@@ -563,6 +628,117 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets restore mode complete ingress proxy route actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $edge = createDoctorIngressNode('edge-1');
+        $router = createDoctorRouterNode('gateway-1');
+        $backend = createDoctorProductionBackendNode('web-1');
+        $app = App::factory()->create([
+            'node_id' => $backend->id,
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        $backendHash = str_repeat('b', 64);
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => $backendHash,
+                ]],
+            ],
+        ]);
+        $shell = new DoctorProxyRemoteShell(perNodeStdout: [
+            'route_edge-1' => "0\t\t\t\t0\t0\n",
+            'route_gateway-1' => "1\t".str_repeat('c', 64)."\t\t\t0\t0\n",
+            'route_web-1' => "1\t{$backendHash}\t\t\t0\t0\n",
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'edge-1', '--family' => ['proxy'], '--restore' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'edge-1',
+                'key' => 'proxy.public_route_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->nodesForScripts())->toContain('edge-1')
+            ->and(implode("\n", $shell->scripts))->toContain('/etc/caddy/sites/docs.test.caddy');
+    });
+
+    it('lets restore mode complete private backend proxy route actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $edge = createDoctorIngressNode('edge-1');
+        $router = createDoctorRouterNode('gateway-1');
+        $backend = createDoctorProductionBackendNode('web-1');
+        $app = App::factory()->create([
+            'node_id' => $backend->id,
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+        $shell = new DoctorProxyRemoteShell(perNodeStdout: [
+            'route_edge-1' => "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/docs.test.crt\t/etc/orbit/certs/docs.test.key\t1\t1\n",
+            'route_gateway-1' => "1\t".str_repeat('c', 64)."\t\t\t0\t0\n",
+            'route_web-1' => "0\t\t\t\t0\t0\n",
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'edge-1', '--family' => ['proxy'], '--restore' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'web-1',
+                'key' => 'proxy.backend_route_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->nodesForScripts())->toContain('web-1')
+            ->and(implode("\n", $shell->scripts))->toContain('/etc/caddy/sites/docs.test.backend.caddy');
+    });
+
     it('reports proxy route_extra drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = createDoctorHostedAppNode('app-1');
@@ -976,6 +1152,12 @@ describe('doctor command contract', function (): void {
 
 final class DoctorProxyRemoteShell implements RemoteShell
 {
+    /** @var list<Node> */
+    public array $nodes = [];
+
+    /** @var list<string> */
+    public array $scripts = [];
+
     /**
      * @param  array<string, string>  $perNodeStdout
      */
@@ -991,11 +1173,22 @@ final class DoctorProxyRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->nodes[] = $node;
+        $this->scripts[] = $script;
+
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
         $nodeKey = $isNodeLevel ? 'node_'.$node->name : 'route_'.$node->name;
         $stdout = $this->perNodeStdout[$nodeKey] ?? ($isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout);
 
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $stdout, stderr: '', durationMs: 1);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function nodesForScripts(): array
+    {
+        return array_map(fn (Node $node): string => $node->name, $this->nodes);
     }
 }
 

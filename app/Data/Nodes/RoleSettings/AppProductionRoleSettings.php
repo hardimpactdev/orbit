@@ -8,21 +8,43 @@ use InvalidArgumentException;
 
 final readonly class AppProductionRoleSettings implements NodeRoleSettings
 {
+    public function __construct(
+        public ?int $ingressNodeId = null,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $settings
      */
     public static function fromArray(array $settings): self
     {
-        if ($settings !== []) {
-            throw new InvalidArgumentException('This role does not accept settings.');
+        $unknownSettings = array_diff(array_keys($settings), ['ingress_node_id']);
+
+        if ($unknownSettings !== []) {
+            throw new InvalidArgumentException('The app-production role does not accept unknown settings.');
         }
 
-        return new self;
+        $ingressNodeId = $settings['ingress_node_id'] ?? null;
+
+        if ($ingressNodeId === null) {
+            return new self;
+        }
+
+        if (! is_int($ingressNodeId) || $ingressNodeId <= 0) {
+            throw new InvalidArgumentException('The app-production role requires a positive ingress_node_id setting when provided.');
+        }
+
+        return new self($ingressNodeId);
     }
 
     #[\Override]
     public function toArray(): array
     {
-        return [];
+        if ($this->ingressNodeId === null) {
+            return [];
+        }
+
+        return [
+            'ingress_node_id' => $this->ingressNodeId,
+        ];
     }
 }

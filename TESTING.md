@@ -52,6 +52,7 @@ installation, cloud-init, or host-level daemon behavior:
 composer e2e:preflight
 php artisan e2e:prepare-incus-images --role=blank --force
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
+composer e2e:prepare-topology -- --force operator-gateway-appprod-ingress
 composer test:e2e:provision
 ```
 
@@ -256,12 +257,16 @@ persistent gateway, control, or app nodes as verification targets.
 The `e2e-feature` lane uses prepared topology clones. Choose the smallest topology
 that covers the behavior under test:
 
+Legacy `control-*` aliases remain accepted for existing topology kinds. New
+topology kinds use the canonical `operator-*` spelling.
+
 | Kind | Nodes | Use when |
 | --- | --- | --- |
 | `control` | 1 control | Fastest. Use for control-node-only commands. |
 | `control-gateway` | control + 1 gateway | Use for gateway trust, onboarding, or node-registry flows. |
 | `control-gateway-dev` | control + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
 | `control-gateway-dev-prod` | control + gateway + dev + 1 prod app | Full topology. Slowest but most realistic. Use for production-app flows or full-stack verification. |
+| `operator-gateway-appprod-ingress` | control + gateway + 1 prod app + 1 ingress | Use for public production ingress and private app-production backend flows that do not need dev or agent nodes. |
 
 ## Feature Checkout Overlay
 
@@ -384,6 +389,19 @@ Common requirements for every prepared topology:
 - production-app assertions can run without re-provisioning the control,
   gateway, or development app nodes.
 
+`operator-gateway-appprod-ingress`:
+
+- includes everything from `control-gateway`;
+- skips development and agent clones;
+- one production app clone is available through the `prodApp()` topology handle;
+- one ingress clone is available through the `ingress()` topology
+  handle and the `ingress` topology role;
+- the ingress node is named `edge-1`;
+- the production app node is named `app-prod-1` and stores
+  `ingress_node_id` pointing at `edge-1`;
+- WireGuard test addresses are stable: production app `10.6.0.5`, public
+  ingress `10.6.0.7`.
+
 ## Commands
 
 ```bash
@@ -407,15 +425,19 @@ php artisan e2e:prepare-incus-images --role=blank --force
 # checkout, installs Orbit on the control template, then provisions gateway/app
 # templates through node:new from control before snapshotting clean.
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
+composer e2e:prepare-topology -- --force operator-gateway-appprod-ingress
 
 # Prepare Docker feature topology images
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
+composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
 
 # Prepare Docker feature topology images on the build host, then import on Docker hosts
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
 composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias control-gateway-dev-prod
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appprod-ingress
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appprod-ingress
 
 # Reap stale E2E resources
 composer e2e:reap-incus
@@ -485,6 +507,7 @@ For single-host local debugging, the lower-level equivalents are:
 ```bash
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
+composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
 ```
 
 On this Mac, OrbStack provides the local Docker CLI and daemon. The active
@@ -639,6 +662,7 @@ configured Docker host pool:
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
 composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appdev-appprod
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator-gateway-appprod-ingress
 ```
 
 When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command imports into each unique

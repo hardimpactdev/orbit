@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
 use RuntimeException;
 
 #[Signature('e2e:prepare-docker-topology
-    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod)}
+    {kind=operator-gateway-appdev-appprod : Topology kind to prepare (operator|operator-gateway|operator-gateway-appdev|operator-gateway-appdev-appprod|operator-gateway-appdev-appprod-agent|operator-gateway-appprod-ingress)}
     {--force : Build the Docker prepared per-role images}
     {--topology-mode=dns-alias : Topology mode to bake (legacy-retarget|dns-alias)}
     {--json : Output as JSON}')]
@@ -42,7 +42,7 @@ class E2EPrepareDockerTopologyCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod. Legacy control topology names are accepted as aliases.");
+            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator-gateway, operator-gateway-appdev, operator-gateway-appdev-appprod, operator-gateway-appdev-appprod-agent, operator-gateway-appprod-ingress. Legacy control topology names are accepted as aliases.");
         }
 
         $mode = (string) $this->option('topology-mode');

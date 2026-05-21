@@ -39,7 +39,9 @@ record.
 - **Production app:** App whose owning node carries the `app-production` role.
   Hostname is a public DNS name. Production domains are globally unique across
   the Orbit network and are activated only after DNS verification against the
-  owning node's recorded production addresses.
+  selected ingress placement. Public traffic terminates at
+  `ingress`, forwards over WireGuard to `router`, and reaches the app
+  through a private `app-production` backend artifact.
 - **App PHP version:** Gateway-tracked configuration for the PHP version used by the
   app's PHP-FPM pool and CLI runtime. Workspaces inherit this value unless they
   store an override.
@@ -70,3 +72,6 @@ These boundaries define what the app family owns and what belongs to other famil
   deployment policy, and app health configuration. They do not own proxy route
   registry, workspace policy, process configuration, schedule definitions, tool
   registration, or firewall policy beyond what derives from app configuration.
+  Production route exposure belongs to `ingress`; private route
+  selection and backend-pool targeting belong to `router`; `app-production`
+  owns the private backend runtime.

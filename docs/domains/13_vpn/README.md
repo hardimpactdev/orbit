@@ -50,7 +50,8 @@ Node identity is managed separately.
 - They do this only when the backend for the active `vpn` role requires
   second-factor authentication.
 - VPN commands do not create app routes, proxy routes, Cloudflare records,
-  gateway development DNS mappings, or caller-local resolver overrides.
+  gateway development DNS mappings, private `.orbit` service names owned by the
+  router, or caller-local resolver overrides.
 - Backend implementation details, such as wg-easy storage layout or API paths,
   are not the product contract.
 

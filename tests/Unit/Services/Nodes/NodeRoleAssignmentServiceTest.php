@@ -11,6 +11,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -173,9 +174,10 @@ describe('node role assignment service', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'role' => 'control',
+            'wireguard_address' => '10.6.0.20',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-production', []);
+        app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']);
 
         $selfGrant = NodeAccess::query()
             ->where('consumer_node_id', $node->id)
@@ -185,7 +187,7 @@ describe('node role assignment service', function (): void {
         expect($selfGrant?->permissions)->toBe(['workspace:setup'])
             ->and($selfGrant?->custom_permissions)->toBe([]);
 
-        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-production', force: true);
+        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-development', force: true);
 
         expect(NodeAccess::query()
             ->where('consumer_node_id', $node->id)
@@ -238,7 +240,21 @@ describe('node role assignment service', function (): void {
             'host' => 'app-prod-1.example.com',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-production', []);
+        $ingressNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'status' => 'active',
+            'host' => 'edge-1.example.com',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $ingressNode->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $ingressNode->id,
+        ]);
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
@@ -256,6 +272,24 @@ describe('node role assignment service', function (): void {
             ]);
     });
 
+    it('materializes the ingress baseline as desired tools', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'host' => 'edge-1.example.com',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'ingress', []);
+
+        $tools = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->get();
+
+        expect($tools->pluck('name')->all())->toBe(['caddy'])
+            ->and($tools->first()?->expected_state)->toBe('running');
+    });
+
     it('rejects conflicting roles', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
@@ -268,6 +302,150 @@ describe('node role assignment service', function (): void {
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', []))
             ->toThrow(InvalidArgumentException::class, "Role 'app-production' conflicts with active role 'app-development'.");
+    });
+
+    it('rejects app-production assignment without an active ingress node', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', []))
+            ->toThrow(InvalidArgumentException::class, 'The app-production role requires an active ingress node.');
+    });
+
+    it('rejects app-production assignment when the selected ingress node is not active', function (): void {
+        $ingressNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'provisioning',
+            'host' => 'edge-1.example.com',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $ingressNode->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $ingressNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The app-production role requires an active ingress node.');
+    });
+
+    it('rejects app-production assignment when the selected node lacks an active ingress role', function (): void {
+        $ingressNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'host' => 'edge-1.example.com',
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $ingressNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The app-production role requires an active ingress node.');
+    });
+
+    it('allows app-production assignment when the target node already has active ingress', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'host' => 'edge-app-1.example.com',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $node->id,
+        ]);
+
+        expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->settings)->toBe([
+                'ingress_node_id' => $node->id,
+            ]);
+    });
+
+    it('rejects app-production assignment when the selected ingress role is pending', function (): void {
+        $ingressNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'host' => 'edge-pending.example.com',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $ingressNode->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Pending->value,
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $ingressNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The app-production role requires an active ingress node.');
+    });
+
+    it('rejects app-production assignment when the selected ingress role is errored', function (): void {
+        $ingressNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'host' => 'edge-error.example.com',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $ingressNode->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Error->value,
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'host' => 'app-prod-1.example.com',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $ingressNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The app-production role requires an active ingress node.');
+    });
+
+    it('revalidates the referenced ingress node during app-production updates and preserves the previous assignment on failure', function (): void {
+        $ingressNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'host' => 'edge-1.example.com',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $ingressNode->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Pending->value,
+        ]);
+
+        $appNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'host' => 'app-prod-1.example.com',
+        ]);
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-production',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['ingress_node_id' => 999],
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($appNode, 'app-production', [
+            'ingress_node_id' => $ingressNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The app-production role requires an active ingress node.');
+
+        expect($assignment->fresh()->settings)->toBe(['ingress_node_id' => 999])
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
     it('rejects pending and error role conflicts', function (string $status): void {
@@ -336,13 +514,15 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role '{$role}' conflicts with active role 'gateway'.");
     })->with([
         'app-development' => ['app-development', ['tld' => 'test']],
-        'app-production' => ['app-production', []],
+        'app-production' => ['app-production', ['ingress_node_id' => 9999]],
         'database' => ['database', []],
+        'ingress' => ['ingress', []],
     ]);
 
     it('ignores removing assignments during conflict checks', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
+            'status' => 'active',
             'host' => 'app-prod-1.example.com',
         ]);
 
@@ -352,8 +532,15 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Removing->value,
             'settings' => ['tld' => 'test'],
         ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
 
-        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-production', []);
+        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-production', [
+            'ingress_node_id' => $node->id,
+        ]);
 
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Active->value)
@@ -545,6 +732,7 @@ describe('node role assignment service', function (): void {
     })->with([
         'gateway' => 'gateway',
         'vpn' => 'vpn',
+        'router' => 'router',
     ]);
 
     it('rejects gateway-coupled role updates through the normal service', function (string $role): void {
@@ -561,6 +749,7 @@ describe('node role assignment service', function (): void {
     })->with([
         'gateway' => 'gateway',
         'vpn' => 'vpn',
+        'router' => 'router',
     ]);
 
     it('rejects unknown roles during removal through the registry', function (): void {
@@ -584,6 +773,7 @@ describe('node role assignment service', function (): void {
     })->with([
         'gateway' => 'gateway',
         'vpn' => 'vpn',
+        'router' => 'router',
     ]);
 
     it('rejects agent assignment through the normal service', function (): void {
@@ -707,6 +897,128 @@ describe('node role assignment service', function (): void {
 
         expect(App::query()->whereKey($app->id)->exists())->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
+            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+    });
+
+    it('blocks ingress removal while public proxy route records depend on it', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+        $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
+        $app = App::factory()->create([
+            'node_id' => $backendNode->id,
+            'environment' => 'production',
+        ]);
+        $workspace = Workspace::factory()->create(['app_id' => $app->id]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        ProxyRoute::factory()->forApp($app)->create([
+            'node_id' => $node->id,
+            'kind' => 'app',
+            'owner_type' => 'app',
+            'config' => ['placement' => 'ingress'],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'kind' => 'workspace',
+            'owner_type' => 'workspace',
+            'config' => ['placement' => 'ingress'],
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'ingress'))
+            ->toThrow(InvalidArgumentException::class, "Role 'ingress' cannot be removed while dependents exist.");
+    });
+
+    it('does not count custom ingress placement routes as ingress dependents', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'ingress');
+
+        expect(ProxyRoute::query()->where('node_id', $node->id)->count())->toBe(1)
+            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+    });
+
+    it('forces ingress removal by deleting Orbit-owned public proxy route records', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+        $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
+        $app = App::factory()->create([
+            'node_id' => $backendNode->id,
+            'environment' => 'production',
+        ]);
+        $workspace = Workspace::factory()->create(['app_id' => $app->id]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        ProxyRoute::factory()->forApp($app)->create([
+            'node_id' => $node->id,
+            'kind' => 'app',
+            'owner_type' => 'app',
+            'config' => ['placement' => 'ingress'],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'kind' => 'workspace',
+            'owner_type' => 'workspace',
+            'config' => ['placement' => 'ingress'],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'config' => [
+                'placement' => 'ingress',
+                'target' => ['value' => 'https://example.com'],
+                'code' => 302,
+            ],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => Node::factory()->create(['platform' => 'ubuntu'])->id,
+            'kind' => 'app',
+            'owner_type' => 'app',
+            'config' => ['placement' => 'ingress'],
+        ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'ingress', force: true);
+
+        expect(ProxyRoute::query()->where('node_id', $node->id)->count())->toBe(2)
+            ->and(ProxyRoute::query()->where('node_id', $node->id)->pluck('owner_type')->all())->toBe(['custom', 'custom'])
+            ->and(ProxyRoute::query()->count())->toBe(3)
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
 

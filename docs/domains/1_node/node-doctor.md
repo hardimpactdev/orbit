@@ -107,8 +107,16 @@ The node probe reads gateway node records and checks these layers:
    WireGuard server runtime and DNS runtime, and the DNS runtime served through
    the `vpn` role matches desired DNS mappings owned by the gateway.
 
-   `app-production`, `database`, and `gateway` assignments have no role
-   settings in v1.
+   For `app-production`, the assignment has a valid `ingress_node_id`
+   setting. The role baseline owns private backend readiness: Caddy on HTTP
+   port `80` bound to the node's WireGuard address, plus PHP and Supervisor.
+
+   For `ingress`, assignments have no role settings in v1. The node
+   baseline includes public production HTTP ingress, public Caddy route
+   artifacts, and forwarding readiness to the active `router`. Backend-pool
+   selection belongs to the `router` role.
+
+   `database` and `gateway` assignments have no role settings in v1.
 14. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` nodes when `--self` inspects the CLI's
    local configuration, PHP CLI defaults at the node level point at installed

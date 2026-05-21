@@ -9,6 +9,7 @@ use App\Http\Gateway\Requests\Apps\RegisterAppRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -27,6 +28,41 @@ beforeEach(function (): void {
 afterEach(function (): void {
     MockClient::destroyGlobal();
 });
+
+function createAppRegisterProductionHost(array $attributes = []): Node
+{
+    $router = Node::query()->where('name', 'gateway-1')->first()
+        ?? Node::factory()->create([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+        ]);
+    $router->forceFill(['wireguard_address' => '10.6.0.2'])->save();
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $router->id,
+        'role' => 'router',
+        'status' => 'active',
+    ]);
+
+    $node = createTestAppHostNode([
+        'wireguard_address' => '10.6.0.5',
+        ...$attributes,
+    ], 'app-production');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'ingress',
+        'status' => 'active',
+    ]);
+
+    $node->roleAssignments()
+        ->where('role', 'app-production')
+        ->firstOrFail()
+        ->forceFill(['settings' => ['ingress_node_id' => $node->id]])
+        ->save();
+
+    return $node->refresh();
+}
 
 it('adopts an existing app path and enacts runtime artifacts from a gateway caller', function (): void {
     Node::factory()->create([
@@ -132,11 +168,11 @@ it('reports production domain activation as a retryable proxy warning', function
         'role' => 'gateway',
     ]);
 
-    createTestAppHostNode([
+    createAppRegisterProductionHost([
         'name' => 'app-1',
         'environment' => 'production',
         'status' => 'active',
-    ], 'app-production');
+    ]);
 
     app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -207,11 +243,11 @@ it('renders production activation warnings in human output', function (): void {
         'role' => 'gateway',
     ]);
 
-    createTestAppHostNode([
+    createAppRegisterProductionHost([
         'name' => 'app-1',
         'environment' => 'production',
         'status' => 'active',
-    ], 'app-production');
+    ]);
 
     app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -53,6 +54,188 @@ describe('ProxyRouteFixer', function (): void {
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
+
+    it('re-applies ingress routes and names the public side', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.public_route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+        ));
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['summary'])->toBe('Re-applied public proxy route docs.test from gateway intent.')
+            ->and($action['node'])->toBe('edge-1')
+            ->and($shell->nodes[0]->is($edge))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
+            ->and($caddySite)->toContain('reverse_proxy http://10.6.0.2:80')
+            ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite));
+    });
+
+    it('re-applies router routes and names the router side', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
+                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.router_route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+        ));
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['summary'])->toBe('Re-applied private router route docs.test from gateway intent.')
+            ->and($action['node'])->toBe('gateway-1')
+            ->and($shell->nodes[0]->is($router))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
+            ->and($caddySite)->toContain('bind 10.6.0.2')
+            ->and($caddySite)->toContain('reverse_proxy http://10.6.0.21:80')
+            ->and($route->refresh()->config['router_artifact']['source_hash'])->toBe(hash('sha256', $caddySite));
+    });
+
+    it('re-applies private backend artifacts and names the backend side', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.backend_route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+            detail: ['backend_node_id' => $backend->id],
+        ));
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['summary'])->toBe('Re-applied private backend route docs.test on web-1 from gateway intent.')
+            ->and($action['node'])->toBe('web-1')
+            ->and($shell->nodes[0]->is($backend))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.backend.caddy')
+            ->and($caddySite)->toContain('bind 10.6.0.21')
+            ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock');
+    });
+
+    it('does not repair backend routes without an explicit matching backend node id', function (array $detail): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        $otherBackend = Node::factory()->create(['name' => 'web-2', 'role' => 'control']);
+        NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $otherBackend->id, 'role' => 'app-production', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.backend_route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+            detail: $detail,
+        ));
+
+        expect($action)->toBeNull()
+            ->and($shell->scripts)->toBe([])
+            ->and($shell->nodes)->toBe([]);
+    })->with([
+        'missing backend node id' => [[]],
+        'invalid backend node id' => [['backend_node_id' => 'web-1']],
+        'nonmatching backend node id' => [['backend_node_id' => 999_999]],
+    ]);
 
     it('repairs missing Orbit-managed TLS material for custom proxy routes', function (): void {
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
@@ -201,6 +384,9 @@ final readonly class ProxyFixerFakeCa extends OrbitCaService
 
 final class ProxyFixerRecordingRemoteShell implements RemoteShell
 {
+    /** @var list<Node> */
+    public array $nodes = [];
+
     /** @var list<string> */
     public array $scripts = [];
 
@@ -209,6 +395,7 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->nodes[] = $node;
         $this->scripts[] = $script;
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

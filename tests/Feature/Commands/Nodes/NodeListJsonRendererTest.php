@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -80,6 +81,17 @@ function createNodeListJsonRoleAssignment(
         'last_error' => $lastError,
         'converged_at' => $convergedAt,
     ]);
+}
+
+function markNodeListJsonAppProductionToolsInstalled(Node $node): void
+{
+    foreach (['caddy', 'php', 'supervisor'] as $tool) {
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => $tool,
+            'expected_state' => 'running',
+        ]);
+    }
 }
 
 describe('node:list JSON renderer contract', function (): void {
@@ -482,6 +494,7 @@ describe('node:list JSON renderer contract', function (): void {
             'wireguard_address' => null,
         ]), 'app-production');
         markNodeSecurityBaselineClean($node);
+        markNodeListJsonAppProductionToolsInstalled($node);
 
         $exitCode = Artisan::call('node:list', [
             '--json' => true,

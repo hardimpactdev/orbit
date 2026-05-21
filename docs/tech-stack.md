@@ -54,6 +54,9 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | `orbit-scheduler` Artisan-command daemon on the gateway only; dispatches to other nodes through `RemoteShell` |
 | Process logs | Supervisor-managed stdout/stderr log files |
 | Service containers | Docker Compose for databases, caches, mail, and utilities on nodes that need them |
+| Production HTTP ingress | Caddy on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
+| Private production routing | Caddy on the gateway-coupled `router` role selecting private app backend pools |
+| Production app backend | Private Caddy HTTP listener on `app-production` nodes bound to the node's WireGuard address on port `80` |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -160,6 +163,12 @@ PHP-FPM runs natively on the gateway and on nodes with application roles — not
 
 Each workspace gets its own PHP-FPM pool so workspaces are isolated from one another. Production apps get a dedicated pool as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it re-renders the affected PHP-FPM pool on the owning node through `RemoteShell`.
 
+Production public HTTP traffic enters the fleet through an active
+`ingress` role. `app-production` nodes are production runtime backends:
+they own app files, PHP-FPM, Supervisor, and a private Caddy HTTP listener, but
+they do not own public route exposure unless the same node also carries
+`ingress`.
+
 ### Process manager
 
 Supervisor (`supervisord`) supervises Orbit-managed long-running processes on every node that runs processes. Each process Orbit tracks becomes one Supervisor program. Supervisor restarts crashed processes and captures stdout/stderr into log files surfaced by `process:logs`.
@@ -203,7 +212,7 @@ Docker Compose runs supporting services on nodes that need them — databases, c
 
 ### Agent runtime
 
-Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges Caddy, Supervisor, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The `agent` role requires a node-level `tld` setting (default `agent` when chosen during interactive `node:new`); `tld` is a shared node-level field that the `app-development` role also requires, so a node holds at most one `tld` value at a time. The gateway maps `*.{tld}` to the node's WireGuard address through the same gateway-owned DNS mapping pattern that `app-development` uses.
+Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges Caddy, Supervisor, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The `agent` role requires a node-level `tld` setting (default `agent` when chosen during interactive `node:new`); `tld` is a shared node-level field that the `app-development` role also requires, so a node holds at most one `tld` value at a time. The gateway maps `*.{tld}` to the node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-development` uses. Stable private `.orbit` service names are router-owned and distinct from these development/agent TLD mappings.
 
 Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, supervised by Supervisor like any other long-running process, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
 
@@ -246,7 +255,7 @@ When the client already has a WireGuard identity issued by an existing gateway, 
 
 ### Platform and roles
 
-The Orbit CLI runs on macOS and Ubuntu. The `gateway`, `vpn`, `app-development`, `app-production`, `database`, and `agent` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
+The Orbit CLI runs on macOS and Ubuntu. The `gateway`, `vpn`, `app-development`, `app-production`, `database`, `agent`, and `ingress` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
 
 The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same node.
 

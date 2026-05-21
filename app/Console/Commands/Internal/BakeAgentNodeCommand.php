@@ -17,6 +17,7 @@ use RuntimeException;
 #[Signature('orbit:internal:bake-agent-node
     {name : Agent node name}
     {--host= : Agent node host address}
+    {--host-key-host= : Host/IP to scan for the SSH host key when different from --host}
     {--wireguard-address= : Agent node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
     {--user=orbit : Runtime user}
@@ -30,6 +31,7 @@ class BakeAgentNodeCommand extends Command
     {
         $name = $this->stringArgument('name');
         $host = $this->stringOption('host');
+        $hostKeyHost = $this->stringOption('host-key-host');
         $wireguardAddress = $this->stringOption('wireguard-address');
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
         $user = $this->stringOption('user') ?? 'orbit';
@@ -39,7 +41,7 @@ class BakeAgentNodeCommand extends Command
             throw new RuntimeException('Name, host, and wireguard-address are required.');
         }
 
-        $hostKey = app(SshHostKeyPinner::class)->pin($host);
+        $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
 
         $node = $registryWriter->writeNodeIdentity(
             name: $name,

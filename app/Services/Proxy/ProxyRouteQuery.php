@@ -187,7 +187,7 @@ class ProxyRouteQuery
         $config = is_array($route->config) ? $route->config : [];
         $tlsManagedBy = $this->stringConfig($config, ['tls.managed_by', 'tls_managed_by']) ?? 'orbit';
 
-        return [
+        $entity = [
             'domain' => $route->domain,
             'kind' => $route->kind,
             'owner' => [
@@ -206,6 +206,13 @@ class ProxyRouteQuery
             ],
             'status' => $status ?? $this->stringConfig($config, ['status']) ?? 'expected',
         ];
+
+        if (($config['placement'] ?? null) === 'ingress') {
+            $entity['placement'] = 'ingress';
+            $entity['router'] = $this->router($config);
+        }
+
+        return $entity;
     }
 
     /**
@@ -271,6 +278,53 @@ class ProxyRouteQuery
         $value = $this->nestedConfig($config, 'tls.trusted_by_gateway_ca') ?? $this->nestedConfig($config, 'trusted_by_gateway_ca');
 
         return is_bool($value) ? $value : $managedBy === 'orbit';
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array{node: ?string, url: ?string, backend_pool: list<array{node: string, url: string}>}
+     */
+    private function router(array $config): array
+    {
+        $upstream = $config['router_upstream'] ?? [];
+
+        return [
+            'node' => is_array($upstream) ? $this->stringConfig($upstream, ['node']) : null,
+            'url' => is_array($upstream) ? $this->stringConfig($upstream, ['url']) : null,
+            'backend_pool' => $this->routerBackendPool($config),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<array{node: string, url: string}>
+     */
+    private function routerBackendPool(array $config): array
+    {
+        $pool = $config['router_backend_pool'] ?? null;
+
+        if (! is_array($pool)) {
+            return [];
+        }
+
+        return collect($pool)
+            ->filter(fn (mixed $backend): bool => is_array($backend))
+            ->map(function (array $backend): ?array {
+                $node = $backend['node'] ?? null;
+                $url = $backend['url'] ?? null;
+
+                if (! is_string($node) || $node === '' || ! is_string($url) || $url === '') {
+                    return null;
+                }
+
+                return [
+                    'node' => $node,
+                    'url' => $url,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /**

@@ -166,6 +166,53 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
+    it('returns the orbit error envelope for non-string ingress node on add', function (): void {
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'app-production',
+            'ingress_node' => ['edge-1'],
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'ingress_node')
+            ->assertJsonPath('error.message', 'Ingress node must be a string.')
+            ->assertJsonMissingPath('success');
+    });
+
+    it('rejects ingress node for non-app-production add requests', function (): void {
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'ingress',
+            'ingress_node' => 'edge-1',
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'ingress_node')
+            ->assertJsonPath('error.meta.role', 'ingress')
+            ->assertJsonPath('error.message', "Role 'ingress' does not accept ingress_node.")
+            ->assertJsonMissingPath('success');
+    });
+
+    it('rejects ingress node for app-production when the target node already has ingress', function (): void {
+        $targetId = (int) DB::table('nodes')
+            ->where('name', 'target-1')
+            ->value('id');
+
+        assignNodeRoleApiRole($targetId, 'ingress');
+
+        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
+            'role' => 'app-production',
+            'ingress_node' => 'edge-1',
+        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'ingress_node')
+            ->assertJsonPath('error.meta.role', 'app-production')
+            ->assertJsonPath('error.message', 'The app-production role does not accept ingress_node when the target node already hosts ingress.')
+            ->assertJsonMissingPath('success');
+    });
+
     it('rejects path-like app-development tld settings on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
             'role' => 'app-development',
@@ -213,7 +260,7 @@ describe('node role api validation envelopes', function (): void {
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The gateway role cannot be managed through node role commands.')
+            ->assertJsonPath('error.message', "Role 'gateway' is gateway-coupled and cannot be assigned independently.")
             ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.meta.role', 'gateway')
             ->assertJsonMissingPath('success');
