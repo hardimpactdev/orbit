@@ -9,9 +9,12 @@
 
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
-- Caller holds a grant to the gateway whose permissions include `*`
-  (`gateway-admin`). Callers without gateway-admin authority receive
-  `authorization_failed` before side effects.
+- Read mode requires the caller's grant to the gateway to include `node:read`
+  or `*`.
+- Write modes (`--preset`, `--permissions`, `--add`, `--remove`) require the
+  caller's grant to the gateway to include `node:permissions` or `*`.
+- Callers without the required permission receive `authorization_failed`
+  before side effects.
 - Both `consuming_node` and `serving_node` resolve to existing active node
   records in gateway configuration. Records still in `provisioning` are
   rejected as `node.not_found`.
@@ -52,8 +55,9 @@ This command follows the shared
 ### Authorization Rules
 
 - The gateway resolves the caller's WireGuard identity, then checks for a
-  grant from that identity to the gateway whose normalized permission set
-  includes `*`. Callers without that grant receive `authorization_failed`.
+  grant from that identity to the gateway. Read mode requires `node:read` or
+  `*`; write modes require `node:permissions` or `*`. Callers without the
+  required permission receive `authorization_failed`.
 
 ### Read Rules
 
@@ -85,7 +89,7 @@ This command follows the shared
 - `--remove` requires an existing grant. Missing grants fail with
   `node.grant_not_found`.
 - If the normalized subtract result is the empty set, the grant edge is
-  preserved with an empty permission set so the gateway-admin can audit the
+  preserved with an empty permission set so authorized callers can audit the
   intentional lockout. Removing the grant edge is owned by `node:revoke`.
 
 ### Mutation Response Rules
@@ -127,7 +131,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - [`doctor --family=node`](../../node-doctor.md) reports
   `node.access_permission_invalid` when a stored permission set does not
   normalize cleanly against the permission registry.
-- `node:permissions` is the explicit operator surface for re-normalizing or
+- `node:permissions` is the explicit grant-management surface for re-normalizing or
   rewriting a grant's permission set after such drift.
 
 ## Activity Logging

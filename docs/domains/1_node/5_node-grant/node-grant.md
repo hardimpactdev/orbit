@@ -56,8 +56,8 @@ a normalized initial permission set.
 
 `node:grant` writes gateway-owned grant configuration in `node_access` from
 `consuming_node` to `serving_node`. Gateway callers execute locally;
-configured operator callers forward the request to the gateway over HTTPS
-through WireGuard.
+configured clients forward the request to the gateway over HTTPS through
+WireGuard.
 
 The command:
 
@@ -102,8 +102,7 @@ any redundant-permission warnings.
 
 - Must run on the gateway host or from a configured client.
 - The caller must hold a grant to the gateway whose permissions include
-  `node:grant` (or `*`). App-role callers without such a grant are rejected
-  before side effects.
+  `node:grant` or `*`. Callers without that grant fail before side effects.
 - Both nodes must have active records in gateway node configuration. Records still
   in `provisioning` are rejected as not found; live reachability is not
   probed and belongs to `doctor --family=node`.

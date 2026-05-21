@@ -7,11 +7,11 @@
 **Effects:** `destructive`, `write`.
 
 **Prerequisites:**
-- The gateway authenticates the CLI and authorizes `node:revoke` only when the
-  caller's gateway-known role is `control` or `gateway`. App-role callers are
-  rejected.
-- Gateway callers can read and write gateway-owned node configuration.
-- Operator callers have configured gateway access as defined in
+- The gateway authenticates the CLI through the WireGuard identity path.
+- The caller holds a grant to the gateway whose permissions include
+  `node:revoke` or `*`. Callers without that permission receive
+  `authorization_failed`.
+- Configured client callers have gateway access as defined in
 [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md).
 - Both `consuming_node` and `serving_node` exist in gateway node configuration.
 
@@ -69,8 +69,9 @@ This command follows the shared
      side effects.
    - In non-interactive mode without `--force`, fail before side effects.
 7. Send the typed request to the gateway over HTTPS through WireGuard. The
-   gateway authenticates the caller's WireGuard identity and authorizes the
-   request through gateway-owned access policy before any side effects.
+   gateway authenticates the caller's WireGuard identity, then checks for a
+   grant to the gateway whose permissions include `node:revoke` or `*`
+   before any side effects.
 
 ## Input Mode Contracts
 
@@ -87,7 +88,7 @@ This command follows the shared
 ### Authorization and consent rules
 
 - Verify the caller is authorized to manage node access grants through
-  the access policy that the gateway owns.
+  `node:revoke` or `*` on a grant to the gateway.
 - Apply the destructive consent rules from the selected input mode.
 
 ### Grant Revocation Rules
@@ -157,8 +158,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Command contract: revocation, idempotent absent success, node-not-found validation, operator-caller forwarding, app-role denial, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and authorization failure. |
-| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Operator-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before prompts or side effects, forwarded requests require gateway-node access, and no SSH-to-gateway path is used. |
+| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Revocation success, idempotent absence, node-not-found validation, client forwarding, authorization failure, confirmation, and `--force` behavior. |
+| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, `node:revoke` authorization on a gateway grant, self-lockout, destructive consent, and result rendering. |
 
 Input-mode-specific test mapping lives in:
 
@@ -170,8 +171,7 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-revoke_output-render_human.md`](6.1_node-revoke_output-render_human.md#test-mapping)
 - [`6.2_node-revoke_output-render_json.md`](6.2_node-revoke_output-render_json.md#test-mapping)
 
-Role-specific test mapping lives in:
+Deployment-context test mapping lives in:
 
 - [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md#test-mapping)
 - [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md#test-mapping)
-- [`4_node-revoke_on-app-role.md`](4_node-revoke_on-app-role.md#test-mapping)

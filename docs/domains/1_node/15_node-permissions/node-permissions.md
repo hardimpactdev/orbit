@@ -95,9 +95,9 @@ access grant.
 
 1. Resolve the `consuming_node` and `serving_node` arguments and validate
    that both match active node records.
-2. Authorize the call. The gateway requires a grant from the caller to the
-   gateway whose permissions include `*`. Callers without gateway-admin
-   authority receive `authorization_failed`.
+2. Authorize the call. Read mode requires the caller's grant to the gateway to
+   include `node:read` or `*`; write modes require `node:permissions` or `*`.
+   Callers without the required permission receive `authorization_failed`.
 3. Compute the normalized target permission set from the requested mode.
 4. Apply the change to the grant. Reads return the current permissions
    without mutation. Mutations write the normalized set and report whether
@@ -105,7 +105,8 @@ access grant.
 
 `node:permissions` does not:
 
-- Edit grants the caller is not gateway-admin to administer.
+- Edit grants unless the caller holds `node:permissions` or `*` on a grant to
+  the gateway.
 - Create a grant in read mode or in `--remove` mode.
 - Repair drift owned by `doctor --family=node`.
 - Mutate node host state.
@@ -123,7 +124,9 @@ for the exact payload shape.
 ## Requirements
 
 - Must run on the gateway host or from a configured client.
-- The caller must hold a grant to the gateway whose permissions include `*`.
+- Read mode requires `node:read` or `*` on the caller's grant to the gateway.
+- Write modes require `node:permissions` or `*` on the caller's grant to the
+  gateway.
 - Both target nodes must exist in gateway configuration.
 - The mutually exclusive modes `--preset`, `--permissions`, `--add`, and
   `--remove` cannot be combined.
