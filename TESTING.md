@@ -843,21 +843,40 @@ the three wall times, the wall mean plus sample standard deviation, and per-run
 those event groups are present. Downstream phases must beat the recorded wall
 baseline by more than `2 x stdev`.
 
-## Recommended local SSH tuning
+## Required SSH multiplexing for measured Docker baselines
 
-Operator-applied only. Orbit does not configure this automatically.
+Operator-applied only. Orbit does not configure this automatically. The Docker
+lane opens many short SSH-backed Docker CLI connections through
+`DOCKER_HOST=ssh://...`; without SSH multiplexing, connection setup dominates
+the run and the full Docker lane can regress from the expected 120-150s range
+to roughly 300s even when `.env.e2e` is otherwise identical.
 
 ```sshconfig
 Host sidecar1 sidecar2 beast
+    HostName %h
+    User nckrtl
     ControlMaster auto
     ControlPath ~/.ssh/cm-%r@%h:%p.sock
     ControlPersist 10m
     ServerAliveInterval 30
 ```
 
-Check the effect locally with `time ssh sidecar1 true`; the second call should
-drop below `10 ms`. Keep `ORBIT_E2E_DOCKER_PARALLEL_STARTS=0` unless this is in
-place and sidecar sshd capacity has been verified under load.
+Check the effective SSH config and connection reuse before recording or
+comparing Docker E2E baselines:
+
+```bash
+ssh -G sidecar1 | grep -E '^(controlmaster|controlpath|controlpersist)'
+time ssh -o BatchMode=yes sidecar1 true
+time ssh -o BatchMode=yes sidecar1 true
+```
+
+The config should report `controlmaster auto`, a stable `controlpath`, and
+`controlpersist` in seconds. The second `ssh true` call should be around
+10-20 ms on the local LAN. If it remains in the hundreds of milliseconds,
+fix local SSH config, identity selection, DNS/address selection, or network
+routing before treating Docker E2E timing as an Orbit regression. Keep
+`ORBIT_E2E_DOCKER_PARALLEL_STARTS=0` unless SSH multiplexing is in place and
+sidecar sshd capacity has been verified under load.
 
 Provisioning and topology clones use independent resource budgets. Image
 preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work
