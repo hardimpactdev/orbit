@@ -340,7 +340,9 @@ it('rejects unauthorized callers without delivering', function (): void {
 
     $response->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
-        ->assertJsonPath('error.meta.app', 'docs');
+        ->assertJsonPath('error.meta.app', 'docs')
+        ->assertJsonPath('error.meta.reason', 'missing_permission')
+        ->assertJsonPath('error.meta.missing_permission', 'agent-ide:message');
 
     expect($adapter->deliveries)->toBeEmpty();
 });
