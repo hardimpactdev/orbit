@@ -7,7 +7,7 @@
 **Effects:** `read`, `local-only`.
 
 **Prerequisites:**
-- The caller is authorized as a `control` role peer.
+- The command is running on a non-gateway client/control machine.
 - The caller platform is Linux or macOS.
 
 ## Signature
@@ -64,6 +64,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Not supported on gateway | The command is run on a gateway node. | Failure before local resolver reads |
 | Unsupported platform | The caller platform is neither Linux nor macOS. | Failure before local resolver reads |
 | Resolver read failed | Orbit-managed local resolver state cannot be inspected. | Failure |
 
@@ -96,7 +97,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: caller-role eligibility, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
+| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: gateway-node rejection, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
 | `tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` | JSON renderer selection, success envelope, empty result shape, resolver entry DTO shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, caller-role denial prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
+| `tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, gateway-node rejection prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
 | `tests/E2E/DnsListTest.php` | Incus-backed Linux client feature gate: install the current checkout into a disposable control VM, seed an Orbit-managed local resolver override, and verify `php artisan dns:list --json` reports it. |

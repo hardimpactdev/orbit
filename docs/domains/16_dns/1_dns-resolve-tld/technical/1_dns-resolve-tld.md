@@ -7,7 +7,7 @@
 **Effects:** `read`, `write`, `destructive`, `local-only`, `stream`.
 
 **Prerequisites:**
-- The caller is authorized as a `control` role peer.
+- The command is running on a non-gateway client/control machine.
 - The caller platform has a local resolver backend that Orbit supports.
 - The process has the local OS privileges required to update resolver
   configuration and refresh the resolver backend.
@@ -104,6 +104,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Not supported on gateway | The command is run on a gateway node. | Failure before prompts or side effects |
 | Destructive consent missing | `--reset` is selected in non-interactive mode without `--force`, or the interactive confirmation is rejected. | Failure before side effects |
 | Unsupported platform | The caller platform has no supported local resolver backend. | Failure before resolver writes |
 | Resolver write failed | Orbit-managed resolver configuration cannot be written or removed. | Failure |
@@ -136,7 +137,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract: caller-role eligibility, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway configuration writes, no public DNS writes, and no arbitrary per-host mappings. |
+| `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract: gateway-node rejection, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway configuration writes, no public DNS writes, and no arbitrary per-host mappings. |
 | `tests/Feature/Commands/Dns/DnsResolveTldInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, prompt order, prompt IDs, labels, primitives, field validation, reset confirmation, `--force` confirmation bypass, and prompt abort behavior. |
 | `tests/Feature/Commands/Dns/DnsResolveTldNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing input failures, forbidden target with `--reset`, `--reset` requiring `--force`, and invalid value failures. |
 | `tests/Feature/Commands/Dns/DnsResolveTldJsonRendererTest.php` | JSON renderer selection, success envelope, resolved/reset/already-converged statuses, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
