@@ -159,6 +159,7 @@ final class NodePermissionPresets
             'tool:start',
             'tool:stop',
             'tool:reconfigure',
+            'agent-ide:message',
             'node:read',
             'doctor:verify',
             'dns:list',
@@ -181,6 +182,9 @@ final class NodePermissionPresets
             'activity:read',
             'activity:list',
             'activity:show',
+
+            // Agent IDE
+            'agent-ide:message',
 
             // App
             'app:read',

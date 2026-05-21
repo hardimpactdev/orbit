@@ -23,6 +23,10 @@ final class NodePermissionRegistry
             'activity:show',
             'activity:read',
 
+            // Agent IDE
+            'agent-ide:*',
+            'agent-ide:message',
+
             // App
             'app:*',
             'app:list',
@@ -141,7 +145,6 @@ final class NodePermissionRegistry
             'role:list',
             'role:read',
             'role:remove',
-            'role:update',
 
             // Schedule
             'schedule:*',

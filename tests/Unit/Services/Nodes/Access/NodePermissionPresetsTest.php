@@ -167,6 +167,12 @@ describe('node permission presets', function (): void {
                 ->and($permissions)->toContain('tool:install')
                 ->and($permissions)->toContain('tool:remove');
         });
+
+        it('includes agent ide messaging', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('developer');
+
+            expect($permissions)->toContain('agent-ide:message');
+        });
     });
 
     describe('admin preset', function (): void {
@@ -222,6 +228,12 @@ describe('node permission presets', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('admin');
 
             expect($permissions)->toContain('node:read');
+        });
+
+        it('includes agent ide messaging', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('admin');
+
+            expect($permissions)->toContain('agent-ide:message');
         });
 
         it('does not include wildcard', function (): void {
