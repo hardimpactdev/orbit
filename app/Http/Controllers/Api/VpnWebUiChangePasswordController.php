@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Services\Vpn\VpnFailure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+#[RequiresPermission('vpn:write', servingNode: ServingNode::Gateway)]
 final class VpnWebUiChangePasswordController extends VpnControllerSupport
 {
     public function __invoke(Request $request): JsonResponse

@@ -37,12 +37,6 @@ final class VpnClientListCommand extends VpnCommandSupport
 
     private function executeVpnClientList(): int
     {
-        $denied = $this->ensureAllowedCaller();
-
-        if ($denied !== null) {
-            return $denied;
-        }
-
         if (! (bool) config('orbit.is_gateway', false)) {
             $this->activityForwardedToGateway = true;
             $payload = $this->forwardToGateway('vpn-client:list', options: ['totp' => $this->stringOption('totp')]);

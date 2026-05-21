@@ -29,12 +29,6 @@ final class VpnClientNewCommand extends VpnCommandSupport
 
     private function executeVpnClientNew(): int
     {
-        $denied = $this->ensureAllowedCaller();
-
-        if ($denied !== null) {
-            return $denied;
-        }
-
         $name = $this->stringArgument('name');
 
         if ($name === null) {
