@@ -132,3 +132,39 @@ authority](../architecture.md#gateway-implicit-authority).
 Internal `orbit:internal:*` commands are not public grant surfaces. They are
 invoked by controlled bootstrap/install flows and must not be exposed as remote
 API commands.
+
+## Commands outside the standard grants flow
+
+Most commands require a WireGuard identity, a serving node, and a stored grant
+with the required permission. The commands below are deliberate exceptions.
+
+### Pre-Grants Bootstrap
+
+These paths exist before useful grants can exist:
+
+- `node:new --role=gateway` for first-gateway bootstrap.
+- `gateway:add` for registering a local node connection to an existing gateway.
+
+### Local-Only Deployment Context
+
+These commands mutate or inspect only the caller's local machine and do not need
+a gateway permission check:
+
+- `node:default`
+- `dns:resolve-tld`
+- `dns:list`
+- `gateway:trust`
+- `update`
+
+### Authenticated But Ungated
+
+These commands require a gateway call and a known WireGuard peer identity, but
+do not require a permission check:
+
+- `profile`
+
+### Gateway-Host Rejection
+
+Commands in the pre-grants bootstrap and local-only deployment-context buckets
+may reject when running on a gateway host with `error.code=validation_failed`
+and `error.meta.reason=not_supported_on_gateway`.
