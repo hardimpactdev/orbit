@@ -41,7 +41,7 @@ machine-readable output.
 ## Requirements
 
 - The caller can reach the Orbit gateway.
-- The caller is authorized for Cloudflare provider administration.
+- The caller has `cf:ssl:disable` on the gateway.
 - The gateway has a Cloudflare API token configured.
 - The selected zone exists in the Cloudflare account.
 

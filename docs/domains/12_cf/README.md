@@ -21,13 +21,13 @@ There is no `doctor --family=cf` contract.
 
 These rules constrain all Cloudflare commands.
 
-- Cloudflare commands are gateway-admin provider utilities.
+- Cloudflare commands are gateway-resource provider utilities.
 - The gateway is the only Orbit node that talks directly to the Cloudflare API.
 - Cloudflare API tokens are external secrets stored on the gateway.
 - Callers on clients invoke Cloudflare commands through the gateway API and
-  must be authorized for provider administration.
-- App-role callers are denied before prompts or side effects. Cloudflare
-  provider administration is not app-local runtime work.
+  must have the command's `cf:*` permission on the gateway.
+- Authorization failures use `authorization_failed` with `missing_permission`
+  metadata. Cloudflare provider administration is not app-local runtime work.
 - Cloudflare commands require a real configured domain in a Cloudflare zone.
   Development TLDs and DNS resolver overrides local to the caller are not valid
   Cloudflare targets.

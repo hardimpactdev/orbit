@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized for Cloudflare provider administration.
+- The current node identity has `cf:dns:list` on the gateway.
 - The gateway has a Cloudflare API token configured.
 
 ## Signature
@@ -70,5 +70,5 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php` | Command contract for caller-role denial, zone resolution, provider authorization, gateway forwarding, provider failures, and no Orbit state writes. |
+| `tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php` | Command contract for authorization denial, zone resolution, provider authorization, gateway forwarding, provider failures, and no Orbit state writes. |
 | `tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

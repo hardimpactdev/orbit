@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized for Cloudflare provider administration.
+- The current node identity has `cf:cache:flush` on the gateway.
 - The gateway has a Cloudflare API token configured.
 
 ## Signature
@@ -77,6 +77,6 @@ Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php` | Command contract for caller-role denial, zone resolution, app-name resolution, provider authorization, provider failures, and no deploy or proxy mutations. |
+| `tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php` | Command contract for authorization denial, zone resolution, app-name resolution, provider authorization, provider failures, and no deploy or proxy mutations. |
 | `tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php` | Interactive zone prompt and non-interactive missing-zone failure. |
 | `tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
