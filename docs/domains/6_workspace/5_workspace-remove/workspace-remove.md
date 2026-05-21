@@ -113,9 +113,7 @@ The output format depends on whether `--json` is passed.
 ## Requirements
 
 - CLI caller must reach the Orbit gateway.
-- Must be run from a control or gateway peer. The gateway denies app-role
-  peers before any side effects.
-- Authorized node identity for the target workspace or parent app.
+- Caller identity must have `workspace:remove` on the workspace's owning node.
 - Gateway SSH access to the node is used for artifact cleanup when
   available. If cleanup cannot finish after workspace configuration removal,
   the command still succeeds and reports warnings with repair commands.

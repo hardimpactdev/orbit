@@ -1,7 +1,7 @@
 # Workspace Commands
 
 Workspace commands manage gateway-owned workspace configuration and the
-app-role artifacts derived from that configuration. A workspace belongs to an
+node artifacts derived from that configuration. A workspace belongs to an
 app, has a canonical name, and owns one workspace route lifecycle.
 
 ## Domain Rules
@@ -120,7 +120,7 @@ than inside it.
 | --- | --- | --- |
 | `name` | string | Workspace identity slug. Unique within the parent app. |
 | `app` | string | Parent app slug. |
-| `node` | string | Owning app-role slug inherited from the parent app. |
+| `node` | string | Owning node slug inherited from the parent app. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
@@ -149,10 +149,11 @@ The terms below define the key vocabulary used across workspace command contract
 
 The CLI is a thin gateway client. The gateway authenticates the caller's
 WireGuard peer and applies the scoped permission set stored on the grant that
-connects the caller to the workspace's owning app-role node. The CLI does not check or branch on caller role locally.
+connects the caller to the workspace's owning node. The CLI does not inspect
+legacy role labels locally.
 
 Self-targeting workspace commands — `workspace:setup` from inside a workspace
-path on the owning app-role node — flow through the gateway like any other
+path on the owning node — flow through the gateway like any other
 command and are authorized by the node's self-grant. See [Architecture:
 Self-grants and
 self-serving](../../architecture.md#self-grants-and-self-serving). The

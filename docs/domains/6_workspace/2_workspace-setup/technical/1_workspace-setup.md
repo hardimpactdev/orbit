@@ -132,6 +132,13 @@ worktree paths must live under `<app path>/.worktrees/`.
 Phases are ordered by reversibility cost; configuration is durable across
 phase boundaries.
 
+Authorization is checked once for `workspace:setup` on the resolved
+workspace's owning node before setup side effects begin. Sub-actions inside
+the setup run — proxy route convergence, remote artifact application, setup
+step execution, process starts, and HTTP probing — do not perform additional
+grant checks. Their authority derives from the single `workspace:setup`
+authorization decision.
+
 1. **Registry Convergence** (`phase=registry`):
    - Ensures a gateway workspace record exists for the resolved identity.
    - If the path is new to Orbit, the workspace is *adopted* under the
@@ -257,7 +264,7 @@ all documented command failures exit with the standard command failure status
 | `tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution across CWD outcomes and adapter probe branches, `workspace.path_is_app_root` pre-side-effect failure, `--path` absolute-validation, gateway-applied peer allowance, interactive prompts, JSON envelope alignment, and `success.meta.warnings[]` shape. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupPathResolutionTest.php` | CWD path-ownership outcomes (`workspace`, `app_root`, `inside_app`, `unregistered`); adapter-probe single/none/ambiguous/error branches; adapter-mismatch rejection against explicit `--app`/`[name]`; adapter-driven adoption recording `agent_ide` and `agent_ide_workspace_id`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupCallerRoleTest.php` | App-role peer forwarding to the gateway as a documented local-workflow exception, operator/gateway peer orchestration, and unauthorized-app rejection before side effects. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` authorization failures before side effects. |
 | `tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
 | `tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
 | `tests/E2E/Ephemeral/WorkspaceSetupStepExecutionTest.php` | Real step execution with lifecycle env verification and step-failure reporting. |
@@ -266,4 +273,3 @@ Role-specific behavior and test mapping live in:
 
 - [`2_workspace-setup_on-client.md`](2_workspace-setup_on-client.md)
 - [`3_workspace-setup_on-gateway-node.md`](3_workspace-setup_on-gateway-node.md)
-- [`4_workspace-setup_on-app-role.md`](4_workspace-setup_on-app-role.md)
