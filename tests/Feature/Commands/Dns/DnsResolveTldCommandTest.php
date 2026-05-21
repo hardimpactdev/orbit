@@ -266,7 +266,7 @@ describe('dns:resolve-tld base contract', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('target');
     });
 
-    it('rejects gateway callers before side effects', function (): void {
+    it('reports local DNS resolver changes as unsupported on gateway nodes before side effects', function (): void {
         config(['orbit.is_gateway' => true]);
 
         Process::fake();
@@ -281,8 +281,8 @@ describe('dns:resolve-tld base contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('gateway');
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['reason'])->toBe('not_supported_on_gateway');
 
         Process::assertNothingRan();
     });

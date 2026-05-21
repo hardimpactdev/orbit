@@ -166,7 +166,7 @@ describe('dns:list base contract', function (): void {
             ->and($payload['success']['meta']['count'])->toBe(1);
     });
 
-    it('rejects gateway callers before local resolver reads', function (): void {
+    it('reports local DNS listing as unsupported on gateway nodes before local resolver reads', function (): void {
         config(['orbit.is_gateway' => true]);
 
         $exitCode = Artisan::call('dns:list', [
@@ -176,8 +176,8 @@ describe('dns:list base contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('gateway');
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['reason'])->toBe('not_supported_on_gateway');
     });
 
     it('fails when the caller platform is unsupported', function (): void {

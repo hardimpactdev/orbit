@@ -60,13 +60,11 @@ class DnsListCommand extends Command implements Loggable
 
     private function executeDnsList(LocalResolver $resolver): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
-
-        if ($callerRole === 'gateway') {
+        if ((bool) config('orbit.is_gateway', false)) {
             return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control node.',
-                meta: ['caller_role' => 'gateway'],
+                code: 'validation_failed',
+                message: 'This command is not supported on gateway nodes.',
+                meta: ['reason' => 'not_supported_on_gateway'],
             );
         }
 
