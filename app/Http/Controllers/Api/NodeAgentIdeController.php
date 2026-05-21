@@ -6,13 +6,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\SetNodeAgentIdeApiRequest;
 use App\Models\Node;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('node:agent', servingNode: ServingNode::Target)]
 final class NodeAgentIdeController implements Loggable
 {
     private ?Node $activitySubject = null;
@@ -37,23 +39,6 @@ final class NodeAgentIdeController implements Loggable
 
         if (! $caller instanceof Node) {
             return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from an operator or gateway node.',
-                meta: ['caller_role' => 'app'],
-                status: 403,
-            );
-        }
-
-        if ($caller->role === 'control') {
-            $authorization = $this->authorizeOperatorCaller($caller);
-
-            if ($authorization instanceof JsonResponse) {
-                return $authorization;
-            }
         }
 
         $node = Node::query()
@@ -92,42 +77,6 @@ final class NodeAgentIdeController implements Loggable
                 'data' => $data,
             ],
         ]);
-    }
-
-    private function authorizeOperatorCaller(Node $caller): ?JsonResponse
-    {
-        $gateway = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->first();
-
-        if (! $gateway instanceof Node) {
-            return $this->authorizationFailed(
-                message: 'This operator node is not authorized to update node configuration.',
-                meta: [
-                    'required_node' => null,
-                    'caller_role' => 'control',
-                ],
-            );
-        }
-
-        $hasGatewayAccess = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->exists();
-
-        if ($hasGatewayAccess) {
-            return null;
-        }
-
-        return $this->authorizationFailed(
-            message: 'This operator node is not authorized to update node configuration.',
-            meta: [
-                'required_node' => $gateway->name,
-                'caller_role' => 'control',
-            ],
-        );
     }
 
     /**

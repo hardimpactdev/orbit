@@ -10,7 +10,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Deploy\ListDeployHistoryRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
 use App\Services\Deploy\DeployManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -26,9 +25,9 @@ class DeployHistoryCommand extends Command
 {
     use RendersDeployResponses;
 
-    public function handle(DeployManager $deploy, CallerRoleResolver $roles): int
+    public function handle(DeployManager $deploy): int
     {
-        $callerRole = $roles->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $app = $this->stringArgument('app');
 
@@ -43,7 +42,7 @@ class DeployHistoryCommand extends Command
         }
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 /** @var DeployResponse $dto */
                 $dto = app(GatewayConnector::class)
                     ->send(new ListDeployHistoryRequest($app, $limit))

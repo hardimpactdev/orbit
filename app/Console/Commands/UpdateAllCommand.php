@@ -82,9 +82,9 @@ class UpdateAllCommand extends Command implements Loggable
 
     private function executeUpdateAll(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
-        if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
+        if (! $onGateway && ! $this->hasConfiguredGateway()) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required to update the fleet.',
@@ -92,7 +92,7 @@ class UpdateAllCommand extends Command implements Loggable
             );
         }
 
-        if ($callerRole === 'control') {
+        if (! $onGateway) {
             return $this->executeControlPath($updater, $gatewayStream);
         }
 

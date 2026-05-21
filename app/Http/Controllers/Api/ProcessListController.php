@@ -28,12 +28,6 @@ final readonly class ProcessListController implements Loggable
             return $this->fail('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        if (! in_array($caller->role, ['control', 'gateway', 'app'], true)) {
-            return $this->fail('caller_role_not_allowed', 'The caller role is not allowed to list processes.', [
-                'caller_role' => $caller->role,
-            ], 403);
-        }
-
         try {
             $data = $this->payload->forContext(
                 appName: $this->stringQuery($request, 'app'),

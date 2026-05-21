@@ -15,10 +15,9 @@ These terms define the Cloudflare command domain and its relationship to the gat
 - **Cloudflare provider integration:** External DNS/CDN provider integration
   used for real production domains. It supports app and proxy behavior. It does
   not replace gateway-owned Orbit app, proxy, TLS, or DNS configuration.
-- **Provider administration:** Gateway-admin workflow that reads or mutates
-  Cloudflare provider state through the gateway. Operator callers must go
-  through the gateway; app-role callers are denied before prompts or side
-  effects.
+- **Provider administration:** Gateway-resource workflow that reads or mutates
+  Cloudflare provider state through the gateway. Non-gateway callers must go
+  through the gateway and hold the command's `cf:*` permission on that gateway.
 - **Cloudflare API token:** External provider secret stored on the gateway as
   `CLOUDFLARE_API_TOKEN` and used only by the gateway when calling the
   Cloudflare API. `CLOUDFLARE_API_EMAIL` is optional compatibility for

@@ -7,14 +7,15 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\UpdateNodeApiRequest;
 use App\Models\Node;
 use App\Services\Dns\DnsmasqReconciler;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('node:update', servingNode: ServingNode::Target)]
 final class NodeUpdateController implements Loggable
 {
     private ?Node $activitySubject = null;
@@ -26,10 +27,6 @@ final class NodeUpdateController implements Loggable
      */
     private array $activityChangedFields = [];
 
-    public function __construct(
-        private readonly NodeRoleAssignments $nodeRoleAssignments,
-    ) {}
-
     public function __invoke(UpdateNodeApiRequest $request, string $name, ReenactNodeArtifacts $reenactNodeArtifacts): JsonResponse
     {
         $this->activityTargetName = $name;
@@ -40,26 +37,6 @@ final class NodeUpdateController implements Loggable
 
         if (! $caller instanceof Node) {
             return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
-        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
-
-        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from an operator or gateway node.',
-                meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
-                status: 403,
-            );
-        }
-
-        if (! $callerIsGateway) {
-            $authorization = $this->authorizeOperatorCaller($caller);
-
-            if ($authorization instanceof JsonResponse) {
-                return $authorization;
-            }
         }
 
         $node = Node::query()
@@ -170,41 +147,6 @@ final class NodeUpdateController implements Loggable
                 'next_command' => 'doctor --fix --family=node --restore',
             ]];
         }
-    }
-
-    private function authorizeOperatorCaller(Node $caller): ?JsonResponse
-    {
-        $gateway = $this->nodeRoleAssignments
-            ->activeGatewayNodeQuery()
-            ->orderBy('name')
-            ->first();
-
-        if (! $gateway instanceof Node) {
-            return $this->authorizationFailed(
-                message: 'This operator node is not authorized to update nodes.',
-                meta: [
-                    'required_node' => null,
-                    'caller_role' => 'control',
-                ],
-            );
-        }
-
-        $hasGatewayAccess = DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->exists();
-
-        if ($hasGatewayAccess) {
-            return null;
-        }
-
-        return $this->authorizationFailed(
-            message: 'This operator node is not authorized to update nodes.',
-            meta: [
-                'required_node' => $gateway->name,
-                'caller_role' => 'control',
-            ],
-        );
     }
 
     /**

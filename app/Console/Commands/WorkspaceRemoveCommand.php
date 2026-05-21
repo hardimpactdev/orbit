@@ -36,14 +36,14 @@ class WorkspaceRemoveCommand extends Command
 
     public function handle(RemoveWorkspace $removeWorkspace): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $app = $this->stringOption('app');
         $workspaceFromCwd = null;
         $name = $this->stringArgument('name');
 
         if ($name === null) {
-            $workspaceFromCwd = $this->resolveWorkspaceFromCwd($callerRole);
+            $workspaceFromCwd = $this->resolveWorkspaceFromCwd($onGateway);
             $name = $workspaceFromCwd?->name;
             $app ??= $workspaceFromCwd?->app?->name;
         }
@@ -90,7 +90,7 @@ class WorkspaceRemoveCommand extends Command
             );
         }
 
-        if ($callerRole === 'control') {
+        if (! $onGateway) {
             return $this->forwardRemove($name, $app);
         }
 
@@ -195,9 +195,9 @@ class WorkspaceRemoveCommand extends Command
         ]);
     }
 
-    private function resolveWorkspaceFromCwd(string $callerRole): ?Workspace
+    private function resolveWorkspaceFromCwd(bool $onGateway): ?Workspace
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             return null;
         }
 

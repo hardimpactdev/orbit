@@ -7,22 +7,25 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Workspaces\RemoveWorkspace;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\Workspace;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('workspace:remove', servingNode: ServingNode::WorkspaceOwning)]
 final class WorkspaceRemoveController implements Loggable
 {
     private ?Workspace $activitySubject = null;
 
     public function __construct(
-        private readonly NodeRoleAssignments $nodeRoleAssignments,
+        private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(string $name, Request $request, RemoveWorkspace $removeWorkspace): JsonResponse
@@ -34,16 +37,12 @@ final class WorkspaceRemoveController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         if ($request->boolean('destructive_consent') !== true) {
             return $this->error('validation_failed', 'Use --force to remove this workspace.', ['field' => 'force'], 422);
         }
 
         $app = $this->stringQuery($request, 'app');
-        $matches = $this->matchingWorkspaces($caller, $name, $app);
+        $matches = $this->matchingWorkspaces($name, $app);
 
         if ($matches->isEmpty()) {
             return $this->error('workspace.not_found', "Workspace '{$name}' not found in registry.", array_filter([
@@ -60,12 +59,19 @@ final class WorkspaceRemoveController implements Loggable
 
         $workspace = $matches->firstOrFail();
 
-        if (! $this->callerCanRemoveWorkspace($caller, $workspace)) {
-            return $this->error('authorization_failed', 'This caller is not authorized to remove this workspace.', [
+        $node = $workspace->app?->node;
+
+        if (! $node instanceof Node) {
+            return $this->error('authorization_failed', 'Workspace owning node could not be resolved.', [
                 'name' => $workspace->name,
                 'app' => $workspace->app?->name,
-                'caller_role' => $caller->role,
             ], 403);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $node, 'workspace:remove');
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, 'workspace:remove');
         }
 
         $this->activitySubject = $workspace;
@@ -94,50 +100,13 @@ final class WorkspaceRemoveController implements Loggable
     /**
      * @return Collection<int, Workspace>
      */
-    private function matchingWorkspaces(Node $caller, string $name, ?string $app): Collection
+    private function matchingWorkspaces(string $name, ?string $app): Collection
     {
         return Workspace::query()
             ->with(['app.node', 'app.processes'])
             ->where('name', $name)
             ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
             ->get();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function visibleAppNodeIds(Node $caller): array
-    {
-        $visibleNodeIds = $this->hostedAppNodeIds();
-
-        if ($caller->role === 'gateway') {
-            return $visibleNodeIds;
-        }
-
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $visibleNodeIds)
-            ->pluck('node_access.serving_node_id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
-            ->all();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function hostedAppNodeIds(): array
-    {
-        return $this->nodeRoleAssignments->activeNodeIdsForRole('app-development');
-    }
-
-    private function callerCanRemoveWorkspace(Node $caller, Workspace $workspace): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        return $workspace->app?->node_id !== null
-            && in_array($workspace->app->node_id, $this->visibleAppNodeIds($caller), true);
     }
 
     private function stringQuery(Request $request, string $key): ?string
@@ -159,6 +128,20 @@ final class WorkspaceRemoveController implements Loggable
                 'meta' => empty($meta) ? (object) [] : $meta,
             ],
         ], $status);
+    }
+
+    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
+    {
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+            403,
+        );
     }
 
     public function effect(): ActivityLogType

@@ -161,7 +161,7 @@ describe('tool:start JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['caller_role' => 'control'],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:start'],
         ], 403],
         'tool.not_found' => [[
             'code' => 'tool.not_found',

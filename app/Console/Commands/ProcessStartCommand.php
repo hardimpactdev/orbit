@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Processes\StartProcessesRequest;
 use App\Http\Gateway\Responses\Processes\ProcessStartResponse;
 use App\Models\App;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -33,12 +32,12 @@ class ProcessStartCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(StartProcesses $startProcesses, CallerRoleResolver $callerRoleResolver): int
+    public function handle(StartProcesses $startProcesses): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 return $this->forwardStart();
             }
 

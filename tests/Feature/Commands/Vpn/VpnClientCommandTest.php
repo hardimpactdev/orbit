@@ -155,7 +155,7 @@ it('protects active node peers from vpn-client writes', function (): void {
         ->and(Node::query()->where('name', 'app-1')->exists())->toBeTrue();
 });
 
-it('runs on gateway machines without client-side role checks', function (): void {
+it('runs on gateway machines without client-side caller checks', function (): void {
     vpnLocalNode('app');
     NodeRoleAssignment::factory()->create([
         'node_id' => Node::query()->firstOrFail()->id,

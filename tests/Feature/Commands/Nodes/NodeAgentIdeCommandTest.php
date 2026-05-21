@@ -320,7 +320,7 @@ describe('node:agent-ide command', function (): void {
         $mockClient->assertSent(SetNodeAgentIdeRequest::class);
     });
 
-    it('queries gateway adapter choices before prompting configured control callers', function (): void {
+    it('queries gateway adapter choices before prompting configured callers', function (): void {
         config(['orbit.is_gateway' => false]);
 
         setupNodeAgentIdeControlCaller();
@@ -383,7 +383,7 @@ describe('node:agent-ide command', function (): void {
         $mockClient->assertSent(SetNodeAgentIdeRequest::class);
     });
 
-    it('fails before prompting when configured control callers cannot fetch adapter choices', function (): void {
+    it('fails before prompting when configured callers cannot fetch adapter choices', function (): void {
         config(['orbit.is_gateway' => false]);
 
         setupNodeAgentIdeControlCaller();
@@ -427,10 +427,11 @@ describe('node:agent-ide command', function (): void {
         fakeNodeAgentIdeGateway([
             'error' => [
                 'code' => 'authorization_failed',
-                'message' => 'This control node is not authorized to update node configuration.',
+                'message' => "This node is not authorized for 'node:agent' on 'app-1'.",
                 'meta' => [
-                    'required_node' => 'gateway-1',
-                    'caller_role' => 'control',
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'node:agent',
+                    'serving_node' => 'app-1',
                 ],
             ],
         ], 403);
@@ -445,7 +446,7 @@ describe('node:agent-ide command', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toBe('This control node is not authorized to update node configuration.')
-            ->and($payload['error']['meta']['required_node'])->toBe('gateway-1');
+            ->and($payload['error']['message'])->toBe("This node is not authorized for 'node:agent' on 'app-1'.")
+            ->and($payload['error']['meta']['missing_permission'])->toBe('node:agent');
     });
 });

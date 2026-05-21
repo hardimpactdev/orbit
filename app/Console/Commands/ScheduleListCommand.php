@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Schedules\SchedulePayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -24,12 +23,12 @@ use function Laravel\Prompts\table;
 #[Description('List configured schedules')]
 class ScheduleListCommand extends Command
 {
-    public function handle(SchedulePayload $payload, CallerRoleResolver $callerRoleResolver): int
+    public function handle(SchedulePayload $payload): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            $data = $this->fetchSchedules($payload, $callerRole);
+            $data = $this->fetchSchedules($payload, $onGateway);
         } catch (GatewayApiException $e) {
             return $this->failCommand($e->errorCode() ?? 'gateway_unavailable', $e->getMessage(), $e->errorMeta());
         } catch (Throwable) {
@@ -48,12 +47,12 @@ class ScheduleListCommand extends Command
     /**
      * @return array{schedules: list<array<string, mixed>>, meta: array<string, mixed>}
      */
-    private function fetchSchedules(SchedulePayload $payload, string $callerRole): array
+    private function fetchSchedules(SchedulePayload $payload, bool $onGateway): array
     {
         $app = $this->stringOption('app');
         $node = $this->stringOption('node');
 
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             return $payload->list($app, $node);
         }
 

@@ -54,6 +54,20 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   of observed backend routes must use explicit
   `doctor --fix --family=proxy --adopt` semantics.
 
+## Permissions
+
+Proxy API requests are authorized against the route's serving node.
+
+- `proxy:read` covers `proxy:list`; row-level filtering applies when the caller
+  has access to only some serving nodes.
+- `proxy:add` covers custom proxy and redirect route creation on the selected
+  serving node.
+- `proxy:remove` covers removal of custom proxy and redirect routes on the
+  route's owning node.
+
+Authorization failures use `authorization_failed` with standard
+`missing_permission` metadata.
+
 ## App and workspace ingress baseline
 
 App and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed apps and workspaces:

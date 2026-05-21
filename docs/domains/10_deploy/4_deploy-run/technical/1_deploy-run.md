@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-role callers are denied by the gateway before prompts or side effects because deployment runs mutate app-owned gateway history and execute node-side deployment steps.
+- The current node identity has `deploy:run` on the production app's owning node.
 - The gateway can reach the selected production app's owning node.
 
 ## Signature
@@ -122,8 +122,8 @@ deployment status when reporting `app.latest_deployment_failed` or
 | `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering the deploy-run lifecycle; see detail below. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |
 
-`DeployCommandTest.php` covers production app lookup, app-role denial before
-prompts or side effects, authorization, empty pipeline failure, run creation,
+`DeployCommandTest.php` covers production app lookup, grant denial before
+side effects, authorization, empty pipeline failure, run creation,
 ordered step execution through the gateway from the app source path, timeout
 enforcement, metadata exposure, and progress-tree rendering.
 

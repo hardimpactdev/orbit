@@ -9,7 +9,8 @@
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
 - Gateway callers execute locally.
-- Callers other than the gateway must be authorized by the gateway through the existing grant pattern.
+- Non-gateway callers have `role:add` on the target node, or an equivalent
+  gateway-admin grant.
 
 ## Signature
 
@@ -52,6 +53,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Gateway callers execute the service locally.
 - Non-gateway callers forward to the gateway through typed HTTPS.
+- The gateway authorizes the request with `role:add` on the target node.
 
 ## Renderer Contracts
 
@@ -64,7 +66,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php` | Add success, role validation including the `vpn` and `agent` rejection paths, tld validation, conflict validation, and control forwarding. |
+| `tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php` | Add success, role validation including the `vpn` and `agent` rejection paths, tld validation, conflict validation, and configured-caller forwarding. |
 | `tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php` | Exactly one top-level `success` key on add success and exactly one top-level `error` key on add validation failure. |
 
 ## Failure Semantics

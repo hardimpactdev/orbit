@@ -330,7 +330,7 @@ describe('tool:remove command contract', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['caller_role' => 'control'],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:remove'],
         ], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',

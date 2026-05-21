@@ -206,4 +206,3 @@ Role-specific behavior and test mapping live in:
 
 - [`2_workspace-new_on-client.md`](2_workspace-new_on-client.md)
 - [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md)
-- [`4_workspace-new_on-app-role.md`](4_workspace-new_on-app-role.md)

@@ -143,6 +143,16 @@ Authorization is two gates: a grant edge between a consuming node and a serving 
 
 Any node with a gateway-known identity and the required grants can act through that identity-and-grants path. There is no separate "operator" or "control" role — capability comes from the grants attached to the node, not from a built-in label.
 
+#### Gateway implicit authority
+
+A node carrying the `gateway` role has implicit authority for every permission
+against every other node. This is the one named exception to the grants-only
+model: the gateway is the singleton policy owner and must be able to converge
+the fleet even when no explicit self- or cross-node grant exists for a managed
+node. It is implemented by `NodeAccessAuthorizer::allows()` when the caller has
+an active `gateway` role assignment; it is not a runtime feature flag and does
+not create stored grant rows.
+
 This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-development` role and no grant at all to nodes with the `app-production` role.

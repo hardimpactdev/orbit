@@ -76,7 +76,9 @@ The command supports four modes. Verify mode (no flag) compares only and does no
 
 `--fix` is the interactive driver, not a direction. The two directions are restore (gateway to node) and adopt (node to gateway). `--restore` and `--adopt` are mutually exclusive. `--restore` is explicit repair-mode consent for family-declared safe actions. `--adopt` is explicit adoption-mode consent and the only doctor mode that mutates gateway configuration.
 
-The gateway authorizes verify-mode runs for app-role peers. It denies `--fix`, `--restore`, or `--adopt` from app-role peers unless a family doctor contract documents a narrow app-role write exception.
+The gateway authorizes each run against the resolved target node. Verify mode
+requires `doctor:verify`; resolution actions require `doctor:restore` or
+`doctor:adopt` for the selected direction.
 
 ## Output
 

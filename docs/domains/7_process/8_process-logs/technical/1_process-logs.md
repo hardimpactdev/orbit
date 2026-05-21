@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer to read process logs for the target app or workspace context. `unknown` callers are denied.
+- The gateway authorizes the authenticated peer for `process:logs` on the target app's owning node.
 - Log access requires gateway reachability to the owning node.
 
 ## Signature
@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
-| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may read. |
-| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace of the selected app that the caller may read. |
+| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
+| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer count of historical log lines to read before streaming or returning. |
 | `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
@@ -74,7 +74,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:GET /processes/{name}/log` |
 | Effect | `read` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
 | Properties | `app` (string or null) and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
 | Description | derived |
 
@@ -87,8 +87,8 @@ Primary test owners:
 | `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for `process:logs` behavior; see detail below. |
 | `tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
 
-`ProcessLogsCommandTest.php` covers context resolution, app-role caller
-allowance, unknown-role denial, bounded log reads, follow-mode streaming, line
+`ProcessLogsCommandTest.php` covers context resolution, grant authorization,
+missing-grant denial, bounded log reads, follow-mode streaming, line
 count validation, `--json` with `--follow` rejection, no configuration mutation,
 no direct Supervisor log read, log read failure, and authorization failure.
 

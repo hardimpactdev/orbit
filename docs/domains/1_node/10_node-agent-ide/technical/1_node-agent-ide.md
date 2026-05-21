@@ -7,15 +7,15 @@
 **Effects:** `write`.
 
 **Prerequisites:**
-- The gateway authenticates the CLI and authorizes `node:agent-ide` only when
-  the caller's gateway-known role is `control` or `gateway`. App-role callers
-  are rejected by the gateway before side effects.
-- The CLI does not perform a local app-role check or a separate `/api/me`
-  preflight. Local input validation or prompting may occur before the final
-  gateway write request unless another gateway request naturally returns the
-  role denial first.
-- Gateway callers can read and write gateway-owned node configuration.
-- Operator callers have configured gateway access.
+- The gateway authenticates the CLI and authorizes the write with the
+  `node:agent` permission on the target node.
+- The CLI does not perform a local role check or a separate identity preflight.
+  Local input validation or prompting may occur before the final gateway write
+  request unless another gateway request naturally returns the authorization
+  denial first.
+- Gateway callers can read and write gateway-owned node configuration through
+  the gateway host path.
+- Configured non-gateway callers forward the write request to the gateway.
 - The target node exists in gateway node configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
@@ -53,7 +53,7 @@ is invalid at node scope.
 3. Resolve `node_agent_ide.adapter` from `[agent_ide]`. The prompt presents
    the reserved `none` token followed by the list of supported adapters from
    the shared Agent IDE adapter registry. Gateway callers read the registry
-   locally; operator callers query the gateway adapter choices API before
+   locally; non-gateway callers query the gateway adapter choices API before
    rendering the prompt.
 4. Validate `node_agent_ide.adapter` immediately.
    - Must be `none` or appear in the gateway-owned adapter registry. The gateway is the sole
@@ -177,7 +177,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, app-role denial, operator-caller gateway forwarding, no downstream warning payloads, and read-only guarantees. |
+| `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, grant denial, non-gateway forwarding, no downstream warning payloads, and read-only guarantees. |
 
 Read-only guarantees mean no SSH and no session creation during the command.
 

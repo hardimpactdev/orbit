@@ -285,12 +285,16 @@ describe('node:default human renderer contract', function (): void {
     it('renders authorization-failed prose error', function (): void {
         $result = invokeNodeDefaultFailCommandHuman(
             code: 'authorization_failed',
-            message: "This node is not authorized to operate on 'app-1'.",
-            meta: ['name' => 'app-1', 'caller_role' => 'control'],
+            message: "This node is not authorized for 'node:read' on 'gateway-1'.",
+            meta: [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:read',
+                'serving_node' => 'gateway-1',
+            ],
         );
 
         expect($result['exitCode'])->not->toBe(0);
-        expect($result['output'])->toContain("This node is not authorized to operate on 'app-1'.");
+        expect($result['output'])->toContain("This node is not authorized for 'node:read' on 'gateway-1'.");
     });
 
     it('renders gateway authorization failures without collapsing the message', function (): void {
@@ -308,19 +312,19 @@ describe('node:default human renderer contract', function (): void {
             ->assertExitCode(1);
     });
 
-    it('renders gateway caller-role failures without collapsing the message', function (): void {
+    it('renders gateway validation failures without collapsing the message', function (): void {
         fakeNodeDefaultHumanGateway([
             'error' => [
-                'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control node.',
+                'code' => 'validation_failed',
+                'message' => 'node:default is not supported on gateway nodes.',
                 'meta' => [
-                    'caller_role' => 'app',
+                    'reason' => 'not_supported_on_gateway',
                 ],
             ],
-        ], 403);
+        ], 422);
 
         \Pest\Laravel\artisan('node:default', ['name' => 'app-1'])
-            ->expectsOutputToContain('This command may only be run from a control node.')
+            ->expectsOutputToContain('node:default is not supported on gateway nodes.')
             ->doesntExpectOutputToContain('Gateway connection is required to set a default node.')
             ->assertExitCode(1);
     });

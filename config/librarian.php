@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Docs\Librarian\Rules\ActivityLoggingContractRule;
-use App\Docs\Librarian\Rules\AppNodeWriteDenialRule;
 use App\Docs\Librarian\Rules\AppPhpVersionContractRule;
 use App\Docs\Librarian\Rules\BehaviorContractStructureRule;
 use App\Docs\Librarian\Rules\CanonicalBehaviorBoundaryRule;
@@ -108,7 +107,6 @@ return [
         SharedFailureVocabularyRule::class,
         NextActionContractRule::class,
         AppPhpVersionContractRule::class,
-        AppNodeWriteDenialRule::class,
         ReadCommandNoLiveProbeRule::class,
         DriftIssueSuffixRule::class,
         CommonFailureNotRestatedRule::class,

@@ -187,7 +187,10 @@ describe('proxy:list', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read the proxy route registry.',
-                    'meta' => ['caller_role' => 'app'],
+                    'meta' => [
+                        'reason' => 'missing_permission',
+                        'missing_permission' => 'proxy:read',
+                    ],
                 ],
             ], 403),
         ]);
@@ -197,7 +200,7 @@ describe('proxy:list', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
+            ->and($payload['error']['meta']['missing_permission'])->toBe('proxy:read');
     });
 
     it('does not mutate proxy registry state or run live probes', function (): void {

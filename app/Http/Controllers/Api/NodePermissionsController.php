@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\NodePermissionsApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -20,32 +21,12 @@ final readonly class NodePermissionsController implements Loggable
 {
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
-    private function callerCanManagePermissions(Node $caller): bool
+    private function requiredPermission(NodePermissionsApiRequest $request): string
     {
-        if ($this->nodeRoleAssignments->nodeIsGateway($caller)) {
-            return true;
-        }
-
-        $gateway = $this->nodeRoleAssignments->activeGatewayNodeQuery()->first();
-
-        if (! $gateway instanceof Node) {
-            return false;
-        }
-
-        $grant = NodeAccess::query()
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->first();
-
-        if ($grant === null) {
-            return false;
-        }
-
-        $permissions = $grant->permissions ?? ['*'];
-
-        return in_array('*', $permissions, true);
+        return $this->isReadMode($request) ? 'node:read' : 'node:permissions';
     }
 
     public function __invoke(NodePermissionsApiRequest $request): JsonResponse
@@ -58,8 +39,10 @@ final readonly class NodePermissionsController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if (! $this->callerCanManagePermissions($caller)) {
-            return $this->authorizationFailed('Only gateway-admin callers may manage node permissions.');
+        $authorization = $this->authorizeCaller($caller, $this->requiredPermission($request));
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         $consumerName = $request->consumingNodeName();
@@ -80,7 +63,7 @@ final readonly class NodePermissionsController implements Loggable
         $addOpt = $request->addInput();
         $removeOpt = $request->removeInput();
 
-        $modeCount = (int) ($preset !== null) + (int) ($permissionsOpt !== null) + (int) ($addOpt !== null) + (int) ($removeOpt !== null);
+        $modeCount = $this->modeCount($request);
 
         if ($modeCount > 1) {
             return $this->error(
@@ -222,6 +205,49 @@ final readonly class NodePermissionsController implements Loggable
         }
 
         return response()->json($payload);
+    }
+
+    private function authorizeCaller(Node $caller, string $permission): ?JsonResponse
+    {
+        $gateway = $this->nodeRoleAssignments->activeGatewayNodeQuery()->first();
+
+        if (! $gateway instanceof Node) {
+            return $this->authorizationFailed(
+                'This action requires a grant to the gateway.',
+                [
+                    'reason' => 'serving_node_unresolved',
+                    'missing_permission' => $permission,
+                ],
+            );
+        }
+
+        $result = $this->authorizer->authorize($caller, $gateway, $permission);
+
+        if ($result->allowed) {
+            return null;
+        }
+
+        return $this->authorizationFailed(
+            "This action requires the {$permission} permission on a grant to the gateway.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $gateway->name,
+            ],
+        );
+    }
+
+    private function isReadMode(NodePermissionsApiRequest $request): bool
+    {
+        return $this->modeCount($request) === 0;
+    }
+
+    private function modeCount(NodePermissionsApiRequest $request): int
+    {
+        return (int) ($request->preset() !== null)
+            + (int) ($request->permissionsInput() !== null)
+            + (int) ($request->addInput() !== null)
+            + (int) ($request->removeInput() !== null);
     }
 
     /**

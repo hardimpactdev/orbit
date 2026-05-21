@@ -8,10 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- App-role callers are denied by the gateway with
-  `error.code=caller_role_not_allowed` before prompts or side effects.
 - The target app name or hostname must resolve to exactly one gateway app record.
-- The caller is authorized to manage the target app.
+- The caller has `app:prune` on the app's owning node.
 - At least one agent IDE adapter is configured for the app (directly, inherited from the node, or as an extension).
 
 ## Signature
@@ -145,5 +143,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php` | Stale workspace identification, dry-run logic, delegation to workspace removal semantics, database skipping behavior, and lock acquisition. |
-| `tests/Feature/Commands/AppPruneCommandTest.php` | CLI contract: arguments, options, destructive consent, interactive prompts, renderer selection, `workspace:remove` warning propagation, and warning payload shape for `success.meta.warnings[]`. |
+| `tests/Feature/Commands/Apps/AppPruneCommandTest.php` | CLI contract: arguments, options, destructive consent, interactive prompts, renderer selection, `workspace:remove` warning propagation, and warning payload shape for `success.meta.warnings[]`. |
+| `tests/Feature/Http/Api/AppPruneControllerTest.php` | Gateway API authorization with `app:prune`, dry-run response shape, and structured authorization failures. |
 | `tests/E2E/Ephemeral/AppPruneTest.php` | End-to-end execution with real agent IDE adapters (mocked or ephemeral) and node-side artifact verification. |

@@ -34,12 +34,12 @@ class AppRemoveCommand extends Command
 
     public function handle(RemoveApp $removeApp): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $selector = $this->stringArgument('app');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = $this->promptForApp($callerRole);
+            $selector = $this->promptForApp($executionContext);
 
             if (is_int($selector)) {
                 return $selector;
@@ -50,7 +50,7 @@ class AppRemoveCommand extends Command
             return $this->failValidation('app', 'App name is required.');
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             $consent = $this->confirmRemoval($selector);
 
             if (is_int($consent)) {
@@ -153,9 +153,9 @@ class AppRemoveCommand extends Command
         ]);
     }
 
-    private function promptForApp(string $callerRole): string|int
+    private function promptForApp(string $executionContext): string|int
     {
-        $apps = $this->fetchPromptApps($callerRole);
+        $apps = $this->fetchPromptApps($executionContext);
 
         if ($apps instanceof GatewayApiException) {
             return $this->failCommand(
@@ -192,9 +192,9 @@ class AppRemoveCommand extends Command
     /**
      * @return list<array<string, mixed>>|GatewayApiException
      */
-    private function fetchPromptApps(string $callerRole): array|GatewayApiException
+    private function fetchPromptApps(string $executionContext): array|GatewayApiException
     {
-        if ($callerRole === 'gateway') {
+        if ($executionContext === 'gateway') {
             return App::query()
                 ->with('node')
                 ->get()

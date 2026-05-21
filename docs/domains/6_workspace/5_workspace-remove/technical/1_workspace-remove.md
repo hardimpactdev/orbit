@@ -18,7 +18,7 @@
 This is the canonical technical contract for the `workspace:remove` command. It
 owns the signature, input resolution, behavior, and failure semantics for the
 primary destructive command of the workspace family. It removes
-gateway-owned workspace configuration and its derived app-role artifacts.
+gateway-owned workspace configuration and its derived node artifacts.
 
 ## Signature
 
@@ -231,5 +231,5 @@ family doctor — not a removal failure.
 | `tests/Feature/Actions/Workspaces/RemoveWorkspaceActionTest.php` | Phase A atomic configuration removal, Phase B step ordering, `--keep-files` worktree preservation, partial cleanup warnings, and teardown step execution. |
 | `tests/Feature/Concerns/ResolveWorkspaceFromCwdTest.php` | CWD-to-workspace resolution, self-targeting detection, and unresolved-CWD failure. |
 | `tests/Unit/Actions/Workspaces/TeardownStepRunnerTest.php` | Teardown step ordering and execution environment. |
-| `tests/Feature/Commands/Workspaces/WorkspaceRemoveCallerRoleTest.php` | Control and gateway peer allowance and app-role peer denial before any side effects, asserted via gateway-applied authorization. |
+| `tests/Feature/Commands/Workspaces/WorkspaceRemoveCommandTest.php` | Gateway forwarding and `workspace:remove` authorization failures before any side effects. |
 | `tests/E2E/Ephemeral/WorkspaceRemoveTest.php` | End-to-end `workspace:remove` flow with SSH artifact cleanup, `--keep-files`, `--force`, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

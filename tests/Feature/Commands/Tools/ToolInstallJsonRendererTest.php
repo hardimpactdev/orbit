@@ -204,7 +204,7 @@ describe('tool:install JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['caller_role' => 'control'],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:install'],
         ], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',

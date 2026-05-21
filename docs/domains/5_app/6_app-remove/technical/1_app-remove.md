@@ -12,7 +12,7 @@
   available. SSH reachability is not a pre-configuration prerequisite; if cleanup
   cannot finish after app configuration removal, the command succeeds with structured
   warnings.
-- App-role callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
+- The caller has `app:remove` on the app's owning node.
 
 This is the canonical technical contract for the `app:remove` command. It owns the signature, input resolution, behavior, and failure semantics.
 
@@ -118,7 +118,7 @@ removal attempts.
 | --- | --- |
 | Type | `api:DELETE /apps/{app}` |
 | Effect | `destructive` |
-| Subject | `App` when the app is resolved before deletion; `none` for not-found, caller-role, or authorization failures before the target app can be logged. |
+| Subject | `App` when the app is resolved before deletion; `none` for not-found or authorization failures before the target app can be logged. |
 | Properties | `name` (string), the requested route selector for the app being removed. No raw shell command text, node-side output, or secrets. |
 | Description | derived |
 
@@ -128,5 +128,5 @@ removal attempts.
 | --- | --- |
 | `tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Configuration removal, dependent artifact deletion logic, and self-targeting detection. |
 | `tests/Unit/Concerns/ResolvesAppFromPathTest.php` | App resolution from name, hostname, and current working directory context. |
-| `tests/Feature/Commands/Apps/AppRemoveCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-role caller denial before prompts or side effects, and forwarded caller authorization failure. |
+| `tests/Feature/Http/Api/AppRemoveControllerTest.php` | Gateway API removal authorization with `app:remove`, destructive consent, configuration cleanup, and structured success/error envelopes. |
 | `tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

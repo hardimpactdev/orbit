@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized for Cloudflare provider administration.
+- The current node identity has `cf:dns:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
 
 ## Signature
@@ -75,5 +75,5 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php` | Command contract for caller-role denial, zone inference, A/AAAA validation, idempotent equivalent records, conflicting records, provider authorization, and no Orbit configuration writes. |
+| `tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php` | Command contract for authorization denial, zone inference, A/AAAA validation, idempotent equivalent records, conflicting records, provider authorization, and no Orbit configuration writes. |
 | `tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

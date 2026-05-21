@@ -9,8 +9,8 @@ uses(RefreshDatabase::class);
 require_once __DIR__.'/NodeRoleApiTestHelpers.php';
 
 describe('NodeRoleListController', function (): void {
-    it('lists role assignments for an authorized control caller', function (): void {
-        [, , $target] = setUpNodeRoleApiContractAccess();
+    it('lists role assignments for an authorized caller', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:read']);
         createNodeRoleApiContractAssignment($target, 'app-development', 'error', ['tld' => 'test'], 'DNS failed.');
         createNodeRoleApiContractAssignment($target, 'database');
 
@@ -27,8 +27,8 @@ describe('NodeRoleListController', function (): void {
             ->assertJsonPath('success.data.roles.1.settings', []);
     });
 
-    it('returns the authorized control caller response shape for empty role lists', function (): void {
-        setUpNodeRoleApiContractAccess();
+    it('returns the authorized caller response shape for empty role lists', function (): void {
+        setUpNodeRoleApiContractAccess(['role:read']);
 
         $response = getNodeRoleApiContractJson('/api/nodes/target-1/roles');
 

@@ -13,7 +13,6 @@ use App\Http\Gateway\Requests\Deploy\ListDeployStepsRequest;
 use App\Http\Gateway\Responses\Deploy\DeployResponse;
 use App\Models\App;
 use App\Services\Deploy\DeployManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -30,9 +29,9 @@ class DeployStepListCommand extends Command
     use HandlesPromptCancellation;
     use RendersDeployResponses;
 
-    public function handle(DeployManager $deploy, CallerRoleResolver $roles): int
+    public function handle(DeployManager $deploy): int
     {
-        $callerRole = $roles->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $app = $this->stringArgument('app');
 
@@ -57,7 +56,7 @@ class DeployStepListCommand extends Command
         }
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 /** @var DeployResponse $dto */
                 $dto = app(GatewayConnector::class)
                     ->send(new ListDeployStepsRequest($app))

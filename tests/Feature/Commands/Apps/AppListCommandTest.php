@@ -141,7 +141,10 @@ describe('app:list base contract', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read the app registry.',
-                    'meta' => ['caller_role' => 'control'],
+                    'meta' => [
+                        'reason' => 'missing_permission',
+                        'missing_permission' => 'app:read',
+                    ],
                 ],
             ], 403),
         ]);
@@ -151,7 +154,7 @@ describe('app:list base contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('control');
+            ->and($payload['error']['meta']['missing_permission'])->toBe('app:read');
     });
 
     it('does not mutate app registry state or run processes', function (): void {

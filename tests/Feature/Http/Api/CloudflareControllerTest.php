@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -21,6 +22,15 @@ afterEach(function (): void {
 
 function createCloudflareApiCallerNode(string $role = 'gateway'): Node
 {
+    if ($role === 'gateway') {
+        return createTestGatewayNode([
+            'name' => 'cf-api-gateway',
+            'host' => CLOUDFLARE_API_CALLER_WG_IP,
+            'wireguard_address' => CLOUDFLARE_API_CALLER_WG_IP,
+            'platform' => 'ubuntu',
+        ]);
+    }
+
     return Node::factory()->create([
         'name' => "cf-api-{$role}",
         'role' => $role,
@@ -28,6 +38,19 @@ function createCloudflareApiCallerNode(string $role = 'gateway'): Node
         'wireguard_address' => CLOUDFLARE_API_CALLER_WG_IP,
         'platform' => 'ubuntu',
         'status' => 'active',
+    ]);
+}
+
+/**
+ * @param  list<string>  $permissions
+ */
+function grantCloudflareApiAccess(Node $consumer, Node $gateway, array $permissions): void
+{
+    NodeAccess::query()->create([
+        'consumer_node_id' => $consumer->id,
+        'serving_node_id' => $gateway->id,
+        'permissions' => $permissions,
+        'custom_permissions' => [],
     ]);
 }
 
@@ -56,7 +79,35 @@ it('lists Cloudflare zones through the gateway API', function (): void {
         ->assertJsonPath('success.meta.count', 1);
 });
 
-it('denies app callers before provider requests', function (): void {
+it('lists Cloudflare zones for a caller with a gateway grant', function (): void {
+    $gateway = createTestGatewayNode(['name' => 'gateway-1']);
+    $caller = createCloudflareApiCallerNode('control');
+    grantCloudflareApiAccess($caller, $gateway, ['cf:zone:list']);
+
+    Http::fake([
+        'https://api.cloudflare.com/client/v4/zones*' => Http::response([
+            'success' => true,
+            'result' => [
+                [
+                    'id' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    'name' => 'lindaretel.nl',
+                    'status' => 'active',
+                ],
+            ],
+        ]),
+    ]);
+
+    $response = $this->call('GET', '/api/cloudflare/zones', [], [], [], [
+        'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('success.data.zones.0.name', 'lindaretel.nl')
+        ->assertJsonPath('success.meta.count', 1);
+});
+
+it('denies callers without the required Cloudflare grant before provider requests', function (): void {
+    $gateway = createTestGatewayNode(['name' => 'gateway-1']);
     createCloudflareApiCallerNode('app');
 
     $response = $this->call('GET', '/api/cloudflare/zones', [], [], [], [
@@ -64,8 +115,27 @@ it('denies app callers before provider requests', function (): void {
     ]);
 
     $response->assertForbidden()
-        ->assertJsonPath('error.code', 'caller_role_not_allowed')
-        ->assertJsonPath('error.meta.caller_role', 'app');
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.missing_permission', 'cf:zone:list')
+        ->assertJsonPath('error.meta.serving_node', $gateway->name);
+
+    Http::assertNothingSent();
+});
+
+it('requires the disable permission for the Cloudflare SSL disable API route', function (): void {
+    $gateway = createTestGatewayNode(['name' => 'gateway-1']);
+    $caller = createCloudflareApiCallerNode('control');
+    grantCloudflareApiAccess($caller, $gateway, ['cf:ssl:enable']);
+
+    $response = $this->call('PUT', '/api/cloudflare/zones/lindaretel.nl/ssl/disable', [
+        'destructive_consent' => true,
+    ], [], [], [
+        'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+    ]);
+
+    $response->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.missing_permission', 'cf:ssl:disable');
 
     Http::assertNothingSent();
 });

@@ -6,8 +6,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceShowPayload;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,12 +18,13 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('workspace:read', servingNode: ServingNode::WorkspaceOwning)]
 final readonly class WorkspaceShowController implements Loggable
 {
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(string $name, Request $request, WorkspaceShowPayload $payload): JsonResponse
@@ -63,7 +67,8 @@ final readonly class WorkspaceShowController implements Loggable
             return $this->authorizationFailed("This caller is not authorized to inspect '{$name}'.", [
                 'name' => $name,
                 'app' => $app,
-                'caller_role' => $this->nodeRoleAssignments->assignmentRoleLabel($caller),
+                'reason' => 'missing_permission',
+                'missing_permission' => 'workspace:read',
             ]);
         }
 
@@ -94,9 +99,15 @@ final readonly class WorkspaceShowController implements Loggable
             ], 400);
         }
 
+        $workspace = $matches->firstOrFail();
+
+        if (! $this->canReadWorkspace($caller, $workspace)) {
+            return $this->workspaceReadForbidden($workspace);
+        }
+
         return response()->json([
             'success' => [
-                'data' => $payload->forWorkspace($matches->firstOrFail()),
+                'data' => $payload->forWorkspace($workspace),
                 'meta' => [
                     'registry_only' => true,
                 ],
@@ -118,7 +129,8 @@ final readonly class WorkspaceShowController implements Loggable
         if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed("This caller is not authorized to inspect '{$path}'.", [
                 'path' => $path,
-                'caller_role' => $this->nodeRoleAssignments->assignmentRoleLabel($caller),
+                'reason' => 'missing_permission',
+                'missing_permission' => 'workspace:read',
             ]);
         }
 
@@ -134,6 +146,10 @@ final readonly class WorkspaceShowController implements Loggable
                     ],
                 ],
             ], 404);
+        }
+
+        if (! $this->canReadWorkspace($caller, $workspace)) {
+            return $this->workspaceReadForbidden($workspace);
         }
 
         return response()->json([
@@ -157,11 +173,12 @@ final readonly class WorkspaceShowController implements Loggable
             return $visibleNodeIds;
         }
 
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $visibleNodeIds)
-            ->pluck('node_access.serving_node_id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+        return Node::query()
+            ->whereIn('id', $visibleNodeIds)
+            ->get()
+            ->filter(fn (Node $node): bool => $this->authorizer->allows($caller, $node, 'workspace:read'))
+            ->map(fn (Node $node): int => $node->id)
+            ->values()
             ->all();
     }
 
@@ -208,6 +225,29 @@ final readonly class WorkspaceShowController implements Loggable
     private function callerIsGateway(Node $caller): bool
     {
         return $this->nodeRoleAssignments->nodeIsGateway($caller);
+    }
+
+    private function canReadWorkspace(Node $caller, Workspace $workspace): bool
+    {
+        $node = $workspace->app?->node;
+
+        return $node instanceof Node && $this->authorizer->allows($caller, $node, 'workspace:read');
+    }
+
+    private function workspaceReadForbidden(Workspace $workspace): JsonResponse
+    {
+        $node = $workspace->app?->node;
+
+        return $this->authorizationFailed(
+            $node instanceof Node
+                ? "This node is not authorized for 'workspace:read' on '{$node->name}'."
+                : 'Workspace owning node could not be resolved.',
+            [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'workspace:read',
+                ...($node instanceof Node ? ['serving_node' => $node->name] : []),
+            ],
+        );
     }
 
     private function stringQuery(Request $request, string $key): ?string

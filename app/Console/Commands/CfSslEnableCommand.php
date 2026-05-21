@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -18,7 +17,7 @@ use Saloon\Enums\Method;
 #[Description('Enable Cloudflare SSL mode for a zone')]
 final class CfSslEnableCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $zone = $this->stringArgument('zone');
 
@@ -29,7 +28,6 @@ final class CfSslEnableCommand extends CloudflareCommand
         $mode = $this->stringOption('mode') ?? 'strict';
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(Method::PUT, "/api/cloudflare/zones/{$zone}/ssl", ['mode' => $mode]),
             local: fn (): array => $cloudflare->enableSsl($zone, $mode),
             gatewayFailureMessage: 'Gateway connection is required to manage Cloudflare SSL.',

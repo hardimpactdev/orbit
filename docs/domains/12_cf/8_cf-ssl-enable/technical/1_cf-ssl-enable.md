@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized for Cloudflare provider administration.
+- The current node identity has `cf:ssl:enable` on the gateway.
 - The gateway has a Cloudflare API token configured.
 
 ## Signature
@@ -66,5 +66,5 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php` | Command contract for caller-role denial, zone resolution, strict default, full mode, flexible refusal, provider authorization, provider failures, and no origin-certificate mutation. |
+| `tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php` | Command contract for authorization denial, zone resolution, strict default, full mode, flexible refusal, provider authorization, provider failures, and no origin-certificate mutation. |
 | `tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

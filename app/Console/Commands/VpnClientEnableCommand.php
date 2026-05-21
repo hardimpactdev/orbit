@@ -29,12 +29,6 @@ class VpnClientEnableCommand extends VpnCommandSupport
 
     protected function handleToggle(bool $enabled): int
     {
-        $denied = $this->ensureAllowedCaller();
-
-        if ($denied !== null) {
-            return $denied;
-        }
-
         $name = $this->stringArgument('name');
 
         if ($name === null) {

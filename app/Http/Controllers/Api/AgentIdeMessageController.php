@@ -12,9 +12,9 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\AgentIde\AgentIdeMessageDelivery;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
 final class AgentIdeMessageController implements Loggable
 {
@@ -27,6 +27,7 @@ final class AgentIdeMessageController implements Loggable
 
     public function __construct(
         private readonly AgentIdeMessageDelivery $delivery,
+        private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(SendAgentIdeMessageApiRequest $request): JsonResponse
@@ -96,14 +97,13 @@ final class AgentIdeMessageController implements Loggable
     {
         $app->loadMissing('node');
 
-        if (! $app->node instanceof Node || ! $this->callerCanMessageApp($caller, $app)) {
+        $authorizationMeta = $this->messageAuthorizationMeta($caller, $app);
+
+        if ($authorizationMeta !== null) {
             return $this->error(
                 code: 'authorization_failed',
                 message: "This node is not authorized to message app '{$app->name}'.",
-                meta: [
-                    'app' => $app->name,
-                    'caller_role' => $caller->role,
-                ],
+                meta: $authorizationMeta,
                 status: 403,
             );
         }
@@ -145,15 +145,13 @@ final class AgentIdeMessageController implements Loggable
 
         $workspace->app->loadMissing('node');
 
-        if (! $workspace->app->node instanceof Node || ! $this->callerCanMessageApp($caller, $workspace->app)) {
+        $authorizationMeta = $this->messageAuthorizationMeta($caller, $workspace->app, $workspace);
+
+        if ($authorizationMeta !== null) {
             return $this->error(
                 code: 'authorization_failed',
                 message: "This node is not authorized to message workspace '{$workspace->name}'.",
-                meta: [
-                    'app' => $workspace->app->name,
-                    'workspace' => $workspace->name,
-                    'caller_role' => $caller->role,
-                ],
+                meta: $authorizationMeta,
                 status: 403,
             );
         }
@@ -228,22 +226,35 @@ final class AgentIdeMessageController implements Loggable
             });
     }
 
-    private function callerCanMessageApp(Node $caller, App $app): bool
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function messageAuthorizationMeta(Node $caller, App $app, ?Workspace $workspace = null): ?array
     {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
         $node = $app->node;
 
         if (! $node instanceof Node) {
-            return false;
+            return array_filter([
+                'app' => $app->name,
+                'workspace' => $workspace?->name,
+                'reason' => 'serving_node_unresolved',
+                'missing_permission' => 'agent-ide:message',
+            ], static fn (mixed $value): bool => $value !== null);
         }
 
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
+        $result = $this->authorizer->authorize($caller, $node, 'agent-ide:message');
+
+        if ($result->allowed) {
+            return null;
+        }
+
+        return array_filter([
+            'app' => $app->name,
+            'workspace' => $workspace?->name,
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $node->name,
+        ], static fn (mixed $value): bool => $value !== null);
     }
 
     /**

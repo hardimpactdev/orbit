@@ -9,7 +9,8 @@
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
 - Gateway callers execute locally.
-- Callers other than the gateway must be authorized by the gateway through the existing grant pattern.
+- Non-gateway callers have `role:remove` on the target node, or an equivalent
+  gateway-admin grant.
 
 ## Signature
 
@@ -51,6 +52,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Gateway callers execute locally.
 - Non-gateway callers forward to the gateway through typed HTTPS.
+- The gateway authorizes the request with `role:remove` on the target node.
 
 ## Renderer Contracts
 

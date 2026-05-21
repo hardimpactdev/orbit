@@ -4,12 +4,13 @@
 
 **Owner:** `vpn`.
 
-**Effects:** `write`, `destructive`, `gateway-admin`.
+**Effects:** `write`, `destructive`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized client with SSH access
-  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
-  gateway-coupled.
+- The caller is the gateway node, has `vpn:write` on the active gateway node,
+  or has `gateway-admin` (`*`) on the active gateway node.
+- Non-gateway callers can reach the active `vpn` role node over
+  Orbit/WireGuard SSH. In v1 that node is gateway-coupled.
 - The active `vpn` role is resolvable.
 - The VPN runtime backend is installed and reachable on the active `vpn` role host.
 - The operator can authenticate to the VPN runtime backend when TOTP is
@@ -71,7 +72,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | VPN runtime unavailable | No active `vpn` role node exists for VPN administration. | `error.code=vpn_runtime_unavailable` |
-| VPN runtime SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
+| VPN runtime SSH unavailable | A non-gateway caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
 | VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 
@@ -86,7 +87,7 @@ detection and safe node-peer cleanup.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: role denial, SSH execution, TOTP, missing-client failure, node-peer protection, destructive consent, backend deletion, and no node cleanup. |
+| `tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: grant denial, SSH execution, TOTP, missing-client failure, node-peer protection, destructive consent, backend deletion, and no node cleanup. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php` | Interactive confirmation prompt, `--force` bypass, declined confirmation failure before side effects, and prompt abort behavior. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php` | Non-interactive missing-`--force` failure, `--json` forcing non-interactive mode, and no prompts. |
 | `tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

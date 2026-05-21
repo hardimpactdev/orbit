@@ -40,7 +40,7 @@ provider status. Use `--json` for machine-readable output.
 ## Requirements
 
 - The caller can reach the Orbit gateway.
-- The caller is authorized for Cloudflare provider administration.
+- The caller has `cf:zone:list` on the gateway.
 - The gateway has a Cloudflare API token configured.
 
 ## Related Commands

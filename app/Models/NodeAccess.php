@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property list<string> $permissions
+ * @property list<string> $custom_permissions
  */
 class NodeAccess extends Model
 {
@@ -16,12 +17,14 @@ class NodeAccess extends Model
 
     protected $attributes = [
         'permissions' => '["*"]',
+        'custom_permissions' => '[]',
     ];
 
     protected $fillable = [
         'consumer_node_id',
         'serving_node_id',
         'permissions',
+        'custom_permissions',
     ];
 
     #[\Override]
@@ -29,6 +32,7 @@ class NodeAccess extends Model
     {
         return [
             'permissions' => 'array',
+            'custom_permissions' => 'array',
         ];
     }
 

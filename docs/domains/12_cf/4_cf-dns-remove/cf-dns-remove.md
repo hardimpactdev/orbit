@@ -43,7 +43,7 @@ output.
 ## Requirements
 
 - The caller can reach the Orbit gateway.
-- The caller is authorized for Cloudflare provider administration.
+- The caller has `cf:dns:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
 - The selected zone and DNS record exist in the Cloudflare account.
 

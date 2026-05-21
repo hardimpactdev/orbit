@@ -13,7 +13,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Proxy\AddProxyRouteRequest;
 use App\Http\Gateway\Responses\Proxy\ProxyRouteMutationResponse;
 use App\Models\LocalNodeDefault;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Proxy\ProxyRouteIntent;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -35,7 +34,7 @@ class ProxyAddCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(ProxyRouteIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    public function handle(ProxyRouteIntent $intent): int
     {
         $input = $this->validatedInput();
 
@@ -44,11 +43,11 @@ class ProxyAddCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $this->handleAddHuman($input, $intent, $callerRoleResolver);
+            return $this->handleAddHuman($input, $intent);
         }
 
         try {
-            if ($callerRoleResolver->resolve() !== 'gateway') {
+            if (! (bool) config('orbit.is_gateway', false)) {
                 return $this->forwardAdd($input);
             }
 
@@ -80,11 +79,11 @@ class ProxyAddCommand extends Command
     /**
      * @param  array{domain: string, node: string, upstream: ?string, redirect: ?string, code: ?int, force: bool}  $input
      */
-    private function handleAddHuman(array $input, ProxyRouteIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    private function handleAddHuman(array $input, ProxyRouteIntent $intent): int
     {
         $result = null;
         $failure = null;
-        $callerRole = null;
+        $onGateway = null;
 
         $exitCode = $this->runStepTree(
             'Adding Proxy Route',
@@ -97,18 +96,18 @@ class ProxyAddCommand extends Command
                 [
                     'label' => 'Check ownership boundary',
                     'doneLabel' => 'Checked ownership boundary',
-                    'run' => function () use ($callerRoleResolver, &$callerRole): string {
-                        $callerRole = $callerRoleResolver->resolve();
+                    'run' => function () use (&$onGateway): string {
+                        $onGateway = (bool) config('orbit.is_gateway', false);
 
-                        return $callerRole;
+                        return $onGateway ? 'local gateway' : 'gateway API';
                     },
                 ],
                 [
                     'label' => 'Apply and verify proxy route',
                     'doneLabel' => 'Applied and verified proxy route',
-                    'run' => function () use ($input, $intent, &$result, &$failure, &$callerRole): string {
+                    'run' => function () use ($input, $intent, &$result, &$failure, &$onGateway): string {
                         try {
-                            if ($callerRole !== 'gateway') {
+                            if (! $onGateway) {
                                 /** @var ProxyRouteMutationResponse $dto */
                                 $dto = app(GatewayConnector::class)
                                     ->send(new AddProxyRouteRequest(

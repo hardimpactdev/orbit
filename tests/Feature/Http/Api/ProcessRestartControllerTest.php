@@ -17,12 +17,18 @@ const PROCESS_RESTART_CALLER_WG_IP = '10.6.0.93';
 
 function createProcessRestartCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => PROCESS_RESTART_CALLER_WG_IP,
         'wireguard_address' => PROCESS_RESTART_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProcessRestartAccess(Node $caller, Node $appNode): void
@@ -30,6 +36,8 @@ function grantProcessRestartAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['process:restart'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -38,7 +46,7 @@ function grantProcessRestartAccess(Node $caller, Node $appNode): void
 describe('ProcessRestartController', function (): void {
     it('restarts a process for authorized control callers and records the event', function (): void {
         $caller = createProcessRestartCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         grantProcessRestartAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -60,7 +68,7 @@ describe('ProcessRestartController', function (): void {
 
     it('returns partial runtime failure data', function (): void {
         createProcessRestartCallerNode(['role' => 'gateway']);
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
@@ -81,7 +89,7 @@ describe('ProcessRestartController', function (): void {
 
     it('requires authorization before runtime side effects', function (): void {
         createProcessRestartCallerNode();
-        $appNode = Node::factory()->create(['role' => 'app']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         $remoteShell = new ProcessRestartApiRemoteShell([]);
@@ -93,7 +101,9 @@ describe('ProcessRestartController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_RESTART_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:restart');
 
         expect($remoteShell->scripts)->toBe([]);
     });

@@ -38,8 +38,8 @@ Orbit distinguishes three concepts:
   `app-production`, `database`, and `agent`. `agent` is exclusive and
   selectable only during `node:new`; `node role:add` rejects it.
 - **Client identity:** a CLI installation that has gateway configuration
-  and a gateway-issued WireGuard identity. A client may have no hosted
-  roles. It can request self-scoped actions and can operate other nodes only
+  and a gateway-issued WireGuard identity. A client may have no workload role
+  assignments. It can request self-scoped actions and can operate other nodes only
   through explicit gateway grants.
 
 Roles are code-defined bundles, not open-ended labels. Orbit stores role
@@ -48,7 +48,7 @@ assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
 Nodes may run the Orbit CLI as a stateless gateway client, but they do
-not own fleet state or run a local Orbit operator capability layer. They run workload
+not own fleet state or run a local Orbit capability layer. They run workload
 services, call the gateway when a local command is invoked, and receive
 gateway-applied changes over SSH.
 
@@ -136,7 +136,7 @@ directly.
                              | HTTPS over WireGuard
                              v
 +-----------+   SSH   +------+-------+   SSH   +-----------+
-| hosted    | <------ |   gateway    | ------> | hosted    |
+| workload  | <------ |   gateway    | ------> | workload  |
 | node      |         |              |         | node      |
 +-----+-----+         +------+-------+         +-----+-----+
                              ^
@@ -172,7 +172,7 @@ These rules apply to all node commands and define the invariants the family enfo
   accept a node target may use this local default when `--node` is omitted
   and no app or workspace context already determines the owning node.
 - `node:new` never sets the local default development node automatically.
-  The operator must run `node:default` explicitly.
+  The caller must run `node:default` explicitly.
 - Nodes may store a default agent IDE adapter for apps and workspaces on that
   node. App-level settings override the node default.
 - Node access grants decide which consuming nodes may operate on which serving
@@ -193,7 +193,7 @@ These rules apply to all node commands and define the invariants the family enfo
   rejected, and wildcards `node:*` or `*` include future permissions that
   belong to the matched namespace.
 - Self-grants are explicit. A node does not implicitly have access to itself.
-  Role baseline self-grants are created during `node:new` from each hosted
+  Role baseline self-grants are created during `node:new` from each assigned
   role's self preset.
 - `node:grant` creates the initial grant edge and the initial permissions on
   it. It does not edit an existing grant's permission set.
@@ -245,7 +245,8 @@ Node transport has different rules before and after bootstrap:
   Orbit/WireGuard.
 - The gateway uses SSH to communicate with nodes. On-node work such as file
   writes, service control, log access, package installation, and shell execution
-  is simpler and more explicit over SSH than through an HTTP operator capability layer on the node.
+  is simpler and more explicit over SSH than through an HTTP capability API on
+  the node.
 
 The steady-state paths are therefore:
 
@@ -323,7 +324,7 @@ The node family probe, drift kinds, and `doctor --family=node --restore` /
 `doctor --family=node --adopt` boundaries are defined in [`node-doctor.md`](node-doctor.md).
 `doctor --fix` runs an interactive resolution flow that prompts per item to
 restore or adopt.
-`node:list --doctor` is a node-family-only operator convenience that attaches a
+`node:list --doctor` is a node-family-only inspection convenience that attaches a
 node-family doctor summary to the registry list. It is not a shared list-command
 convention; app and workspace list commands remain registry-only and point to
 their family doctor commands for live verification.
@@ -408,7 +409,7 @@ repair only local gateway CA trust without re-running identity verification or
 changing gateway settings.
 
 When a node is already provisioned and can prove compatible node identity,
-`node:new` may adopt that hosted identity into gateway configuration. When a gateway is
+`node:new` may adopt that existing identity into gateway configuration. When a gateway is
 already known to the gateway registry, `node:new --role=gateway` converges that
 gateway-owned identity instead of minting a duplicate node. Missing gateway-row
 materialization belongs to first-gateway bootstrap or a future explicit recovery
@@ -460,8 +461,10 @@ Use these commands to update, remove, or configure node settings after initial p
 ### Role assignments
 
 Use these commands to inspect and mutate the role assignments on an existing node.
+Role assignment settings are changed through the command that owns the setting;
+for example, app-development TLD changes route through
+[`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
 11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)
 12. [`orbit node role:add [node] [role]`](12_node-role-add/node-role-add.md)
-13. [`orbit node role:update [node] [role]`](13_node-role-update/node-role-update.md)
-14. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)
+13. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)

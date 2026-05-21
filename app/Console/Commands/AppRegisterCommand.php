@@ -45,7 +45,7 @@ class AppRegisterCommand extends Command
 
     public function handle(EnactAppRuntime $enactAppRuntime): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $input = $this->resolveInput();
 
@@ -53,7 +53,7 @@ class AppRegisterCommand extends Command
             return $input;
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardRegister($input);
         }
 

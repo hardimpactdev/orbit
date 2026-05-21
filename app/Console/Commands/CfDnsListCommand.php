@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -17,7 +16,7 @@ use Saloon\Enums\Method;
 #[Description('List Cloudflare DNS records for a zone')]
 final class CfDnsListCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $zone = $this->stringArgument('zone');
 
@@ -26,7 +25,6 @@ final class CfDnsListCommand extends CloudflareCommand
         }
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(Method::GET, "/api/cloudflare/zones/{$zone}/dns"),
             local: fn (): array => $cloudflare->listDnsRecords($zone),
             gatewayFailureMessage: 'Gateway connection is required to list Cloudflare DNS records.',

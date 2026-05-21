@@ -271,12 +271,16 @@ describe('node:remove human renderer contract', function (): void {
     it('renders authorization-failed prose error', function (): void {
         $result = invokeNodeRemoveFailCommandHuman(
             code: 'authorization_failed',
-            message: 'This control node is not authorized to remove nodes.',
-            meta: ['required_node' => 'gateway-1', 'caller_role' => 'control'],
+            message: "This node is not authorized for 'node:remove' on 'app-1'.",
+            meta: [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:remove',
+                'serving_node' => 'app-1',
+            ],
         );
 
         expect($result['exitCode'])->not->toBe(0);
-        expect($result['output'])->toContain('This control node is not authorized to remove nodes.');
+        expect($result['output'])->toContain("This node is not authorized for 'node:remove' on 'app-1'.");
     });
 
     it('renders operation-cancelled prose error', function (): void {

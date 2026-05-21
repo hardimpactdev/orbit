@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized for Cloudflare provider administration.
+- The current node identity has `cf:zone:list` on the gateway.
 - The gateway has a Cloudflare API token configured.
 
 ## Signature
@@ -62,5 +62,5 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php` | Command contract for caller-role denial, gateway forwarding, provider authorization, Cloudflare token failures, empty zone lists, and no Orbit state writes. |
+| `tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php` | Command contract for authorization denial, gateway forwarding, provider authorization, Cloudflare token failures, empty zone lists, and no Orbit state writes. |
 | `tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

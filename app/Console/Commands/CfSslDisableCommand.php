@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -18,7 +17,7 @@ use Saloon\Enums\Method;
 #[Description('Disable Cloudflare SSL for a zone')]
 final class CfSslDisableCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $zone = $this->stringArgument('zone');
 
@@ -33,11 +32,10 @@ final class CfSslDisableCommand extends CloudflareCommand
         }
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(
                 method: Method::PUT,
-                endpoint: "/api/cloudflare/zones/{$zone}/ssl",
-                payload: ['mode' => 'off', 'destructive_consent' => true],
+                endpoint: "/api/cloudflare/zones/{$zone}/ssl/disable",
+                payload: ['destructive_consent' => true],
             ),
             local: fn (): array => $cloudflare->disableSsl($zone),
             gatewayFailureMessage: 'Gateway connection is required to manage Cloudflare SSL.',

@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -19,7 +18,7 @@ use function Laravel\Prompts\text;
 #[Description('Flush Cloudflare cache for a zone')]
 final class CfCacheFlushCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $zone = $this->stringOption('zone');
 
@@ -32,7 +31,6 @@ final class CfCacheFlushCommand extends CloudflareCommand
         }
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(Method::POST, '/api/cloudflare/cache/flush', ['zone' => $zone]),
             local: fn (): array => $cloudflare->flushCache($zone),
             gatewayFailureMessage: 'Gateway connection is required to flush Cloudflare cache.',

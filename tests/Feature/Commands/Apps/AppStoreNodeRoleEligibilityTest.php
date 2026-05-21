@@ -47,11 +47,16 @@ function assignRole(Node $node, string $role, string $status = 'active', array $
     ]);
 }
 
-function grantAppStoreRoleAccess(Node $caller, Node $target): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppStoreRoleAccess(Node $caller, Node $target, array $permissions = ['app:new']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $target->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);

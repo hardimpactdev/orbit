@@ -24,11 +24,16 @@ function createAppRemoveCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function grantAppRemoveAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppRemoveAccess(Node $caller, Node $appNode, array $permissions = ['app:remove']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -102,13 +107,14 @@ describe('AppRemoveController', function (): void {
         expect(App::query()->whereKey($app->id)->exists())->toBeTrue();
     });
 
-    it('rejects app removal when the caller cannot access the app node', function (): void {
-        createAppRemoveCallerNode();
+    it('rejects app removal when the caller lacks app:remove on the app node', function (): void {
+        $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'role' => 'app',
             'status' => 'active',
         ]);
+        grantAppRemoveAccess($caller, $targetNode, ['app:read']);
 
         App::factory()->create([
             'name' => 'docs',
@@ -122,7 +128,9 @@ describe('AppRemoveController', function (): void {
         ], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:remove')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue();
     });

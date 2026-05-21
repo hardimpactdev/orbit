@@ -130,7 +130,7 @@ describe('node role:list', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('node');
     });
 
-    it('forwards control callers to the gateway', function (): void {
+    it('forwards configured callers to the gateway', function (): void {
         setupNodeRoleControlCaller();
 
         $convergedAt = now()->toJSON();

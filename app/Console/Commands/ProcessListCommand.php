@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\ListProcessesRequest;
 use App\Http\Gateway\Responses\Processes\ProcessListResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Processes\ProcessListPayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -24,12 +23,12 @@ use function Laravel\Prompts\table;
 #[Description('List configured app processes')]
 class ProcessListCommand extends Command
 {
-    public function handle(ProcessListPayload $payload, CallerRoleResolver $callerRoleResolver): int
+    public function handle(ProcessListPayload $payload): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            $data = $this->fetchProcesses($payload, $callerRole);
+            $data = $this->fetchProcesses($payload, $onGateway);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -56,12 +55,12 @@ class ProcessListCommand extends Command
     /**
      * @return array{context: array<string, mixed>, processes: list<array<string, mixed>>}
      */
-    private function fetchProcesses(ProcessListPayload $payload, string $callerRole): array
+    private function fetchProcesses(ProcessListPayload $payload, bool $onGateway): array
     {
         $app = $this->stringOption('app');
         $workspace = $this->stringOption('workspace');
 
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             return $payload->forContext($app, $workspace);
         }
 

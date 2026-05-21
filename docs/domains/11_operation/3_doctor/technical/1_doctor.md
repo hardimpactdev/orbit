@@ -9,8 +9,10 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway identifies the calling WireGuard peer and authorizes the selected scope.
-- For app-role peers, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects.
-- The selected family doctor contract may document a narrow exception that permits resolution modes for app-role peers.
+- Verify mode requires `doctor:verify` on the resolved target node.
+- Resolution actions require the matching doctor permission on the resolved
+  target node: `doctor:restore` for restore actions and `doctor:adopt` for
+  adopt actions.
 
 ## Signature
 
@@ -103,15 +105,13 @@ Input-mode-specific contracts are required for resolution modes:
 
 `--adopt` is explicit adoption-mode consent for family-declared adoption actions. It is the only doctor mode that may intentionally mutate gateway configuration.
 
-### Scope, Authorization, and App-Node Write Boundaries
+### Scope and Authorization
 
-Cross-peer scope-resolution rules and the app-role write boundary list are
-owned by
+Cross-peer scope-resolution and grant requirements are owned by
 [`7_doctor_scope-and-authorization.md`](7_doctor_scope-and-authorization.md).
 Peer-specific authorization remains in the on-node companion contracts:
 [`2_doctor_on-client.md`](2_doctor_on-client.md),
-[`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md), and
-[`4_doctor_on-app-role.md`](4_doctor_on-app-role.md).
+and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 ### Result Classification Rules
 
@@ -196,7 +196,7 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-role write-mode denial, exit-code semantics, JSON envelope, and family dispatch boundaries. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
 | `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-development/app-production workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
 | `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
@@ -208,7 +208,6 @@ Peer-specific behavior and test mapping live in:
 
 - [`2_doctor_on-client.md`](2_doctor_on-client.md)
 - [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md)
-- [`4_doctor_on-app-role.md`](4_doctor_on-app-role.md)
 
 ## Activity Logging
 

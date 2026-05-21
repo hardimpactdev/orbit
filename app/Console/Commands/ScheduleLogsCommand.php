@@ -10,7 +10,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleLogsRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleLogsResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Schedules\ScheduleLogsPayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -33,7 +32,7 @@ class ScheduleLogsCommand extends Command
 
     private ?string $resolvedScheduleNode = null;
 
-    public function handle(ScheduleLogsPayload $payload, CallerRoleResolver $callerRoleResolver): int
+    public function handle(ScheduleLogsPayload $payload): int
     {
         $name = $this->resolveNameInput();
 
@@ -41,7 +40,7 @@ class ScheduleLogsCommand extends Command
             return $name;
         }
 
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $run = $this->positiveIntegerOption('run');
         $lines = $this->positiveIntegerOption('lines') ?? 100;
@@ -55,7 +54,7 @@ class ScheduleLogsCommand extends Command
         }
 
         try {
-            if ($callerRole !== 'gateway') {
+            if (! $onGateway) {
                 return $this->forwardLogs($name, $run, $lines);
             }
 

@@ -9,7 +9,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Firewall\ListFirewallRulesRequest;
 use App\Http\Gateway\Responses\Firewall\FirewallRuleListResponse;
 use App\Services\Firewall\FirewallRuleQuery;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -71,7 +70,7 @@ class FirewallListCommand extends Command
      */
     private function fetchRules(FirewallRuleQuery $rules, ?string $node): array
     {
-        if (app(CallerRoleResolver::class)->resolve() === 'gateway') {
+        if ((bool) config('orbit.is_gateway', false)) {
             return $rules->list(node: $node);
         }
 

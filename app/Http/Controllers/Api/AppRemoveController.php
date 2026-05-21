@@ -7,30 +7,20 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\RemoveApp;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Models\Node;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('app:remove', servingNode: ServingNode::AppOwning)]
 final class AppRemoveController implements Loggable
 {
     private ?App $activitySubject = null;
 
     public function __invoke(string $app, Request $request, RemoveApp $removeApp): JsonResponse
     {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         if ($request->boolean('destructive_consent') !== true) {
             return $this->error('validation_failed', 'Use --force to remove this app.', ['field' => 'force'], 422);
         }
@@ -42,13 +32,6 @@ final class AppRemoveController implements Loggable
         }
 
         $targetApp->loadMissing('node');
-
-        if (! $targetApp->node instanceof Node || ! $this->callerCanRemoveApp($caller, $targetApp)) {
-            return $this->error('authorization_failed', 'This operator node is not authorized to remove this app.', [
-                'name' => $targetApp->name,
-                'caller_role' => $caller->role,
-            ], 403);
-        }
 
         $this->activitySubject = $targetApp;
         $result = $removeApp->handle($targetApp);
@@ -81,24 +64,6 @@ final class AppRemoveController implements Loggable
                 || $app->url() === "https://{$selector}")
             ->values()
             ->first();
-    }
-
-    private function callerCanRemoveApp(Node $caller, App $app): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            return false;
-        }
-
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
     }
 
     /**

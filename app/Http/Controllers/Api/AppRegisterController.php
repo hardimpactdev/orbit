@@ -6,48 +6,45 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('app:register', servingNode: ServingNode::Target)]
 final class AppRegisterController implements Loggable
 {
     private ?App $activitySubject = null;
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
+        private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
-        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
-
-        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
-            return $this->error(
-                'caller_role_not_allowed',
-                'This command may only be run from an operator or gateway node.',
-                ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
-                403,
-            );
-        }
-
         $targetNode = $this->targetNode($request);
 
-        if ($targetNode instanceof Node && ! $this->callerCanRegisterOnNode($caller, $targetNode, $callerIsGateway)) {
-            return $this->error('authorization_failed', "This node is not authorized to register apps on '{$targetNode->name}'.", ['node' => $targetNode->name], 403);
+        if ($targetNode instanceof Node) {
+            /** @var mixed $caller */
+            $caller = $request->user();
+
+            if (! $caller instanceof Node) {
+                return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
+            }
+
+            $authorization = $this->authorizer->authorize($caller, $targetNode, 'app:register');
+
+            if (! $authorization->allowed) {
+                return $this->forbidden($targetNode, $authorization, 'app:register');
+            }
         }
 
         $arguments = [
@@ -117,18 +114,6 @@ final class AppRegisterController implements Loggable
         return $nodes->first();
     }
 
-    private function callerCanRegisterOnNode(Node $caller, Node $node, bool $callerIsGateway): bool
-    {
-        if ($callerIsGateway) {
-            return true;
-        }
-
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $node->id)
-            ->exists();
-    }
-
     /**
      * @param  array<string, mixed>  $arguments
      */
@@ -162,6 +147,20 @@ final class AppRegisterController implements Loggable
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
+    {
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+            403,
+        );
     }
 
     public function effect(): ActivityLogType

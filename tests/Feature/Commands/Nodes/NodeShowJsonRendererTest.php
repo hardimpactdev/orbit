@@ -504,7 +504,7 @@ describe('node:show JSON renderer contract', function (): void {
             json: true,
             code: 'authorization_failed',
             message: "This node is not authorized to inspect 'app-1'.",
-            meta: ['name' => 'app-1', 'caller_role' => 'control'],
+            meta: ['name' => 'app-1', 'reason' => 'missing_permission', 'missing_permission' => 'node:read'],
         );
 
         $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
@@ -517,7 +517,7 @@ describe('node:show JSON renderer contract', function (): void {
 
         expect($error['code'])->toBe('authorization_failed')
             ->and($error['message'])->toBe("This node is not authorized to inspect 'app-1'.")
-            ->and($error['meta'])->toBe(['name' => 'app-1', 'caller_role' => 'control']);
+            ->and($error['meta'])->toBe(['name' => 'app-1', 'reason' => 'missing_permission', 'missing_permission' => 'node:read']);
     });
 
     it('returns gateway_unavailable error with empty object metadata', function (): void {

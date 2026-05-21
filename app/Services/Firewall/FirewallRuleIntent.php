@@ -204,13 +204,17 @@ class FirewallRuleIntent
             return;
         }
 
-        if (app(NodeAccessAuthorizer::class)->allows($caller, $node, 'firewall_rule:write')) {
+        $result = app(NodeAccessAuthorizer::class)->authorize($caller, $node, 'firewall_rule:write');
+
+        if ($result->allowed) {
             return;
         }
 
         throw new GatewayApiException('This node is not authorized to manage firewall rules for the selected node.', 'authorization_failed', [
             'node' => $node->name,
-            'caller_role' => $caller->role,
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $node->name,
         ]);
     }
 

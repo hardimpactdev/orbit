@@ -19,6 +19,7 @@ class NodeRoleAssignmentService
         private readonly NodeRoleAssignments $assignments,
         private readonly NodeRoleBaselineConverger $converger,
         private readonly NodeRoleDependencyInspector $dependencyInspector,
+        private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
     ) {}
 
     /**
@@ -170,6 +171,7 @@ class NodeRoleAssignmentService
                 $transactionAssignment->delete();
 
                 $this->syncLegacyNodeFields($node);
+                $this->roleSelfGrantMaterializer->reconcileOnRoleRemoved($node, NodeRoleName::from($role));
             });
         } catch (InvalidArgumentException $exception) {
             throw $exception;
@@ -207,6 +209,7 @@ class NodeRoleAssignmentService
             ])->save();
 
             $this->syncLegacyNodeFields($node);
+            $this->roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::from($assignment->role));
         } catch (Throwable $throwable) {
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Error->value,

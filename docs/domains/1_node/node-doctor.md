@@ -60,8 +60,8 @@ The node probe reads gateway node records and checks these layers:
    recorded WireGuard address.
 6. **Platform reality:** gateway and nodes report supported Ubuntu platform
    identifiers through SSH. The local client reports a supported macOS or
-   Ubuntu platform identifier when `--self` can inspect it. Remote joined
-   clients are verified through identity and gateway API reachability, not SSH.
+   Ubuntu platform identifier when `--self` can inspect it. Remote client
+   machines are verified through identity and gateway API reachability, not SSH.
 7. **SSH reachability:** the gateway can SSH to nodes. Clients are
    not SSH targets for node doctor checks.
 8. **Gateway runtime readiness:** the gateway node exposes the Orbit API and
@@ -175,9 +175,9 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.wireguard_address_mismatch` | A gateway-managed WireGuard peer address differs from the node record's WireGuard address. |
 | `node.platform_unsupported` | A gateway or node reports an unsupported platform-version identifier. |
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
-| `node.app_ssh_unreachable` | The gateway cannot SSH to a node. |
+| `node.ssh_unreachable` | The gateway cannot SSH to a node. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway runtime. |
-| `node.app_runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
+| `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
@@ -213,7 +213,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |
-| `node.app_runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
+| `node.runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
 | `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
@@ -227,7 +227,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
-`node.platform_record_mismatch`, `node.app_ssh_unreachable`,
+`node.platform_record_mismatch`, `node.ssh_unreachable`,
 `node.security.host_key.<node>`, `node.security.ssh_user`,
 `node.security.home_perms`, `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
@@ -261,7 +261,7 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 | `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer. See conditions below. |
 | `node.wireguard_peer_extra` | Attach the peer when the registry peer public key matches live WireGuard reality. See conditions below. |
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
-| `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
+| `node.runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
 | `node.security.host_key.<node>` | Pin the currently observed host key only when the operator selected this exact key and explicitly chose adopt. |
 
@@ -294,6 +294,30 @@ leave the adoption result as `conflict` or `skipped`.
 `restore` (re-apply gateway configuration to the node) or `adopt` (record
 observed node reality back into gateway configuration). `--restore` and
 `--adopt` are the non-interactive forms that select one direction up front.
+
+## Implementation Contract
+
+The node-family doctor implementation lives in `App\Services\Nodes\NodesProbe`.
+There is no separate domain-local technical contract; this document is the
+canonical product and implementation reference for the node-family probe.
+
+`NodesProbe` exposes these service methods:
+
+| Method | Purpose |
+| --- | --- |
+| `key()` | Returns the singular state family key: `node`. |
+| `label()` | Returns the human-readable family label: `Node`. |
+| `introspect(Node $node)` | Reads physical node state for ordinary drift checks. The current implementation returns an empty snapshot for layers that do not need preloaded external state. |
+| `diff(Node $node, ProbeSnapshot $snapshot)` | Compares registry state, local/gateway context, WireGuard state, platform state, runtime readiness, role baselines, and node defaults into `DriftEntry` results. |
+| `canReconcile()` | Returns whether `doctor --family=node --restore` is supported. |
+| `reconcile(Node $node, DriftEntry $entry)` | Applies restore behavior for supported keys and throws for unsupported keys. |
+| `canAdopt()` | Returns whether `doctor --family=node --adopt` is supported. |
+| `snapshotForAdopt(Node $node)` | Reads adoption-specific proof such as identity artifacts, WireGuard reality, runtime readiness, VPN DNS/runtime state, and local platform facts. |
+| `adopt(Node $node, ProbeSnapshot $snapshot)` | Attempts supported adoption paths and returns `AdoptResult` rows with `updated`, `skipped`, or `conflict` actions. |
+
+New probe layers must add the issue code here, add focused Pest coverage in
+`NodesProbeTest.php`, and document restore/adopt behavior before the code starts
+returning the new key.
 
 ## Test Mapping
 

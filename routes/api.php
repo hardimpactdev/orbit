@@ -34,7 +34,6 @@ use App\Http\Controllers\Api\NodeRevokeController;
 use App\Http\Controllers\Api\NodeRoleAddController;
 use App\Http\Controllers\Api\NodeRoleListController;
 use App\Http\Controllers\Api\NodeRoleRemoveController;
-use App\Http\Controllers\Api\NodeRoleUpdateController;
 use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
@@ -92,13 +91,14 @@ use App\Http\Controllers\Api\WorkspaceStepStoreController;
 use App\Http\Controllers\Api\WorkspaceStoreController;
 use App\Http\Middleware\CorrelationHeader;
 use App\Http\Middleware\LogActivity;
+use App\Http\Middleware\RequireGrantPermission;
 use App\Http\Middleware\WireGuardIdentity;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::get('/ca/root', CaRootController::class);
 
-    Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
+    Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class, LogActivity::class])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
@@ -110,7 +110,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/cloudflare/cache/flush', [CloudflareController::class, 'flushCache']);
         Route::post('/cloudflare/cache-rules/{app}', [CloudflareController::class, 'addCacheRule']);
         Route::delete('/cloudflare/cache-rules/{app}', [CloudflareController::class, 'removeCacheRule']);
-        Route::put('/cloudflare/zones/{zone}/ssl', [CloudflareController::class, 'updateSsl']);
+        Route::put('/cloudflare/zones/{zone}/ssl', [CloudflareController::class, 'enableSsl']);
+        Route::put('/cloudflare/zones/{zone}/ssl/disable', [CloudflareController::class, 'disableSsl']);
         Route::post('/doctor/fix', DoctorFixController::class);
         Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/database-connections', [DatabaseConnectionController::class, 'index']);
@@ -206,7 +207,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/nodes/revoke', NodeRevokeController::class);
         Route::get('/nodes/{name}/roles', NodeRoleListController::class);
         Route::post('/nodes/{name}/roles', NodeRoleAddController::class);
-        Route::patch('/nodes/{name}/roles/{role}', NodeRoleUpdateController::class);
         Route::delete('/nodes/{name}/roles/{role}', NodeRoleRemoveController::class);
         Route::post('/nodes/{name}/agent-ide', NodeAgentIdeController::class);
         Route::delete('/nodes/{name}', NodeRemoveController::class);

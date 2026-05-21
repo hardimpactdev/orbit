@@ -28,7 +28,8 @@ This command validates the role assignment, applies role-local options, and repo
 - `app-development` requires `--tld`.
 - `app-production` and `database` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.
-- Joined callers forward through the typed gateway API.
+- Configured non-gateway callers forward through the typed gateway API and need
+  `role:add` on the target node.
 
 ## Technical Contract
 

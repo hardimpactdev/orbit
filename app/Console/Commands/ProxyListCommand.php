@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Proxy\ListProxyRoutesRequest;
 use App\Http\Gateway\Responses\Proxy\ProxyRouteListResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Proxy\ProxyRouteQuery;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -84,7 +83,7 @@ class ProxyListCommand extends Command
      */
     private function fetchRoutes(ProxyRouteQuery $routes, string $filter, ?string $node): array
     {
-        if (app(CallerRoleResolver::class)->resolve() === 'gateway') {
+        if ((bool) config('orbit.is_gateway', false)) {
             return $routes->list(filter: $filter, node: $node);
         }
 

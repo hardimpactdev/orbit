@@ -45,6 +45,9 @@ These rules define the Agent IDE command domain and its authorization model.
   authenticates the WireGuard peer and authorizes the resolved app or workspace.
   Locally gathered context (current app, workspace, paths) can help resolve
   defaults, but it is not authorization.
+- `agent-ide:message` requires `agent-ide:message` on the resolved app or
+  workspace's owning node. Authorization failures use `authorization_failed`
+  with standard `missing_permission` metadata.
 
 ## Commands
 

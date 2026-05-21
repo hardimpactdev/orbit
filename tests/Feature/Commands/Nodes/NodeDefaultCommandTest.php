@@ -268,7 +268,7 @@ describe('node:default command contract', function (): void {
         expect($record->default_node_name)->toBe('app-2');
     });
 
-    it('validates set through gateway-visible development app nodes for configured control callers', function (): void {
+    it('validates set through gateway-visible development app nodes for configured callers', function (): void {
         setupConfiguredControlNodeDefaultCaller();
 
         $mock = MockClient::global([
@@ -381,7 +381,7 @@ describe('node:default command contract', function (): void {
         'pending app-development' => [[['role' => 'app-development', 'status' => 'pending']]],
     ]);
 
-    it('keeps show and clear local-only for configured control callers', function (): void {
+    it('keeps show and clear local-only for configured callers', function (): void {
         setupConfiguredControlNodeDefaultCaller();
         setLocalDefaultCommand('stale-local-app');
 

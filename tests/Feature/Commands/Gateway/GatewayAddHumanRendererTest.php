@@ -109,7 +109,8 @@ it('shows human renderer by default', function (): void {
         ->expectsOutputToContain('○  Verify gateway API')
         ->expectsOutputToContain('○  Verify identity')
         ->expectsOutputToContain('○  Store local config')
-        ->expectsOutputToContain("Joined 'gateway-1' as 'control-1' (control)")
+        ->expectsOutputToContain("Joined 'gateway-1' as 'control-1'")
+        ->doesntExpectOutputToContain("Joined 'gateway-1' as 'control-1' (control)")
         ->assertSuccessful();
 });
 
@@ -134,7 +135,8 @@ it('renders decorated add progress tree with ansi completed rows', function (): 
     expect($text)->toContain("\e[38;5;242m┌\e[39m  \e[97mJoining Gateway\e[39m")
         ->and($text)->toContain("\e[32m●\e[39m")
         ->and($text)->toContain('Working...')
-        ->and($text)->toContain("Joined 'gateway-1' as 'control-1' (control).");
+        ->and($text)->toContain("Joined 'gateway-1' as 'control-1'.")
+        ->and($text)->not->toContain("Joined 'gateway-1' as 'control-1' (control).");
 });
 
 it('shows converged progress tree', function (): void {
@@ -198,9 +200,14 @@ it('shows unregistered peer prose', function (): void {
         ]),
     ]);
 
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('This peer is not registered on the gateway at 10.6.0.2')
-        ->assertFailed();
+    $output = new BufferedOutput;
+    $exitCode = Artisan::call('gateway:add', ['gateway_ip' => '10.6.0.2'], $output);
+    $text = $output->fetch();
+
+    expect($exitCode)->toBe(1);
+    expect($text)->toContain('This peer is not registered on the gateway at 10.6.0.2')
+        ->and($text)->toContain('Ask your admin to register this machine on the gateway, then retry.')
+        ->and($text)->not->toContain('node:new --role=control');
 });
 
 it('shows gateway unavailable prose', function (): void {

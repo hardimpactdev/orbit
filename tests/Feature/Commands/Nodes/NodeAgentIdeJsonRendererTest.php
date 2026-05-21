@@ -98,19 +98,13 @@ describe('node:agent-ide JSON renderer contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload)->toBe(['error' => $error]);
     })->with([
-        'caller_role_not_allowed' => [[
-            'code' => 'caller_role_not_allowed',
-            'message' => 'This command may only be run from a control or gateway node.',
-            'meta' => [
-                'caller_role' => 'app',
-            ],
-        ]],
         'authorization_failed' => [[
             'code' => 'authorization_failed',
-            'message' => 'This control node is not authorized to update node configuration.',
+            'message' => "This node is not authorized for 'node:agent' on 'app-1'.",
             'meta' => [
-                'required_node' => 'gateway-1',
-                'caller_role' => 'control',
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:agent',
+                'serving_node' => 'app-1',
             ],
         ]],
         'node.not_found' => [[

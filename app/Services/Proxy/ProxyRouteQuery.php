@@ -7,10 +7,10 @@ namespace App\Services\Proxy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 class ProxyRouteQuery
 {
@@ -44,7 +44,10 @@ class ProxyRouteQuery
             throw new GatewayApiException(
                 message: 'This node is not authorized to read the proxy route registry.',
                 errorCode: 'authorization_failed',
-                errorMeta: ['caller_role' => $this->nodeRoleAssignments()->assignmentRoleLabel($caller)],
+                errorMeta: [
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'proxy:read',
+                ],
             );
         }
 
@@ -136,12 +139,20 @@ class ProxyRouteQuery
             return Node::query()->pluck('id')->all();
         }
 
-        return DB::table('node_access')
-            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->where('nodes.status', 'active')
-            ->pluck('nodes.id')
-            ->all();
+        $authorizer = app(NodeAccessAuthorizer::class);
+        $nodes = Node::query()
+            ->where('status', 'active')
+            ->get();
+
+        $visibleNodeIds = [];
+
+        foreach ($nodes as $node) {
+            if ($authorizer->allows($caller, $node, 'proxy:read')) {
+                $visibleNodeIds[] = $node->id;
+            }
+        }
+
+        return $visibleNodeIds;
     }
 
     private function nodeRoleAssignments(): NodeRoleAssignments

@@ -15,8 +15,8 @@ When run from a client, `workspace:new` acts as a gateway client:
 - **Gateway Dispatch:** Forwards the resolved configuration to the gateway
   over HTTPS through WireGuard.
 - **Apply:** The gateway performs the gateway workspace row write and
-  orchestrates app-role application over SSH via `RemoteShell`. The control
-  caller never opens an SSH connection to the node.
+  orchestrates owning-node application over SSH via `RemoteShell`. The client
+  never opens an SSH connection to the node.
 - **Progress Streaming:** Human output streams the step tree and apply
   progress from the gateway to the local renderer. JSON output uses the typed
   gateway response envelope and does not render a progress tree.
@@ -35,5 +35,5 @@ When run from a client, `workspace:new` acts as a gateway client:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Operator-caller input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct app-role SSH from the operator caller. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Client input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct SSH from the client. |
 | `tests/E2E/Ephemeral/WorkspaceNewControlForwardingTest.php` | Real-environment smoke coverage: `workspace:new` invoked from a client forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |

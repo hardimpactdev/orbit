@@ -1,10 +1,10 @@
-# Technical Contract: `node:new` Authorized For Control Callers
+# Technical Contract: `node:new` From Client Callers
 
 [Back to `node:new` technical contract.](1_node-new.md)
 
-This page describes what the gateway authorizes for callers whose
-authenticated node record has role `control`, plus the special first-gateway
-bootstrap path where the gateway does not exist yet.
+This page describes how configured CLI callers that are not gateways forward
+`node:new` to the gateway, plus the special first-gateway bootstrap path where
+the gateway does not exist yet.
 
 **Post-input path eligibility:**
 - For first-gateway bootstrap:
@@ -21,15 +21,14 @@ bootstrap path where the gateway does not exist yet.
   - a gateway is configured locally;
   - the CLI has an active gateway-issued WireGuard identity;
   - the CLI can reach the gateway API over HTTPS through WireGuard;
-  - the gateway authorizes the operator-role caller to request the selected
-    node creation or enrollment operation.
+  - the gateway authorizes the caller for `node:new` on the active gateway node.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, an operator caller with no configured gateway and a
+are known. For example, a client with no configured gateway and a
 resolved explicit requested role other than `gateway` fails before side effects,
 before prompting for app-role host, environment, TLD, or any later input.
-Omitted `--role` does not show a role prompt; it follows the joined/client
-no-hosted-role path and only succeeds when a gateway is already configured.
+Omitted `--role` does not show a role prompt; it follows the client identity
+no-role path and only succeeds when a gateway is already configured.
 Non-interactive input mode fails at the same early eligibility point for the
 same blocker. All path eligibility must complete before side effects begin.
 
@@ -38,17 +37,17 @@ same blocker. All path eligibility must complete before side effects begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local client onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| omitted `--role` | Forward a joined/client identity request with no roles to the configured gateway over HTTPS. |
-| `control` | Legacy compatibility alias for the no-role joined/client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
-| `app-development` | Resolve canonical hosted-role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
-| `app-production` | Resolve canonical hosted-role inputs, then forward to the gateway over HTTPS as `roles: ['app-production']`. Requires `node_new.host` and `node_new.user`. |
-| `database` | Forward a canonical hosted-role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
-| repeated roles | Forward compatible canonical hosted-role arrays, such as `roles: ['app-production', 'database']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
+| omitted `--role` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
+| `control` | Legacy compatibility alias for the no-role client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
+| `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
+| `app-production` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-production']`. Requires `node_new.host` and `node_new.user`. |
+| `database` | Forward a canonical role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
+| repeated roles | Forward compatible canonical role arrays, such as `roles: ['app-production', 'database']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
 | `app` | Legacy compatibility path. See app-role forwarding below. |
 
 For `--role=app`, resolve app-role inputs, then forward to the gateway over
 HTTPS using the legacy app contract with `node_new.environment`. Human mode
-warns that `app` now maps to hosted app roles after the environment is resolved
+warns that `app` now maps to app role assignments after the environment is resolved
 interactively or from flags.
 
 ## First-Gateway Bootstrap
@@ -83,8 +82,8 @@ When a gateway is configured:
 - Preserve all resolved role-specific inputs in the forwarded request,
   including:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
-  - canonical `roles[]` arrays for hosted-role requests;
-  - `node_new.tld` for development hosted app-role provisioning;
+  - canonical `roles[]` arrays for role requests;
+  - `node_new.tld` for development app-role provisioning;
   - legacy `node_new.environment` only for legacy `--role=app` forwarding.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.
@@ -114,7 +113,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Operator-caller behavior across input, bootstrap, and forwarding paths; see detail below. |
+| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Client-caller behavior across input, bootstrap, and forwarding paths; see detail below. |
 | `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from an client; see detail below. |
 | `tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for client execution after `gateway:add`, proving gateway convergence or adoption, app-role creation, and client enrollment are forwarded to the gateway over WireGuard instead of applied locally. |
 

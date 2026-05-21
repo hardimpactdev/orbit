@@ -6,45 +6,27 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
 final class AppShowController implements Loggable
 {
     private ?App $activitySubject = null;
 
-    public function __construct(
-        private readonly NodeRoleAssignments $nodeRoleAssignments,
-    ) {}
-
-    public function __invoke(Request $request, string $app): JsonResponse
+    public function __invoke(string $app): JsonResponse
     {
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return response()->json([
-                'error' => [
-                    'code' => 'authorization_failed',
-                    'message' => 'Peer identity unknown.',
-                    'meta' => [],
-                ],
-            ], 403);
-        }
-
-        $model = $this->resolveVisibleApp($app, $caller);
+        $model = $this->resolveApp($app);
 
         if (! $model instanceof App) {
             return response()->json([
                 'error' => [
                     'code' => 'app.not_found',
-                    'message' => "App '{$app}' not found or not visible.",
+                    'message' => "App '{$app}' not found.",
                     'meta' => [
                         'app' => $app,
                     ],
@@ -64,11 +46,10 @@ final class AppShowController implements Loggable
         ]);
     }
 
-    private function resolveVisibleApp(string $selector, Node $caller): ?App
+    private function resolveApp(string $selector): ?App
     {
         $baseQuery = App::query()
-            ->with('node')
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $this->visibleAppNodeIds($caller)));
+            ->with('node');
 
         $nameMatch = (clone $baseQuery)
             ->where('name', $selector)
@@ -81,32 +62,6 @@ final class AppShowController implements Loggable
         return $baseQuery
             ->where('domain', $selector)
             ->first();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function visibleAppNodeIds(Node $caller): array
-    {
-        $visibleNodeIds = $this->hostedAppNodeIds();
-
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $visibleNodeIds)
-            ->pluck('node_access.serving_node_id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
-            ->all();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function hostedAppNodeIds(): array
-    {
-        return array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
-        ]));
     }
 
     /**

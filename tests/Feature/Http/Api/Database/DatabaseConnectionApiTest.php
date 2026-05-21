@@ -59,7 +59,7 @@ describe('database connection api', function (): void {
     it('allows active non-gateway callers with database permissions to use registry endpoints', function (): void {
         $caller = createDatabaseApiCallerNode();
         $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
-        grantDatabaseApiAccess($caller, $node, ['database:read', 'database:attach']);
+        grantDatabaseApiAccess($caller, $node, ['database:read', 'database:write']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
@@ -227,7 +227,8 @@ describe('database connection api', function (): void {
             ->assertJsonPath('success.data.rows.0.id', 1);
         $writeResponse->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.permission', 'database:query:write');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'database:query:write');
     });
 
     it('rejects active app and database callers from registry endpoints without database grants', function (): void {
@@ -250,10 +251,12 @@ describe('database connection api', function (): void {
 
         $appResponse->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'database:read');
         $databaseResponse->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'database:read');
     });
 
     it('rejects active app and database legacy-role callers without active assignments', function (): void {
@@ -275,10 +278,12 @@ describe('database connection api', function (): void {
 
         $appResponse->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'database:read');
         $databaseResponse->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'database:read');
     });
 
     it('rejects inactive control callers from registry endpoints', function (): void {

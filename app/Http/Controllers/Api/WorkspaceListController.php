@@ -9,18 +9,19 @@ use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 final readonly class WorkspaceListController implements Loggable
 {
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -48,7 +49,8 @@ final readonly class WorkspaceListController implements Loggable
 
         if (! $callerIsGateway && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the workspace registry.', [
-                'caller_role' => $caller->role,
+                'reason' => 'missing_permission',
+                'missing_permission' => 'workspace:read',
             ]);
         }
 
@@ -87,11 +89,12 @@ final readonly class WorkspaceListController implements Loggable
             return $visibleNodeIds;
         }
 
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $visibleNodeIds)
-            ->pluck('node_access.serving_node_id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+        return Node::query()
+            ->whereIn('id', $visibleNodeIds)
+            ->get()
+            ->filter(fn (Node $node): bool => $this->authorizer->allows($caller, $node, 'workspace:read'))
+            ->map(fn (Node $node): int => $node->id)
+            ->values()
             ->all();
     }
 

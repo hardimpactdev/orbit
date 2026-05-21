@@ -17,7 +17,6 @@ use App\Http\Gateway\Requests\Processes\EditProcessRequest;
 use App\Http\Gateway\Responses\Processes\ProcessEditResponse;
 use App\Models\App;
 use App\Models\Process;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -38,9 +37,9 @@ class ProcessEditCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(EditProcess $editProcess, CallerRoleResolver $callerRoleResolver): int
+    public function handle(EditProcess $editProcess): int
     {
-        $callerRole = $callerRoleResolver->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $input = $this->validatedInput();
 
@@ -50,9 +49,9 @@ class ProcessEditCommand extends Command
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $input, $editProcess, &$result, &$failure): string {
+        $operation = function () use ($onGateway, $input, $editProcess, &$result, &$failure): string {
             try {
-                if ($callerRole === 'control') {
+                if (! $onGateway) {
                     $result = $this->forwardEditResult($input);
 
                     return 'gateway accepted';

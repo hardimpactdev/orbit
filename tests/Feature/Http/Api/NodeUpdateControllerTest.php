@@ -57,12 +57,12 @@ function createUpdateGatewayNode(): int
         'wireguard_address' => '10.6.0.2',
     ]));
 
-    assignUpdateNodeRole($gatewayId, 'gateway');
+    assignNodeUpdateRole($gatewayId, 'gateway');
 
     return $gatewayId;
 }
 
-function assignUpdateNodeRole(int $nodeId, string $role, string $status = 'active'): void
+function assignNodeUpdateRole(int $nodeId, string $role, string $status = 'active'): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $nodeId,
@@ -71,11 +71,31 @@ function assignUpdateNodeRole(int $nodeId, string $role, string $status = 'activ
     ]);
 }
 
-function grantUpdateGatewayAccess(int $callerId, int $gatewayId): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantUpdateGatewayAccess(int $callerId, int $gatewayId, array $permissions = ['*']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $callerId,
         'serving_node_id' => $gatewayId,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+/**
+ * @param  list<string>  $permissions
+ */
+function grantUpdateNodeAccess(int $consumerId, int $servingId, array $permissions): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $consumerId,
+        'serving_node_id' => $servingId,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -159,7 +179,7 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('updates a node directly for a gateway caller', function (): void {
-        assignUpdateNodeRole(createUpdateCallerNode('gateway'), 'gateway');
+        assignNodeUpdateRole(createUpdateCallerNode('gateway'), 'gateway');
         DB::table('nodes')->insert(apiUpdateNodeRow());
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
@@ -170,7 +190,7 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('success.data.changed', ['host']);
     });
 
-    it('rejects stale gateway role shadows before mutation', function (): void {
+    it('rejects callers without node update grants before mutation', function (): void {
         createUpdateCallerNode('gateway');
         DB::table('nodes')->insert(apiUpdateNodeRow());
 
@@ -179,8 +199,10 @@ describe('NodeUpdateController', function (): void {
         ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.meta.caller_role', 'gateway');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:update')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
@@ -237,18 +259,17 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.meta', []);
     });
 
-    it('rejects app callers before mutation', function (): void {
-        createUpdateCallerNode('app');
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+    it('updates for app callers with explicit target node update grants', function (): void {
+        $callerId = createUpdateCallerNode('app');
+        $targetId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow());
+        grantUpdateNodeAccess($callerId, $targetId, ['node:update']);
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['host']);
 
-        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.8');
     });
 
     it('rejects database callers before mutation', function (): void {
@@ -258,28 +279,27 @@ describe('NodeUpdateController', function (): void {
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:update')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
 
-    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+    it('updates for database callers with gateway admin grants even when the legacy role shadow is control', function (): void {
         $callerId = createUpdateCallerNode();
-        assignUpdateNodeRole($callerId, 'database');
+        assignNodeUpdateRole($callerId, 'database');
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
         DB::table('nodes')->insert(apiUpdateNodeRow());
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['host']);
 
-        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.8');
     });
 
     it('rejects control callers without gateway access', function (): void {
@@ -291,9 +311,9 @@ describe('NodeUpdateController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This operator node is not authorized to update nodes.')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:update')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
     });
 
     it('checks control caller authorization against active gateway assignments', function (): void {
@@ -313,8 +333,9 @@ describe('NodeUpdateController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:update')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });

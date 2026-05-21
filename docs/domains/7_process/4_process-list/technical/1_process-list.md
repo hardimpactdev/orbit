@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer to read process configuration for the target app or workspace context. `unknown` callers are denied.
+- The gateway authorizes the authenticated peer for `process:read` on the target app's owning node.
 
 ## Signature
 
@@ -22,8 +22,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may read. |
-| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace of the selected app that the caller may read. |
+| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:read`. |
+| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:read`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -55,7 +55,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 
-Owning app-role reachability is not part of the default list path and does not cause this command to fail.
+Owning app-host reachability is not part of the default list path and does not cause this command to fail.
 
 ## Doctor Relationship
 
@@ -79,7 +79,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, app-role caller allowance, unknown-role denial, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
+| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, grant-scoped visibility, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
 | `tests/Feature/Commands/Processes/ProcessListInputContractTest.php` | App and workspace input resolution, missing context failures, ambiguous context failures, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

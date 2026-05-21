@@ -63,6 +63,30 @@ function apiStoreNodeRow(array $overrides = []): array
     ], $overrides);
 }
 
+function assignStoreNodeRole(int $nodeId, string $role): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+    ]);
+}
+
+/**
+ * @param  list<string>  $permissions
+ */
+function grantStoreNodeAccess(int $consumerId, int $servingId, array $permissions): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $consumerId,
+        'serving_node_id' => $servingId,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
 describe('NodeStoreController', function (): void {
     it('rejects legacy gateway callers without an active gateway assignment', function (): void {
         DB::table('nodes')->insert([
@@ -93,17 +117,16 @@ describe('NodeStoreController', function (): void {
     });
 
     it('rejects database callers before provisioning when the legacy role shadow is control', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'database-caller',
             'role' => 'control',
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
         ]));
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $callerId,
-            'role' => 'database',
-            'status' => 'active',
-        ]);
+        assignStoreNodeRole($callerId, 'database');
 
         Process::fake();
         Process::preventStrayProcesses();
@@ -118,7 +141,10 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:new')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
         expect(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -129,11 +155,7 @@ describe('NodeStoreController', function (): void {
             'name' => 'gateway',
             'role' => 'gateway',
         ]));
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $gatewayId,
-            'role' => 'gateway',
-            'status' => 'active',
-        ]);
+        assignStoreNodeRole($gatewayId, 'gateway');
 
         Process::fake();
         Process::preventStrayProcesses();
@@ -155,21 +177,22 @@ describe('NodeStoreController', function (): void {
     it('executes node creation in gateway context even when local config is stale', function (): void {
         config(['orbit.is_gateway' => false]);
 
-        DB::table('nodes')->insert([
-            apiStoreNodeRow([
-                'name' => 'gateway',
-                'role' => 'gateway',
-            ]),
-            apiStoreNodeRow([
-                'name' => 'control-1',
-                'role' => 'control',
-                'host' => '10.6.0.3',
-                'wireguard_address' => '10.6.0.3',
-                'gateway_endpoint' => '10.6.0.2',
-                'user' => 'tester',
-                'orbit_path' => '/home/tester/orbit',
-            ]),
-        ]);
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'gateway',
+            'role' => 'gateway',
+        ]));
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
 
         Process::fake();
         Process::preventStrayProcesses();
@@ -191,18 +214,19 @@ describe('NodeStoreController', function (): void {
     });
 
     it('provisions an app node for an authenticated control caller', function (): void {
-        DB::table('nodes')->insert([
-            apiStoreNodeRow(),
-            apiStoreNodeRow([
-                'name' => 'control-1',
-                'role' => 'control',
-                'host' => '10.6.0.3',
-                'wireguard_address' => '10.6.0.3',
-                'gateway_endpoint' => '10.6.0.2',
-                'user' => 'tester',
-                'orbit_path' => '/home/tester/orbit',
-            ]),
-        ]);
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
 
         WireGuardPeer::query()->create([
             'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
@@ -277,18 +301,18 @@ describe('NodeStoreController', function (): void {
     });
 
     it('rejects app callers before provisioning', function (): void {
-        DB::table('nodes')->insert([
-            apiStoreNodeRow(),
-            apiStoreNodeRow([
-                'name' => 'app-caller',
-                'role' => 'app',
-                'environment' => 'development',
-                'tld' => 'caller',
-                'host' => '10.6.0.7',
-                'wireguard_address' => '10.6.0.7',
-                'gateway_endpoint' => '10.6.0.2',
-            ]),
-        ]);
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        DB::table('nodes')->insert(apiStoreNodeRow([
+            'name' => 'app-caller',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'caller',
+            'host' => '10.6.0.7',
+            'wireguard_address' => '10.6.0.7',
+            'gateway_endpoint' => '10.6.0.2',
+        ]));
 
         Process::fake();
         Process::preventStrayProcesses();
@@ -304,25 +328,29 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:new')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
         expect(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
     it('adopts a compatible app node for an authenticated control caller', function (): void {
-        DB::table('nodes')->insert([
-            apiStoreNodeRow(),
-            apiStoreNodeRow([
-                'name' => 'control-1',
-                'role' => 'control',
-                'host' => '10.6.0.3',
-                'wireguard_address' => '10.6.0.3',
-                'gateway_endpoint' => '10.6.0.2',
-                'user' => 'tester',
-                'orbit_path' => '/home/tester/orbit',
-            ]),
-        ]);
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
 
         $nodeId = DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'app-adopt-1',
@@ -384,18 +412,19 @@ describe('NodeStoreController', function (): void {
     });
 
     it('materializes a compatible unknown app host for an authenticated control caller', function (): void {
-        DB::table('nodes')->insert([
-            apiStoreNodeRow(),
-            apiStoreNodeRow([
-                'name' => 'control-1',
-                'role' => 'control',
-                'host' => '10.6.0.3',
-                'wireguard_address' => '10.6.0.3',
-                'gateway_endpoint' => '10.6.0.2',
-                'user' => 'tester',
-                'orbit_path' => '/home/tester/orbit',
-            ]),
-        ]);
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
 
         app()->instance(RemoteShell::class, new NodeStoreSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([

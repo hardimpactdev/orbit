@@ -34,12 +34,6 @@ final class VpnWebUiChangePasswordCommand extends VpnCommandSupport
 
     private function executeVpnWebUiChangePassword(): int
     {
-        $denied = $this->ensureAllowedCaller();
-
-        if ($denied !== null) {
-            return $denied;
-        }
-
         $newPassword = $this->stringArgument('password');
 
         if ($newPassword === null) {

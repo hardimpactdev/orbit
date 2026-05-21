@@ -8,8 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
-- `control` and `gateway` callers may proceed when authorized.
+- The gateway authorizes the authenticated peer for `process:edit` on the target app's owning node.
 - To re-render runtime artifacts, the gateway must reach the owning node.
 
 ## Signature
@@ -25,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
-| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may manage. |
+| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:edit`. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
@@ -77,7 +76,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:PATCH /processes/{name}` |
 | Effect | `write` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
 | Properties | `app` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 
@@ -87,7 +86,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessEditCommandTest.php` | Process update contract, caller-role denial, required editable fields, app resolution, re-rendering derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessEditCommandTest.php` | Process update contract, grant authorization denial, required editable fields, app resolution, re-rendering derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessEditInputContractTest.php` | Required inputs, editable field validation, enum validation, no-op rejection, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

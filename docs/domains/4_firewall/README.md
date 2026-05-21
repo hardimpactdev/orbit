@@ -23,6 +23,9 @@ create, update, or remove firewall rules. Firewall writes require an
 `admin`-class preset or an explicit `firewall_rule:write` permission on the
 grant.
 
+Authorization failures use `authorization_failed` with standard
+`missing_permission` metadata.
+
 **Read and adopt rules:**
 
 - Bootstrap policy includes Orbit/WireGuard management access and public ingress decisions specific to each node role. Firewall commands do not create public SSH policy exceptions for nodes.

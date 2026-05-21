@@ -11,11 +11,9 @@ use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
-use App\Models\Node;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final readonly class DeployManager
@@ -412,18 +410,6 @@ final readonly class DeployManager
         }
 
         return $app;
-    }
-
-    public function canAccess(Node $caller, App $app): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        return DB::table('node_access')
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $app->node_id)
-            ->exists();
     }
 
     public function stepEntity(DeployStep $step): array

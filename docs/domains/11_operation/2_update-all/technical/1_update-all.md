@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the calling WireGuard peer to update Orbit installations. App-role peers are rejected by the gateway.
+- The gateway authorizes the calling WireGuard peer with gateway-admin authority
+  (`*` on the active gateway node).
 - The gateway can reach each selected non-local installation through its node execution path.
 
 ## Signature
@@ -32,8 +33,8 @@ options are optional.
 ## Input Resolution
 
 1. Select the output renderer.
-2. Call the gateway to authorize the fleet update and resolve selected non-local
-   managed Orbit installations from active gateway node configuration.
+2. Call the gateway to authorize gateway-admin authority and resolve selected
+   non-local managed Orbit installations from active gateway node configuration.
 3. Start the fleet update sequence through the selected output renderer's
    execution contract.
 4. After the gateway-local checkout succeeds, selected remote app-role
@@ -59,12 +60,12 @@ execution details live in the renderer contracts.
   the local target.
 - Apply gateway-owned authorization before updating any installation.
 
-The expected target shape per calling peer role:
+The expected target shape per calling context:
 
-| Peer role identified by gateway | Local target | Gateway target | App-role targets | Other client targets |
+| Calling context | Local target | Gateway target | App-role targets | Other client targets |
 | --- | --- | --- | --- | --- |
-| `control` peer | The control checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active node selected by the rules above. | Never. |
-| `gateway` peer | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
+| Non-gateway caller with gateway-admin authority | The caller-local checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active node selected by the rules above. | Never. |
+| Gateway caller | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
 
 ### Per-Installation Update Rules
 
@@ -150,7 +151,7 @@ Primary existing test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap coverage for local plus registered-node update execution. Expand to cover: gateway denial of app-role peers, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
+| `tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap coverage for local plus registered-node update execution. Expand to cover: gateway-admin denial, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
 
 Required split contract tests:
 

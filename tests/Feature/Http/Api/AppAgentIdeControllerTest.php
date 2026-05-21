@@ -23,19 +23,30 @@ const APP_AGENT_IDE_CALLER_WG_IP = '10.6.0.98';
 
 function createAppAgentIdeCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'caller',
         'role' => 'control',
         'host' => APP_AGENT_IDE_CALLER_WG_IP,
         'wireguard_address' => APP_AGENT_IDE_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    if ($attributes['role'] === 'gateway') {
+        return createTestGatewayNode($attributes);
+    }
+
+    return Node::factory()->create($attributes);
 }
 
-function grantAppAgentIdeAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppAgentIdeAccess(Node $caller, Node $appNode, array $permissions = ['app:agent']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -159,12 +170,13 @@ describe('AppAgentIdeController', function (): void {
         expect($entry->properties->get('action'))->toBe('set');
     });
 
-    it('rejects callers without access before mutation', function (): void {
-        createAppAgentIdeCallerNode();
+    it('rejects callers without app:agent before mutation', function (): void {
+        $caller = createAppAgentIdeCallerNode();
         $appNode = Node::factory()->create([
             'name' => 'app-1',
             'role' => 'app',
         ]);
+        grantAppAgentIdeAccess($caller, $appNode, ['app:read']);
 
         App::factory()->create([
             'name' => 'docs',
@@ -177,7 +189,8 @@ describe('AppAgentIdeController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.missing_permission', 'app:agent')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
     });

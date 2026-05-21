@@ -8,8 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration writes on the target app. `app` and `unknown` callers are denied.
-- `control` and `gateway` callers may proceed when authorized.
+- The gateway authorizes the authenticated peer for `process:remove` on the target app's owning node.
 - Runtime artifact cleanup requires gateway reachability to the owning node.
 
 ## Signature
@@ -25,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
-| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may manage. |
+| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:remove`. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false`. | Boolean flag. Bypasses the interactive confirmation prompt when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. It never grants destructive consent. |
 
@@ -77,7 +76,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:DELETE /processes/{name}` |
 | Effect | `destructive` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
 | Properties | `app` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
 | Description | derived |
 
@@ -87,7 +86,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Caller-role denial, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Grant authorization denial, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php` | Required inputs, app resolution, `--force` destructive consent behavior, `--json` not granting consent, and cancelled confirmation behavior. |
 
 Renderer and input-mode test mapping lives in the split companion files.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Vpn\VpnBackendClient;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Services\Vpn\ArrayVpnBackend;
 use App\Services\Vpn\VpnBackend;
@@ -14,7 +15,7 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 it('logs vpn api activity with safe metadata', function (): void {
-    $node = Node::factory()->create([
+    $node = createTestGatewayNode([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
@@ -48,7 +49,7 @@ it('logs vpn api activity with safe metadata', function (): void {
 });
 
 it('returns vpn runtime unavailable when no active vpn role node exists', function (): void {
-    Node::factory()->create([
+    createTestGatewayNode([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
@@ -67,7 +68,7 @@ it('returns vpn runtime unavailable when no active vpn role node exists', functi
 });
 
 it('uses the configured fake backend without requiring an active vpn role node', function (): void {
-    Node::factory()->create([
+    createTestGatewayNode([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'host' => '10.6.0.2',
@@ -100,4 +101,95 @@ it('uses the configured fake backend without requiring an active vpn role node',
     } finally {
         File::delete($backendPath);
     }
+});
+
+it('requires vpn read grants for non-gateway api callers', function (): void {
+    $gateway = createTestGatewayNode([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.6.0.9'])
+        ->getJson('/api/vpn/clients')
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.missing_permission', 'vpn:read')
+        ->assertJsonPath('error.meta.serving_node', 'gateway-1');
+});
+
+it('allows non-gateway api callers with vpn read grants', function (): void {
+    $gateway = createTestGatewayNode([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+    $caller = Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+    NodeAccess::query()->create([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $gateway->id,
+        'permissions' => ['vpn:read'],
+        'custom_permissions' => ['vpn:read'],
+    ]);
+    app()->instance(VpnBackend::class, new ArrayVpnBackend([
+        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null),
+    ]));
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.6.0.9'])
+        ->getJson('/api/vpn/clients')
+        ->assertOk()
+        ->assertJsonPath('success.data.clients.0.name', 'laptop');
+});
+
+it('requires vpn write grants for non-gateway api writes', function (): void {
+    $gateway = createTestGatewayNode([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.6.0.9'])
+        ->postJson('/api/vpn/clients', ['name' => 'laptop'])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.missing_permission', 'vpn:write')
+        ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 });

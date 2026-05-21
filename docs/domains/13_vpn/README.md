@@ -29,10 +29,10 @@ These rules govern all VPN commands and their gateway-execution contract.
 - CLI calls on the gateway host execute the backend operation locally.
 - CLI calls from a remote client open an SSH connection to the active `vpn`
   role host over the Orbit/WireGuard path and execute the VPN-backend command
-  there. Either path requires a grant to the `vpn` role host that includes
-  the `vpn-client:*` or `vpn-web-ui:*` permissions for the requested
-  command; the typical preset is `admin` (or `gateway-admin` on a grant to
-  the gateway). This SSH-over-WireGuard path is a VPN-role infrastructure
+  there. Gateway API authorization requires `vpn:read` for list operations
+  and `vpn:write` for client mutations and web UI password rotation on the
+  active gateway node; `gateway-admin` (`*` on the gateway) also satisfies
+  those checks. This SSH-over-WireGuard path is a VPN-role infrastructure
   exception and is not a general public SSH path.
 - `vpn-client:*` commands manage VPN clients for humans and operators, not Orbit node peers.
 

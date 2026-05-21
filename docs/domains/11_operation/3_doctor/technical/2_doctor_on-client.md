@@ -100,4 +100,4 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, `--family` rejection for families outside the target active-role set, and `--node=<other>` role-assignment scoping for app-family probes. |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Control-peer forwarding through the typed gateway request, mutually exclusive flag rejection, unsupported family rejection, app-role write-mode denial, verify request shape, and rendered panel structure. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Control-peer forwarding through the typed gateway request, mutually exclusive flag rejection, unsupported family rejection, authorization failure handling, verify request shape, and rendered panel structure. |

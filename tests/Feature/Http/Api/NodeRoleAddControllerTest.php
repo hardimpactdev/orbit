@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -9,8 +10,8 @@ uses(RefreshDatabase::class);
 require_once __DIR__.'/NodeRoleApiTestHelpers.php';
 
 describe('NodeRoleAddController', function (): void {
-    it('adds a role for an authorized control caller and returns the assignment payload', function (): void {
-        [, , $target] = setUpNodeRoleApiContractAccess();
+    it('adds a role for an authorized caller and returns the assignment payload', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'database',
@@ -28,7 +29,7 @@ describe('NodeRoleAddController', function (): void {
     });
 
     it('rejects gateway role additions before side effects', function (): void {
-        [, , $target] = setUpNodeRoleApiContractAccess();
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'gateway',
@@ -45,8 +46,8 @@ describe('NodeRoleAddController', function (): void {
         expect($target->roleAssignments()->where('role', 'gateway')->exists())->toBeFalse();
     });
 
-    it('returns the authorized control caller response shape', function (): void {
-        setUpNodeRoleApiContractAccess();
+    it('returns the authorized caller response shape', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-development',
@@ -70,5 +71,13 @@ describe('NodeRoleAddController', function (): void {
             ])
             ->assertJsonPath('success.data.node', 'target-1')
             ->assertJsonPath('success.data.assignment.settings.tld', 'test');
+
+        $selfGrant = NodeAccess::query()
+            ->where('consumer_node_id', $target->id)
+            ->where('serving_node_id', $target->id)
+            ->first();
+
+        expect($selfGrant?->permissions)->toBe(['workspace:setup'])
+            ->and($selfGrant?->custom_permissions)->toBe([]);
     });
 });

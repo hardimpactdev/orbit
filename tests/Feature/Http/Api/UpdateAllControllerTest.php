@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,7 +36,7 @@ function createUpdateAllAppHostNode(array $attributes, string $role = 'app-devel
 }
 
 beforeEach(function (): void {
-    Node::factory()->create([
+    createTestGatewayNode([
         'name' => 'gateway',
         'role' => 'gateway',
         'host' => 'gateway',
@@ -322,6 +323,49 @@ it('rejects unauthenticated requests', function (): void {
     $this->call('POST', '/api/update/all')
         ->assertStatus(403)
         ->assertJsonPath('error.code', 'authorization_failed');
+});
+
+it('requires gateway-admin authority for non-gateway callers', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'status' => 'active',
+        'wireguard_address' => '10.6.0.90',
+    ]);
+
+    $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => '10.6.0.90'])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.missing_permission', '*')
+        ->assertJsonPath('error.meta.serving_node', 'gateway');
+});
+
+it('allows non-gateway callers with gateway-admin authority', function (): void {
+    $gateway = Node::query()->where('name', 'gateway')->firstOrFail();
+    $caller = Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'status' => 'active',
+        'wireguard_address' => '10.6.0.90',
+    ]);
+    NodeAccess::query()->create([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $gateway->id,
+        'permissions' => ['*'],
+        'custom_permissions' => ['*'],
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
+
+    $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => '10.6.0.90']);
+
+    $response->assertOk()
+        ->assertJsonPath('success.data.updates.0.target', 'gateway');
 });
 
 it('streams progress events for gateway-owned update targets', function (): void {

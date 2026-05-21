@@ -70,21 +70,6 @@ abstract class VpnCommandSupport extends Command implements Loggable
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
-    protected function ensureAllowedCaller(): ?int
-    {
-        $role = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
-
-        if (in_array($role, ['gateway', 'control'], true)) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'caller_role_not_allowed',
-            message: 'This command may only be run from a control or gateway node.',
-            meta: ['caller_role' => $role],
-        );
-    }
-
     protected function forwardToGateway(string $command, array $arguments = [], array $options = []): array|VpnFailure
     {
         try {

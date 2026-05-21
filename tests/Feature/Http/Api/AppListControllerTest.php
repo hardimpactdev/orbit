@@ -48,11 +48,16 @@ function assignAppListGatewayRole(Node $node): void
     ]);
 }
 
-function grantAppListAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantAppListAccess(Node $caller, Node $appNode, array $permissions = ['app:read']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -100,6 +105,7 @@ describe('AppListController', function (): void {
         $visibleNode = createAppListAppNode(['name' => 'visible-node']);
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node']);
         grantAppListAccess($caller, $visibleNode);
+        grantAppListAccess($caller, $hiddenNode, ['node:read']);
 
         App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
         App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
@@ -138,15 +144,17 @@ describe('AppListController', function (): void {
     });
 
     it('returns authorization failure when the caller has no app registry visibility', function (): void {
-        createAppListCallerNode();
+        $caller = createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
+        grantAppListAccess($caller, $node, ['node:read']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This node is not authorized to read the app registry.');
+            ->assertJsonPath('error.message', 'This node is not authorized to read the app registry.')
+            ->assertJsonPath('error.meta.missing_permission', 'app:read');
     });
 
     it('returns validation error for invalid environment', function (): void {

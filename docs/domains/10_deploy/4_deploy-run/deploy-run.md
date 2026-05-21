@@ -58,9 +58,8 @@ foreground runs. Detached JSON output returns the created run with
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
-- The caller is authorized to deploy the production app.
+- The caller has `deploy:run` on the production app's owning node.
 - The gateway can reach the app's owning node.
-- App-role callers are denied before prompts or side effects.
 
 ## Related
 

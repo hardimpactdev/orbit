@@ -45,8 +45,7 @@ JSON output returns the run entity and per-step captured output.
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
-- The caller is authorized to inspect deployment history for the production
-  app.
+- The caller has `deploy:read` on the production app's owning node.
 
 ## Related
 

@@ -110,16 +110,18 @@ describe('node:agent-ide non-interactive input mode', function (): void {
             ]);
     });
 
-    it('sends app-role callers to the gateway write request and preserves the role denial', function (): void {
+    it('sends non-gateway callers to the gateway write request and preserves grant denial', function (): void {
         setupNodeAgentIdeNonInteractiveAppCaller();
 
         $mock = MockClient::global([
             SetNodeAgentIdeRequest::class => MockResponse::make([
                 'error' => [
-                    'code' => 'caller_role_not_allowed',
-                    'message' => 'This command may only be run from a control or gateway node.',
+                    'code' => 'authorization_failed',
+                    'message' => "This node is not authorized for 'node:agent' on 'app-1'.",
                     'meta' => [
-                        'caller_role' => 'app',
+                        'reason' => 'missing_permission',
+                        'missing_permission' => 'node:agent',
+                        'serving_node' => 'app-1',
                     ],
                 ],
             ], 403),
@@ -134,10 +136,12 @@ describe('node:agent-ide non-interactive input mode', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error'])->toBe([
-                'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control or gateway node.',
+                'code' => 'authorization_failed',
+                'message' => "This node is not authorized for 'node:agent' on 'app-1'.",
                 'meta' => [
-                    'caller_role' => 'app',
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'node:agent',
+                    'serving_node' => 'app-1',
                 ],
             ]);
 

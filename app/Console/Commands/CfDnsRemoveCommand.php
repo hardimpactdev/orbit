@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -19,7 +18,7 @@ use Saloon\Enums\Method;
 #[Description('Remove a Cloudflare address DNS record')]
 final class CfDnsRemoveCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $recordId = $this->stringArgument('record-id');
         $zone = $this->stringOption('zone');
@@ -35,7 +34,6 @@ final class CfDnsRemoveCommand extends CloudflareCommand
         }
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(
                 method: Method::DELETE,
                 endpoint: "/api/cloudflare/zones/{$zone}/dns/{$recordId}",

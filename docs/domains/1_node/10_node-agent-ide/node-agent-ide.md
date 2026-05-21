@@ -37,7 +37,7 @@ orbit node:agent-ide app-1 polyscope --json
 ## What Happens
 
 `node:agent-ide` writes the adapter you choose into gateway node
-configuration. Gateway callers execute locally; configured operator callers
+configuration. Gateway callers execute locally; configured non-gateway callers
 forward the request to the gateway over HTTPS through WireGuard.
 
 The command:
@@ -90,11 +90,12 @@ payload shape.
 ## Requirements
 
 - Must run on the gateway host or from a configured client.
-- Operator callers must be authorized to update node registry configuration.
-- App callers are rejected by the gateway before side effects. Local input
-  validation or prompting may occur before the final gateway write request
-  unless another gateway request naturally returns the role denial first. The
-  CLI does not perform a local app-role check or a separate `/api/me` preflight.
+- Non-gateway callers must be authorized for `node:agent` on the target node.
+- Unauthorized callers are rejected by the gateway before side effects. Local
+  input validation or prompting may occur before the final gateway write request
+  unless another gateway request naturally returns the authorization denial
+  first. The CLI does not perform a local role check or a separate identity
+  preflight.
 - The target node must exist in gateway configuration.
 - The adapter must be present in the gateway-owned adapter registry. Adapters
   shipped by installed Orbit extensions become valid only after the extension

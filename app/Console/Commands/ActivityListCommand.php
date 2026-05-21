@@ -33,7 +33,7 @@ class ActivityListCommand extends Command
 
     public function handle(ActivityHistory $history): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $filters = $this->validatedFilters();
 
@@ -42,7 +42,7 @@ class ActivityListCommand extends Command
         }
 
         try {
-            $result = $this->fetchActivity($callerRole, $filters, $history);
+            $result = $this->fetchActivity($onGateway, $filters, $history);
         } catch (Throwable) {
             return $this->failGatewayError(
                 code: 'gateway_unavailable',
@@ -127,9 +127,9 @@ class ActivityListCommand extends Command
      * @param  array{app: string|null, node: string|null, effect: string|null, correlation: string|null, limit: int}  $filters
      * @return array{activities: list<array<string, mixed>>, meta: array<string, mixed>}|GatewayApiException
      */
-    private function fetchActivity(string $callerRole, array $filters, ActivityHistory $history): array|GatewayApiException
+    private function fetchActivity(bool $onGateway, array $filters, ActivityHistory $history): array|GatewayApiException
     {
-        if ($callerRole === 'gateway') {
+        if ($onGateway) {
             return $history->list($filters);
         }
 

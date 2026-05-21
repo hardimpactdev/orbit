@@ -24,9 +24,9 @@ execution.
 - For canonical `--role=app-production`, `node_new.name`, `node_new.role`,
   `node_new.host`, and `node_new.user` can be resolved, and the target host is
   reachable over SSH as `node_new.user`.
-- For canonical hosted-role requests that include `database` alongside an app
+- For canonical role requests that include `database` alongside an app
   role, the shared host-provisioning preconditions for that app role apply.
-- For canonical hosted-role requests that include `database` alone, no
+- For canonical role requests that include `database` alone, no
   SSH/bootstrap-only inputs are required.
 - For legacy `--role=app`, `node_new.name`, `node_new.role`,
   `node_new.environment`, `node_new.host`, and `node_new.user` can be
@@ -58,13 +58,13 @@ side effects that the gateway owns begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. |
-| omitted `--role` | Enroll a joined/client identity with no roles by minting a WireGuard peer and active node record. |
-| `control` | Legacy compatibility alias for the no-role joined/client enrollment path. |
-| `app-development` | Provision or adopt an app-development node over SSH, then create the hosted-role assignment. |
-| `app-production` | Provision or adopt an app-production node over SSH, then create the hosted-role assignment. |
-| `database` | Create the base node identity plus an active database hosted-role assignment. When requested alone, no SSH provisioning path runs. |
-| repeated roles | Provision or adopt one compatible host for the requested hosted-role set, then create each hosted-role assignment. Supported initial combinations are `app-development` + `database` and `app-production` + `database`. |
-| `app` | Legacy compatibility path. Provision or adopt a node with an app role over SSH using `node_new.environment`, then create the mapped hosted-role assignment. |
+| omitted `--role` | Enroll a client identity with no roles by minting a WireGuard peer and active node record. |
+| `control` | Legacy compatibility alias for the no-role client enrollment path. |
+| `app-development` | Provision or adopt an app-development node over SSH, then create the role assignment. |
+| `app-production` | Provision or adopt an app-production node over SSH, then create the role assignment. |
+| `database` | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
+| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database` and `app-production` + `database`. |
+| `app` | Legacy compatibility path. Provision or adopt a node with an app role over SSH using `node_new.environment`, then create the mapped role assignment. |
 
 ## Gateway Authority Rules
 
@@ -75,7 +75,7 @@ side effects that the gateway owns begin.
   must not bind UDP `51820`.
 - Gateway execution may write durable node state directly.
 - Gateway execution may use SSH to provision app-hosting nodes.
-- Gateway execution must not SSH to joined/client identities for omitted
+- Gateway execution must not SSH to client identities for omitted
   `--role` or legacy `--role=control`.
 
 ## Gateway convergence and adoption
@@ -117,7 +117,7 @@ changes the matrix and never authorizes reset or destructive reprovisioning.
 For omitted `--role` or legacy `--role=control`:
 
 1. Resolve `node_new.name` and `node_new.role`.
-2. Apply the canonical forbidden-input rules for a no-hosted-role identity,
+2. Apply the canonical forbidden-input rules for a no-role identity,
    including SSH/bootstrap-only inputs.
 3. Mint a WireGuard peer.
 4. Create or converge the active client row with matching `wg_ip`.

@@ -178,7 +178,7 @@ setup-step removal attempts.
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php` | Atomic delete + order-compaction within `(app, phase=setup)`, refusal to remove a `phase=teardown` step, and rejection of step records that do not belong to the resolved app. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found handling, destructive consent (`--force` and `--json` interaction), and runtime-lock absence (full scope below). |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCallerRoleTest.php` | Operator / gateway peer acceptance and app-role peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
 | `tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php` | Real gateway delete against a registered app with steps, verification of contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight `workspace:setup` run continues using its start-of-run snapshot. |
 
 `WorkspaceSetupStepRemoveCommandTest` covers:

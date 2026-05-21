@@ -12,7 +12,6 @@ use App\Http\Gateway\Responses\Workspaces\WorkspaceStepMutationResponse;
 use App\Models\App;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Console\Command;
 use Throwable;
@@ -27,7 +26,7 @@ abstract class AbstractWorkspaceStepAddCommand extends Command
 
     public function handle(WorkspaceStepListPayload $payload): int
     {
-        $callerRole = app(CallerRoleResolver::class)->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         $command = $this->resolveStepCommand();
 
@@ -78,7 +77,7 @@ abstract class AbstractWorkspaceStepAddCommand extends Command
         $path = $app === null ? (realpath((string) getcwd()) ?: (string) getcwd()) : null;
 
         try {
-            $response = $this->storeStep($app, $path, $command, $timeout, is_int($before) ? $before : null, is_int($after) ? $after : null, $callerRole, $payload);
+            $response = $this->storeStep($app, $path, $command, $timeout, is_int($before) ? $before : null, is_int($after) ? $after : null, $onGateway, $payload);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -112,10 +111,10 @@ abstract class AbstractWorkspaceStepAddCommand extends Command
         int $timeout,
         ?int $before,
         ?int $after,
-        string $callerRole,
+        bool $onGateway,
         WorkspaceStepListPayload $payload,
     ): array {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             /** @var WorkspaceStepMutationResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new AddWorkspaceStepRequest(

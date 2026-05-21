@@ -9,7 +9,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\ShowWorkspaceLogRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceLogResponse;
 use App\Models\WorkspaceRun;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Workspaces\WorkspaceLogPayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -31,10 +30,10 @@ class WorkspaceLogCommand extends Command
             return self::FAILURE;
         }
 
-        $callerRole = app(CallerRoleResolver::class)->resolve();
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            $run = $this->fetchRun($runId, $callerRole, $payload);
+            $run = $this->fetchRun($runId, $onGateway, $payload);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -93,9 +92,9 @@ class WorkspaceLogCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function fetchRun(int $runId, string $callerRole, WorkspaceLogPayload $payload): array
+    private function fetchRun(int $runId, bool $onGateway, WorkspaceLogPayload $payload): array
     {
-        if ($callerRole !== 'gateway') {
+        if (! $onGateway) {
             /** @var WorkspaceLogResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new ShowWorkspaceLogRequest(run: $runId))

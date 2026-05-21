@@ -56,6 +56,21 @@ These rules describe how schedule writes propagate to the Orbit Scheduler and ho
 - Live scheduler reality belongs to `doctor --family=schedule`.
 - The schedule family does not adopt arbitrary observed processes as schedules. Adoption is reserved for explicitly selected runs reported by the Orbit Scheduler that match an existing or operator-supplied schedule shape.
 
+### Permissions
+
+Schedule API requests are authorized against the schedule target node. App-scoped
+schedules use the app's owning node, node-scoped schedules use the selected
+node, and Orbit-scoped schedules use the gateway node.
+
+- `schedule:read` covers `schedule:list`, `schedule:show`, and
+  `schedule:logs`.
+- `schedule:add` covers creating schedule intent.
+- `schedule:run` covers one-off schedule execution.
+- `schedule:remove` covers destructive schedule removal.
+
+Authorization failures use `authorization_failed` with standard
+`missing_permission` metadata.
+
 ## Schedule JSON Entity
 
 Schedule JSON renderers that return one schedule entity embed this shape under

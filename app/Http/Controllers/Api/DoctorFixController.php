@@ -10,6 +10,8 @@ use App\Models\Node;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,8 +24,12 @@ final class DoctorFixController implements Loggable
 
     private bool $activityDryRun = false;
 
-    public function __invoke(Request $request, DoctorReportRunner $runner, DoctorScopeValidator $validator): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        DoctorReportRunner $runner,
+        DoctorScopeValidator $validator,
+        NodeAccessAuthorizer $authorizer,
+    ): JsonResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -55,19 +61,6 @@ final class DoctorFixController implements Loggable
         $this->activityKey = $key;
         $this->activityDryRun = $dryRun;
 
-        if ($caller->role === 'app') {
-            return response()->json([
-                'error' => [
-                    'code' => 'caller_role_not_allowed',
-                    'message' => 'App-node callers may not run doctor --fix for this scope.',
-                    'meta' => [
-                        'caller_role' => 'app',
-                        'mode' => $mode,
-                    ],
-                ],
-            ], 403);
-        }
-
         $families = $this->families($request);
         $target = $this->resolveTarget($request, $caller);
 
@@ -79,6 +72,12 @@ final class DoctorFixController implements Loggable
                     'meta' => ['node' => $request->input('node')],
                 ],
             ], 422);
+        }
+
+        $authorization = $this->authorizeDoctorFix($authorizer, $caller, $target, $mode);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         $failure = $validator->validate($families, $runner, $target);
@@ -132,6 +131,34 @@ final class DoctorFixController implements Loggable
         }
 
         return $caller;
+    }
+
+    private function authorizeDoctorFix(NodeAccessAuthorizer $authorizer, Node $caller, Node $target, string $mode): ?JsonResponse
+    {
+        $permission = $mode === 'adopt' ? 'doctor:adopt' : 'doctor:restore';
+        $result = $authorizer->authorize($caller, $target, $permission);
+
+        if ($result->allowed) {
+            return null;
+        }
+
+        return $this->authorizationFailed($target, $permission, $result, $mode);
+    }
+
+    private function authorizationFailed(Node $target, string $permission, AuthorizationResult $result, string $mode): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => "This node is not authorized for '{$permission}' on '{$target->name}'.",
+                'meta' => [
+                    'reason' => $result->reason,
+                    'missing_permission' => $result->missingPermission,
+                    'serving_node' => $target->name,
+                    'mode' => $mode,
+                ],
+            ],
+        ], 403);
     }
 
     /**

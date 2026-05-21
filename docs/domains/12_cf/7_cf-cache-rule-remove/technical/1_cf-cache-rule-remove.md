@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized for Cloudflare provider administration.
+- The current node identity has `cf:cache:rule:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
 - The app exists and has a real domain that resolves to a Cloudflare zone.
 
@@ -80,5 +80,5 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php` | Command contract for caller-role denial, app lookup, zone resolution, matching rule removal, missing rule failure, destructive consent, `--force`, provider authorization, and no app/proxy mutations. |
+| `tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php` | Command contract for authorization denial, app lookup, zone resolution, matching rule removal, missing rule failure, destructive consent, `--force`, provider authorization, and no app/proxy mutations. |
 | `tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

@@ -28,6 +28,7 @@ describe('node permission registry', function (): void {
 
         expect($registry->isKnown('tool:read'))->toBeTrue()
             ->and($registry->isKnown('node:read'))->toBeTrue()
+            ->and($registry->isKnown('agent-ide:message'))->toBeTrue()
             ->and($registry->isKnown('database:read'))->toBeTrue()
             ->and($registry->isKnown('database:query:write'))->toBeTrue()
             ->and($registry->isKnown('doctor:verify'))->toBeTrue()
@@ -37,6 +38,7 @@ describe('node permission registry', function (): void {
     it('rejects unknown permissions', function (): void {
         expect((new NodePermissionRegistry)->isKnown('unknown:permission'))->toBeFalse()
             ->and((new NodePermissionRegistry)->isKnown('tool:hack'))->toBeFalse()
+            ->and((new NodePermissionRegistry)->isKnown('role:update'))->toBeFalse()
             ->and((new NodePermissionRegistry)->isKnown('invalid'))->toBeFalse();
     });
 
@@ -110,6 +112,13 @@ describe('node permission registry', function (): void {
             ->and($implied)->not->toContain('node:*');
     });
 
+    it('returns namespace permissions for agent-ide wildcard', function (): void {
+        $registry = new NodePermissionRegistry;
+
+        expect($registry->isKnown('agent-ide:*'))->toBeTrue()
+            ->and($registry->impliedBy('agent-ide:*'))->toBe(['agent-ide:message']);
+    });
+
     it('reports coverage correctly', function (): void {
         $registry = new NodePermissionRegistry;
 
@@ -129,6 +138,7 @@ describe('node permission registry', function (): void {
 
         expect($namespaces->toArray())->toContain('node')
             ->and($namespaces->toArray())->toContain('tool')
+            ->and($namespaces->toArray())->toContain('agent-ide')
             ->and($namespaces->toArray())->toContain('app')
             ->and($namespaces->toArray())->toContain('database')
             ->and($namespaces->toArray())->toContain('doctor')

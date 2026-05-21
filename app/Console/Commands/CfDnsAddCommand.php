@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Services\Cloudflare\CloudflareManager;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Saloon\Enums\Method;
@@ -21,7 +20,7 @@ use Saloon\Enums\Method;
 #[Description('Add a Cloudflare address DNS record')]
 final class CfDnsAddCommand extends CloudflareCommand
 {
-    public function handle(CloudflareManager $cloudflare, CallerRoleResolver $callerRoleResolver): int
+    public function handle(CloudflareManager $cloudflare): int
     {
         $name = $this->stringArgument('name');
         $content = $this->stringArgument('content');
@@ -36,7 +35,6 @@ final class CfDnsAddCommand extends CloudflareCommand
         $endpointZone = $zone ?? $name;
 
         $result = $this->resolveCloudflareResult(
-            callerRoleResolver: $callerRoleResolver,
             gatewayRequest: new CloudflareRequest(Method::POST, "/api/cloudflare/zones/{$endpointZone}/dns", [
                 'name' => $name,
                 'content' => $content,

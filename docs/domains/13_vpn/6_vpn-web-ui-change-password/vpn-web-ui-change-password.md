@@ -52,8 +52,9 @@ machine-readable output.
 
 All of the following must be true before the command runs.
 
-- The caller is a gateway or authorized client.
-- Operator callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- The caller is the gateway node, has `vpn:write` on the active gateway node,
+  or has gateway-admin authority.
+- Non-gateway callers can SSH to the active `vpn` role host over Orbit/WireGuard.
 - The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
 - The new password satisfies the active `vpn` role runtime backend password policy.

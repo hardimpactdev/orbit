@@ -6,9 +6,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to inspect or manage the target app or node.
+- The current node identity has `app:register` on the resolved target app node.
 - The gateway can reach the target node over SSH.
-- App-role callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 [Back to the public command page.](../app-register.md)
 
@@ -165,7 +164,7 @@ registration attempts.
 | --- | --- |
 | Type | `api:POST /apps/register` |
 | Effect | `write` |
-| Subject | `App` when registration resolves to an app row; `none` for validation, caller-role, authorization, or apply failures before an app row is resolved. |
+| Subject | `App` when registration resolves to an app row; `none` for validation, authorization, or apply failures before an app row is resolved. |
 | Properties | `name` (string or null) and `node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
 | Description | derived |
 
@@ -174,13 +173,12 @@ registration attempts.
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Configuration convergence, adoption logic, path-collision rejection, and apply dispatch. |
-| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Input resolution, role-based rejection, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Input resolution, authorization failure forwarding, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
 | `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy route handoff behavior using mocked node execution. |
 | `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-apply refresh. |
 | `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |
 
-Role-specific behavior and test mapping live in:
+Context-specific behavior and test mapping live in:
 
 - [`2_app-register_on-client.md`](2_app-register_on-client.md)
 - [`3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)
-- [`4_app-register_on-app-role.md`](4_app-register_on-app-role.md)

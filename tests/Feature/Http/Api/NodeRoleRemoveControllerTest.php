@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -71,13 +72,16 @@ function createNodeRoleRemoveGateway(): int
     return $nodeId;
 }
 
-function grantNodeRoleRemoveGatewayAccess(int $callerId, int $gatewayId): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantNodeRoleRemoveAccess(int $callerId, int $targetId, array $permissions = ['role:remove']): void
 {
-    DB::table('node_access')->insert([
+    NodeAccess::query()->create([
         'consumer_node_id' => $callerId,
-        'serving_node_id' => $gatewayId,
-        'created_at' => now(),
-        'updated_at' => now(),
+        'serving_node_id' => $targetId,
+        'permissions' => $permissions,
+        'custom_permissions' => [],
     ]);
 }
 
@@ -103,16 +107,14 @@ function deleteNodeRoleRemoveJson(string $uri, array $data = [], array $server =
 }
 
 describe('NodeRoleRemoveController', function (): void {
-    it('reports caller role metadata from active role assignments on authorization failure', function (): void {
-        $callerId = createNodeRoleRemoveCaller('control');
+    it('reports missing permission metadata on authorization failure', function (): void {
+        createNodeRoleRemoveCaller('control');
         createNodeRoleRemoveGateway();
 
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $callerId,
-            'role' => 'app-development',
-            'status' => 'active',
-            'settings' => ['tld' => 'test'],
-        ]);
+        Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+        ]));
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [], [
             'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
@@ -120,19 +122,20 @@ describe('NodeRoleRemoveController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'role:remove')
+            ->assertJsonPath('error.meta.serving_node', 'target-1');
     });
 
     it('logs dependent summaries when role removal is blocked', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'target-1',
             'wireguard_address' => '10.6.0.20',
         ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         NodeRoleAssignment::query()->create([
             'node_id' => $node->id,
@@ -177,8 +180,7 @@ describe('NodeRoleRemoveController', function (): void {
 
     it('rejects gateway role removal before side effects', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'gateway-2',
@@ -192,6 +194,7 @@ describe('NodeRoleRemoveController', function (): void {
             'role' => 'gateway',
             'status' => 'active',
         ]);
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/gateway-2/roles/gateway', [
             'force' => true,
@@ -209,20 +212,26 @@ describe('NodeRoleRemoveController', function (): void {
 
     it('refreshes legacy node shadows when the final app role is removed', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'target-1',
             'wireguard_address' => '10.6.0.20',
             'tld' => 'test',
         ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
             'role' => 'app-development',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
+        ]);
+        NodeAccess::query()->create([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+            'permissions' => ['workspace:setup'],
+            'custom_permissions' => [],
         ]);
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [], [
@@ -237,18 +246,22 @@ describe('NodeRoleRemoveController', function (): void {
         expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeFalse()
             ->and($node->role)->toBe('control')
             ->and($node->environment)->toBeNull()
-            ->and($node->tld)->toBeNull();
+            ->and($node->tld)->toBeNull()
+            ->and(NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->where('serving_node_id', $node->id)
+                ->exists())->toBeFalse();
     });
 
     it('removes Orbit-owned role dependents when force is true without purge data', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'target-1',
             'wireguard_address' => '10.6.0.20',
         ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -279,13 +292,13 @@ describe('NodeRoleRemoveController', function (): void {
 
     it('rejects purge data without force before removing role state', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'target-1',
             'wireguard_address' => '10.6.0.20',
         ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -320,13 +333,13 @@ describe('NodeRoleRemoveController', function (): void {
 
     it('purges role dependents only when purge data is requested with force', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'target-1',
             'wireguard_address' => '10.6.0.20',
         ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -358,13 +371,13 @@ describe('NodeRoleRemoveController', function (): void {
 
     it('returns an error when role removal cleanup fails', function (): void {
         $callerId = createNodeRoleRemoveCaller();
-        $gatewayId = createNodeRoleRemoveGateway();
-        grantNodeRoleRemoveGatewayAccess($callerId, $gatewayId);
+        createNodeRoleRemoveGateway();
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'target-1',
             'wireguard_address' => '10.6.0.20',
         ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
 
         $assignment = NodeRoleAssignment::query()->create([
             'node_id' => $node->id,

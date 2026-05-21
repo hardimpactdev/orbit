@@ -2,12 +2,11 @@
 
 [Back to `gateway:add` technical contract.](1_gateway-add.md)
 
-This page describes caller-role behavior when `orbit gateway:add` is invoked from
-a client.
+This page describes local onboarding behavior when `orbit gateway:add` is
+invoked from a non-gateway host.
 
 **Prerequisites:**
-- The gateway has authorized the caller's WireGuard peer identity as a
-  `control` node.
+- The gateway has issued and authorized this machine's WireGuard peer identity.
 
 **Post-input path eligibility:**
 - The client has an active gateway-issued WireGuard identity.
@@ -16,9 +15,9 @@ a client.
 - The local platform is supported for clients (macOS or Ubuntu).
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, an operator caller with no active WireGuard identity
-shows a validation message before side effects begin. Non-interactive input
-mode fails before side effects for the same blocker.
+are known. For example, a host with no active WireGuard identity shows a
+validation message before side effects begin. Non-interactive input mode fails
+before side effects for the same blocker.
 
 ## Allowed Paths
 
@@ -39,7 +38,7 @@ mode fails before side effects for the same blocker.
 7. Store the gateway WireGuard IP and trust material in local settings.
 8. Persist caller-local gateway settings and trust metadata.
 
-The operator path must not create or update a local Orbit database as a registry
+The client path must not create or update a local Orbit database as a registry
 mirror of the gateway or current client. It stores local gateway endpoint
 and trust configuration only.
 
@@ -58,5 +57,5 @@ and trust configuration only.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Operator caller behavior: first add flow, idempotent convergence, local onboarding refresh, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and context flush. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Non-gateway host behavior: first add flow, local onboarding path, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and gateway-host rejection. |
 | `tests/E2E/GatewayAddTest.php` | Real-node client join flow via `gateway:add`, including omitted-argument gateway IP derivation and idempotent convergence. |

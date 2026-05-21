@@ -41,7 +41,7 @@ JSON output returns deploy step entities with app and count metadata.
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
-- The caller is authorized to inspect deployment policy for the production app.
+- The caller has `deploy:read` on the production app's owning node.
 
 ## Related
 

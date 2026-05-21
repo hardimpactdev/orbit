@@ -10,8 +10,9 @@ use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
 use App\Exceptions\WorkspaceCreateFailed;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Models\Node;
 use App\Models\Workspace;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+#[RequiresPermission('workspace:new', servingNode: ServingNode::AppOwning)]
 final class WorkspaceStoreController implements Loggable
 {
     private ?Workspace $activitySubject = null;
@@ -34,17 +36,6 @@ final class WorkspaceStoreController implements Loggable
     ): JsonResponse|StreamedResponse {
         if ($this->wantsEventStream($request)) {
             return $this->stream($request, $createProgress, $streams);
-        }
-
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
         }
 
         $validator = validator($request->all(), [
@@ -130,17 +121,6 @@ final class WorkspaceStoreController implements Loggable
         CreateWorkspaceProgress $createProgress,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
-        if ($caller->role === 'app') {
-            return $this->error('caller_role_not_allowed', 'This command may only be run from an operator or gateway node.', ['caller_role' => 'app'], 403);
-        }
-
         $validator = validator($request->all(), [
             'name' => ['required', 'string', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', 'max:63'],
             'app' => ['required', 'string'],

@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the WireGuard peer to inspect deployment policy for the selected app.
+- The current node identity has `deploy:read` on the production app's owning node.
 
 ## Signature
 

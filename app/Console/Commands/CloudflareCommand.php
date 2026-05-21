@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Http\Gateway\Responses\Cloudflare\CloudflareResponse;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -21,23 +20,14 @@ abstract class CloudflareCommand extends Command
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}|int
      */
     protected function resolveCloudflareResult(
-        CallerRoleResolver $callerRoleResolver,
         CloudflareRequest $gatewayRequest,
         callable $local,
         string $gatewayFailureMessage,
     ): array|int {
-        $callerRole = $callerRoleResolver->resolve();
-
-        if (in_array($callerRole, ['app', 'unknown'], true)) {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $callerRole],
-            );
-        }
+        $onGateway = (bool) config('orbit.is_gateway', false);
 
         try {
-            if ($callerRole === 'gateway') {
+            if ($onGateway) {
                 return $local();
             }
 

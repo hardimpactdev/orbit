@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -309,7 +310,7 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['schedule']);
     });
 
-    it('denies app-node write mode requests', function (): void {
+    it('requires doctor write authority for fix mode requests', function (): void {
         createDoctorRunCallerNode(['role' => 'app']);
 
         $response = $this->call('POST', '/api/doctor/fix', [
@@ -318,8 +319,32 @@ describe('DoctorRunController', function (): void {
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'doctor:adopt')
             ->assertJsonPath('error.meta.mode', 'adopt');
+    });
+
+    it('allows app-node fix mode requests with explicit doctor authority', function (): void {
+        $caller = createDoctorRunCallerNode(['role' => 'app', 'platform' => 'linux']);
+        NodeAccess::query()->updateOrCreate(
+            [
+                'consumer_node_id' => $caller->id,
+                'serving_node_id' => $caller->id,
+            ],
+            [
+                'permissions' => ['doctor:adopt'],
+                'custom_permissions' => ['doctor:adopt'],
+            ],
+        );
+
+        $response = $this->call('POST', '/api/doctor/fix', [
+            'mode' => 'adopt',
+            'families' => ['node'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.mode', 'adopt')
+            ->assertJsonPath('success.data.doctor.scope.families', ['node']);
     });
 });
 

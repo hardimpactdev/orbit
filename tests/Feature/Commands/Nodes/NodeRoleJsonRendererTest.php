@@ -58,31 +58,6 @@ describe('node role json renderer', function (): void {
             ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
     });
 
-    it('uses exactly one top-level success key on update success', function (): void {
-        setupNodeRoleGatewayCaller();
-        $node = createHostedNode([
-            'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
-        ]);
-
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'old']);
-
-        Artisan::call('node role:update', [
-            'node' => 'client-1',
-            'role' => 'app-development',
-            '--tld' => 'test',
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-
-        expect(array_keys($payload))->toBe(['success'])
-            ->and($payload)->not->toHaveKey('error')
-            ->and($payload['success']['data']['assignment']['role'])->toBe('app-development')
-            ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
-    });
-
     it('uses exactly one top-level success key on remove success', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([

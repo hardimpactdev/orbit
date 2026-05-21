@@ -15,10 +15,10 @@ class NodeAccessAuthorizer
         private readonly NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
-    public function allows(Node $consumer, Node $serving, string $permission): bool
+    public function authorize(Node $consumer, Node $serving, string $permission): AuthorizationResult
     {
         if ($this->nodeRoleAssignments->nodeIsGateway($consumer)) {
-            return true;
+            return AuthorizationResult::allow('gateway_node');
         }
 
         $gateway = $this->resolveGateway();
@@ -30,7 +30,7 @@ class NodeAccessAuthorizer
                 ->first();
 
             if ($gatewayGrant !== null && in_array('*', $gatewayGrant->permissions ?? ['*'], true)) {
-                return true;
+                return AuthorizationResult::allow('gateway_admin_grant');
             }
         }
 
@@ -39,11 +39,16 @@ class NodeAccessAuthorizer
             ->where('serving_node_id', $serving->id)
             ->first();
 
-        if ($directGrant !== null) {
-            return $this->registry->allows($directGrant->permissions ?? ['*'], $permission);
+        if ($directGrant !== null && $this->registry->allows($directGrant->permissions ?? ['*'], $permission)) {
+            return AuthorizationResult::allow('direct_grant');
         }
 
-        return false;
+        return AuthorizationResult::deny($permission);
+    }
+
+    public function allows(Node $consumer, Node $serving, string $permission): bool
+    {
+        return $this->authorize($consumer, $serving, $permission)->allowed;
     }
 
     private function resolveGateway(): ?Node

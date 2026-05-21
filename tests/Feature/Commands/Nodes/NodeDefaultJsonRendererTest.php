@@ -309,10 +309,11 @@ describe('node:default JSON renderer contract', function (): void {
         fakeNodeDefaultJsonGateway([
             'error' => [
                 'code' => 'authorization_failed',
-                'message' => "This node is not authorized to operate on 'app-1'.",
+                'message' => "This node is not authorized for 'node:read' on 'gateway-1'.",
                 'meta' => [
-                    'name' => 'app-1',
-                    'caller_role' => 'control',
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'node:read',
+                    'serving_node' => 'gateway-1',
                 ],
             ],
         ], 403);
@@ -326,24 +327,25 @@ describe('node:default JSON renderer contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error'])->toBe([
                 'code' => 'authorization_failed',
-                'message' => "This node is not authorized to operate on 'app-1'.",
+                'message' => "This node is not authorized for 'node:read' on 'gateway-1'.",
                 'meta' => [
-                    'name' => 'app-1',
-                    'caller_role' => 'control',
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'node:read',
+                    'serving_node' => 'gateway-1',
                 ],
             ]);
     });
 
-    it('preserves caller_role_not_allowed from gateway validation', function (): void {
+    it('preserves validation_failed from gateway validation', function (): void {
         fakeNodeDefaultJsonGateway([
             'error' => [
-                'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control node.',
+                'code' => 'validation_failed',
+                'message' => 'node:default is not supported on gateway nodes.',
                 'meta' => [
-                    'caller_role' => 'app',
+                    'reason' => 'not_supported_on_gateway',
                 ],
             ],
-        ], 403);
+        ], 422);
 
         $exitCode = Artisan::call('node:default', [
             'name' => 'app-1',
@@ -353,10 +355,10 @@ describe('node:default JSON renderer contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error'])->toBe([
-                'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control node.',
+                'code' => 'validation_failed',
+                'message' => 'node:default is not supported on gateway nodes.',
                 'meta' => [
-                    'caller_role' => 'app',
+                    'reason' => 'not_supported_on_gateway',
                 ],
             ]);
     });
@@ -429,8 +431,12 @@ describe('node:default JSON renderer contract', function (): void {
         $result = invokeNodeDefaultFailCommand(
             json: true,
             code: 'authorization_failed',
-            message: "This node is not authorized to operate on 'app-1'.",
-            meta: ['name' => 'app-1', 'caller_role' => 'control'],
+            message: "This node is not authorized for 'node:read' on 'gateway-1'.",
+            meta: [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:read',
+                'serving_node' => 'gateway-1',
+            ],
         );
 
         $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
@@ -442,8 +448,12 @@ describe('node:default JSON renderer contract', function (): void {
         $error = $payload['error'];
 
         expect($error['code'])->toBe('authorization_failed')
-            ->and($error['message'])->toBe("This node is not authorized to operate on 'app-1'.")
-            ->and($error['meta'])->toBe(['name' => 'app-1', 'caller_role' => 'control']);
+            ->and($error['message'])->toBe("This node is not authorized for 'node:read' on 'gateway-1'.")
+            ->and($error['meta'])->toBe([
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:read',
+                'serving_node' => 'gateway-1',
+            ]);
     });
 
     it('returns gateway_unavailable error with empty object metadata', function (): void {

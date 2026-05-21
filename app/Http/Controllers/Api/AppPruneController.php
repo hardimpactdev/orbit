@@ -7,13 +7,15 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+#[RequiresPermission('app:prune', servingNode: ServingNode::AppOwning)]
 final class AppPruneController implements Loggable
 {
     private ?App $activitySubject = null;
@@ -25,13 +27,6 @@ final class AppPruneController implements Loggable
 
     public function __invoke(Request $request): JsonResponse
     {
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
-        }
-
         $validator = validator($request->all(), [
             'app' => ['required', 'string'],
             'dry_run' => ['boolean'],

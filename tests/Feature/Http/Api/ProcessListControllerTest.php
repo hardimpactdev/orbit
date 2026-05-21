@@ -24,11 +24,11 @@ function createProcessListCallerNode(array $overrides = []): Node
         'wireguard_address' => PROCESS_LIST_CALLER_WG_IP,
     ], $overrides);
 
-    if ($attributes['role'] === 'gateway') {
-        return createTestGatewayNode($attributes);
-    }
-
-    return Node::factory()->create($attributes);
+    return match ($attributes['role']) {
+        'app' => createTestAppHostNode($attributes),
+        'gateway' => createTestGatewayNode($attributes),
+        default => Node::factory()->create($attributes),
+    };
 }
 
 function grantProcessListAccess(Node $caller, Node $appNode): void
@@ -36,6 +36,8 @@ function grantProcessListAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
+        'permissions' => json_encode(['process:read'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -116,7 +118,8 @@ describe('ProcessListController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'process:read');
     });
 
     it('returns validation errors for missing and unknown contexts', function (string $query, string $field): void {

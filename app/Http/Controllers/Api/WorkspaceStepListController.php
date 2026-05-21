@@ -8,21 +8,24 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('workspace:read', servingNode: ServingNode::AppOwning)]
 final readonly class WorkspaceStepListController implements Loggable
 {
     public function __construct(
-        private NodeRoleAssignments $nodeRoleAssignments,
+        private NodeAccessAuthorizer $authorizer,
         private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
@@ -62,11 +65,16 @@ final readonly class WorkspaceStepListController implements Loggable
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        if (! $this->canReadApp($caller, $app)) {
-            return $this->authorizationFailed(
-                "You are not authorized to read {$phaseEnum->value}-step policy for '{$app->name}'.",
-                ['app' => $app->name],
-            );
+        $app->loadMissing('node');
+
+        if (! $app->node instanceof Node) {
+            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", ['app' => $app->name]);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $app->node, 'workspace:read');
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($app->node, $authorization, 'workspace:read');
         }
 
         return response()->json([
@@ -111,27 +119,6 @@ final readonly class WorkspaceStepListController implements Loggable
 
                 return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
             })?->app;
-    }
-
-    private function canReadApp(Node $caller, App $app): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $this->hostedAppNodeIds())
-            ->where('node_access.serving_node_id', $app->node_id)
-            ->exists();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function hostedAppNodeIds(): array
-    {
-        return $this->nodeRoleAssignments->activeNodeIdsForRole('app-development');
     }
 
     private function stringQuery(Request $request, string $key): ?string
@@ -192,6 +179,18 @@ final readonly class WorkspaceStepListController implements Loggable
                 'meta' => empty($meta) ? (object) [] : $meta,
             ],
         ], 403);
+    }
+
+    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
+    {
+        return $this->authorizationFailed(
+            "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+        );
     }
 
     public function effect(): ActivityLogType

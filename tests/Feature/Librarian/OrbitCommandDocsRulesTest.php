@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Docs\Librarian\Rules\ActivityLoggingContractRule;
-use App\Docs\Librarian\Rules\AppNodeWriteDenialRule;
 use App\Docs\Librarian\Rules\AppPhpVersionContractRule;
 use App\Docs\Librarian\Rules\BehaviorContractStructureRule;
 use App\Docs\Librarian\Rules\CanonicalBehaviorBoundaryRule;
@@ -101,7 +100,6 @@ beforeEach(function (): void {
         SharedFailureVocabularyRule::class,
         NextActionContractRule::class,
         AppPhpVersionContractRule::class,
-        AppNodeWriteDenialRule::class,
         ReadCommandNoLiveProbeRule::class,
         DriftIssueSuffixRule::class,
         CommonFailureNotRestatedRule::class,
@@ -317,6 +315,46 @@ it('reports missing role companion contracts when canonical docs declare role-sp
             'severity' => 'error',
             'rule' => 'command_docs.role_companion_coverage',
             'message' => 'Canonical contract declares role-specific companion behavior but 2_node-new_on-client.md is missing.',
+        ]);
+});
+
+it('allows deployment companion subsets without app-role companion contracts', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        canonicalContract: validOrbitCanonicalContract(extra: "\nDeployment-context test mapping lives in:\n\n- [Client](2_node-new_on-client.md#test-mapping)\n- [Gateway](3_node-new_on-gateway-node.md#test-mapping)\n"),
+    );
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/README.md', "# Domain Docs\n\n## JSON Envelope\n\nShared envelope.\n");
+
+    $companionContract = "# Technical Contract: `node:new` From Configured Clients\n\n"
+        ."[Back to `node:new` technical contract.](1_node-new.md)\n\n"
+        ."## Allowed Paths\n\n"
+        ."| Context | Behavior |\n"
+        ."| --- | --- |\n"
+        ."| Configured client | Forward to the gateway. |\n\n"
+        ."## Test Mapping\n\n"
+        ."| Path | Coverage |\n"
+        ."| --- | --- |\n"
+        ."| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers optional deployment-context companion slots. |\n";
+
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/2_node-new_on-client.md', $companionContract);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/3_node-new_on-gateway-node.md', $companionContract);
+
+    config()->set('librarian.rules', [RoleCompanionCoverageRule::class]);
+    app()->forgetInstance(DocsConfig::class);
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'references',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['findings'] ?? [])->toBe([])
+        ->and($exitCode)->toBe(0)
+        ->and($payload)->toMatchArray([
+            'tool' => 'librarian',
+            'result' => 'passed',
+            'issues' => 0,
         ]);
 });
 
@@ -979,25 +1017,6 @@ it('reports app docs that use the old php option contract', function (): void {
         ]);
 });
 
-it('reports app write commands without app-node denial contracts', function (): void {
-    writeOrbitAppCommandDocsFamily($this->docsRoot);
-
-    $exitCode = Artisan::call('librarian:lint', [
-        '--format' => 'agent',
-        '--path' => 'docs/domains',
-        '--group' => 'contracts',
-    ]);
-    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-    $matchingFindings = findingsForRule($payload, 'command_docs.app_node_write_denial');
-
-    expect($exitCode)->toBe(1)
-        ->and(array_column($matchingFindings, 'message'))->toContain(
-            'App write commands must document app-role denial with error.code=caller_role_not_allowed.',
-            'App write commands must explicitly state that app-role callers are denied.',
-            'App-role denial must be documented as happening before prompts or side effects.',
-        );
-});
-
 it('reports read-only command contracts that document implicit live checks', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
@@ -1260,35 +1279,6 @@ function writeOrbitCommandDocsFamily(
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/1_node-new.md', $canonicalContract);
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md', $humanRendererContract);
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md', $jsonRendererContract);
-}
-
-function writeOrbitAppCommandDocsFamily(string $root): void
-{
-    writeOrbitDocsFile($root, 'docs/domains/5_app/README.md', "# App Commands\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/app.md', "# App\n\n## Purpose\n\nApp command contracts describe how Orbit manages application intent and runtime ownership.\n\n## Responsibilities\n\nApp docs own the app command family and app-specific behavior contracts.\n\n## Boundaries\n\nShared command UX and cross-family behavior stay in their owning docs.\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/app-new.md', "# `orbit app:new`\n\n[Technical](technical/1_app-new.md)\n\n## Usage\n\nUse it.\n\n## Arguments and options\n\nNone.\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/technical/1_app-new.md', "# Technical Contract: `orbit app:new`\n\n"
-        ."**Owner:** App domain.\n"
-        ."**Effects:** Writes app intent.\n"
-        ."**Prerequisites:** Gateway access.\n\n"
-        ."## Signature\n\n"
-        ."```text\norbit app:new\n```\n\n"
-        ."## Input Contract\n\n"
-        ."[Invocation Model](../../README.md#invocation-model)\n\n"
-        ."## Behavior Contract\n\n"
-        ."### App Creation\n\nCreates the app intent.\n\n"
-        ."## Failure Semantics\n\n"
-        ."Uses shared failure semantics.\n\n"
-        ."## Doctor Relationship\n\n"
-        ."References app-doctor.md for drift detection.\n\n"
-        ."## Activity Logging\n\n"
-        ."This command does not emit activity events.\n\n"
-        ."## Test Mapping\n\n"
-        ."| Path | Coverage |\n"
-        ."| --- | --- |\n"
-        ."| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers app command contracts. |\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/technical/6.1_app-new_output-render_human.md', "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating App\n○ Resolve target\n○ Create app intent\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers app human renderer mapping. |\n");
-    writeOrbitDocsFile($root, 'docs/domains/5_app/1_app-new/technical/6.2_app-new_output-render_json.md', "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers app json renderer mapping. |\n");
 }
 
 function validOrbitCanonicalContract(

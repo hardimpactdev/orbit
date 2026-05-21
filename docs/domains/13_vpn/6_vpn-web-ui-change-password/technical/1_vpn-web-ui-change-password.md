@@ -4,12 +4,13 @@
 
 **Owner:** `vpn`.
 
-**Effects:** `write`, `destructive`, `gateway-admin`.
+**Effects:** `write`, `destructive`.
 
 **Prerequisites:**
-- The caller is a gateway node, or an authorized client with SSH access
-  to the active `vpn` role node over Orbit/WireGuard. In v1 that node is
-  gateway-coupled.
+- The caller is the gateway node, has `vpn:write` on the active gateway node,
+  or has `gateway-admin` (`*`) on the active gateway node.
+- Non-gateway callers can reach the active `vpn` role node over
+  Orbit/WireGuard SSH. In v1 that node is gateway-coupled.
 - The active `vpn` role is resolvable.
 - The VPN runtime backend is installed and reachable on the active `vpn` role host.
 - The operator can authenticate to the VPN runtime backend when TOTP is
@@ -76,7 +77,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | VPN runtime unavailable | No active `vpn` role node exists for VPN administration. | `error.code=vpn_runtime_unavailable` |
-| VPN runtime SSH unavailable | An operator caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
+| VPN runtime SSH unavailable | A non-gateway caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
 | VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 | Credential rotation failed | The backend credential, session secret, or Orbit-managed credential store cannot be updated. | `error.code=vpn_credential_rotation_failed` |
@@ -93,7 +94,7 @@ but it does not rotate the VPN web UI password.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: role denial, operator SSH, runtime execution, TOTP, password validation, destructive consent, credential update, session invalidation, redaction, and non-goals. |
+| `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: grant denial, non-gateway SSH, runtime execution, TOTP, password validation, destructive consent, credential update, session invalidation, redaction, and non-goals. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php` | Interactive password prompt, confirmation prompt, `--force` bypass, validation retry, declined confirmation failure before side effects, and prompt abort behavior. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php` | Non-interactive missing password failure, missing `--force` failure, `--json` forcing non-interactive mode, no prompts, and secret redaction in errors. |
 | `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

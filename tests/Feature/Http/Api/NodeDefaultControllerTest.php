@@ -13,6 +13,10 @@ uses(RefreshDatabase::class);
 
 const DEFAULT_CALLER_WG_IP = '10.6.0.99';
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
 /**
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -42,16 +46,6 @@ function createDefaultCallerNode(string $role = 'control'): int
         'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => DEFAULT_CALLER_WG_IP,
     ]));
-}
-
-function grantDefaultNodeAccess(int $callerId, int $nodeId): void
-{
-    DB::table('node_access')->insert([
-        'consumer_node_id' => $callerId,
-        'serving_node_id' => $nodeId,
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
 }
 
 function assignApiDefaultRole(int $nodeId, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
@@ -143,10 +137,9 @@ describe('NodeDefaultController', function (): void {
     });
 
     it('sets an authorized development app node as default', function (): void {
-        $callerId = createDefaultCallerNode();
+        createDefaultCallerNode();
         $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
         assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
-        grantDefaultNodeAccess($callerId, $appId);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
@@ -158,10 +151,9 @@ describe('NodeDefaultController', function (): void {
     });
 
     it('logs activity when setting the default node', function (): void {
-        $callerId = createDefaultCallerNode();
+        createDefaultCallerNode();
         $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
         assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
-        grantDefaultNodeAccess($callerId, $appId);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
@@ -180,13 +172,11 @@ describe('NodeDefaultController', function (): void {
     });
 
     it('updates the existing default row on repeated set', function (): void {
-        $callerId = createDefaultCallerNode();
+        createDefaultCallerNode();
         $firstId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow(['name' => 'app-1']));
         $secondId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow(['name' => 'app-2']));
         assignApiDefaultRole($firstId, 'app-development', settings: ['tld' => 'test']);
         assignApiDefaultRole($secondId, 'app-development', settings: ['tld' => 'test']);
-        grantDefaultNodeAccess($callerId, $firstId);
-        grantDefaultNodeAccess($callerId, $secondId);
 
         nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-2'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
@@ -256,16 +246,26 @@ describe('NodeDefaultController', function (): void {
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });
 
-    it('rejects non-operator callers', function (string $role): void {
-        createDefaultCallerNode($role);
+    it('allows app callers in local deployment context', function (): void {
+        createDefaultCallerNode('app');
 
         $response = nodeDefaultJson('GET', '/api/nodes/default', server: ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator node.')
-            ->assertJsonPath('error.meta.caller_role', $role);
-    })->with(['app', 'gateway']);
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'show');
+    });
+
+    it('rejects gateway hosts', function (): void {
+        config(['orbit.is_gateway' => true]);
+        createDefaultCallerNode('gateway');
+
+        $response = nodeDefaultJson('GET', '/api/nodes/default', server: ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', 'node:default is not supported on gateway nodes.')
+            ->assertJsonPath('error.meta.reason', 'not_supported_on_gateway');
+    });
 
     it('rejects set with missing name', function (): void {
         createDefaultCallerNode();
@@ -290,13 +290,12 @@ describe('NodeDefaultController', function (): void {
     });
 
     it('rejects non-development app targets', function (): void {
-        $callerId = createDefaultCallerNode();
+        createDefaultCallerNode();
         $prodId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow([
             'name' => 'prod-1',
             'environment' => 'production',
         ]));
         assignApiDefaultRole($prodId, 'app-production');
-        grantDefaultNodeAccess($callerId, $prodId);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'prod-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
@@ -306,17 +305,4 @@ describe('NodeDefaultController', function (): void {
             ->assertJsonPath('error.meta.required_role_assignment', 'app-development');
     });
 
-    it('rejects unauthorized target nodes', function (): void {
-        createDefaultCallerNode();
-        $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
-        assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
-
-        $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
-
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', "This node is not authorized to operate on 'app-1'.")
-            ->assertJsonPath('error.meta.name', 'app-1')
-            ->assertJsonPath('error.meta.caller_role', 'control');
-    });
 });

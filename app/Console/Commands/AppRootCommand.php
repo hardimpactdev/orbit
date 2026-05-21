@@ -34,7 +34,7 @@ class AppRootCommand extends Command
 
     public function handle(EnactAppRuntime $enactAppRuntime): int
     {
-        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
+        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $selector = $this->stringArgument('app');
         $root = $this->stringArgument('root');
@@ -63,7 +63,7 @@ class AppRootCommand extends Command
             return $this->failValidation('root', 'Root is required.');
         }
 
-        if ($callerRole === 'control') {
+        if ($executionContext === 'control') {
             return $this->forwardUpdate($selector, $root);
         }
 
