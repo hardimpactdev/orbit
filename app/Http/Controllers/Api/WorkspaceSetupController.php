@@ -10,8 +10,12 @@ use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,12 +23,14 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+#[RequiresPermission('workspace:setup', servingNode: ServingNode::WorkspaceOwning)]
 final class WorkspaceSetupController implements Loggable
 {
     private ?Workspace $activitySubject = null;
 
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
+        private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(
@@ -78,6 +84,12 @@ final class WorkspaceSetupController implements Loggable
                 ['field' => $field],
                 422,
             );
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $node, 'workspace:setup');
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, 'workspace:setup');
         }
 
         $this->activitySubject = $workspace;
@@ -170,6 +182,12 @@ final class WorkspaceSetupController implements Loggable
             );
         }
 
+        $authorization = $this->authorizer->authorize($caller, $node, 'workspace:setup');
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, 'workspace:setup');
+        }
+
         $this->activitySubject = $workspace;
 
         return $streams->make(function ($emitter) use ($setupProgress, $workspace, $app, $node, $isAdoption): void {
@@ -239,6 +257,20 @@ final class WorkspaceSetupController implements Loggable
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
+    {
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+            403,
+        );
     }
 
     public function effect(): ActivityLogType

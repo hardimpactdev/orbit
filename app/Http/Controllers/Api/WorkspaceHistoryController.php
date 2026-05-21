@@ -6,8 +6,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceHistoryPayload;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,9 +18,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
+#[RequiresPermission('workspace:history', servingNode: ServingNode::WorkspaceOwning)]
 final readonly class WorkspaceHistoryController implements Loggable
 {
     private const int DEFAULT_LIMIT = 50;
@@ -26,6 +29,7 @@ final readonly class WorkspaceHistoryController implements Loggable
 
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(string $name, Request $request, WorkspaceHistoryPayload $payload): JsonResponse
@@ -62,10 +66,12 @@ final readonly class WorkspaceHistoryController implements Loggable
         $app = $this->stringQuery($request, 'app');
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
-        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+        if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read workspace history.', [
                 'workspace' => $name,
                 'app' => $app,
+                'reason' => 'missing_permission',
+                'missing_permission' => 'workspace:history',
             ]);
         }
 
@@ -89,6 +95,10 @@ final readonly class WorkspaceHistoryController implements Loggable
                         : ['name' => $name],
                 ],
             ], 404);
+        }
+
+        if (! $this->canReadHistory($caller, $workspace)) {
+            return $this->workspaceHistoryForbidden($workspace);
         }
 
         $history = $payload->forWorkspace(
@@ -175,15 +185,16 @@ final readonly class WorkspaceHistoryController implements Loggable
     {
         $visibleNodeIds = $this->hostedAppNodeIds();
 
-        if ($caller->role === 'gateway') {
+        if ($this->callerIsGateway($caller)) {
             return $visibleNodeIds;
         }
 
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $visibleNodeIds)
-            ->pluck('node_access.serving_node_id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+        return Node::query()
+            ->whereIn('id', $visibleNodeIds)
+            ->get()
+            ->filter(fn (Node $node): bool => $this->authorizer->allows($caller, $node, 'workspace:history'))
+            ->map(fn (Node $node): int => $node->id)
+            ->values()
             ->all();
     }
 
@@ -206,7 +217,7 @@ final readonly class WorkspaceHistoryController implements Loggable
         $matches = Workspace::query()
             ->with(['app.node'])
             ->where('name', $name)
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
             ->get();
 
@@ -235,7 +246,7 @@ final readonly class WorkspaceHistoryController implements Loggable
 
         return Workspace::query()
             ->with(['app.node'])
-            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim($workspace->path, '/');
@@ -249,6 +260,34 @@ final readonly class WorkspaceHistoryController implements Loggable
         $value = $request->query($key);
 
         return is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+    }
+
+    private function callerIsGateway(Node $caller): bool
+    {
+        return $this->nodeRoleAssignments->nodeIsGateway($caller);
+    }
+
+    private function canReadHistory(Node $caller, Workspace $workspace): bool
+    {
+        $node = $workspace->app?->node;
+
+        return $node instanceof Node && $this->authorizer->allows($caller, $node, 'workspace:history');
+    }
+
+    private function workspaceHistoryForbidden(Workspace $workspace): JsonResponse
+    {
+        $node = $workspace->app?->node;
+
+        return $this->authorizationFailed(
+            $node instanceof Node
+                ? "This node is not authorized for 'workspace:history' on '{$node->name}'."
+                : 'Workspace owning node could not be resolved.',
+            [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'workspace:history',
+                ...($node instanceof Node ? ['serving_node' => $node->name] : []),
+            ],
+        );
     }
 
     private function validationFailed(string $field, ?string $value, string $message): JsonResponse

@@ -6,19 +6,22 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspaceLogPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
+#[RequiresPermission('workspace:log', servingNode: ServingNode::WorkspaceOwning)]
 final readonly class WorkspaceLogController implements Loggable
 {
     public function __construct(
-        private NodeRoleAssignments $nodeRoleAssignments,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(string $run, Request $request, WorkspaceLogPayload $payload): JsonResponse
@@ -43,16 +46,18 @@ final readonly class WorkspaceLogController implements Loggable
             return $this->runNotFound((int) $run);
         }
 
-        if (! $this->canSeeRun($caller, $workspaceRun)) {
-            $workspace = $workspaceRun->workspace;
+        $node = $workspaceRun->workspace?->app?->node;
 
-            return $this->authorizationFailed(
-                "This caller is not authorized to read logs for workspace '{$workspace?->name}'.",
-                [
-                    'workspace' => $workspace?->name,
-                    'app' => $workspace?->app?->name,
-                ],
-            );
+        if (! $node instanceof Node) {
+            return $this->authorizationFailed('Workspace run owning node could not be resolved.', [
+                'run' => $workspaceRun->id,
+            ]);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $node, 'workspace:log');
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, 'workspace:log');
         }
 
         return response()->json([
@@ -65,36 +70,6 @@ final readonly class WorkspaceLogController implements Loggable
                 ],
             ],
         ]);
-    }
-
-    private function canSeeRun(Node $caller, WorkspaceRun $run): bool
-    {
-        if ($caller->role === 'gateway') {
-            return true;
-        }
-
-        $nodeId = $run->workspace?->app?->node_id;
-
-        if (! is_int($nodeId)) {
-            return false;
-        }
-
-        return DB::table('node_access')
-            ->where('node_access.consumer_node_id', $caller->id)
-            ->whereIn('node_access.serving_node_id', $this->hostedAppNodeIds())
-            ->where('node_access.serving_node_id', $nodeId)
-            ->exists();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function hostedAppNodeIds(): array
-    {
-        return array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
-        ]));
     }
 
     private function validationFailed(string $value): JsonResponse
@@ -136,6 +111,18 @@ final readonly class WorkspaceLogController implements Loggable
                 'meta' => empty($meta) ? (object) [] : $meta,
             ],
         ], 403);
+    }
+
+    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
+    {
+        return $this->authorizationFailed(
+            "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+        );
     }
 
     public function effect(): ActivityLogType

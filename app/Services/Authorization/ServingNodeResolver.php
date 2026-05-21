@@ -93,6 +93,14 @@ final class ServingNodeResolver
             }
         }
 
+        foreach (['path', 'caller_cwd'] as $parameter) {
+            $workspace = $this->workspaceFromPath($this->requestValue($request, $parameter));
+
+            if ($workspace instanceof Workspace) {
+                return $workspace->app?->node;
+            }
+        }
+
         return null;
     }
 
@@ -219,14 +227,39 @@ final class ServingNodeResolver
             return null;
         }
 
-        return Workspace::query()
+        $query = Workspace::query()
             ->with('app.node')
             ->when($app instanceof OrbitApp, fn ($query) => $query->where('app_id', $app->id))
             ->when(
                 is_int($value) || ctype_digit((string) $value),
                 fn ($query) => $query->whereKey($value),
                 fn ($query) => $query->where('name', $value),
-            )
-            ->first();
+            );
+
+        $matches = $query->limit(2)->get();
+
+        if ($matches->count() !== 1) {
+            return null;
+        }
+
+        return $matches->first();
+    }
+
+    private function workspaceFromPath(mixed $value): ?Workspace
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $normalizedPath = rtrim($value, '/');
+
+        return Workspace::query()
+            ->with('app.node')
+            ->get()
+            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
+                $workspacePath = rtrim($workspace->path, '/');
+
+                return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
+            });
     }
 }
