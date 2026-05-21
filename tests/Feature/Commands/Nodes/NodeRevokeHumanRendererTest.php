@@ -280,11 +280,15 @@ describe('node:revoke human renderer contract', function (): void {
     it('renders authorization-failed prose error', function (): void {
         $result = invokeNodeRevokeFailCommandHuman(
             code: 'authorization_failed',
-            message: 'This control node is not authorized to revoke grants.',
-            meta: ['required_node' => 'gateway-1', 'caller_role' => 'control'],
+            message: 'This action requires the node:revoke permission on a grant to the gateway.',
+            meta: [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:revoke',
+                'serving_node' => 'gateway-1',
+            ],
         );
 
         expect($result['exitCode'])->not->toBe(0);
-        expect($result['output'])->toContain('This control node is not authorized to revoke grants.');
+        expect($result['output'])->toContain('This action requires the node:revoke permission on a grant to the gateway.');
     });
 });

@@ -328,8 +328,12 @@ describe('node:grant JSON renderer contract', function (): void {
         $result = invokeNodeGrantFailCommand(
             json: true,
             code: 'authorization_failed',
-            message: 'This control node is not authorized to grant node access.',
-            meta: ['required_node' => 'gateway-1', 'caller_role' => 'control'],
+            message: 'This action requires the node:grant permission on a grant to the gateway.',
+            meta: [
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:grant',
+                'serving_node' => 'gateway-1',
+            ],
         );
 
         $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
@@ -341,8 +345,12 @@ describe('node:grant JSON renderer contract', function (): void {
         $error = $payload['error'];
 
         expect($error['code'])->toBe('authorization_failed')
-            ->and($error['message'])->toBe('This control node is not authorized to grant node access.')
-            ->and($error['meta'])->toBe(['required_node' => 'gateway-1', 'caller_role' => 'control']);
+            ->and($error['message'])->toBe('This action requires the node:grant permission on a grant to the gateway.')
+            ->and($error['meta'])->toBe([
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:grant',
+                'serving_node' => 'gateway-1',
+            ]);
     });
 
     it('returns validation_failed error with correct metadata', function (): void {

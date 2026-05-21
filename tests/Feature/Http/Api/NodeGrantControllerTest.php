@@ -66,12 +66,15 @@ function createGrantGatewayNode(): int
     return $nodeId;
 }
 
-function grantGatewayManagementAccess(int $callerId, int $gatewayId): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantGatewayManagementAccess(int $callerId, int $gatewayId, array $permissions = ['node:grant']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $callerId,
         'serving_node_id' => $gatewayId,
-        'permissions' => json_encode(['*']),
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -294,8 +297,9 @@ describe('NodeGrantController', function (): void {
             ->assertJsonPath('error.meta', []);
     });
 
-    it('rejects app callers before mutation', function (): void {
+    it('rejects callers without node grant permission before mutation', function (): void {
         createGrantCallerNode('app');
+        createGrantGatewayNode();
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -314,14 +318,15 @@ describe('NodeGrantController', function (): void {
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.message', 'This command may only be run from an operator or gateway node.')
-            ->assertJsonPath('error.meta.caller_role', 'app');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:grant')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
         expect(DB::table('node_access')->count())->toBe(0);
     });
 
-    it('rejects stale gateway role shadows before mutation', function (): void {
+    it('rejects stale gateway role shadows without node grant permission before mutation', function (): void {
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'gateway-caller',
             'role' => 'gateway',
@@ -329,6 +334,7 @@ describe('NodeGrantController', function (): void {
             'environment' => null,
             'wireguard_address' => GRANT_CALLER_WG_IP,
         ]));
+        createGrantGatewayNode();
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -347,8 +353,9 @@ describe('NodeGrantController', function (): void {
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.meta.caller_role', 'gateway');
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'node:grant')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
         expect(DB::table('node_access')
             ->where('consumer_node_id', $consumingId)
@@ -356,7 +363,7 @@ describe('NodeGrantController', function (): void {
             ->exists())->toBeFalse();
     });
 
-    it('rejects database callers before mutation even when the legacy role shadow is control', function (): void {
+    it('allows database assigned callers with node grant permission', function (): void {
         $callerId = createGrantCallerNode();
         assignApiGrantNodeRole($callerId, 'database');
         $gatewayId = createGrantGatewayNode();
@@ -378,17 +385,16 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'caller_role_not_allowed')
-            ->assertJsonPath('error.meta.caller_role', 'database');
+        $response->assertOk()
+            ->assertJsonPath('success.data.already_granted', false);
 
         expect(DB::table('node_access')
             ->where('consumer_node_id', $consumingId)
             ->where('serving_node_id', $servingId)
-            ->exists())->toBeFalse();
+            ->exists())->toBeTrue();
     });
 
-    it('rejects control callers without gateway access before mutation', function (): void {
+    it('rejects callers without gateway grant before mutation', function (): void {
         createGrantCallerNode();
         createGrantGatewayNode();
         DB::table('nodes')->insert(apiGrantNodeRow([
@@ -410,9 +416,9 @@ describe('NodeGrantController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This operator node is not authorized to grant node access.')
-            ->assertJsonPath('error.meta.required_node', 'gateway-1')
-            ->assertJsonPath('error.meta.caller_role', 'control');
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:grant')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
         expect(DB::table('node_access')->count())->toBe(0);
     });

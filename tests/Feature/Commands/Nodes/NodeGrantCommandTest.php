@@ -439,10 +439,11 @@ describe('node:grant control forwarding', function (): void {
     })->with([
         'authorization failure' => [[
             'code' => 'authorization_failed',
-            'message' => 'This control node is not authorized to grant node access.',
+            'message' => 'This action requires the node:grant permission on a grant to the gateway.',
             'meta' => [
-                'required_node' => 'gateway-1',
-                'caller_role' => 'control',
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:grant',
+                'serving_node' => 'gateway-1',
             ],
         ]],
         'not found' => [[

@@ -402,10 +402,11 @@ describe('node:revoke control forwarding', function (): void {
     })->with([
         'authorization failure' => [[
             'code' => 'authorization_failed',
-            'message' => 'This control node is not authorized to revoke grants.',
+            'message' => 'This action requires the node:revoke permission on a grant to the gateway.',
             'meta' => [
-                'required_node' => 'gateway-1',
-                'caller_role' => 'control',
+                'reason' => 'missing_permission',
+                'missing_permission' => 'node:revoke',
+                'serving_node' => 'gateway-1',
             ],
         ]],
         'not found' => [[

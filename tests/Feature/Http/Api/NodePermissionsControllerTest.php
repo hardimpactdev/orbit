@@ -257,7 +257,7 @@ describe('NodePermissionsController', function (): void {
             ->assertJsonPath('error.code', 'node.grant_not_found');
     });
 
-    it('allows non-gateway caller with wildcard grant to gateway to manage permissions', function (): void {
+    it('allows non-gateway callers with node read permission to read permissions', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -277,7 +277,61 @@ describe('NodePermissionsController', function (): void {
         DB::table('node_access')->insert([
             'consumer_node_id' => $callerId,
             'serving_node_id' => $gatewayId,
-            'permissions' => json_encode(['*']),
+            'permissions' => json_encode(['node:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $controlId,
+            'serving_node_id' => $appId,
+            'permissions' => json_encode(['node:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'read')
+            ->assertJsonPath('success.data.permissions', ['node:read']);
+    });
+
+    it('allows non-gateway callers with node permissions authority to manage permissions', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.2',
+        ]));
+        assignPermsGatewayRole($gatewayId);
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'control-caller',
+            'role' => 'control',
+            'host' => PERMS_CALLER_WG_IP,
+            'environment' => null,
+            'wireguard_address' => PERMS_CALLER_WG_IP,
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $callerId,
+            'serving_node_id' => $gatewayId,
+            'permissions' => json_encode(['node:permissions']),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -355,7 +409,10 @@ describe('NodePermissionsController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'Only gateway-admin callers may manage node permissions.');
+            ->assertJsonPath('error.message', 'This action requires the node:permissions permission on a grant to the gateway.')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'node:permissions')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
     });
 
     it('fails with validation_failed for non-string preset', function (): void {

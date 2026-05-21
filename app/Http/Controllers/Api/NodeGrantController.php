@@ -6,17 +6,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\GrantNodeApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
 
+#[RequiresPermission('node:grant', servingNode: ServingNode::Gateway)]
 final readonly class NodeGrantController implements Loggable
 {
     public function __construct(
@@ -31,26 +33,6 @@ final readonly class NodeGrantController implements Loggable
 
         if (! $caller instanceof Node) {
             return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
-        $callerRole = $this->nodeRoleAssignments->assignmentRoleLabel($caller);
-
-        if (! $callerIsGateway && ($caller->role !== 'control' || $callerRole !== 'control')) {
-            return $this->error(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from an operator or gateway node.',
-                meta: ['caller_role' => $callerRole !== 'control' ? $callerRole : $caller->role],
-                status: 403,
-            );
-        }
-
-        if (! $callerIsGateway) {
-            $authorization = $this->authorizeOperatorCaller($caller);
-
-            if ($authorization instanceof JsonResponse) {
-                return $authorization;
-            }
         }
 
         $consumerName = $request->consumingNodeName();
@@ -205,47 +187,6 @@ final readonly class NodeGrantController implements Loggable
         }
 
         return null;
-    }
-
-    private function authorizeOperatorCaller(Node $caller): ?JsonResponse
-    {
-        $gateway = $this->gatewayQuery()->orderBy('name')->first();
-
-        if (! $gateway instanceof Node) {
-            return $this->authorizationFailed(
-                message: 'This operator node is not authorized to grant node access.',
-                meta: [
-                    'required_node' => null,
-                    'caller_role' => 'control',
-                ],
-            );
-        }
-
-        $grant = NodeAccess::query()
-            ->where('consumer_node_id', $caller->id)
-            ->where('serving_node_id', $gateway->id)
-            ->first();
-
-        if ($grant !== null) {
-            $permissions = $grant->permissions ?? ['*'];
-
-            if (in_array('*', $permissions, true) || in_array('node:grant', $permissions, true)) {
-                return null;
-            }
-        }
-
-        return $this->authorizationFailed(
-            message: 'This operator node is not authorized to grant node access.',
-            meta: [
-                'required_node' => $gateway->name,
-                'caller_role' => 'control',
-            ],
-        );
-    }
-
-    private function gatewayQuery(): Builder
-    {
-        return $this->nodeRoleAssignments->activeGatewayNodeQuery();
     }
 
     private function resolveNode(string $name, string $field): Node|JsonResponse
