@@ -83,6 +83,14 @@ Source code lives in the per-run bundle, not in any image. Topology snapshots
 get rebuilt each time `e2e:prepare-topology --force` runs. Rebuild the blank
 image only when the bootstrap image shape changes.
 
+Every machine that runs the Incus lane must be able to reach the configured
+Incus host with ordinary non-interactive SSH and SCP. The harness runs Incus
+commands over `ssh beast ...` and copies the current checkout archive with
+`scp ... beast:/tmp/...`; both paths intentionally use the same SSH host alias
+and may use keys from the local SSH agent. If `ssh -o BatchMode=yes beast true`
+works but checkout copy fails with `Permission denied (publickey)`, check for
+overly strict local SSH options before changing E2E lane selection.
+
 Latest Beast prepared-topology measurement (May 21, 2026):
 
 - Full `operator-gateway-appdev-appprod-agent` rebuild completed in

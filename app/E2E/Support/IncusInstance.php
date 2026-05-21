@@ -109,7 +109,7 @@ final class IncusInstance implements E2EInstance
             }
         } else {
             $result = Process::timeout(300)->run(sprintf(
-                'scp -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',
+                'scp -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',
                 escapeshellarg($sourcePath),
                 escapeshellarg($hostName),
                 escapeshellarg($remotePath),

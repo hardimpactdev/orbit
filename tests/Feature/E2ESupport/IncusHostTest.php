@@ -6,6 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusInstance;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
 afterEach(function (): void {
@@ -212,6 +213,35 @@ it('keeps locally staged files readable before pushing them into an incus instan
     }
 
     expect($pushedMode)->toBe('644')
+        ->and($commands[0])->toContain("incus file push '/tmp/orbit-current-transfer-")
+        ->and($commands[1])->toContain("rm -f '/tmp/orbit-current-transfer-");
+});
+
+it('allows remote checkout archive copies to use ssh agent identities', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-incus-source-');
+    file_put_contents($source, 'archive');
+
+    $scpCommand = null;
+    Process::fake(function ($process) use (&$scpCommand) {
+        $scpCommand = $process->command;
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(host: 'beast'), $commands);
+    $instance = new IncusInstance($host, 'orbit-template-control');
+
+    try {
+        $instance->copyLocalFileToInstance($source, '/tmp/orbit-current.tar.gz');
+    } finally {
+        @unlink($source);
+    }
+
+    expect($scpCommand)->toContain('scp -o BatchMode=yes')
+        ->and($scpCommand)->not->toContain('IdentitiesOnly=yes')
+        ->and($scpCommand)->toContain("'beast':")
         ->and($commands[0])->toContain("incus file push '/tmp/orbit-current-transfer-")
         ->and($commands[1])->toContain("rm -f '/tmp/orbit-current-transfer-");
 });
