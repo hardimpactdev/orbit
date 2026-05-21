@@ -70,6 +70,9 @@ node when it has one, otherwise the node reached through an attached app or
 workspace target. Connections without an owning node or target are
 gateway-owned and require gateway authority.
 
+Authorization failures use `authorization_failed` with standard
+`missing_permission` metadata.
+
 ## State Ownership
 
 The database command domain owns the `database_connection` state family.

@@ -95,7 +95,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
 
         if (! $this->roles->nodeIsGateway($auth) && $appModel === null && $workspaceModel === null && $nodeModel === null) {
             $connections = $connections
-                ->filter(fn (DatabaseConnection $connection): bool => $this->connectionAllowsAny($auth, $connection, 'database:list'))
+                ->filter(fn (DatabaseConnection $connection): bool => $this->connectionAllowsAny($auth, $connection, 'database:read'))
                 ->values();
         }
 
@@ -139,7 +139,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
         $servingNode = array_key_exists('node_id', $payload) && $payload['node_id'] !== null
             ? Node::query()->find($payload['node_id'])
             : $this->gatewayNode();
-        $authorization = $this->authorizeNodePermission($auth, $servingNode, 'database:add');
+        $authorization = $this->authorizeNodePermission($auth, $servingNode, 'database:write');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -165,7 +165,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
         $result = $this->registry->show($connection);
 
         if ($result instanceof DatabaseConnection) {
-            $authorization = $this->authorizeConnectionPermission($auth, $result, 'database:show');
+            $authorization = $this->authorizeConnectionPermission($auth, $result, 'database:read');
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
@@ -205,7 +205,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->failureResponse($existing);
         }
 
-        $authorization = $this->authorizeConnectionPermission($auth, $existing, 'database:update', requireAll: true);
+        $authorization = $this->authorizeConnectionPermission($auth, $existing, 'database:write', requireAll: true);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -213,7 +213,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
 
         if (array_key_exists('node_id', $payload)) {
             $newServingNode = $payload['node_id'] !== null ? Node::query()->find($payload['node_id']) : $this->gatewayNode();
-            $authorization = $this->authorizeNodePermission($auth, $newServingNode, 'database:update');
+            $authorization = $this->authorizeNodePermission($auth, $newServingNode, 'database:write');
 
             if ($authorization instanceof JsonResponse) {
                 return $authorization;
@@ -250,7 +250,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->failureResponse($existing);
         }
 
-        $authorization = $this->authorizeConnectionPermission($auth, $existing, 'database:remove', requireAll: true);
+        $authorization = $this->authorizeConnectionPermission($auth, $existing, 'database:write', requireAll: true);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -300,7 +300,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->failureResponse($existing);
         }
 
-        $authorization = $this->authorizeNodePermission($auth, $this->ownerNode($owner), 'database:attach');
+        $authorization = $this->authorizeNodePermission($auth, $this->ownerNode($owner), 'database:write');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -351,7 +351,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->failureResponse($existing);
         }
 
-        $authorization = $this->authorizeNodePermission($auth, $this->ownerNode($owner), 'database:detach');
+        $authorization = $this->authorizeNodePermission($auth, $this->ownerNode($owner), 'database:write');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -523,15 +523,15 @@ final class DatabaseConnectionController extends Controller implements Loggable
     private function authorizeListScope(Node $caller, ?App $app, ?Workspace $workspace, ?Node $node): ?JsonResponse
     {
         if ($app instanceof App) {
-            return $this->authorizeNodePermission($caller, $this->ownerNode($app), 'database:list');
+            return $this->authorizeNodePermission($caller, $this->ownerNode($app), 'database:read');
         }
 
         if ($workspace instanceof Workspace) {
-            return $this->authorizeNodePermission($caller, $this->ownerNode($workspace), 'database:list');
+            return $this->authorizeNodePermission($caller, $this->ownerNode($workspace), 'database:read');
         }
 
         if ($node instanceof Node) {
-            return $this->authorizeNodePermission($caller, $node, 'database:list');
+            return $this->authorizeNodePermission($caller, $node, 'database:read');
         }
 
         if ($this->roles->nodeIsGateway($caller)) {
@@ -539,12 +539,12 @@ final class DatabaseConnectionController extends Controller implements Loggable
         }
 
         foreach (Node::query()->get() as $servingNode) {
-            if ($this->authorizer->allows($caller, $servingNode, 'database:list')) {
+            if ($this->authorizer->allows($caller, $servingNode, 'database:read')) {
                 return null;
             }
         }
 
-        return $this->authorizationFailed($caller, 'database:list');
+        return $this->authorizationFailed($caller, 'database:read');
     }
 
     private function authorizeNodePermission(Node $caller, ?Node $servingNode, string $permission): ?JsonResponse
@@ -553,8 +553,14 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return null;
         }
 
-        if ($servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, $permission)) {
-            return null;
+        if ($servingNode instanceof Node) {
+            $result = $this->authorizer->authorize($caller, $servingNode, $permission);
+
+            if ($result->allowed) {
+                return null;
+            }
+
+            return $this->authorizationFailed($caller, $result->missingPermission ?? $permission, $servingNode);
         }
 
         return $this->authorizationFailed($caller, $permission, $servingNode);
@@ -686,20 +692,13 @@ final class DatabaseConnectionController extends Controller implements Loggable
                 'code' => 'authorization_failed',
                 'message' => 'This node is not authorized to manage database connections.',
                 'meta' => array_filter([
-                    'caller_role' => $this->callerRoleForMeta($caller),
-                    'permission' => $permission,
+                    'reason' => 'missing_permission',
+                    'missing_permission' => $permission,
                     'serving_node' => $servingNode?->name,
                     'serving_nodes' => $servingNodes === [] ? null : $servingNodes,
                 ], static fn (mixed $value): bool => $value !== null),
             ],
         ], 403);
-    }
-
-    private function callerRoleForMeta(Node $caller): string
-    {
-        $assignmentRole = $this->roles->assignmentRoleLabel($caller);
-
-        return $assignmentRole !== 'control' ? $assignmentRole : $caller->role;
     }
 
     /**
@@ -832,7 +831,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
             return $this->failureResponse($connection);
         }
 
-        $requiredPermission = "database:{$operation}";
+        $requiredPermission = 'database:read';
         $targetNode = $this->targetOwnerNode($target);
         $authorization = $targetNode instanceof Node
             ? $this->authorizeNodePermission($auth, $targetNode, $requiredPermission)
