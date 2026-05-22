@@ -35,6 +35,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolves target context from explicit options, cwd app/workspace context,
   app ownership, workspace ownership, local `node:default`, or gateway-local
   node identity.
+- When an app or workspace context resolves an owning node, any explicit
+  `--node` selector must match that owner; `--node` is not an alternate image
+  inventory source for app or workspace runtime facts.
 - Reads gateway configuration for app PHP version and workspace override or
   inheritance when those scopes are resolved.
 - Reads the Orbit-supported PHP version set from the PHP runtime catalog.

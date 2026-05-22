@@ -10,6 +10,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Vpn\ArrayVpnBackend;
 use App\Services\Vpn\VpnBackend;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -263,12 +264,19 @@ function createPhpLocalNode(string $role = 'gateway'): Node
  */
 function createPhpTool(Node $node, array $config = []): NodeTool
 {
+    $catalog = new PhpRuntimeCatalog;
+    $versions = array_values(array_filter(
+        $config['versions'] ?? ['8.5', '8.4'],
+        fn (mixed $version): bool => is_string($version) && $catalog->supports($version),
+    ));
+
     return NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
         'expected_state' => 'running',
         'config' => array_merge([
-            'versions' => ['8.5', '8.4'],
+            'versions' => $versions,
+            'images' => array_map($catalog->imageFor(...), $versions),
             'cli_version' => '8.5',
         ], $config),
     ]);

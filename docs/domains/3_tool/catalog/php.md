@@ -31,6 +31,11 @@ containers. PHP runtime selection is admitted as the separate `php:*` command
 family because it mutates app configuration and workspace overrides rather than
 only tool lifecycle state.
 
+Orbit resolves supported PHP versions to the approved official FrankenPHP
+Debian/glibc image family `dunglas/frankenphp:1-php<version>-bookworm`.
+Alpine/musl FrankenPHP variants, PHP-FPM images, CLI-only PHP images, and host
+PHP package names are invalid app/workspace runtime targets.
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies PHP image availability where image capability

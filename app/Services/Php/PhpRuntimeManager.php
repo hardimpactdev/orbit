@@ -57,29 +57,12 @@ final readonly class PhpRuntimeManager
 
         $requestedVersion = is_string($version) ? trim($version) : null;
 
-        if ($requestedVersion !== null && ! $this->catalog->supports($requestedVersion)) {
-            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
-                code: 'validation_failed',
-                message: "Unsupported PHP version '{$requestedVersion}'.",
-                meta: [
-                    'field' => 'version',
-                    'reason' => 'unsupported',
-                    'supported' => $this->catalog->supported(),
-                ],
-            ));
-        }
+        if ($requestedVersion !== null && $target['scope'] === 'node_cli') {
+            $availabilityFailure = $this->versionAvailabilityFailure($target['node'], $requestedVersion);
 
-        if ($requestedVersion !== null && ! in_array($requestedVersion, $this->installedVersions($target['node']), true)) {
-            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
-                code: 'validation_failed',
-                message: "PHP {$requestedVersion} is not installed on node '{$target['node']->name}'.",
-                meta: [
-                    'field' => 'version',
-                    'reason' => 'not_installed',
-                    'node' => $target['node']->name,
-                    'version' => $requestedVersion,
-                ],
-            ));
+            if ($availabilityFailure instanceof PhpRuntimeFailure) {
+                return new PhpRuntimeOperation(failure: $availabilityFailure);
+            }
         }
 
         return match ($target['scope']) {
@@ -119,6 +102,11 @@ final readonly class PhpRuntimeManager
 
         if ($appModel instanceof App) {
             $appModel->loadMissing('node');
+
+            if ($nodeModel instanceof Node && $appModel->node instanceof Node && $nodeModel->id !== $appModel->node->id) {
+                return $this->nodeTargetMismatch($nodeModel, $appModel);
+            }
+
             $nodeModel ??= $appModel->node;
         }
 
@@ -246,6 +234,15 @@ final readonly class PhpRuntimeManager
         }
 
         $app->loadMissing('node');
+
+        if ($app->node instanceof Node) {
+            $availabilityFailure = $this->versionAvailabilityFailure($app->node, $version);
+
+            if ($availabilityFailure instanceof PhpRuntimeFailure) {
+                return new PhpRuntimeOperation(failure: $availabilityFailure);
+            }
+        }
+
         $previous = $app->php_version;
         $changed = $previous !== $version;
         $app->forceFill(['php_version' => $version])->save();
@@ -261,6 +258,7 @@ final readonly class PhpRuntimeManager
                 'workspace' => null,
                 'previous' => $previous,
                 'version' => $version,
+                'image' => $this->catalog->imageFor($version),
                 'inherits' => false,
                 'changed' => $changed,
             ],
@@ -280,6 +278,16 @@ final readonly class PhpRuntimeManager
         $previous = $workspace->php_version ?? $workspace->app?->php_version;
         $previousRaw = $workspace->php_version;
         $nextRaw = $inherit ? null : $version;
+        $nextEffective = $nextRaw ?? $workspace->app?->php_version;
+
+        if ($workspace->app?->node instanceof Node && is_string($nextEffective)) {
+            $availabilityFailure = $this->versionAvailabilityFailure($workspace->app->node, $nextEffective);
+
+            if ($availabilityFailure instanceof PhpRuntimeFailure) {
+                return new PhpRuntimeOperation(failure: $availabilityFailure);
+            }
+        }
+
         $workspace->forceFill(['php_version' => $nextRaw])->save();
         $workspace->refresh()->loadMissing('app.node');
         $effective = $workspace->effectivePhpVersion();
@@ -295,6 +303,7 @@ final readonly class PhpRuntimeManager
                 'workspace' => $workspace->name,
                 'previous' => $previous,
                 'version' => $effective,
+                'image' => $this->imageForSupportedVersion($effective),
                 'inherits' => $inherit,
                 'changed' => $previousRaw !== $nextRaw,
             ],
@@ -328,6 +337,7 @@ final readonly class PhpRuntimeManager
                 'workspace' => null,
                 'previous' => $previous,
                 'version' => $version,
+                'image' => $this->catalog->imageFor($version),
                 'inherits' => false,
                 'changed' => $previous !== $version,
             ],
@@ -363,7 +373,7 @@ final readonly class PhpRuntimeManager
         return [
             'node' => $node->name,
             'supported' => $this->catalog->supported(),
-            'installed' => $this->installedVersions($node),
+            'available_images' => $this->availableImageVersions($node),
             'cli' => $this->cliVersion($node),
             'app' => $app instanceof App ? [
                 'name' => $app->name,
@@ -380,14 +390,93 @@ final readonly class PhpRuntimeManager
     /**
      * @return list<string>
      */
-    private function installedVersions(Node $node): array
+    private function availableImageVersions(Node $node): array
     {
         $tool = $this->phpTool($node);
-        $versions = $tool?->config['versions'] ?? [];
+        $config = is_array($tool?->config) ? $tool->config : [];
+        $images = $config['images'] ?? null;
 
-        return is_array($versions)
-            ? array_values(array_filter($versions, is_string(...)))
-            : [];
+        if (is_array($images)) {
+            $versions = [];
+
+            foreach ($images as $image) {
+                if (! is_string($image) || ! $this->catalog->isApprovedImage($image)) {
+                    continue;
+                }
+
+                $versions[] = $this->catalog->versionForImage($image);
+            }
+
+            return array_values(array_unique($versions));
+        }
+
+        return [];
+    }
+
+    private function versionAvailabilityFailure(Node $node, string $version): ?PhpRuntimeFailure
+    {
+        $version = trim($version);
+
+        if (! $this->catalog->supports($version)) {
+            return new PhpRuntimeFailure(
+                code: 'validation_failed',
+                message: "Unsupported PHP version '{$version}'.",
+                meta: [
+                    'field' => 'version',
+                    'reason' => 'unsupported',
+                    'supported' => $this->catalog->supported(),
+                ],
+            );
+        }
+
+        if (in_array($version, $this->availableImageVersions($node), true)) {
+            return null;
+        }
+
+        return new PhpRuntimeFailure(
+            code: 'validation_failed',
+            message: "Approved FrankenPHP image for PHP {$version} is not available on node '{$node->name}'.",
+            meta: [
+                'field' => 'version',
+                'reason' => 'not_installed',
+                'node' => $node->name,
+                'version' => $version,
+                'image' => $this->catalog->imageFor($version),
+                'rejected_images' => $this->rejectedImages($node),
+            ],
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function rejectedImages(Node $node): array
+    {
+        $tool = $this->phpTool($node);
+        $config = is_array($tool?->config) ? $tool->config : [];
+        $images = $config['images'] ?? null;
+
+        if (! is_array($images)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $images,
+            fn (mixed $image): bool => is_string($image) && ! $this->catalog->isApprovedImage($image),
+        ));
+    }
+
+    private function imageForSupportedVersion(?string $version): ?string
+    {
+        if (! is_string($version) || trim($version) === '') {
+            return null;
+        }
+
+        $version = trim($version);
+
+        return $this->catalog->supports($version)
+            ? $this->catalog->imageFor($version)
+            : null;
     }
 
     private function cliVersion(Node $node): ?string
@@ -479,5 +568,20 @@ final readonly class PhpRuntimeManager
             'field' => $field,
             'value' => $value,
         ]);
+    }
+
+    private function nodeTargetMismatch(Node $node, App $app): PhpRuntimeFailure
+    {
+        return new PhpRuntimeFailure(
+            code: 'validation_failed',
+            message: "Node '{$node->name}' does not own app '{$app->name}'.",
+            meta: [
+                'field' => 'node',
+                'reason' => 'target_mismatch',
+                'node' => $node->name,
+                'app' => $app->name,
+                'owning_node' => $app->node?->name,
+            ],
+        );
     }
 }

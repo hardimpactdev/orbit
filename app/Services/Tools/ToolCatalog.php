@@ -173,7 +173,9 @@ final readonly class ToolCatalog
 
     /**
      * @return array{
-     *     binary: string,
+     *     binary?: string,
+     *     probe?: string,
+     *     images?: list<string>,
      *     version_command?: string,
      *     service?: string,
      *     update_command?: string,

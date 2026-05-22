@@ -22,9 +22,9 @@ use function Laravel\Prompts\table;
     {--app= : App selector}
     {--workspace= : Workspace selector}
     {--node= : Node selector}
-    {--live : Inspect installed PHP versions live}
+    {--live : Inspect available PHP images live}
     {--json : Output as JSON}')]
-#[Description('List PHP runtime support, installed facts, and selected runtime intent')]
+#[Description('List PHP runtime support, available image facts, and selected runtime intent')]
 class PhpListCommand extends Command
 {
     public function handle(PhpRuntimeManager $php): int
@@ -93,7 +93,7 @@ class PhpListCommand extends Command
         table(['Field', 'Value'], [
             ['Node', $php['node'] ?? '(unknown)'],
             ['Supported', implode(', ', $php['supported'] ?? [])],
-            ['Installed', implode(', ', $php['installed'] ?? [])],
+            ['Available images', implode(', ', $php['available_images'] ?? [])],
             ['CLI', $php['cli'] ?? '(unset)'],
         ]);
 

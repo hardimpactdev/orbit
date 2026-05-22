@@ -20,11 +20,21 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   runtime catalog. Unsupported versions fail validation before PHP configuration or
   node artifacts are changed.
 - **Available PHP image:** PHP image version available to the Docker runtime on
-  a target node. PHP commands may require the requested version to already be
-  available before runtime containers are changed.
+  a target node through the approved FrankenPHP image family. PHP commands may
+  require the requested version to already be available before runtime
+  containers are changed.
 - **PHP runtime catalog:** Tool catalog knowledge that declares the PHP versions
-  Orbit can manage and the PHP image/runtime facts Orbit can report. It is
-  catalog evidence for selection and reporting, not a separate state family.
+  Orbit can manage and resolves each supported version to the approved
+  FrankenPHP image reference built on Debian/glibc. Orbit's standard PHP app/workspace
+  image family is `dunglas/frankenphp:1-php<version>-bookworm`; Alpine/musl,
+  PHP-FPM, CLI-only, and host package references are invalid app/workspace
+  runtime targets. The catalog is evidence for selection and reporting, not a
+  separate state family.
+- **PHP runtime policy:** Shared runtime policy consumed by app and workspace
+  renderers. It carries the catalog-approved image reference, classic
+  FrankenPHP mode default, OPcache defaults, realpath cache defaults, and
+  optional preload behavior. Renderer families may add app/workspace-specific
+  container wiring, but they must not choose a host PHP or PHP-FPM fallback.
 - **Gateway-tracked image facts:** Stored gateway facts about PHP images
   available on a node. `php:list` uses these by default instead of live node
   inspection.

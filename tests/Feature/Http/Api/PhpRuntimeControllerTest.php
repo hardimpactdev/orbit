@@ -53,7 +53,18 @@ describe('PHP runtime API controllers', function (): void {
         $caller = createPhpApiCaller();
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
         grantPhpApiAccess($caller, $node);
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php', 'config' => ['versions' => ['8.5', '8.4'], 'cli_version' => '8.5']]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'php',
+            'config' => [
+                'versions' => ['8.5', '8.4'],
+                'images' => [
+                    'dunglas/frankenphp:1-php8.5-bookworm',
+                    'dunglas/frankenphp:1-php8.4-bookworm',
+                ],
+                'cli_version' => '8.5',
+            ],
+        ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
 
         $response = $this->call('POST', '/api/php/use', [

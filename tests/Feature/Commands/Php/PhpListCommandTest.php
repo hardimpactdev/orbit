@@ -21,7 +21,7 @@ afterEach(function (): void {
 });
 
 describe('php:list command contract', function (): void {
-    it('reports supported, installed, CLI, app, and workspace runtime facts on the gateway', function (): void {
+    it('reports supported, available image, CLI, app, and workspace runtime facts on the gateway', function (): void {
         createPhpLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
         createPhpTool($node, ['versions' => ['8.5'], 'cli_version' => '8.5']);
@@ -39,7 +39,7 @@ describe('php:list command contract', function (): void {
             ->and($payload['success']['data']['php'])->toBe([
                 'node' => 'app-1',
                 'supported' => ['8.5', '8.4', '8.3'],
-                'installed' => ['8.5'],
+                'available_images' => ['8.5'],
                 'cli' => '8.5',
                 'app' => [
                     'name' => 'docs',
@@ -108,7 +108,7 @@ describe('php:list command contract', function (): void {
                         'php' => [
                             'node' => 'app-1',
                             'supported' => ['8.5', '8.4', '8.3'],
-                            'installed' => ['8.5'],
+                            'available_images' => ['8.5'],
                             'cli' => '8.5',
                             'app' => null,
                             'workspace' => null,

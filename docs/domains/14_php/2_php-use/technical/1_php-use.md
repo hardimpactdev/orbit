@@ -26,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` | No app or workspace context resolves for app/workspace targets. | Never. | Cwd-inferred app when present. | Visible app selector. |
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
-| `node` | `--node` | Optional target-resolution fallback. | Never. | App/workspace owning node for runtime scope. | Visible node slug. |
+| `node` | `--node` | Optional. | Never. | App/workspace owning node for runtime scope. | Visible node slug. For app and workspace targets, may only confirm the owning node; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
@@ -41,6 +41,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 4. Validate the requested version against Orbit-supported versions and
    available images on the target node.
 5. Apply post-input authorization before side effects.
+
+For app and workspace runtime targets, the target node is always the owning app
+node. An explicit `--node` may only confirm that owner; it must not supply image
+facts from another node.
 
 ## Input Mode Contracts
 

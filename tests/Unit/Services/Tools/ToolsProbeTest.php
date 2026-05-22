@@ -132,6 +132,46 @@ describe('ToolsProbe', function (): void {
         expect($probe->diff($tool, $snapshot))->toBe([]);
     });
 
+    it('frankenphp probes approved Docker image inventory for the PHP tool instead of host PHP', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php']);
+        $shell = new RecordingToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "dunglas/frankenphp:1-php8.5-bookworm\n",
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshot = $probe->introspect($tool);
+
+        expect($shell->script)->toContain('docker image inspect')
+            ->not->toContain('command -v php')
+            ->and($shell->input)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($snapshot->get('php'))->toMatchArray([
+                'installed' => true,
+                'version' => '8.5',
+                'images' => ['dunglas/frankenphp:1-php8.5-bookworm'],
+            ])
+            ->and($probe->diff($tool, $snapshot))->toBe([]);
+    });
+
+    it('frankenphp does not accept host PHP output as PHP tool capability', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php']);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/bin/php\t8.5.0\n",
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect($snapshot->get('php'))->toMatchArray([
+            'installed' => false,
+            'images' => [],
+        ])
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
     it('detects version drift when the catalog tracks versions', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
@@ -435,6 +475,29 @@ final readonly class ToolsProbeRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final class RecordingToolsProbeRemoteShell implements RemoteShell
+{
+    public string $script = '';
+
+    public string $input = '';
+
+    public function __construct(
+        private int $exitCode = 0,
+        private string $stdout = '',
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->script = $script;
+        $this->input = is_string($options['input'] ?? null) ? $options['input'] : '';
+
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
     }
 }

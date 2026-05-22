@@ -14,6 +14,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Throwable;
 
@@ -45,6 +46,11 @@ final readonly class ToolsProbe
         }
 
         $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
+
+        if (($metadata['probe'] ?? null) === 'docker_images') {
+            return $this->introspectDockerImages($tool, $metadata);
+        }
+
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
@@ -116,6 +122,57 @@ PHP;
                 'config_hash' => ($parts[4] ?? '') !== '' ? $parts[4] : null,
                 'secret_exists' => ($parts[5] ?? '') !== '' ? $parts[5] === '1' : null,
                 'secret_hash' => ($parts[6] ?? '') !== '' ? $parts[6] : null,
+            ],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function introspectDockerImages(NodeTool $tool, array $metadata): ProbeSnapshot
+    {
+        $images = is_array($metadata['images'] ?? null)
+            ? array_values(array_filter($metadata['images'], is_string(...)))
+            : [];
+        $script = <<<'BASH'
+found=0
+while IFS= read -r image; do
+    [ -n "$image" ] || continue
+    if docker image inspect "$image" >/dev/null 2>&1; then
+        printf '%s\n' "$image"
+        found=1
+    fi
+done
+
+[ "$found" -eq 1 ]
+BASH;
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
+            'throw' => false,
+            'input' => implode("\n", $images)."\n",
+        ]);
+        $catalog = app(PhpRuntimeCatalog::class);
+        $observedImages = array_values(array_filter(
+            preg_split('/\R/', trim($result->stdout)) ?: [],
+            fn (string $image): bool => in_array($image, $images, true) && $catalog->isApprovedImage($image),
+        ));
+        $versions = array_values(array_map(
+            fn (string $image): string => $catalog->versionForImage($image),
+            $observedImages,
+        ));
+
+        return new ProbeSnapshot([
+            $tool->name => [
+                'installed' => $result->successful() && $observedImages !== [],
+                'path' => null,
+                'version' => $versions[0] ?? null,
+                'state' => null,
+                'images' => $observedImages,
+                'versions' => $versions,
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
             ],
         ]);
     }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
+use App\Services\Php\PhpRuntimeCatalog;
+
 final class PhpTool extends BaseTool
 {
     public function slug(): string
@@ -26,9 +28,11 @@ final class PhpTool extends BaseTool
     #[\Override]
     public function probeMetadata(): array
     {
+        $catalog = new PhpRuntimeCatalog;
+
         return [
-            'binary' => 'php',
-            'version_command' => 'php -r "echo PHP_VERSION;"',
+            'probe' => 'docker_images',
+            'images' => $catalog->supportedImages(),
         ];
     }
 }

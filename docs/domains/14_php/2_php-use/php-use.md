@@ -24,8 +24,13 @@ orbit php:use 8.5 --app=docs --json
 - `--workspace=<workspace>`: Target workspace override.
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
   app PHP version.
-- `--node=<node>`: Target-resolution fallback for app/workspace context and
-  available-image checks.
+- `--node=<node>`: For app and workspace targets, this may only confirm the
+  owning node. A node that does not own the resolved app or workspace fails
+  validation with the stable `target_mismatch` reason before any gateway
+  configuration is written. It is not a fallback target source and does not
+  override which node supplies image-availability facts. See the
+  [JSON renderer contract](technical/6.2_php-use_output-render_json.md) for
+  the exact failure shape.
 - `--json`: Return the selected runtime result in the shared JSON command
   envelope.
 

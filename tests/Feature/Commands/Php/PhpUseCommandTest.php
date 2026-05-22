@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Php\UsePhpRuntimeRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -45,6 +46,79 @@ describe('php:use command contract', function (): void {
                 'changed' => true,
             ])
             ->and($payload['success']['meta']['warnings'])->toBe([]);
+    });
+
+    it('rejects app node mismatches before using another node image inventory', function (): void {
+        createPhpLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'php',
+            'config' => [
+                'versions' => ['8.5'],
+                'cli_version' => '8.5',
+            ],
+        ]);
+
+        $imageNode = Node::factory()->create(['name' => 'image-node', 'role' => 'app']);
+        createPhpTool($imageNode, ['versions' => ['8.5']]);
+
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
+
+        $exitCode = Artisan::call('php:use', [
+            'version' => '8.5',
+            '--app' => 'docs',
+            '--node' => 'image-node',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($app->refresh()->php_version)->toBe('8.4')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'field' => 'node',
+                'reason' => 'target_mismatch',
+                'node' => 'image-node',
+                'app' => 'docs',
+                'owning_node' => 'app-1',
+            ]);
+    });
+
+    it('rejects workspace node mismatches before using another node image inventory', function (): void {
+        createPhpLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'php',
+            'config' => [
+                'versions' => ['8.5'],
+                'cli_version' => '8.5',
+            ],
+        ]);
+
+        $imageNode = Node::factory()->create(['name' => 'image-node', 'role' => 'app']);
+        createPhpTool($imageNode, ['versions' => ['8.5']]);
+
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
+        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
+
+        $exitCode = Artisan::call('php:use', [
+            'version' => '8.5',
+            '--workspace' => 'feature-docs',
+            '--node' => 'image-node',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($workspace->refresh()->php_version)->toBe('8.4')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'field' => 'node',
+                'reason' => 'target_mismatch',
+                'node' => 'image-node',
+                'app' => 'docs',
+                'owning_node' => 'app-1',
+            ]);
     });
 
     it('renders the documented human progress tree', function (): void {
@@ -129,7 +203,7 @@ describe('php:use command contract', function (): void {
             ]);
     });
 
-    it('rejects unsupported and missing installed versions before side effects', function (): void {
+    it('rejects unsupported and missing available image versions before side effects', function (): void {
         createPhpLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
         createPhpTool($node, ['versions' => ['8.5']]);
@@ -183,7 +257,7 @@ describe('php:use command contract', function (): void {
                         'php' => [
                             'node' => 'app-1',
                             'supported' => ['8.5', '8.4', '8.3'],
-                            'installed' => ['8.5'],
+                            'available_images' => ['8.5'],
                             'cli' => '8.5',
                             'app' => ['name' => 'docs', 'php_version' => '8.5'],
                             'workspace' => null,

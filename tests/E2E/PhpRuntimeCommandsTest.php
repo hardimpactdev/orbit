@@ -55,6 +55,10 @@ $app = \App\Models\App::query()->create([
     'expected_version' => null,
     'config' => [
         'versions' => ['8.5', '8.4'],
+        'images' => [
+            'dunglas/frankenphp:1-php8.5-bookworm',
+            'dunglas/frankenphp:1-php8.4-bookworm',
+        ],
         'cli_version' => '8.4',
     ],
 ]);
@@ -122,7 +126,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         expect($list->successful())->toBeTrue()
             ->and($listPayload['success']['data']['php'])->toMatchArray([
                 'node' => 'app-dev-1',
-                'installed' => ['8.5', '8.4'],
+                'available_images' => ['8.5', '8.4'],
                 'cli' => '8.4',
                 'app' => [
                     'name' => 'docs',
@@ -198,6 +202,10 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
             'php_tool_count' => 1,
             'php_tool_config' => [
                 'versions' => ['8.5', '8.4'],
+                'images' => [
+                    'dunglas/frankenphp:1-php8.5-bookworm',
+                    'dunglas/frankenphp:1-php8.4-bookworm',
+                ],
                 'cli_version' => '8.5',
             ],
         ]);
