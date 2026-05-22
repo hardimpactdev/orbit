@@ -27,8 +27,12 @@ owning family concept document.
 - **VPN role** — gateway-coupled infrastructure role that owns the WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Router role** — gateway-coupled infrastructure role that owns private `.orbit` DNS/service hostnames, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Ingress role** — workload role that owns public production HTTP ingress, public `orbit-caddy` route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
+- **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-production` nodes are production runtime backends: they own app files, FrankenPHP app containers, Docker process runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
+- **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_app/app-concepts.md).
+- **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Orbit launcher** — host `orbit` executable that runs commands inside the local `orbit-runtime` container and passes `ORBIT_HOST_CWD`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit runtime container** — one `orbit-runtime` container per node; it is the CLI execution target and, on the gateway, the API and scheduler runtime. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -87,6 +91,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Router role**
 - **Agent role**
 - **Ingress role**
+- **WebSocket role**
 - **Gateway-coupled infrastructure role**
 - **Orbit launcher**
 - **Orbit runtime container**
@@ -176,6 +181,8 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **FrankenPHP app runtime**
 - **Worker mode**
 - **Worker config**
+- **App WebSocket binding**
+- **Reverb app credentials**
 - **App agent IDE adapter**
 - **App registration**
 - **App adoption**
@@ -248,6 +255,9 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Private router artifact**
 - **Private backend artifact**
 - **Router backend pool**
+- **App WebSocket route**
+- **WebSocket service route**
+- **WebSocket backend pool**
 - **Orbit-managed TLS**
 - **Route leaf certificate**
 - **Intermediate CA certificate**

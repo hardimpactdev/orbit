@@ -10,7 +10,7 @@ You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--json]
+orbit node role:add [node] [role] [--tld=] [--redis-node=] [--json]
 ```
 
 ## Behavior
@@ -26,6 +26,8 @@ This command validates the role assignment, applies role-local options, and repo
   agent` fails with `validation_failed` and the explanation that
   `node:new --role=agent` is the only path that may create it.
 - `app-development` requires `--tld`.
+- `websocket` requires `--redis-node`; the selected node must have an active
+  `database` role and Redis expected or installed.
 - `app-production` and `database` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.
 - Configured non-gateway callers forward through the typed gateway API and need

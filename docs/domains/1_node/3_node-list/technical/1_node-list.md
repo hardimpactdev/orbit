@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|app|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|app|control>] [--environment=<development|production>] [--doctor] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,7 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `app`, or `control`. See alias notes below. |
+| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `app`, or `control`. See alias notes below. |
 | `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. |
 | `doctor` | `--doctor` | Optional. | Never. | `false`. | Boolean flag. Explicit secondary operation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |

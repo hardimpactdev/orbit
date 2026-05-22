@@ -58,6 +58,14 @@ record.
 - **Worker config:** Gateway-tracked object for worker settings such as worker
   count, max requests, and failure thresholds. It is stored separately from the
   on/off decision.
+- **App WebSocket binding:** Gateway-owned app configuration that enables one
+  app to use the fleet websocket service. It owns per-app Reverb credentials,
+  allowed origins, public WebSocket hosts, and the app's private
+  `websocket.orbit` publishing configuration.
+- **Reverb app credentials:** Reverb application id, key, and secret material
+  for one app, owned by an app WebSocket binding. These credentials are not
+  shared across apps; rotating or disabling one binding must not invalidate
+  unrelated app bindings.
 - **App agent IDE adapter:** Optional gateway-owned override of the owning
   node's default agent IDE adapter for app and workspace workflows. Set,
   cleared, and shown through `app:agent-ide`.
@@ -82,10 +90,11 @@ These boundaries define what the app family owns and what belongs to other famil
 - **App-owned route:** Proxy route whose lifecycle is owned by the app, edited
   through app commands, and surfaced as inventory by the `proxy` family.
 - **App-family boundaries:** App commands own app registry, runtime policy,
-  deployment policy, and app health configuration. They do not own proxy route
-  registry, workspace policy, process configuration, schedule definitions, tool
-  registration, or firewall policy beyond what derives from app configuration.
-  Production route exposure belongs to `ingress`; private route
-  selection and backend-pool targeting belong to `router`; `app-production`
-  owns the private backend runtime. App commands do not install host PHP,
-  Composer, Caddy, or PHP-FPM.
+  deployment policy, app health configuration, and app WebSocket binding state.
+  They do not own proxy route registry, workspace policy, process
+  configuration, schedule definitions, tool registration, or firewall policy
+  beyond what derives from app configuration. Production route exposure belongs
+  to `ingress`; private route selection and backend-pool targeting belong to
+  `router`; `app-production` owns the private backend runtime; `websocket`
+  owns the Reverb runtime. App commands do not install host PHP, Composer,
+  Caddy, PHP-FPM, or Reverb.

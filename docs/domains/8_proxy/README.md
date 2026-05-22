@@ -11,17 +11,25 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
-- Every proxy route has an owner: `app`, `workspace`, `gateway`, `tool`, or
-  `custom`.
+- Every proxy route has an owner: `app`, `app-websocket`, `workspace`,
+  `gateway`, `websocket`, `tool`, or `custom`.
 - Every proxy route has a kind: `app`, `workspace`, `internal`, `proxy`, or
   `redirect`.
 - `proxy:list` shows all proxy routes by default, including app routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `app`, `workspace`, `gateway`, `tool`, `custom`, and `redirect`.
+  `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `tool`,
+  `custom`, and `redirect`.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
+- App WebSocket routes are visible through proxy commands but edited through
+  app WebSocket binding commands. Public WebSocket hosts are `ingress` routes
+  that forward to `router`; they must not route directly to websocket role
+  nodes.
+- Router-owned websocket service routes are visible through proxy commands but
+  edited by websocket route convergence. Router owns `websocket.orbit`,
+  websocket backend pools, and private router-to-websocket TLS verification.
 - Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP tool
   service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
   endpoints owned by the tool catalog and do not appear as HTTP proxy routes.
@@ -100,6 +108,9 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
   serves the app/workspace ingress contract to a backend FrankenPHP container.
 - **Router backend pool:** Ordered list of URLs for app-production backends.
   The router owns this pool. V1 creates one target but stores a list.
+- **WebSocket backend pool:** Ordered list of TLS websocket backend URLs, such
+  as `https://ws-1.websocket.orbit:8080`, owned by `router`. V1 creates one
+  target but stores a list.
 
 ## TLS Authority Model
 
@@ -147,10 +158,10 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
 | `kind` | `app`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `app`, `workspace`, `gateway`, `tool`, or `custom` | Domain that owns route lifecycle. |
-| `owner.name` | string \| null | Owning app, workspace, gateway route, or tool identity when applicable. |
+| `owner.type` | `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `tool`, or `custom` | Domain that owns route lifecycle. |
+| `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, websocket service, or tool identity when applicable. |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, or `tool`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, or `tool`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |

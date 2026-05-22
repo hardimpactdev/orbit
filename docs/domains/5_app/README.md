@@ -40,6 +40,12 @@ These rules govern all app family commands.
 - Worker mode is an opt-in app runtime setting. It is disabled by default and
   `app:worker enable` must validate app readiness before changing gateway
   configuration.
+- App WebSocket bindings are explicit app-owned configuration. They enable one
+  app to use the fleet websocket service, own per-app Reverb credentials,
+  allowed origins, public WebSocket hosts, and private `websocket.orbit`
+  publishing configuration. App commands own the binding state; `ingress`
+  owns public route exposure, `router` owns route selection and backend pools,
+  and the `websocket` role owns the Reverb runtime.
 - Production deployment pipeline definitions belong to apps. Deployments and
   releases are not standalone state families.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks

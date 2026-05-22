@@ -38,8 +38,10 @@ Orbit distinguishes three concepts:
   private HTTP/WebSocket/S3 routing.
 - **Node roles:** composable roles that prepare a node to serve a kind of
   workload. The initial workload roles are `app-development`,
-  `app-production`, `database`, `agent`, and `ingress`. `agent` is
+  `app-production`, `database`, `agent`, `ingress`, and `websocket`. `agent` is
   exclusive and selectable only during `node:new`; `node role:add` rejects it.
+  `websocket` is a private workload role for Laravel Reverb; it binds only to
+  WireGuard and receives traffic through router-owned private service routes.
 - **Client identity:** a CLI installation that has gateway configuration
   and a gateway-issued WireGuard identity. A client may have no workload role
   assignments. It can request self-scoped actions and can operate other nodes only
@@ -71,14 +73,15 @@ Active role assignments must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
-| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
-| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
-| `app-development` | `database` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
-| `database` | `app-development` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress` |
-| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
+| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
+| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
+| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
+| `app-development` | `database`, `websocket` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket` |
+| `database` | `app-development`, `websocket` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket` |
+| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket` |
+| `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
 
 In this version, `gateway`, `vpn`, and `router` are gateway-coupled
 infrastructure roles. They are stored as separate role assignments and shown
@@ -98,6 +101,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
+| `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -217,8 +221,10 @@ These rules apply to all node commands and define the invariants the family enfo
   one `tld` value at a time (the `agent` default during interactive `node:new`
   is `agent`). `vpn` stores `public_endpoint`, `wireguard_cidr`,
   `wireguard_port`, and `dns_ip` as role-assignment settings.
-  `app-production` stores `ingress_node_id`; `database` and `gateway`
-  have no role-assignment settings.
+  `app-production` stores `ingress_node_id`; `websocket` stores
+  `redis_node_id`, which points at the `database` role node whose managed Redis
+  service backs Reverb scaling; `database` and `gateway` have no
+  role-assignment settings.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.

@@ -14,10 +14,10 @@ Each term below has a precise meaning in the node command family.
   configuration and WireGuard identity material. Any node can act as a client
   when it runs the Orbit CLI; the term emphasizes the CLI-caller perspective.
 - **Node role:** A fixed code-defined bundle attached through a role
-  assignment. The eight roles are `gateway` (singleton authority), `vpn` and
+  assignment. The nine roles are `gateway` (singleton authority), `vpn` and
   `router` (gateway-coupled infrastructure), `app-development`,
-  `app-production`, `database`, `agent`, and `ingress`. The latter five
-  are workload roles.
+  `app-production`, `database`, `agent`, `ingress`, and `websocket`. The
+  latter six are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
   durable Orbit state, the typed API, root CA material, node access policy, and
   doctor convergence. It is stored as a role assignment, but normal
@@ -47,9 +47,14 @@ Each term below has a precise meaning in the node command family.
   Nodes have at most one. It owns Orbit HTTP routing on that node, including
   gateway API, app/workspace, tool, ingress, router, and private backend routes
   when those capabilities apply.
+- **WebSocket role:** Private workload role for Orbit-managed realtime
+  infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
+  container managed by Orbit, binds only to its WireGuard address, receives
+  traffic through router-owned private service routes, and uses Redis selected
+  from a `database` role node.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-development`,
-  `app-production`, `database`, and `ingress`. Selectable only during
+  `app-production`, `database`, `ingress`, and `websocket`. Selectable only during
   `node:new`.
 - **Ingress role:** Workload role that owns public production HTTP
   ingress, public Caddy route artifacts, public TLS, and public edge
@@ -100,14 +105,15 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
-| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
-| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress` |
-| `app-development` | `database` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
-| `database` | `app-development` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress` |
-| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent` |
+| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
+| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
+| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
+| `app-development` | `database`, `websocket` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket` |
+| `database` | `app-development`, `websocket` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket` |
+| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket` |
+| `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
@@ -134,6 +140,7 @@ require, read, and write.
 | `gateway` | — | — |
 | `agent` | — | `tld` (default `agent` during interactive `node:new` setup) |
 | `ingress` | — | — |
+| `websocket` | `redis_node_id` | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and write the same node-level field. This shared field keeps the data
@@ -155,6 +162,9 @@ adding the role.
 `wireguard_port` defaults to `51820`.
 `dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into peer
 configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
+`redis_node_id` references the active `database` role node whose managed Redis
+service backs Reverb scaling for the `websocket` role. The websocket role uses
+that Redis service but does not install or own Redis.
 
 ## Role Baselines
 
@@ -169,6 +179,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
+| `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -205,6 +216,7 @@ Each role is supported on a specific set of host platforms.
 | `database` | Ubuntu |
 | `agent` | Ubuntu |
 | `ingress` | Ubuntu |
+| `websocket` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's gateway role assignment or

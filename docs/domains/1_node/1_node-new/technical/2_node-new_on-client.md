@@ -42,7 +42,8 @@ same blocker. All path eligibility must complete before side effects begin.
 | `app-dev` / `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
 | `app-prod` / `app-production` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-production', 'ingress']` or private `roles: ['app-production']` plus `ingress_node=<node>`. Requires `node_new.host` and `node_new.user`; private placement also requires selecting an active `ingress` node. |
 | `database` | Forward a canonical role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
-| repeated roles | Forward compatible canonical role arrays, such as `roles: ['app-production', 'ingress']` or `roles: ['app-development', 'database']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`. |
+| `websocket` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['websocket']`. Requires `node_new.host`, `node_new.user`, and `node_new.redis_node`. |
+| repeated roles | Forward compatible canonical role arrays, such as `roles: ['app-production', 'ingress']`, `roles: ['app-development', 'database']`, or `roles: ['app-development', 'database', 'websocket']`. When any requested role needs SSH provisioning, resolve and forward the shared `node_new.host` and `node_new.user`; development app roles also forward `node_new.tld`; websocket roles forward `node_new.redis_node`. |
 | `app` | Legacy compatibility path. See app-role forwarding below. |
 
 For deprecated legacy `--role=app`, resolve app-role inputs, then forward to the gateway over
@@ -84,6 +85,7 @@ When a gateway is configured:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
   - canonical `roles[]` arrays for role requests;
   - `node_new.tld` for development app-role provisioning;
+  - `node_new.redis_node` for websocket role provisioning;
   - legacy `node_new.environment` only for legacy `--role=app` forwarding.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.

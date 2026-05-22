@@ -117,6 +117,12 @@ The node probe reads gateway node records and checks these layers:
    artifacts, and forwarding readiness to the active `router`. Backend-pool
    selection belongs to the `router` role.
 
+   For `websocket`, assignments have a valid `redis_node_id` setting that
+   references an active `database` role node with Redis expected or installed.
+   The node baseline owns Laravel Reverb in a Docker runtime container managed
+   by Orbit, private backend certificate material, WireGuard-only binding, and
+   router-facing readiness. The websocket role does not install or own Redis.
+
    `database` and `gateway` assignments have no role settings in v1.
 14. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` nodes when `--self` inspects the CLI's

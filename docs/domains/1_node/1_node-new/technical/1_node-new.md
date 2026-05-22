@@ -19,7 +19,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -31,19 +31,20 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
 | `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values and aliases below). |
-| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-development`, `app-production`, or `ingress`. | Client/control identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-development`, `app-production`, `ingress`, or `websocket`. | Client/control identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
 | `environment` | `--environment` | Only when deprecated legacy `--role=app` is used. | Canonical role input, gateway bootstrap, and client/control identity. | None. | Legacy compatibility mapper retained for old automation. Prefer `app-dev` or `app-prod`. |
 | `tld` | `--tld` | `app-dev`, `app-development`, or legacy `--role=app --environment=development`. | Client/control identity, gateway bootstrap, `database`, `app-prod`, `app-production`, or legacy `--role=app --environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client/control identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `ingress_node` | `--ingress` | Private `app-production` placement. | Every path other than private `app-production` placement. | None. | Must match an active node with the `ingress` role. |
+| `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 Canonical stored role values are `app-development`, `app-production`,
-`database`, and `ingress`. Input aliases `app-dev` and `app-prod` map to
-`app-development` and `app-production`. Legacy compatibility values `control`,
-`app`, and `gateway` are accepted; the `gateway` value remains a bootstrap path,
-not a public role assignment.
+`database`, `ingress`, and `websocket`. Input aliases `app-dev` and `app-prod`
+map to `app-development` and `app-production`. Legacy compatibility values
+`control`, `app`, and `gateway` are accepted; the `gateway` value remains a
+bootstrap path, not a public role assignment.
 
 ## Input Resolution
 
@@ -64,6 +65,8 @@ not a public role assignment.
    - For `app-production`, resolve `node_new.host`, `node_new.user`, and the
      production placement choice.
    - For `ingress`, resolve `node_new.host` and `node_new.user`.
+   - For `websocket`, resolve `node_new.host`, `node_new.user`, and
+     `node_new.redis_node`.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
@@ -154,12 +157,17 @@ Caller-path behavior is split out into:
 - Create the node identity first, then add each requested role. Role settings
   stay minimal: `app-development` assignments store `settings.tld`,
   `app-production` assignments store `settings.ingress_node_id`, and
-  `database` assignments use empty settings.
+  `websocket` assignments store `settings.redis_node_id`. `database`
+  assignments use empty settings.
 - `app-production` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
-- `database` may be combined only with `app-development` on the same
-  provisioned host.
+- `database` may be combined only with `app-development` and `websocket` on the
+  same provisioned host; `websocket` may be combined with `app-development`,
+  `database`, and the future `s3` role. WebSocket assignments require
+  `settings.redis_node_id` to reference an active database role node with Redis
+  expected or installed. Reverb runs in a Docker runtime container managed by
+  Orbit and binds only to the node's WireGuard address.
 - If an initial role is persisted with `status=error` because its first
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available

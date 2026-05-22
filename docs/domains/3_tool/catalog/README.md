@@ -79,8 +79,10 @@ verified by `doctor --family=tool`.
 
 ### Runtime, database, cache, and communication
 
-These installable tools cover the PHP runtime, managed databases, caches,
-mail, and websocket capability.
+These installable tools cover the PHP runtime, managed databases, caches, mail,
+and compatibility websocket capability. Fleet realtime uses the `websocket`
+role; the `reverb` tool remains documented for compatibility until it is
+removed or migrated.
 
 1. [`php`](php.md)
 2. [`postgres`](postgres.md)

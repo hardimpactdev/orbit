@@ -27,6 +27,15 @@ Internet
   -> router private HTTP/WebSocket/S3 routing, .orbit DNS, and backend pools
   -> private app-production backend orbit-caddy
   -> FrankenPHP app container
+
+Public WebSocket:
+
+Internet
+  -> public 443
+  -> ingress edge orbit-caddy
+  -> private WireGuard route to router
+  -> router private WebSocket route and backend pool
+  -> websocket node Reverb runtime container
 ```
 
 One hub, one path: there is exactly one place to answer "what should exist?", and exactly one place changes are written. Spokes initiate commands and serve workloads, but durable configuration always lives on the gateway.
@@ -57,7 +66,7 @@ state writer: durable writes still happen only on the gateway.
 
 ### Node roles
 
-A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, and `ingress`. The `gateway` role is the singleton authority role described above.
+A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, and `websocket`. The `gateway` role is the singleton authority role described above.
 
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
@@ -65,7 +74,7 @@ peer defaults, and the VPN-facing DNS runtime. First gateway bootstrap assigns
 `gateway`, `vpn`, and `router` to the same node, and normal role commands
 cannot manage those roles independently.
 
-The other five are workload roles applied to nodes in the fleet.
+The other six are workload roles applied to nodes in the fleet.
 
 `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate role.
 
@@ -74,12 +83,24 @@ workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
 run as Docker process runtime units by default. Host PHP and PHP-FPM are not
 fallbacks.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, or `ingress`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `websocket` role is a private workload role for Orbit-managed realtime
+infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
+container managed by Orbit, binds only to its WireGuard address, and receives traffic
+through router-owned private service routes. Public WebSocket traffic enters
+through `ingress`, then flows to `router`, then to the websocket backend pool.
+Apps use the stable `websocket.orbit` endpoint and never target a concrete
+websocket node. The role depends on a Redis service selected from a
+`database` role node and does not install or own Redis itself.
+
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, or `websocket`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
 and `router` are coupled and combine only with each other. `app-development`
 may combine with `database`. `app-production` may combine with `ingress`, but
-conflicts with `database`. The `agent` role remains exclusive. The full
+conflicts with `database`. `websocket` may combine with `app-development` and
+`database`, and is reserved to combine with the `s3` role when that role lands;
+it conflicts with public edge, production app, agent, and gateway-coupled
+infrastructure roles. The `agent` role remains exclusive. The full
 compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
 Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
@@ -94,10 +115,10 @@ nodes, and events those nodes send back. The `vpn` role owns the WireGuard
 server runtime, the public endpoint settings peers use to reach it, peer
 defaults, and the VPN-facing DNS runtime. In v1 that role is gateway-coupled,
 so the active `vpn` role runs on the same node as the active `gateway` role.
-Nodes with only `app-development`, `database`, or private `app-production`
-roles do not need a public face. Only nodes with an active `ingress` role
-expose public production HTTP/HTTPS. SSH and the Orbit API stay reachable only
-over the VPN. The current VPN implementation is WireGuard; see
+Nodes with only `app-development`, `database`, `websocket`, or private
+`app-production` roles do not need a public face. Only nodes with an active
+`ingress` role expose public production HTTP/HTTPS. SSH and the Orbit API stay
+reachable only over the VPN. The current VPN implementation is WireGuard; see
 [tech-stack.md](tech-stack.md).
 
 ### DNS responsibilities

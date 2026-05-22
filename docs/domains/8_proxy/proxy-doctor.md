@@ -26,11 +26,12 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
 1. **Registry configuration:** every selected route has a valid domain, kind, owner,
    serving node, target, and TLS policy.
 2. **Owner eligibility:** the owner reference still resolves when the route is
-   owned by an app, workspace, gateway route, or tool.
+   owned by an app, app WebSocket binding, workspace, gateway route, websocket
+   service, or tool.
 3. **Node eligibility:** the serving node resolves to a visible active Ubuntu
    gateway or node with proxy capability.
-4. **Conflict boundary:** custom routes do not claim domains owned by app,
-   workspace, gateway, or tool routes.
+4. **Conflict boundary:** custom routes do not claim domains owned by app, app
+   WebSocket binding, workspace, gateway, websocket service, or tool routes.
 5. **Backend presence:** the expected proxy backend route exists when gateway
    configuration says it should exist.
 6. **Backend shape:** the observed backend route matches the expected owner,
@@ -59,9 +60,9 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | Code | Detected when |
 | --- | --- |
 | `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
-| `proxy.owner_invalid` | An app, workspace, gateway, or tool owner reference cannot be resolved or is not visible to the caller. |
+| `proxy.owner_invalid` | An app, app-websocket binding, workspace, gateway, websocket service, or tool owner reference cannot be resolved or is not visible to the caller. |
 | `proxy.node_invalid` | The route points at a missing, unauthorized, inactive, unsupported, or role-incompatible serving node. |
-| `proxy.domain_conflict` | A custom route claims a domain owned by an app, workspace, gateway, or tool route. |
+| `proxy.domain_conflict` | A custom route claims a domain owned by an app, app WebSocket binding, workspace, gateway, websocket service, or tool route. |
 | `proxy.route_missing` | Gateway configuration expects a managed backend route, but the route is absent from node reality. |
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
@@ -89,9 +90,9 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `proxy.route_extra` | Create a custom gateway proxy route row when: the operator selected a specific node and backend route; the domain is unowned; and the observed route maps to `--upstream` or `--redirect`. |
-| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, workspace, gateway, or tool ownership. |
+| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, app-websocket, workspace, gateway, websocket, or tool ownership. |
 
-`doctor --adopt` does not scan arbitrary hosts, adopt app/workspace/gateway/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
+`doctor --adopt` does not scan arbitrary hosts, adopt app/app-websocket/workspace/gateway/websocket/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
 
 ## Test Mapping
 

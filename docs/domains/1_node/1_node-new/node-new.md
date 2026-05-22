@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -34,6 +34,7 @@ orbit node:new dev-1 --role=app-dev --host=app-1.ssh.example.com --tld=test
 orbit node:new edge-1 --role=ingress --host=203.0.113.20
 orbit node:new web-1 --role=app-prod --role=ingress --host=203.0.113.21
 orbit node:new web-2 --role=app-prod --ingress=edge-1 --host=203.0.113.22
+orbit node:new realtime-1 --role=websocket --host=203.0.113.30 --redis-node=db-1
 orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=control-1
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --tld=agent --self-grant=default
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
@@ -46,7 +47,7 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   converging or adopting a compatible existing node.
 - `--role`: repeatable initial role assignment. Supported roles:
   `app-dev`, `app-prod`, `app-development`, `app-production`, `database`,
-  `agent`, and `ingress`. `app-dev` maps to `app-development`;
+  `agent`, `ingress`, and `websocket`. `app-dev` maps to `app-development`;
   `app-prod` maps to `app-production`. No assigned role means a client/control identity.
   `gateway` remains an internal
   bootstrap path. `agent` is exclusive and may only be selected during
@@ -73,6 +74,8 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 - `--ingress`: existing active `ingress` node to use when
   creating a private `app-production` backend node that does not serve public
   traffic itself.
+- `--redis-node`: existing active `database` node whose Redis service backs a
+  requested `websocket` role. Required when `--role=websocket` is selected.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
@@ -129,14 +132,28 @@ node and requires an existing active `ingress` node.
 **`database`**
 
 Creates an active role assignment for database responsibilities. It may
-be combined with `app-development` on the same provisioned host.
+be combined with `app-development` and `websocket` on the same provisioned
+host.
+
+**`websocket`**
+
+Provisions a private realtime node and creates an active role assignment whose
+settings point at the selected Redis node. The role runs Laravel Reverb in a
+Docker runtime container managed by Orbit, binds only to the node's WireGuard
+address, and receives traffic through router-owned private service routes.
+
+Requires `--host` and `--redis-node`. `--redis-node` must name an active
+`database` role node with Redis expected or installed. The websocket role uses
+that Redis service but does not install or own Redis.
 
 `app-development` and `app-production` are mutually exclusive. In v1,
 `gateway`, `vpn`, and `router` are gateway-coupled and conflict with
-`app-development`, `app-production`, `database`, `agent`, and `ingress`.
+`app-development`, `app-production`, `database`, `agent`, `ingress`, and
+`websocket`.
 The `agent` role conflicts with `gateway`, `vpn`, `router`,
-`app-development`, `app-production`, `database`, and `ingress`. `ingress`
-may combine only with `app-production`.
+`app-development`, `app-production`, `database`, `ingress`, and `websocket`.
+`ingress` may combine only with `app-production`. `websocket` may combine with
+`app-development`, `database`, and the future `s3` role.
 `gateway`, `vpn`, and `router` are not command-assignable through the
 public role flow.
 

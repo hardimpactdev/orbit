@@ -50,7 +50,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`proxy-remove` must not remove app, workspace, gateway, or tool-owned routes. It must not delete app files, workspaces, tools, DNS records, firewall rules, or service processes. Owned-route removal belongs to the owner domain.
+`proxy-remove` must not remove app, app-websocket, workspace, gateway,
+websocket, or tool-owned routes. It must not delete app files, app WebSocket
+bindings, workspaces, tools, DNS records, firewall rules, or service processes.
+Owned-route removal belongs to the owner domain.
 
 ## Renderer Contracts
 
@@ -75,7 +78,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
-| Owned route denied | The selected route is owned by app, workspace, gateway, or tool. | `error.code=proxy.owned_route_denied` |
+| Owned route denied | The selected route is owned by app, app-websocket, workspace, gateway, websocket, or tool. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
 | Cleanup failed | Gateway configuration was removed, but backend route or TLS cleanup failed. | `error.code=proxy.cleanup_failed` |
 

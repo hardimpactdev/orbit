@@ -63,7 +63,8 @@ side effects that the gateway owns begin.
 | `app-development` | Provision or adopt an app-development node over SSH, then create the role assignment. |
 | `app-production` | Provision or adopt an app-production node over SSH, then create the role assignment. |
 | `database` | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
-| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database` and `app-production` + `database`. |
+| `websocket` | Provision or adopt a private websocket node over SSH, then create the role assignment with `redis_node_id`. |
+| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database`, `app-development` + `websocket`, `database` + `websocket`, `app-development` + `database` + `websocket`, and `app-production` + `ingress`. |
 | `app` | Legacy compatibility path. Provision or adopt a node with an app role over SSH using `node_new.environment`, then create the mapped role assignment. |
 
 ## Gateway Authority Rules
@@ -132,8 +133,9 @@ minimum runtime readiness, node identity readiness, narrow event-hook readiness,
 and development TLD mapping when applicable. Managed firewall configuration and
 drift belong to the `firewall_rule` family after the node exists.
 
-For canonical `--role=app-development`, `--role=app-production`, compatible
-repeated app-role sets that also include `database`, and legacy `--role=app`:
+For canonical `--role=app-development`, `--role=app-production`,
+`--role=websocket`, compatible repeated role sets that include those
+host-provisioned roles, and legacy `--role=app`:
 
 1. Resolve `node_new.name`, `node_new.host`, and `node_new.user`.
 2. For canonical app-hosting roles, derive the internal app environment from
@@ -143,16 +145,19 @@ repeated app-role sets that also include `database`, and legacy `--role=app`:
 3. For legacy `--role=app`, resolve `node_new.environment` from input.
 4. When the derived or legacy environment is `development`, resolve
    `node_new.tld`.
-5. Verify the target host is reachable over SSH.
-6. Verify the target host platform is supported for the app role.
-7. Install or converge the Orbit runtime.
-8. Mint or verify WireGuard identity.
-9. Register node configuration, including `nodes.tld` for development nodes.
-10. Configure the node's local TLD default for development nodes.
-11. Use the internal DNS applier for the node family to create or converge
+5. When the role set includes `websocket`, resolve `node_new.redis_node` and
+   verify that it references an active `database` role node with Redis expected
+   or installed.
+6. Verify the target host is reachable over SSH.
+7. Verify the target host platform is supported for every requested role.
+8. Install or converge the Orbit runtime.
+9. Mint or verify WireGuard identity.
+10. Register node configuration, including `nodes.tld` for development nodes.
+11. Configure the node's local TLD default for development nodes.
+12. Use the internal DNS applier for the node family to create or converge
    the development DNS mapping that the gateway owns for `*.{node_new.tld}` to the node's WireGuard
    address.
-12. Verify node readiness.
+13. Verify node readiness.
 
 The development DNS configuration model that the gateway owns is derived from the
 active development app-role row, not from a public DNS command record. The
