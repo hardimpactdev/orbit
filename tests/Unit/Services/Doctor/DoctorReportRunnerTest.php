@@ -181,8 +181,7 @@ describe('DoctorReportRunner', function (): void {
             'status' => 'active',
         ]);
         $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "missing\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
@@ -204,7 +203,9 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
-            ->and(base64_decode((string) str($shell->scripts[2])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toContain('[program:orbit_scheduler]');
+            ->and($shell->scripts[1])->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
+            ->and($shell->scripts[1])->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler'")
+            ->and($shell->scripts[1])->not->toContain('supervisor');
     });
 
     it('installs missing tools through restore mode family dispatch', function (): void {
@@ -277,9 +278,8 @@ describe('DoctorReportRunner', function (): void {
             'status' => 'active',
         ]);
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "missing\n", stderr: '', durationMs: 1),
-            new RuntimeException('supervisor update failed'),
+            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
+            new RuntimeException('docker restart failed'),
         ]));
 
         $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
@@ -303,7 +303,7 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'failed',
                 'details' => [
-                    'error' => 'supervisor update failed',
+                    'error' => 'docker restart failed',
                 ],
             ]);
     });

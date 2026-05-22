@@ -1003,7 +1003,7 @@ describe('doctor command contract', function (): void {
             'heartbeat_at' => now(),
             'registry_synced_at' => now(),
         ]);
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("running\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=true\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['schedule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -1035,7 +1035,7 @@ describe('doctor command contract', function (): void {
 
     it('lets restore mode complete supported schedule scheduler actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("missing\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'local-gateway', '--family' => ['schedule'], '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

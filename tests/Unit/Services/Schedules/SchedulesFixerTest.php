@@ -33,7 +33,7 @@ function createSchedulesFixerGatewayNode(): Node
 }
 
 describe('SchedulesFixer', function (): void {
-    it('installs the orbit scheduler supervisor program on the gateway when missing', function (): void {
+    it('restarts the gateway orbit-runtime container when scheduler configuration is missing', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
 
@@ -50,11 +50,12 @@ describe('SchedulesFixer', function (): void {
             'key' => 'schedule.scheduler_missing',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toContain('[program:orbit_scheduler]')
-            ->and($shell->scripts[0])->toContain("sudo supervisorctl update 'orbit_scheduler'");
+        ])->and($shell->scripts[0])->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
+            ->and($shell->scripts[0])->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler'")
+            ->and($shell->scripts[0])->not->toContain('supervisor');
     });
 
-    it('starts the orbit scheduler supervisor program on the gateway when stopped', function (): void {
+    it('restarts the gateway orbit-runtime container when scheduler is stopped', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
 
@@ -71,9 +72,9 @@ describe('SchedulesFixer', function (): void {
             'key' => 'schedule.scheduler_stopped',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toContain('[program:orbit_scheduler]')
-            ->and($shell->scripts[0])->toContain("sudo supervisorctl update 'orbit_scheduler'")
-            ->and($shell->scripts[0])->toContain("sudo supervisorctl start 'orbit_scheduler'");
+        ])->and($shell->scripts[0])->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
+            ->and($shell->scripts[0])->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler'")
+            ->and($shell->scripts[0])->not->toContain('supervisor');
     });
 
     it('releases stale gateway schedule locks and marks running history failed', function (): void {

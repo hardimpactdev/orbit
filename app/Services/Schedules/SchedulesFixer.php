@@ -45,7 +45,7 @@ final readonly class SchedulesFixer
 
         $script = match ($entry->key) {
             'schedule.scheduler_missing' => $this->renderer->installScript($gatewayNode),
-            'schedule.scheduler_stopped' => $this->renderer->installScript($gatewayNode)." && sudo supervisorctl start 'orbit_scheduler'",
+            'schedule.scheduler_stopped' => $this->renderer->installScript($gatewayNode),
             default => null,
         };
 

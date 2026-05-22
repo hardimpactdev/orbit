@@ -5,38 +5,35 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Services\Schedules\OrbitSchedulerProgramRenderer;
 
-it('builds the orbit scheduler supervisor program definition for a node', function (): void {
+it('builds the orbit scheduler runtime definition for the gateway container', function (): void {
     $node = new Node([
-        'name' => 'app-1',
+        'name' => 'gateway-1',
         'user' => 'deploy',
         'orbit_path' => '/srv/orbit',
     ]);
 
-    $definition = (new OrbitSchedulerProgramRenderer)->definition($node);
+    $definition = (new OrbitSchedulerProgramRenderer)->definition($node, sleepSeconds: 60);
 
-    expect($definition->name)->toBe('orbit_scheduler');
-    expect($definition->directory)->toBe('/srv/orbit');
-    expect($definition->command)->toBe('php artisan orbit-scheduler');
-    expect($definition->user)->toBe('deploy');
-    expect($definition->restartPolicy)->toBe('true');
-    expect($definition->stdoutLogFile)->toBe('/home/deploy/.config/orbit/logs/orbit_scheduler.log');
-    expect($definition->autostart)->toBeTrue();
+    expect($definition)->toBe([
+        'container' => 'orbit-runtime',
+        'command' => 'orbit orbit-scheduler --sleep-seconds=60',
+        'restart_policy' => 'unless-stopped',
+    ]);
 });
 
-it('renders install scripts for the orbit scheduler supervisor program', function (): void {
+it('renders restart scripts for the orbit-runtime scheduler path', function (): void {
     $node = new Node([
         'user' => null,
         'orbit_path' => '/home/orbit/orbit',
     ]);
 
     $script = (new OrbitSchedulerProgramRenderer)->installScript($node, sleepSeconds: 60);
-    $program = base64_decode((string) str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($script)
-        ->toContain("sudo tee '/etc/supervisor/conf.d/orbit_scheduler.conf' >/dev/null")
-        ->toContain("sudo supervisorctl update 'orbit_scheduler'")
-        ->and($program)->toContain('[program:orbit_scheduler]')
-        ->and($program)->toContain("command=/bin/bash -lc 'php artisan orbit-scheduler --sleep-seconds=60'")
-        ->and($program)->toContain('autostart=true')
-        ->and($program)->toContain('stdout_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.log');
+        ->toContain("sudo docker inspect 'orbit-runtime' >/dev/null")
+        ->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
+        ->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler --sleep-seconds=60' >/dev/null")
+        ->not->toContain('supervisor')
+        ->not->toContain('/etc/supervisor')
+        ->not->toContain('php artisan orbit-scheduler');
 });

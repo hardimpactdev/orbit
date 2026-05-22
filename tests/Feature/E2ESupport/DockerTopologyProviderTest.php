@@ -71,7 +71,7 @@ it('starts Docker feature topology nodes with the host Docker socket and runtime
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-control-home-orbit,dst=/home/orbit'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")
         ->toContain("--env 'ORBIT_RUNTIME_CONTAINER=orbit-e2e-run123-control-orbit-runtime'")
-        ->toContain("docker run -d --name 'orbit-e2e-run123-control-orbit-runtime'")
+        ->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-run123-control-orbit-runtime'")
         ->toContain("--network 'container:orbit-e2e-run123-control'")
         ->toContain("--env 'ORBIT_SOURCE_PATH=/home/control/orbit'");
 });
@@ -95,7 +95,7 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
     );
 
     $setup = implode("\n", $commands);
-    $gatewayRuntimeStart = strpos($setup, "docker run -d --name 'orbit-e2e-run123-gateway-orbit-runtime'");
+    $gatewayRuntimeStart = strpos($setup, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime'");
     $gatewayRetarget = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway' sh -lc 'cd /home/orbit/orbit && if orbit orbit:internal:bootstrap-gateway-local");
 
     expect($gatewayRuntimeStart)->toBeInt()
@@ -360,9 +360,9 @@ it('acquires a control-gateway lease by launching containers from prepared image
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
             || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-control' ")
-            || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-control-orbit-runtime' ")
+            || str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-control-orbit-runtime' ")
             || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway' ")
-            || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway-orbit-runtime' ")
+            || str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime' ")
             || str_starts_with($command, 'docker exec ')
         ) {
             return str_contains($command, 'docker run -d ')
@@ -422,9 +422,9 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
         "docker network create --subnet '10.42.0.0/16' 'orbit-e2e-run123'" => Process::result(),
         "docker run -d --name 'orbit-e2e-run123-control' *" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'docker exec *' => Process::result(),
     ]);
 
@@ -600,7 +600,7 @@ it('cleans containers and network when docker acquire fails partway through', fu
             return Process::result(output: "control-id\n");
         }
 
-        if (str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-control-orbit-runtime' ")) {
+        if (str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-control-orbit-runtime' ")) {
             return Process::result(output: "runtime-id\n");
         }
 
@@ -684,9 +684,9 @@ it('uses dns aliases and primes the gateway api in dns-alias mode', function ():
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-run123'" => Process::result(),
         "docker run -d --name 'orbit-e2e-run123-control' *" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker run -d --name 'orbit-e2e-run123-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'docker exec *' => Process::result(),
     ]);
 

@@ -427,8 +427,8 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        if (str_contains($script, 'supervisorctl status orbit_scheduler')) {
-            return new RemoteShellResult(exitCode: 0, stdout: "running\n", stderr: '', durationMs: 1);
+        if (str_contains($script, 'docker inspect') && str_contains($script, 'orbit-runtime')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=true\n", stderr: '', durationMs: 1);
         }
 
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');

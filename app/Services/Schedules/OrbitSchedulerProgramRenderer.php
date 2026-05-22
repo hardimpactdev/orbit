@@ -4,49 +4,66 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
-use App\Data\RuntimeBackend\SupervisorProgramDefinition;
 use App\Models\Node;
-use App\Services\RuntimeBackend\SupervisorProgramRenderer;
+use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class OrbitSchedulerProgramRenderer
 {
     public function __construct(
-        private SupervisorProgramRenderer $renderer = new SupervisorProgramRenderer,
+        private OrbitContainerNames $containerNames = new OrbitContainerNames,
     ) {}
 
     public function render(Node $node, ?int $sleepSeconds = null): string
     {
-        return $this->renderer->render($this->definition($node, $sleepSeconds));
+        return $this->definition($node, $sleepSeconds)['command'];
     }
 
     public function installScript(Node $node, ?int $sleepSeconds = null): string
     {
-        return $this->renderer->renderInstallScript($this->definition($node, $sleepSeconds));
+        $definition = $this->definition($node, $sleepSeconds);
+        $container = $definition['container'];
+        $command = $definition['command'];
+
+        return implode("\n", [
+            'set -e',
+            'sudo docker inspect '.escapeshellarg($container).' >/dev/null',
+            'sudo docker restart '.escapeshellarg($container).' >/dev/null',
+            'sleep 1',
+            "if ! sudo docker exec {$this->escapedContainer()} sh -lc ".escapeshellarg($this->schedulerRunningScript()).'; then',
+            "    sudo docker exec --detach {$this->escapedContainer()} sh -lc ".escapeshellarg("exec {$command}").' >/dev/null',
+            'fi',
+        ]);
     }
 
-    public function definition(Node $node, ?int $sleepSeconds = null): SupervisorProgramDefinition
+    /**
+     * @return array{
+     *     container: string,
+     *     command: string,
+     *     restart_policy: string
+     * }
+     */
+    public function definition(Node $node, ?int $sleepSeconds = null): array
     {
-        $user = $node->user ?: 'orbit';
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $command = 'php artisan orbit-scheduler';
+        $command = 'orbit orbit-scheduler';
 
         if ($sleepSeconds !== null) {
             $command .= " --sleep-seconds={$sleepSeconds}";
         }
 
-        return new SupervisorProgramDefinition(
-            name: 'orbit_scheduler',
-            directory: $node->orbit_path,
-            command: $command,
-            user: $user,
-            restartPolicy: 'true',
-            stdoutLogFile: "{$home}/.config/orbit/logs/orbit_scheduler.log",
-            environment: [
-                'PATH' => "{$home}/.local/bin:/usr/local/bin:/usr/bin:/bin",
-                'HOME' => $home,
-            ],
-            autostart: true,
-            startSeconds: 1,
-        );
+        return [
+            'container' => $this->containerNames->runtime(),
+            'command' => $command,
+            'restart_policy' => 'unless-stopped',
+        ];
+    }
+
+    private function escapedContainer(): string
+    {
+        return escapeshellarg($this->containerNames->runtime());
+    }
+
+    private function schedulerRunningScript(): string
+    {
+        return "ps -eo args | grep -F 'artisan orbit-scheduler' | grep -v grep >/dev/null";
     }
 }

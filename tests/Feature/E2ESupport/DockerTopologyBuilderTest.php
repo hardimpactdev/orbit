@@ -33,7 +33,7 @@ it('starts Docker build topology nodes with the host Docker socket and runtime c
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-build-operator'")
         ->toContain("--env 'ORBIT_RUNTIME_CONTAINER=orbit-e2e-build-operator-control-orbit-runtime'")
-        ->toContain("docker run -d --name 'orbit-e2e-build-operator-control-orbit-runtime'")
+        ->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator-control-orbit-runtime'")
         ->toContain("--network 'container:orbit-e2e-build-operator-control'")
         ->toContain("--env 'ORBIT_SOURCE_PATH=/home/control/orbit'")
         ->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader');
@@ -74,7 +74,7 @@ it('builds Docker topology state through the host orbit launcher', function (): 
         ->build(E2ETopologyKind::ControlGateway);
 
     $setup = implode("\n", $commands);
-    $controlRuntimeStart = strpos($setup, "docker run -d --name 'orbit-e2e-build-operator_gateway-control-orbit-runtime'");
+    $controlRuntimeStart = strpos($setup, "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-control-orbit-runtime'");
     $controlMigrate = strpos($setup, "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc 'cd /home/control/orbit && orbit migrate --force'");
 
     expect($controlRuntimeStart)->toBeInt()
@@ -232,9 +232,9 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker image inspect 'orbit-runtime:current' >/dev/null" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-build-operator_gateway'" => Process::result(),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'orbit-e2e-build-operator_gateway-control' *" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'orbit-e2e-build-operator_gateway-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'orbit-e2e-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker run -d --name 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
@@ -324,9 +324,9 @@ it('uses the configured instance prefix for transient resources but stable image
         "docker image inspect 'orbit-runtime:current' >/dev/null" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'ci-foo-build-operator_gateway'" => Process::result(),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'ci-foo-build-operator_gateway-control' *" => Process::result(output: "control-id\n"),
-        "docker run -d --name 'ci-foo-build-operator_gateway-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'ci-foo-build-operator_gateway-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'ci-foo-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker run -d --name 'ci-foo-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'ci-foo-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'docker exec --user *' => Process::result(),
         'docker exec *' => Process::result(),
         "docker commit --change * 'ci-foo-build-operator_gateway-control' 'orbit-e2e-topology:operator_gateway-control-current'" => Process::result(),

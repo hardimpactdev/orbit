@@ -36,12 +36,12 @@ it('renders supervisor program definitions for runtime backend enactment', funct
 
 it('renders install scripts for supervisor program definitions', function (): void {
     $program = new SupervisorProgramDefinition(
-        name: 'orbit_scheduler',
-        directory: '/Users/orbit/orbit',
-        command: 'php artisan orbit-scheduler',
+        name: 'orbit_docs_main_queue',
+        directory: '/Users/orbit/apps/docs',
+        command: 'php artisan queue:work',
         user: 'orbit',
         restartPolicy: 'true',
-        stdoutLogFile: '/Users/orbit/.config/orbit/logs/orbit_scheduler.log',
+        stdoutLogFile: '/Users/orbit/.config/orbit/logs/orbit_docs_main_queue.log',
     );
 
     $script = (new SupervisorProgramRenderer)->renderInstallScript($program);
@@ -49,11 +49,11 @@ it('renders install scripts for supervisor program definitions', function (): vo
 
     expect($script)
         ->toContain('sudo mkdir -p /etc/supervisor/conf.d')
-        ->toContain("sudo tee '/etc/supervisor/conf.d/orbit_scheduler.conf' >/dev/null")
-        ->toContain("sudo supervisorctl update 'orbit_scheduler'")
+        ->toContain("sudo tee '/etc/supervisor/conf.d/orbit_docs_main_queue.conf' >/dev/null")
+        ->toContain("sudo supervisorctl update 'orbit_docs_main_queue'")
         ->and($content)->toBe((new SupervisorProgramRenderer)->render($program))
-        ->and($content)->toContain('[program:orbit_scheduler]')
-        ->and($content)->toContain("command=/bin/bash -lc 'php artisan orbit-scheduler'");
+        ->and($content)->toContain('[program:orbit_docs_main_queue]')
+        ->and($content)->toContain("command=/bin/bash -lc 'php artisan queue:work'");
 });
 
 it('rejects unsafe supervisor program names', function (): void {

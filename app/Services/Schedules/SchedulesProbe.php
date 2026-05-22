@@ -13,6 +13,7 @@ use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Runtime\OrbitContainerNames;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
 use Throwable;
@@ -24,6 +25,7 @@ final readonly class SchedulesProbe
     public function __construct(
         private RuntimeBackendProbe $runtimeBackendProbe,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
+        private OrbitContainerNames $containerNames = new OrbitContainerNames,
     ) {}
 
     public function key(): string
@@ -38,22 +40,22 @@ final readonly class SchedulesProbe
 
     public function introspectGateway(Node $gatewayNode): ProbeSnapshot
     {
-        $runtime = $this->runtimeBackendProbe->check($gatewayNode);
+        $runtime = $this->runtimeBackendProbe->remoteShell()->run(
+            $gatewayNode,
+            $this->runtimeInspectionScript(),
+            ['timeout' => 15, 'throw' => false],
+        );
         $schedulerState = SchedulerState::query()->where('node_id', $gatewayNode->id)->first();
-        $schedulerStatus = null;
-
-        if ($runtime->available) {
-            $result = $this->runtimeBackendProbe->remoteShell()->run(
-                $gatewayNode,
-                'supervisorctl status orbit_scheduler 2>/dev/null | awk \'{print $2}\' || true',
-                ['timeout' => 15, 'throw' => false],
-            );
-            $schedulerStatus = $this->normalizeSchedulerStatus(trim($result->stdout));
-        }
+        $runtimeOutput = trim($runtime->output());
+        $runtimeAvailable = $runtime->successful();
+        $schedulerStatus = $runtimeAvailable
+            ? $this->schedulerStatusFromRuntimeInspection($runtimeOutput)
+            : null;
 
         return new ProbeSnapshot([
             'gateway' => [
-                'runtime_available' => $runtime->available,
+                'runtime_available' => $runtimeAvailable,
+                'runtime_output' => $runtimeOutput,
                 'scheduler_status' => $schedulerStatus,
                 'heartbeat_at' => $schedulerState?->heartbeat_at?->toISOString(),
             ],
@@ -285,7 +287,7 @@ final readonly class SchedulesProbe
                     family: $this->key(),
                     key: 'schedule.scheduler_missing',
                     kind: DriftKind::Missing,
-                    summary: "Orbit Scheduler program is missing on gateway node {$gatewayNode->name}.",
+                    summary: "Orbit Scheduler daemon configuration is missing from gateway node {$gatewayNode->name}.",
                     detail: [
                         'node' => $gatewayNode->name,
                     ],
@@ -299,7 +301,7 @@ final readonly class SchedulesProbe
                     family: $this->key(),
                     key: 'schedule.scheduler_stopped',
                     kind: DriftKind::Divergent,
-                    summary: "Orbit Scheduler program is not running on gateway node {$gatewayNode->name}.",
+                    summary: "Orbit Scheduler daemon is not running on gateway node {$gatewayNode->name}.",
                     detail: [
                         'node' => $gatewayNode->name,
                         'observed_status' => $status,
@@ -427,15 +429,38 @@ final readonly class SchedulesProbe
             || ($node->role === 'gateway' && $node->status === 'active');
     }
 
-    private function normalizeSchedulerStatus(string $status): string
+    private function runtimeInspectionScript(): string
     {
-        return match (strtolower($status)) {
-            'running' => 'running',
-            'missing', 'error' => 'missing',
-            'stopped', 'exited', 'fatal', 'backoff', 'starting' => 'stopped',
-            '' => 'missing',
-            default => 'stopped',
-        };
+        $container = escapeshellarg($this->containerNames->runtime());
+        $format = <<<'FORMAT'
+running={{.State.Running}}
+restart_policy={{.HostConfig.RestartPolicy.Name}}
+{{range .Config.Env}}env={{.}}
+{{end}}
+FORMAT;
+
+        return implode("\n", [
+            'set -e',
+            'sudo docker inspect --format '.escapeshellarg($format).' '.$container.' 2>/dev/null',
+            "if sudo docker exec {$container} sh -lc ".escapeshellarg("ps -eo args | grep -F 'artisan orbit-scheduler' | grep -v grep >/dev/null").'; then',
+            "    printf 'scheduler_running=true\n'",
+            'else',
+            "    printf 'scheduler_running=false\n'",
+            'fi',
+        ]);
+    }
+
+    private function schedulerStatusFromRuntimeInspection(string $output): string
+    {
+        if (str_contains($output, 'scheduler_running=true')) {
+            return 'running';
+        }
+
+        if (! str_contains($output, 'env=ORBIT_IS_GATEWAY=1') && ! str_contains($output, 'env=ORBIT_IS_GATEWAY=true')) {
+            return 'missing';
+        }
+
+        return 'stopped';
     }
 
     private function dateValue(mixed $value): ?CarbonInterface

@@ -439,9 +439,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     private function startRuntimeContainerCommand(string $nodeContainer, string $network, string $role): string
     {
         $orbitPath = $this->orbitPathForRole($role);
+        $gatewayEnv = $role === 'gateway'
+            ? ' --env '.escapeshellarg('ORBIT_IS_GATEWAY=1')
+            : '';
 
         return sprintf(
-            'docker run -d --name %s --network %s --volume %s --mount %s --mount %s --env %s --env %s --env %s --workdir %s %s',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --mount %s --env %s --env %s --env %s%s --workdir %s %s',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
@@ -450,6 +453,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+            $gatewayEnv,
             escapeshellarg($orbitPath),
             escapeshellarg(self::runtimeSiblingImage()),
         );

@@ -22,6 +22,7 @@ it('defines the orbit runtime image dependency and command contract', function (
         ->toContain('zip')
         ->toContain('git')
         ->toContain('openssh-client')
+        ->toContain('procps')
         ->toContain('sqlite3')
         ->toContain('COPY docker/orbit-runtime/entrypoint.sh /usr/local/bin/orbit-runtime-entrypoint')
         ->toContain('ln -s /usr/local/bin/orbit-runtime-entrypoint /usr/local/bin/orbit')
