@@ -71,7 +71,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -92,7 +92,7 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
         $checkout = escapeshellarg($topology->checkout('control'));
         $setupListResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-setup-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-setup-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
         $setupListPayload = json_decode(trim($setupListResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -101,14 +101,14 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
 
         $removeSetupResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-setup-step:remove --app=docs --step={$setupRemoveId} --force --json",
+            "cd {$checkout} && orbit workspace-setup-step:remove --app=docs --step={$setupRemoveId} --force --json",
             timeoutSeconds: 120,
         );
         $removeSetupPayload = json_decode(trim($removeSetupResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $teardownListBeforeResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-teardown-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-teardown-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
         $teardownListBeforePayload = json_decode(trim($teardownListBeforeResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -116,14 +116,14 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
 
         $removeTeardownResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-teardown-step:remove --app=docs --step={$teardownRemoveId} --force --json",
+            "cd {$checkout} && orbit workspace-teardown-step:remove --app=docs --step={$teardownRemoveId} --force --json",
             timeoutSeconds: 120,
         );
         $removeTeardownPayload = json_decode(trim($removeTeardownResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $teardownListResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-teardown-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-teardown-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
         $teardownListPayload = json_decode(trim($teardownListResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);

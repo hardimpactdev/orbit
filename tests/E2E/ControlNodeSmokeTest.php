@@ -13,7 +13,7 @@ it('runs the current checkout from a prepared control topology', function (): vo
     try {
         $checkouts = e2eCheckout($topology, roles: ['control']);
         $result = $topology->ssh('control', sprintf(
-            'cd %s && php artisan --version >/dev/null && php artisan list --raw >/dev/null',
+            'cd %s && orbit --version >/dev/null && orbit list --raw >/dev/null',
             escapeshellarg($checkouts['control']),
         ));
 

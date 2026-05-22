@@ -48,18 +48,18 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan schedule:add %s --app=%s --command=%s --interval=%s --json',
+                'cd %s && orbit schedule:add %s --app=%s --command=%s --interval=%s --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($scheduleName),
                 escapeshellarg($appName),
-                escapeshellarg('php artisan schedule:run'),
+                escapeshellarg('orbit schedule:run'),
                 escapeshellarg('every minute'),
             ),
             timeoutSeconds: 120,

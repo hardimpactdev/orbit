@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -47,7 +47,7 @@ function nodeShowGrantJson(E2ETopologyHarness $topology, string $name): array
     $result = $topology->ssh(
         'control',
         sprintf(
-            'cd %s && php artisan node:show %s --json',
+            'cd %s && orbit node:show %s --json',
             escapeshellarg($topology->checkout('control')),
             escapeshellarg($name),
         ),
@@ -68,7 +68,7 @@ function nodeShowGrantHuman(E2ETopologyHarness $topology, string $name): string
     $result = $topology->ssh(
         'control',
         sprintf(
-            'cd %s && php artisan node:show %s',
+            'cd %s && orbit node:show %s',
             escapeshellarg($topology->checkout('control')),
             escapeshellarg($name),
         ),

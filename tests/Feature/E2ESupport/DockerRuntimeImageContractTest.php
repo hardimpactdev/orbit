@@ -177,3 +177,58 @@ it('does not ship persisted orbit certificate material in the runtime image', fu
         ->and($process->getOutput())
         ->toContain('OK');
 });
+
+it('provides Docker CLI but not host PHP runtime tools in the topology image', function (): void {
+    $availability = new Process([
+        'docker',
+        'image',
+        'inspect',
+        'orbit-e2e-topology-runtime:current',
+    ]);
+
+    $availability->run();
+
+    if ($availability->getExitCode() !== 0) {
+        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current is not available.');
+    }
+
+    $label = new Process([
+        'docker',
+        'image',
+        'inspect',
+        '--format',
+        '{{ index .Config.Labels "org.orbit.e2e.substrate" }}',
+        'orbit-e2e-topology-runtime:current',
+    ]);
+
+    $label->run();
+
+    if (trim($label->getOutput()) !== 'docker-first') {
+        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current was not built from the Docker-first topology Dockerfile.');
+    }
+
+    $process = new Process([
+        'docker',
+        'run',
+        '--rm',
+        'orbit-e2e-topology-runtime:current',
+        'bash',
+        '-c',
+        implode(' && ', [
+            'command -v docker',
+            '! command -v php',
+            '! command -v composer',
+            '! command -v caddy',
+            '! command -v php-fpm',
+            '! systemctl status caddy >/tmp/orbit-caddy-status.log 2>&1',
+            'echo OK',
+        ]),
+    ]);
+
+    $process->run();
+
+    expect($process->getExitCode())
+        ->toBe(0, $process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())
+        ->toContain('OK');
+});

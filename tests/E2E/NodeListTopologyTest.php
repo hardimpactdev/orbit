@@ -9,7 +9,7 @@ it('lists nodes from a prepared control and gateway topology', function (): void
         ->withCurrentCheckout(roles: ['control']);
 
     try {
-        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan node:list --json");
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && orbit node:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $names = array_column($payload['success']['data']['nodes'], 'name');
@@ -25,7 +25,7 @@ it('lists nodes from a prepared control, gateway, and dev topology', function ()
         ->withCurrentCheckout(roles: ['control']);
 
     try {
-        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan node:list --json");
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && orbit node:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $names = array_column($payload['success']['data']['nodes'], 'name');
@@ -42,7 +42,7 @@ it('lists nodes from a prepared full topology', function (): void {
         ->withCurrentCheckout(roles: ['control']);
 
     try {
-        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan node:list --json");
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && orbit node:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $names = array_column($payload['success']['data']['nodes'], 'name');

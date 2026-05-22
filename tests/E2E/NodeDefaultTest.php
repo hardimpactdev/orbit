@@ -47,7 +47,7 @@ PHP;
 
     $topology->ssh(
         'control',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -96,7 +96,7 @@ PHP;
 
     $topology->ssh(
         'control',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -111,7 +111,7 @@ it('shows the current local default from a control node', function (): void {
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default --json',
+                'cd %s && orbit node:default --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -139,7 +139,7 @@ it('shows human output for the current local default from a control node', funct
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default',
+                'cd %s && orbit node:default',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -162,7 +162,7 @@ it('shows null default when no default is set on a control node', function (): v
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default --json',
+                'cd %s && orbit node:default --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -187,7 +187,7 @@ it('sets a local default node by name on a control node', function (): void {
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default app-dev-1 --json',
+                'cd %s && orbit node:default app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -214,7 +214,7 @@ it('clears the local default node from a control node with was_set true', functi
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default --clear --json',
+                'cd %s && orbit node:default --clear --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -240,7 +240,7 @@ it('clears with was_set false when no default was set on a control node', functi
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default --clear --json',
+                'cd %s && orbit node:default --clear --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -266,7 +266,7 @@ it('rejects name not found on a control node', function (): void {
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default nonexistent --json',
+                'cd %s && orbit node:default nonexistent --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -296,7 +296,7 @@ it('sets a default node through the gateway api from a control node', function (
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:default app-dev-1 --json',
+                'cd %s && orbit node:default app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

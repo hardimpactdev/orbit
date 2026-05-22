@@ -110,7 +110,18 @@ final class DockerInstance implements E2EInstance
     {
         $this->host->run(sprintf(
             'docker rm -f %s >/dev/null 2>&1 || true',
-            escapeshellarg($this->name),
+            implode(' ', array_map(escapeshellarg(...), [
+                $this->name,
+                "{$this->name}-orbit-runtime",
+                "{$this->name}-orbit-caddy",
+            ])),
+        ), timeoutSeconds: 120);
+        $this->host->run(sprintf(
+            'docker volume rm -f %s >/dev/null 2>&1 || true',
+            implode(' ', array_map(escapeshellarg(...), [
+                "{$this->name}-home-control",
+                "{$this->name}-home-orbit",
+            ])),
         ), timeoutSeconds: 120);
     }
 }

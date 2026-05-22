@@ -146,6 +146,7 @@ final class E2ECurrentCheckout
     {
         $vendorSourcePath = $seedFrom ?? "/home/{$user}/orbit";
         $deadline = self::now() + 600.0;
+        $dockerTopology = self::usesDockerRuntime($instance);
 
         self::runInstallPhase(
             $timer,
@@ -160,7 +161,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.vendor',
-            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath),
+            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology),
             $instance,
             $user,
             $keyPair,
@@ -170,7 +171,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.runtime-state',
-            fn (): string => self::runtimeStateCommand($remotePath, $seedFrom),
+            fn (): string => self::runtimeStateCommand($remotePath, $seedFrom, $dockerTopology),
             $instance,
             $user,
             $keyPair,
@@ -180,7 +181,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.migrate',
-            fn (): string => self::migrateCommand($remotePath),
+            fn (): string => self::migrateCommand($remotePath, $dockerTopology),
             $instance,
             $user,
             $keyPair,
@@ -233,12 +234,21 @@ final class E2ECurrentCheckout
         ]);
     }
 
-    private static function vendorInstallCommand(string $remotePath, string $vendorSourcePath): string
+    private static function vendorInstallCommand(string $remotePath, string $vendorSourcePath, bool $dockerTopology = false): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            self::installComposerDependenciesCommand($vendorSourcePath),
+            $dockerTopology
+                ? self::reuseRuntimeDependenciesCommand($vendorSourcePath)
+                : self::installComposerDependenciesCommand($vendorSourcePath),
         ]);
+    }
+
+    private static function reuseRuntimeDependenciesCommand(string $vendorSourcePath): string
+    {
+        $sourceVendor = escapeshellarg("{$vendorSourcePath}/vendor");
+
+        return "test -d {$sourceVendor} && rm -rf vendor && ln -s {$sourceVendor} vendor";
     }
 
     private static function installComposerDependenciesCommand(string $vendorSourcePath): string
@@ -260,12 +270,12 @@ final class E2ECurrentCheckout
         return "if [ -f {$sourceAutoload} ] && [ -d {$sourceBoost} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} composer.lock; then {$reuseVendor}; else composer install --no-interaction --prefer-dist --optimize-autoloader; fi";
     }
 
-    private static function prepareRuntimeStateCommand(?string $seedFrom, ?E2EPhaseTimer $timer = null): string
+    private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?E2EPhaseTimer $timer = null): string
     {
         $runtimeDirectories = 'mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs';
 
         if ($seedFrom === null) {
-            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && php artisan key:generate --ansi";
+            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && ".self::artisanCommand('key:generate --ansi', $dockerTopology);
         }
 
         $seedEnv = escapeshellarg("{$seedFrom}/.env");
@@ -279,15 +289,15 @@ final class E2ECurrentCheckout
             "if [ -d {$seedStorageApp} ]; then mkdir -p storage && rm -rf storage/app && cp -a {$seedStorageApp} storage/app; fi",
             $runtimeDirectories,
             self::dockerTopologyModeEnvCommand(),
-            self::appKeyCommand(),
+            self::appKeyCommand($dockerTopology),
         ]);
     }
 
-    private static function appKeyCommand(): string
+    private static function appKeyCommand(bool $dockerTopology = false): string
     {
         return implode(' && ', [
             "(grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env)",
-            "(grep -Eq '^APP_KEY=base64:.+' .env || php artisan key:generate --force --no-interaction --ansi)",
+            "(grep -Eq '^APP_KEY=base64:.+' .env || ".self::artisanCommand('key:generate --force --no-interaction --ansi', $dockerTopology).')',
             "grep -Eq '^APP_KEY=base64:.+' .env",
         ]);
     }
@@ -305,19 +315,19 @@ final class E2ECurrentCheckout
         ]);
     }
 
-    private static function runtimeStateCommand(string $remotePath, ?string $seedFrom): string
+    private static function runtimeStateCommand(string $remotePath, ?string $seedFrom, bool $dockerTopology = false): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            self::prepareRuntimeStateCommand($seedFrom),
+            self::prepareRuntimeStateCommand($seedFrom, $dockerTopology),
         ]);
     }
 
-    private static function migrateCommand(string $remotePath): string
+    private static function migrateCommand(string $remotePath, bool $dockerTopology = false): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            'php artisan migrate --force --ansi',
+            self::artisanCommand('migrate --force --ansi', $dockerTopology),
         ]);
     }
 
@@ -330,18 +340,28 @@ final class E2ECurrentCheckout
                 $instance,
                 $user,
                 $keyPair,
-                self::hostKeyRefreshCommand($remotePath),
+                self::hostKeyRefreshCommand($remotePath, self::usesDockerRuntime($instance)),
                 timeoutSeconds: 120,
             ),
         );
     }
 
-    private static function hostKeyRefreshCommand(string $remotePath): string
+    private static function hostKeyRefreshCommand(string $remotePath, bool $dockerTopology = false): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            'php artisan orbit:internal:pin-node-host-keys --json',
+            self::artisanCommand('orbit:internal:pin-node-host-keys --json', $dockerTopology),
         ]);
+    }
+
+    private static function artisanCommand(string $arguments, bool $dockerTopology): string
+    {
+        return ($dockerTopology ? 'orbit' : 'php artisan').' '.$arguments;
+    }
+
+    private static function usesDockerRuntime(E2EInstance $instance): bool
+    {
+        return $instance instanceof DockerInstance || $instance instanceof DockerBuildInstance;
     }
 
     private static function cloneCachedCheckoutCommand(string $basePath, string $remotePath): string

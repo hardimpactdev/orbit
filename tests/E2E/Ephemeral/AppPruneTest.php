@@ -36,7 +36,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -65,7 +65,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $create = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:new %s --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -79,7 +79,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:agent-ide %s opencode --json',
+                'cd %s && orbit app:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -89,7 +89,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:prune %s --dry-run --json',
+                'cd %s && orbit app:prune %s --dry-run --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -132,7 +132,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $create = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:new %s --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -145,7 +145,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:agent-ide %s opencode --json',
+                'cd %s && orbit app:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -155,7 +155,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:prune %s --force --json',
+                'cd %s && orbit app:prune %s --force --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),

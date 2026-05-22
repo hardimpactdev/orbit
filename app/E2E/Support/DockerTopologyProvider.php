@@ -10,6 +10,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 {
     private const int DockerMetadataProbeTimeoutSeconds = 120;
 
+    private const int ContainersPerRole = 2;
+
+    private const string RuntimeSiblingImage = 'orbit-runtime:current';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -146,6 +150,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     public function rolesFor(E2ETopologyKind $kind): array
     {
+        return self::rolesForKind($kind);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function rolesForKind(E2ETopologyKind $kind): array
+    {
         return match ($kind) {
             E2ETopologyKind::Operator => ['control'],
             E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
@@ -154,6 +166,21 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
         };
+    }
+
+    public static function containerCountFor(E2ETopologyKind $kind): int
+    {
+        return count(self::rolesForKind($kind)) * self::ContainersPerRole;
+    }
+
+    public static function maxContainerCountForAnyTopology(): int
+    {
+        return max(array_map(self::containerCountFor(...), E2ETopologyKind::cases()));
+    }
+
+    public static function runtimeSiblingImage(): string
+    {
+        return self::RuntimeSiblingImage;
     }
 
     /**
@@ -166,7 +193,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     private function selectHost(E2ETopologyKind $kind, ?array $hostNames = null, bool $checkCapacity = true): array
     {
         $failures = [];
-        $requestedContainers = count($this->rolesFor($kind));
+        $requestedContainers = self::containerCountFor($kind);
         $hostNames ??= $this->dockerHostCandidates();
 
         if ($hostNames === []) {
@@ -189,6 +216,13 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             }
 
             $imageNames = [];
+
+            if (! $this->hasRuntimeSiblingImage($host)) {
+                $failures[] = "{$hostName}: docker runtime image ".self::runtimeSiblingImage().' is not available';
+
+                continue;
+            }
+
             $missingImage = $this->resolveImageNamesFor($host, $kind, $imageNames);
 
             if ($missingImage !== null) {
@@ -262,6 +296,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return null;
     }
 
+    private function hasRuntimeSiblingImage(DockerHost $host): bool
+    {
+        return $host->run(
+            sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::runtimeSiblingImage())),
+            timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+        )->successful();
+    }
+
     private function runningE2EContainerCount(DockerHost $host): int
     {
         $result = $host->run(sprintf(
@@ -304,8 +346,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $tasks[$role] = [
                 'name' => $name,
-                'command' => $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode),
+                'container_names' => $this->managedContainerNames($name),
+                'volume_names' => $this->managedVolumeNames($name),
+                'node_command' => $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode),
+                'runtime_command' => $this->startRuntimeContainerCommand($name, $network, $role),
             ];
+            $tasks[$role]['command'] = $tasks[$role]['node_command'].' && '.$tasks[$role]['runtime_command'];
         }
 
         try {
@@ -315,7 +361,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 foreach ($tasks as $role => $task) {
                     $timer->measure(
                         "{$timerPrefix}.{$role}",
-                        fn () => $host->mustRun($task['command'], "Could not start container {$task['name']}"),
+                        function () use ($host, $task): void {
+                            $host->mustRun($task['node_command'], "Could not start container {$task['name']}");
+                            $host->mustRun($task['runtime_command'], "Could not start runtime container {$this->runtimeContainerName($task['name'])}");
+                        },
                     );
 
                     $instances[$role] = new DockerInstance($host, $task['name'], $network);
@@ -347,7 +396,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             return $instances;
         } catch (\Throwable $throwable) {
-            $this->cleanupContainers($host, array_column($tasks, 'name'));
+            $this->cleanupContainers($host, array_merge(...array_column($tasks, 'container_names')));
+            $this->cleanupVolumes($host, array_merge(...array_column($tasks, 'volume_names')));
 
             throw $throwable;
         }
@@ -367,12 +417,36 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             : '';
 
         return sprintf(
-            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s',
+            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --volume %s --mount %s --mount %s --env %s --env %s %s',
             escapeshellarg($name),
             escapeshellarg($network),
             $networkAlias,
             escapeshellarg($ip),
+            escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
+            escapeshellarg($this->homeVolumeMount($name, 'control')),
+            escapeshellarg($this->homeVolumeMount($name, 'orbit')),
+            escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
+            escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($name)}"),
             escapeshellarg($image),
+        );
+    }
+
+    private function startRuntimeContainerCommand(string $nodeContainer, string $network, string $role): string
+    {
+        $orbitPath = $this->orbitPathForRole($role);
+
+        return sprintf(
+            'docker run -d --name %s --network %s --volume %s --mount %s --mount %s --env %s --env %s --env %s --workdir %s %s',
+            escapeshellarg($this->runtimeContainerName($nodeContainer)),
+            escapeshellarg("container:{$nodeContainer}"),
+            escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
+            escapeshellarg($this->homeVolumeMount($nodeContainer, 'control')),
+            escapeshellarg($this->homeVolumeMount($nodeContainer, 'orbit')),
+            escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
+            escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
+            escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+            escapeshellarg($orbitPath),
+            escapeshellarg(self::runtimeSiblingImage()),
         );
     }
 
@@ -430,12 +504,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private function cleanupResources(DockerHost $host, string $network, array $roles, string $runId, ?E2EPhaseTimer $timer = null): void
     {
-        $containerNames = array_map(
-            fn (string $role): string => "{$this->config->instancePrefix}-{$runId}-{$role}",
-            $roles,
-        );
-
-        $this->cleanupContainers($host, $containerNames, $timer);
+        $this->cleanupContainers($host, $this->containerNamesForRoles($roles, $runId), $timer);
+        $this->cleanupVolumes($host, $this->volumeNamesForRoles($roles, $runId), $timer);
         $this->cleanupNetwork($host, $network, $timer);
     }
 
@@ -444,10 +514,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private function cleanupContainersForRoles(DockerHost $host, array $roles, string $runId, ?E2EPhaseTimer $timer = null): void
     {
-        $this->cleanupContainers($host, array_map(
-            fn (string $role): string => "{$this->config->instancePrefix}-{$runId}-{$role}",
-            $roles,
-        ), $timer);
+        $this->cleanupContainers($host, $this->containerNamesForRoles($roles, $runId), $timer);
+        $this->cleanupVolumes($host, $this->volumeNamesForRoles($roles, $runId), $timer);
     }
 
     /**
@@ -483,6 +551,25 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     }
 
     /**
+     * @param  list<string>  $volumeNames
+     */
+    private function cleanupVolumes(DockerHost $host, array $volumeNames, ?E2EPhaseTimer $timer = null): void
+    {
+        $deleteVolumes = fn () => $host->run(sprintf(
+            'docker volume rm -f %s >/dev/null 2>&1 || true',
+            implode(' ', array_map(escapeshellarg(...), $volumeNames)),
+        ), timeoutSeconds: 120);
+
+        if ($timer !== null) {
+            $timer->measure('cleanup.volumes', $deleteVolumes);
+
+            return;
+        }
+
+        $deleteVolumes();
+    }
+
+    /**
      * @param  array<string, DockerInstance>  $instances
      */
     private function retargetTopology(array $instances, DockerTopologyNetworkPlan $networkPlan): void
@@ -499,7 +586,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $key = new SshKeyPair('/dev/null', '/dev/null');
 
         E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-            'cd /home/orbit/orbit && if php artisan orbit:internal:bootstrap-gateway-local --help | grep -q -- --skip-runtime-install; then php artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install; else php artisan orbit:internal:bootstrap-gateway-local gateway %s; fi',
+            'cd /home/orbit/orbit && if orbit orbit:internal:bootstrap-gateway-local --help | grep -q -- --skip-runtime-install; then orbit orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install; else orbit orbit:internal:bootstrap-gateway-local gateway %s; fi',
             escapeshellarg($gatewayIp),
             escapeshellarg($gatewayIp),
         ), timeoutSeconds: 120);
@@ -509,7 +596,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($gatewayIp),
@@ -518,7 +605,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['ingress'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 escapeshellarg($networkPlan->ipForRole('ingress')),
                 escapeshellarg($networkPlan->ipForRole('ingress')),
                 escapeshellarg($gatewayIp),
@@ -527,7 +614,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['prod'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 escapeshellarg($networkPlan->ipForRole('prod')),
                 escapeshellarg($networkPlan->ipForRole('prod')),
                 escapeshellarg($gatewayIp),
@@ -570,9 +657,88 @@ PHP;
             $control,
             'control',
             $key,
-            'cd /home/control/orbit && php artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/control/orbit && orbit tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return list<string>
+     */
+    private function containerNamesForRoles(array $roles, string $runId): array
+    {
+        $names = [];
+
+        foreach ($roles as $role) {
+            array_push(
+                $names,
+                ...$this->managedContainerNames("{$this->config->instancePrefix}-{$runId}-{$role}"),
+            );
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return list<string>
+     */
+    private function volumeNamesForRoles(array $roles, string $runId): array
+    {
+        $names = [];
+
+        foreach ($roles as $role) {
+            array_push(
+                $names,
+                ...$this->managedVolumeNames("{$this->config->instancePrefix}-{$runId}-{$role}"),
+            );
+        }
+
+        return $names;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function managedContainerNames(string $nodeContainer): array
+    {
+        return [
+            $nodeContainer,
+            $this->runtimeContainerName($nodeContainer),
+            "{$nodeContainer}-orbit-caddy",
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function managedVolumeNames(string $nodeContainer): array
+    {
+        return [
+            $this->homeVolumeName($nodeContainer, 'control'),
+            $this->homeVolumeName($nodeContainer, 'orbit'),
+        ];
+    }
+
+    private function homeVolumeMount(string $nodeContainer, string $user): string
+    {
+        return "type=volume,src={$this->homeVolumeName($nodeContainer, $user)},dst=/home/{$user}";
+    }
+
+    private function homeVolumeName(string $nodeContainer, string $user): string
+    {
+        return "{$nodeContainer}-home-{$user}";
+    }
+
+    private function runtimeContainerName(string $nodeContainer): string
+    {
+        return "{$nodeContainer}-orbit-runtime";
+    }
+
+    private function orbitPathForRole(string $role): string
+    {
+        return $role === 'control' ? '/home/control/orbit' : '/home/orbit/orbit';
     }
 
     private function topologyMode(): string

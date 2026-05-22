@@ -17,17 +17,7 @@ it('lists tables for a database connection from the control node through the gat
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        // Redirect the orbit binary on the dev node to the current checkout so
-        // the gateway's RemoteShell can invoke database:query-local. We replace
-        // /usr/local/bin/orbit directly via docker cp to avoid running a login
-        // shell (which hangs in the Docker topology environment).
-        $devCheckout = $topology->checkout('dev');
-        $orbitScript = "#!/usr/bin/env bash\nset -e\nexec php ".escapeshellarg("{$devCheckout}/artisan").' "$@"'."\n";
-        $tmpScript = tempnam(sys_get_temp_dir(), 'orbit-dev-');
-        file_put_contents($tmpScript, $orbitScript);
-        chmod($tmpScript, 0755);
-        $topology->instance('dev')->copyFileToInstance($tmpScript, '/usr/local/bin/orbit');
-        @unlink($tmpScript);
+        e2eInstallCurrentCheckoutOrbitWrapper($topology, 'dev');
 
         e2eRestartGatewayApi($topology, 'database-tables');
         E2EGatewayApi::waitForGatewayApi(
@@ -66,14 +56,14 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan database:tables %s --json',
+                'cd %s && orbit database:tables %s --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($slug),
             ),
@@ -92,7 +82,7 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

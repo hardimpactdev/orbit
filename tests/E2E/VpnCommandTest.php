@@ -50,7 +50,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -106,7 +106,7 @@ PHP;
 
     $topology->ssh(
         'control',
-        'cd '.escapeshellarg($topology->checkout('control')).' && php artisan tinker --execute='.escapeshellarg($controlScript),
+        'cd '.escapeshellarg($topology->checkout('control')).' && orbit tinker --execute='.escapeshellarg($controlScript),
         timeoutSeconds: 120,
     );
 
@@ -142,7 +142,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -161,7 +161,7 @@ it('administers VPN clients through gateway execution and control SSH forwarding
 
         $gatewayList = $topology->ssh(
             'gateway',
-            "cd {$gatewayCheckout} && php artisan vpn-client:list --json",
+            "cd {$gatewayCheckout} && orbit vpn-client:list --json",
             timeoutSeconds: 120,
         );
         $gatewayListPayload = json_decode(trim($gatewayList->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -171,35 +171,35 @@ it('administers VPN clients through gateway execution and control SSH forwarding
 
         $created = $topology->ssh(
             'control',
-            "cd {$controlCheckout} && php artisan vpn-client:new tablet --config --json",
+            "cd {$controlCheckout} && orbit vpn-client:new tablet --config --json",
             timeoutSeconds: 120,
         );
         $createdPayload = json_decode(trim($created->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $disabled = $topology->ssh(
             'control',
-            "cd {$controlCheckout} && php artisan vpn-client:disable tablet --json",
+            "cd {$controlCheckout} && orbit vpn-client:disable tablet --json",
             timeoutSeconds: 120,
         );
         $disabledPayload = json_decode(trim($disabled->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $enabled = $topology->ssh(
             'control',
-            "cd {$controlCheckout} && php artisan vpn-client:enable tablet --json",
+            "cd {$controlCheckout} && orbit vpn-client:enable tablet --json",
             timeoutSeconds: 120,
         );
         $enabledPayload = json_decode(trim($enabled->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $removed = $topology->ssh(
             'control',
-            "cd {$controlCheckout} && php artisan vpn-client:remove tablet --force --json",
+            "cd {$controlCheckout} && orbit vpn-client:remove tablet --force --json",
             timeoutSeconds: 120,
         );
         $removedPayload = json_decode(trim($removed->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $password = $topology->ssh(
             'gateway',
-            "cd {$gatewayCheckout} && php artisan vpn-web-ui:change-password ".escapeshellarg('new-password-1234').' --force --json',
+            "cd {$gatewayCheckout} && orbit vpn-web-ui:change-password ".escapeshellarg('new-password-1234').' --force --json',
             timeoutSeconds: 120,
         );
         $passwordPayload = json_decode(trim($password->output()), associative: true, flags: JSON_THROW_ON_ERROR);

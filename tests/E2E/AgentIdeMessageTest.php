@@ -15,35 +15,16 @@ file_put_contents('/tmp/orbit-agent-ide-message-request.json', $body === false ?
 http_response_code(204);
 PHP;
 
-    $topology->ssh(
+    e2ePutRuntimeFile($topology, 'gateway', '/tmp/orbit-fake-opencode.php', $router, timeoutSeconds: 60);
+    e2eStartRuntimePhpServer(
+        $topology,
         'gateway',
-        sprintf(
-            'cat > /tmp/orbit-fake-opencode.php <<%s%s%s',
-            escapeshellarg('PHP'),
-            "\n{$router}\n",
-            'PHP',
-        ),
-        timeoutSeconds: 60,
+        $port,
+        '/tmp/orbit-fake-opencode.php',
+        '/tmp/orbit-fake-opencode.log',
+        '/tmp/orbit-fake-opencode.pid',
     );
-
-    $topology->ssh(
-        'gateway',
-        sprintf(
-            'rm -f /tmp/orbit-agent-ide-message-request.json /tmp/orbit-fake-opencode.log; '.
-            'nohup php -S 127.0.0.1:%d /tmp/orbit-fake-opencode.php > /tmp/orbit-fake-opencode.log 2>&1 & echo $! > /tmp/orbit-fake-opencode.pid',
-            $port,
-        ),
-        timeoutSeconds: 60,
-    );
-
-    $topology->ssh(
-        'gateway',
-        sprintf(
-            'for i in $(seq 1 30); do curl -fsS -X POST http://127.0.0.1:%d/session/health/prompt_async -d "{}" >/dev/null 2>&1 && exit 0; sleep 1; done; cat /tmp/orbit-fake-opencode.log; exit 1',
-            $port,
-        ),
-        timeoutSeconds: 45,
-    );
+    e2eWaitForRuntimeHttpEndpoint($topology, 'gateway', $port, '/session/health/prompt_async', '/tmp/orbit-fake-opencode.log');
 }
 
 function agentIdeMessageSeedGatewayIntent(E2ETopologyHarness $topology, int $port): void
@@ -98,7 +79,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -115,7 +96,7 @@ it('sends a workspace message through the managed OpenCode transport', function 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan agent-ide:message %s --workspace=feature-docs --json',
+                'cd %s && orbit agent-ide:message %s --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('gateway')),
                 escapeshellarg('Ship the docs'),
             ),
@@ -123,7 +104,8 @@ it('sends a workspace message through the managed OpenCode transport', function 
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        $request = $topology->ssh(
+        $request = e2eRunInRoleRuntime(
+            $topology,
             'gateway',
             'cat /tmp/orbit-agent-ide-message-request.json',
             timeoutSeconds: 60,
@@ -149,11 +131,7 @@ it('sends a workspace message through the managed OpenCode transport', function 
                 'directory' => '/srv/docs/.worktrees/feature-docs',
             ]);
     } finally {
-        $topology->ssh(
-            'gateway',
-            'test ! -f /tmp/orbit-fake-opencode.pid || kill "$(cat /tmp/orbit-fake-opencode.pid)" >/dev/null 2>&1 || true',
-            timeoutSeconds: 30,
-        );
+        e2eStopRuntimePhpServer($topology, 'gateway', '/tmp/orbit-fake-opencode.pid');
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

@@ -31,7 +31,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -51,7 +51,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
         $add = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan deploy:step-add docs %s --title=%s --timeout=120 --json',
+                'cd %s && orbit deploy:step-add docs %s --title=%s --timeout=120 --json',
                 $checkout,
                 escapeshellarg($command),
                 escapeshellarg('Write marker'),
@@ -62,14 +62,14 @@ it('manages and runs a production app deployment pipeline', function (): void {
 
         $list = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan deploy:step-list docs --json",
+            "cd {$checkout} && orbit deploy:step-list docs --json",
             timeoutSeconds: 120,
         );
         $listPayload = json_decode(trim($list->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $run = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan deploy:run docs --json",
+            "cd {$checkout} && orbit deploy:run docs --json",
             timeoutSeconds: 180,
         );
         $runPayload = json_decode(trim($run->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -78,7 +78,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
 
         $history = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan deploy:history docs --limit=10 --json",
+            "cd {$checkout} && orbit deploy:history docs --limit=10 --json",
             timeoutSeconds: 120,
         );
         $historyPayload = json_decode(trim($history->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -86,7 +86,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
         $log = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan deploy:log docs %d --step=%d --lines=20 --json',
+                'cd %s && orbit deploy:log docs %d --step=%d --lines=20 --json',
                 $checkout,
                 $runId,
                 $runStepId,
@@ -98,7 +98,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
         $remove = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan deploy:step-remove docs %d --force --json',
+                'cd %s && orbit deploy:step-remove docs %d --force --json',
                 $checkout,
                 $addPayload['success']['data']['step']['id'],
             ),

@@ -64,7 +64,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -95,7 +95,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -112,7 +112,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $list = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan php:list --app=docs --workspace=feature-docs --json',
+                'cd %s && orbit php:list --app=docs --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -138,7 +138,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $appUse = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan php:use 8.5 --app=docs --json',
+                'cd %s && orbit php:use 8.5 --app=docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -148,7 +148,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $workspaceUse = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan php:use 8.4 --app=docs --workspace=feature-docs --json',
+                'cd %s && orbit php:use 8.4 --app=docs --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -158,7 +158,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $cliUse = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan php:use 8.5 --node=app-dev-1 --cli --json',
+                'cd %s && orbit php:use 8.5 --node=app-dev-1 --cli --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,

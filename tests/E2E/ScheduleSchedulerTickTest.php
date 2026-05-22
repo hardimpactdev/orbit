@@ -24,7 +24,7 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
         $tick = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan orbit-scheduler --once',
+                'cd %s && orbit orbit-scheduler --once',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -85,7 +85,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -116,7 +116,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 

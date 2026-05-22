@@ -281,12 +281,12 @@ it('removes persisted orbit certificate material from runtime image worktrees be
         ->toContain('rm -rf /home/orbit/orbit/storage/app/orbit/ca /home/orbit/orbit/storage/app/orbit/certs /home/orbit/orbit/storage/app/orbit/keys');
 });
 
-it('installs dev composer dependencies in the docker runtime image', function (): void {
+it('keeps the docker topology host image free of host Composer dependencies', function (): void {
     $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
-        ->toContain("composer install --no-interaction --no-progress'")
-        ->not->toContain('composer install --no-interaction --no-progress --no-dev');
+        ->not->toContain('COPY --from=composer')
+        ->not->toContain('composer install');
 });
 
 it('registers the e2e artisan commands', function (): void {

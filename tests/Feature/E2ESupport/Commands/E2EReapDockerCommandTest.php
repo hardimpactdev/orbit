@@ -12,6 +12,7 @@ it('reports docker e2e resources in dry-run json mode', function (): void {
     Process::fake([
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run\n"),
+        "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\n"),
     ]);
 
     $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--json' => true])
@@ -39,6 +40,14 @@ it('reports docker e2e resources in dry-run json mode', function (): void {
                                 'deleted' => false,
                             ],
                         ],
+                        'volumes' => [
+                            [
+                                'type' => 'volume',
+                                'host' => 'local',
+                                'name' => 'orbit-e2e-run-control-home-control',
+                                'deleted' => false,
+                            ],
+                        ],
                     ],
                 ],
             ],
@@ -50,8 +59,10 @@ it('removes docker e2e resources when forced', function (): void {
     Process::fake([
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run\n"),
+        "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\n"),
         "docker rm -f 'orbit-e2e-run-control'" => Process::result(),
         "docker network rm 'orbit-e2e-run'" => Process::result(),
+        "docker volume rm 'orbit-e2e-run-control-home-control'" => Process::result(),
     ]);
 
     $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
@@ -59,12 +70,68 @@ it('removes docker e2e resources when forced', function (): void {
 
     Process::assertRan("docker rm -f 'orbit-e2e-run-control'");
     Process::assertRan("docker network rm 'orbit-e2e-run'");
+    Process::assertRan("docker volume rm 'orbit-e2e-run-control-home-control'");
+});
+
+it('removes docker e2e home volumes when forced', function (): void {
+    Process::fake([
+        "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+        "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+        "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\norbit-e2e-run-gateway-home-orbit\n"),
+        "docker volume rm 'orbit-e2e-run-control-home-control'" => Process::result(),
+        "docker volume rm 'orbit-e2e-run-gateway-home-orbit'" => Process::result(),
+    ]);
+
+    $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
+        ->assertSuccessful();
+
+    Process::assertRan("docker volume rm 'orbit-e2e-run-control-home-control'");
+    Process::assertRan("docker volume rm 'orbit-e2e-run-gateway-home-orbit'");
+});
+
+it('reaps docker slot hosts when no docker host list is configured', function (): void {
+    $runs = [];
+
+    Process::fake(function ($process) use (&$runs) {
+        $runs[] = [
+            'command' => $process->command,
+            'environment' => $process->environment,
+        ];
+
+        return match ($process->command) {
+            "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
+            "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run\n"),
+            "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\norbit-e2e-run-gateway-home-orbit\n"),
+            default => Process::result(),
+        };
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:1',
+    ], function (): void {
+        $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
+            ->assertSuccessful();
+    });
+
+    $commands = array_column($runs, 'command');
+    $hosts = array_values(array_unique(array_map(
+        fn (array $run): string => $run['environment']['DOCKER_HOST'] ?? 'local',
+        $runs,
+    )));
+
+    expect($hosts)->toBe(['ssh://sidecar1'])
+        ->and($commands)->toContain(
+            "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'",
+            "docker volume rm 'orbit-e2e-run-control-home-control'",
+            "docker volume rm 'orbit-e2e-run-gateway-home-orbit'",
+        );
 });
 
 it('uses configured e2e prefix and docker hosts when reaping resources', function (): void {
     Process::fake([
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-custom-'" => Process::result(output: "orbit-custom-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-custom-'" => Process::result(output: "orbit-custom-run\n"),
+        "docker volume ls --format '{{.Name}}' --filter 'name=orbit-custom-'" => Process::result(output: "orbit-custom-run-control-home-control\n"),
     ]);
 
     withE2EConfigEnvironment([
@@ -74,6 +141,7 @@ it('uses configured e2e prefix and docker hosts when reaping resources', functio
         $this->artisan('e2e:reap-docker', ['--older-than' => '0m'])
             ->expectsOutputToContain('stale: container orbit-custom-run-control on beast')
             ->expectsOutputToContain('stale: network orbit-custom-run on beast')
+            ->expectsOutputToContain('stale: volume orbit-custom-run-control-home-control on beast')
             ->assertSuccessful();
     });
 });
@@ -97,6 +165,7 @@ it('fails when forced docker resource deletion fails', function (): void {
     Process::fake([
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+        "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
         "docker rm -f 'orbit-e2e-run-control'" => Process::result(errorOutput: 'delete failed', exitCode: 1),
     ]);
 

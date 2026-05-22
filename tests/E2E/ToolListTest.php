@@ -15,7 +15,7 @@ it('lists registered tools from gateway intent as JSON', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:list --json',
+                'cd %s && orbit tool:list --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -41,7 +41,7 @@ it('lists registered tools from gateway intent as human output', function (): vo
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:list',
+                'cd %s && orbit tool:list',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -65,7 +65,7 @@ it('filters tool list by node', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:list --node=app-dev-1 --json',
+                'cd %s && orbit tool:list --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -91,7 +91,7 @@ it('filters tool list by app', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:list --app=docs --json',
+                'cd %s && orbit tool:list --app=docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -127,7 +127,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -162,7 +162,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

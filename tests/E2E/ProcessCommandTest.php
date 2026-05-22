@@ -19,7 +19,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $add = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:add {$process} ".escapeshellarg('echo worker-ready; sleep 300').' --app='.escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:add {$process} ".escapeshellarg('echo worker-ready; sleep 300').' --app='.escapeshellarg($app).' --json',
             timeoutSeconds: 180,
         );
         $addPayload = processCommandPayload($add->output());
@@ -35,7 +35,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $edit = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:edit {$process} --app=".escapeshellarg($app).' --restart-policy=always --json',
+            "cd {$checkout} && orbit process:edit {$process} --app=".escapeshellarg($app).' --restart-policy=always --json',
             timeoutSeconds: 180,
         );
         $editPayload = processCommandPayload($edit->output());
@@ -45,7 +45,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $start = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:start {$process} --app=".escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:start {$process} --app=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
         );
         $startPayload = processCommandPayload($start->output());
@@ -63,7 +63,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $logs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:logs {$process} --app=".escapeshellarg($app).' --lines=5 --json',
+            "cd {$checkout} && orbit process:logs {$process} --app=".escapeshellarg($app).' --lines=5 --json',
             timeoutSeconds: 120,
         );
         $logsPayload = processCommandPayload($logs->output());
@@ -74,7 +74,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $restart = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:restart {$process} --app=".escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:restart {$process} --app=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
         );
         $restartPayload = processCommandPayload($restart->output());
@@ -90,7 +90,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $stop = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:stop {$process} --app=".escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:stop {$process} --app=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
         );
         $stopPayload = processCommandPayload($stop->output());
@@ -106,7 +106,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $remove = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan process:remove {$process} --app=".escapeshellarg($app).' --force --json',
+            "cd {$checkout} && orbit process:remove {$process} --app=".escapeshellarg($app).' --force --json',
             timeoutSeconds: 180,
         );
         $removePayload = processCommandPayload($remove->output());
@@ -120,7 +120,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $registry = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan tinker --execute=".escapeshellarg("echo \\App\\Models\\Process::query()->where('name', '{$process}')->whereHas('app', fn (\$query) => \$query->where('name', '{$app}'))->exists() ? 'present' : 'absent';"),
+            "cd {$checkout} && orbit tinker --execute=".escapeshellarg("echo \\App\\Models\\Process::query()->where('name', '{$process}')->whereHas('app', fn (\$query) => \$query->where('name', '{$app}'))->exists() ? 'present' : 'absent';"),
             timeoutSeconds: 120,
         );
 
@@ -162,7 +162,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -173,7 +173,7 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan process:remove worker --app=".escapeshellarg($app).' --force --json >/dev/null 2>&1 || true',
+        "cd {$checkout} && orbit process:remove worker --app=".escapeshellarg($app).' --force --json >/dev/null 2>&1 || true',
         timeoutSeconds: 180,
     );
     $topology->ssh(
@@ -186,7 +186,7 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script).' >/dev/null 2>&1 || true',
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script).' >/dev/null 2>&1 || true',
         timeoutSeconds: 120,
     );
 }

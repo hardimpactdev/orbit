@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyCapabilities;
 use App\E2E\Support\E2ETopologyKind;
@@ -159,7 +160,7 @@ class E2ETestCommand extends Command
             return "ORBIT_E2E_PARALLEL_PROCESSES must match total Docker slots [{$totalSlots}] for the measured Docker lane.";
         }
 
-        $requiredContainers = max($config->dockerHostSlots) * 5;
+        $requiredContainers = max($config->dockerHostSlots) * DockerTopologyProvider::maxContainerCountForAnyTopology();
 
         if ($config->dockerMaxContainersPerHost < $requiredContainers) {
             return "ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least {$requiredContainers} for the largest configured Docker host slot count.";

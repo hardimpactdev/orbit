@@ -53,7 +53,7 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+            "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
             timeoutSeconds: 120,
         );
 
@@ -95,7 +95,7 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:setup %s --app=docs --path=%s --json',
+                'cd %s && orbit workspace:setup %s --app=docs --path=%s --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($workspaceName),
                 escapeshellarg($workspacePath),
@@ -112,7 +112,7 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('lifecycle_status'),
                 'route_count' => \\App\\Models\\ProxyRoute::query()
                     ->where('workspace_id', \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('id'))
@@ -151,7 +151,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         $install = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && ORBIT_IS_GATEWAY=1 php artisan tool:install opencode-server --node=app-dev-1 --status=running --json',
+                'cd %s && ORBIT_IS_GATEWAY=1 orbit tool:install opencode-server --node=app-dev-1 --status=running --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -168,7 +168,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
 
         $setup = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg(workspaceSetupOpencodeResolverScript($workspacePath)),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg(workspaceSetupOpencodeResolverScript($workspacePath)),
             timeoutSeconds: 240,
         );
         $payload = json_decode(trim($setup->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -179,7 +179,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'docs_workspace_app' => \\App\\Models\\Workspace::query()
                     ->where('name', '{$workspaceName}')
                     ->first()?->app?->name,
@@ -281,7 +281,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 

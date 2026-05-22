@@ -28,7 +28,7 @@ it('adds a database connection from the control node through the gateway api', f
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan database:add %s --driver=sqlite --path=/srv/docs/database.sqlite --node=app-dev-1 --json',
+                'cd %s && orbit database:add %s --driver=sqlite --path=/srv/docs/database.sqlite --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($slug),
             ),
@@ -47,7 +47,7 @@ it('adds a database connection from the control node through the gateway api', f
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

@@ -20,7 +20,7 @@ it('grants node access from a control caller through the gateway api', function 
         $grantResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:grant --preset=operator --json control-1 app-prod-1',
+                'cd %s && orbit node:grant --preset=operator --json control-1 app-prod-1',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -47,7 +47,7 @@ it('grants node access from a control caller through the gateway api', function 
         $showResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:show app-prod-1 --json',
+                'cd %s && orbit node:show app-prod-1 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

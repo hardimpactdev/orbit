@@ -42,14 +42,14 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan database:update %s --slug=%s --json',
+                'cd %s && orbit database:update %s --slug=%s --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($slug),
                 escapeshellarg($updatedSlug),
@@ -68,7 +68,7 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

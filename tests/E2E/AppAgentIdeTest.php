@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -63,7 +63,7 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         $register = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
                 escapeshellarg($path),
@@ -78,7 +78,7 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         $set = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:agent-ide %s opencode --json',
+                'cd %s && orbit app:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -98,7 +98,7 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         $clear = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:agent-ide %s inherit --json',
+                'cd %s && orbit app:agent-ide %s inherit --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -115,7 +115,7 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'agent_ide_config' => \\App\\Models\\App::query()->where('name', '{$name}')->value('agent_ide_config'),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,

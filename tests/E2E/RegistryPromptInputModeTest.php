@@ -64,7 +64,7 @@ $app = \App\Models\App::query()->create([
     'interval' => 'daily',
     'timezone' => 'UTC',
     'execution_type' => 'command',
-    'execution_value' => 'php artisan docs:build',
+    'execution_value' => 'orbit docs:build',
     'enabled' => true,
     'status' => 'expected',
 ]);
@@ -74,7 +74,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -111,10 +111,10 @@ it('renders finite registry prompts as data tables in a real terminal session', 
 
         registryPromptE2ESeed($topology);
 
-        $appPrompt = registryPromptE2ECapture($topology, 'php artisan app:show', 'app');
-        $nodePrompt = registryPromptE2ECapture($topology, 'php artisan node:show', 'node');
-        $workspacePrompt = registryPromptE2ECapture($topology, 'php artisan workspace:show --app=docs', 'workspace');
-        $schedulePrompt = registryPromptE2ECapture($topology, 'php artisan schedule:show --app=docs', 'schedule');
+        $appPrompt = registryPromptE2ECapture($topology, 'orbit app:show', 'app');
+        $nodePrompt = registryPromptE2ECapture($topology, 'orbit node:show', 'node');
+        $workspacePrompt = registryPromptE2ECapture($topology, 'orbit workspace:show --app=docs', 'workspace');
+        $schedulePrompt = registryPromptE2ECapture($topology, 'orbit schedule:show --app=docs', 'schedule');
 
         expect($appPrompt)
             ->toContain('Select an app')

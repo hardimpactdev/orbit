@@ -15,7 +15,7 @@ it('installs a docker-managed tool on an app node through the gateway', function
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:install redis --node=app-dev-1 --status=running --json',
+                'cd %s && orbit tool:install redis --node=app-dev-1 --status=running --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -31,7 +31,7 @@ it('installs a docker-managed tool on an app node through the gateway', function
 
         $stored = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->value('expected_state');"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->value('expected_state');"),
             timeoutSeconds: 120,
         );
 

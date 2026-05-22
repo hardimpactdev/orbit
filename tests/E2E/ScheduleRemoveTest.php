@@ -64,14 +64,14 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan schedule:remove %s --app=%s --force --json',
+                'cd %s && orbit schedule:remove %s --app=%s --force --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($scheduleName),
                 escapeshellarg($appName),

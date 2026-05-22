@@ -49,7 +49,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -71,7 +71,7 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
 
         $composerResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-setup-step:add --app=docs --command='composer install' --timeout=600 --json",
+            "cd {$checkout} && orbit workspace-setup-step:add --app=docs --command='composer install' --timeout=600 --json",
             timeoutSeconds: 120,
         );
         $composerPayload = json_decode(trim($composerResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -79,20 +79,20 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
 
         $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-setup-step:add --app=docs --command='npm install' --timeout=300 --after={$composerStep['id']} --json",
+            "cd {$checkout} && orbit workspace-setup-step:add --app=docs --command='npm install' --timeout=300 --after={$composerStep['id']} --json",
             timeoutSeconds: 120,
         );
 
         $teardownResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-teardown-step:add --app=docs --command='dropdb docs' --timeout=60 --json",
+            "cd {$checkout} && orbit workspace-teardown-step:add --app=docs --command='dropdb docs' --timeout=60 --json",
             timeoutSeconds: 120,
         );
         $teardownPayload = json_decode(trim($teardownResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $setupListResult = $topology->ssh(
             'control',
-            "cd {$checkout} && php artisan workspace-setup-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-setup-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
         $setupListPayload = json_decode(trim($setupListResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);

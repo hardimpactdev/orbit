@@ -53,7 +53,7 @@ PHP;
 
         E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
             'Could not seed control identity on gateway',
         );
     }
@@ -145,6 +145,13 @@ PHP;
         $wireguardIdentity ??= $gatewayIp;
         $bindAddress ??= $gatewayIp;
         $certKey ??= $gatewayIp;
+
+        if (self::isDockerTopology($gateway)) {
+            self::startDocker($gateway, $label, $orbitPath, $wireguardIdentity, $bindAddress, $certKey, $certSans, $peerIdentityMap);
+
+            return;
+        }
+
         $orbitPathArgument = escapeshellarg($orbitPath);
         $certKeyValue = var_export($certKey, true);
         $certSansValue = var_export(array_values($certSans), true);
@@ -153,7 +160,7 @@ PHP;
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && php artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -195,10 +202,92 @@ PHP;
 
     public static function stop(E2EInstance $gateway): void
     {
+        if (self::isDockerTopology($gateway)) {
+            E2ECommand::exec(
+                $gateway,
+                sprintf(
+                    'sudo docker exec %s sh -lc %s >/dev/null 2>&1 || true',
+                    escapeshellarg(self::runtimeContainerName($gateway)),
+                    escapeshellarg(self::stopServerShellScript()),
+                ),
+                'Could not stop gateway test servers',
+            );
+
+            return;
+        }
+
         E2ECommand::exec(
             $gateway,
-            'php -r '.escapeshellarg(self::stopServerScript()),
+            'sh -lc '.escapeshellarg(self::stopServerShellScript()),
             'Could not stop gateway test servers',
+        );
+    }
+
+    /**
+     * @param  array<string, string>  $peerIdentityMap
+     */
+    private static function startDocker(
+        E2EInstance $gateway,
+        string $label,
+        string $orbitPath,
+        string $wireguardIdentity,
+        string $bindAddress,
+        string $certKey,
+        array $certSans,
+        array $peerIdentityMap,
+    ): void {
+        $orbitPathArgument = escapeshellarg($orbitPath);
+        $certKeyValue = var_export($certKey, true);
+        $certSansValue = var_export(array_values($certSans), true);
+        $viewCompiledPath = escapeshellarg("{$orbitPath}/storage/framework/views");
+        $dockerTopologyModeEnv = self::dockerTopologyModeEnvCommand();
+        $runtimeContainer = escapeshellarg(self::runtimeContainerName($gateway));
+        $scriptPath = "/tmp/orbit-{$label}-tls.php";
+        $scriptPathArgument = escapeshellarg($scriptPath);
+
+        E2ECommand::orbit(
+            $gateway,
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
+            'Could not issue gateway leaf certificate',
+        );
+
+        self::prepareRootRemoteShellIdentity($gateway);
+        self::prepareDockerRuntimeRemoteShellIdentity($gateway);
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'sudo docker exec --workdir %s %s sh -lc %s',
+                $orbitPathArgument,
+                $runtimeContainer,
+                escapeshellarg("cat > {$scriptPathArgument} <<'PHP'\n".self::tlsServerScript($orbitPath, $wireguardIdentity, $bindAddress, $certKey, $peerIdentityMap, dockerRuntime: true)."\nPHP"),
+            ),
+            'Could not write gateway TLS test server in runtime container',
+        );
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'sudo docker exec --detach --env %s --env %s --workdir %s %s orbit serve --host=%s --port=80 --tries=1 --no-reload --quiet',
+                escapeshellarg("VIEW_COMPILED_PATH={$orbitPath}/storage/framework/views"),
+                escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+                $orbitPathArgument,
+                $runtimeContainer,
+                escapeshellarg($bindAddress),
+            ),
+            'Could not start gateway HTTP API',
+        );
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'sudo docker exec --detach --env %s --workdir %s %s orbit tinker --execute=%s',
+                escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+                $orbitPathArgument,
+                $runtimeContainer,
+                escapeshellarg('include '.var_export($scriptPath, true).';'),
+            ),
+            'Could not start gateway TLS test server',
         );
     }
 
@@ -256,7 +345,7 @@ PHP;
 
         $result = E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
             "Could not read gateway node {$name}",
         );
 
@@ -267,10 +356,29 @@ PHP;
     {
         E2ECommand::exec(
             $gateway,
-            'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi',
+            self::prepareRootRemoteShellIdentityScript(),
             'Could not prepare root RemoteShell identity for gateway HTTP API',
             timeoutSeconds: 60,
         );
+    }
+
+    private static function prepareDockerRuntimeRemoteShellIdentity(E2EInstance $gateway): void
+    {
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'sudo docker exec %s sh -lc %s',
+                escapeshellarg(self::runtimeContainerName($gateway)),
+                escapeshellarg(self::prepareRootRemoteShellIdentityScript()),
+            ),
+            'Could not prepare runtime RemoteShell identity for gateway HTTP API',
+            timeoutSeconds: 60,
+        );
+    }
+
+    private static function prepareRootRemoteShellIdentityScript(): string
+    {
+        return 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi';
     }
 
     private static function httpRouterScript(string $orbitPath): string
@@ -290,11 +398,17 @@ PHP;
     /**
      * @param  array<string, string>  $peerIdentityMap
      */
-    private static function tlsServerScript(string $orbitPath, string $wireguardIdentity, string $bindAddress, string $certKey, array $peerIdentityMap = []): string
+    private static function tlsServerScript(string $orbitPath, string $wireguardIdentity, string $bindAddress, string $certKey, array $peerIdentityMap = [], bool $dockerRuntime = false): string
     {
         $httpUpstream = $bindAddress === '0.0.0.0' ? '127.0.0.1' : $bindAddress;
+        $runOrbitCommand = $dockerRuntime
+            ? "exec(\$script.' 2>&1', \$output, \$exitCode);"
+            : "exec('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', \$output, \$exitCode);";
+        $streamOrbitCommand = $dockerRuntime
+            ? "\$process = popen(\$script.' 2>&1', 'r');"
+            : "\$process = popen('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', 'r');";
 
-        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\n".<<<'PHP_WRAP'
+        $script = "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\n".<<<'PHP_WRAP'
         
         function respond($connection, int $status, string $body, string $contentType = 'application/json'): void
         {
@@ -420,7 +534,7 @@ PHP;
             $output = [];
             $exitCode = 0;
             $script = 'cd '.escapeshellarg($orbitPath).' && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
-            exec('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', $output, $exitCode);
+            __RUN_ORBIT_COMMAND__
         
             return [$exitCode, implode("\n", $output)];
         }
@@ -430,7 +544,7 @@ PHP;
             global $orbitPath;
 
             $script = 'cd '.escapeshellarg($orbitPath).' && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
-            $process = popen('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', 'r');
+            __STREAM_ORBIT_COMMAND__
 
             fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nConnection: close\r\n\r\n");
 
@@ -458,7 +572,7 @@ PHP;
         function stream_tool_logs($connection, string $tool, array $query): void
         {
             $parts = [
-                'timeout 6s php artisan tool:logs',
+                'timeout 6s orbit tool:logs',
                 escapeshellarg($tool),
                 '--follow',
                 '--lines='.escapeshellarg((string) max(1, (int) ($query['lines'] ?? 100))),
@@ -478,7 +592,7 @@ PHP;
         function run_node_new(array $input): array
         {
             $parts = [
-                'php artisan node:new',
+                'orbit node:new',
                 escapeshellarg((string) ($input['name'] ?? '')),
                 '--role='.escapeshellarg((string) ($input['role'] ?? '')),
                 '--host='.escapeshellarg((string) ($input['host'] ?? '')),
@@ -496,13 +610,13 @@ PHP;
         
         function run_node_show(string $name): array
         {
-            return run_orbit_command('php artisan node:show '.escapeshellarg($name).' --json');
+            return run_orbit_command('orbit node:show '.escapeshellarg($name).' --json');
         }
 
         function run_node_agent_ide(string $name, array $input): array
         {
             return run_orbit_command(
-                'php artisan node:agent-ide '
+                'orbit node:agent-ide '
                     .escapeshellarg($name).' '
                     .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
             );
@@ -511,7 +625,7 @@ PHP;
         function run_node_update(string $name, array $input): array
         {
             $parts = [
-                'php artisan node:update',
+                'orbit node:update',
                 escapeshellarg($name),
                 '--json',
             ];
@@ -535,7 +649,7 @@ PHP;
         function run_node_grant(array $input): array
         {
             $parts = [
-                'php artisan node:grant',
+                'orbit node:grant',
                 escapeshellarg((string) ($input['consuming_node'] ?? '')),
                 escapeshellarg((string) ($input['serving_node'] ?? '')),
                 '--json',
@@ -562,7 +676,7 @@ PHP;
         function run_node_revoke(array $input): array
         {
             return run_orbit_command(
-                'php artisan node:revoke '
+                'orbit node:revoke '
                     .escapeshellarg((string) ($input['consuming_node'] ?? '')).' '
                     .escapeshellarg((string) ($input['serving_node'] ?? '')).' --force --json'
             );
@@ -570,18 +684,18 @@ PHP;
 
         function run_node_remove(string $name): array
         {
-            return run_orbit_command('php artisan node:remove '.escapeshellarg($name).' --force --json');
+            return run_orbit_command('orbit node:remove '.escapeshellarg($name).' --force --json');
         }
 
         function run_app_show(string $name): array
         {
-            return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
+            return run_orbit_command('orbit app:show '.escapeshellarg($name).' --json');
         }
 
         function run_app_new(array $input): array
         {
             $parts = [
-                'php artisan app:new',
+                'orbit app:new',
                 escapeshellarg((string) ($input['name'] ?? '')),
                 '--node='.escapeshellarg((string) ($input['node'] ?? '')),
                 '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
@@ -603,7 +717,7 @@ PHP;
         function run_app_register(array $input): array
         {
             $parts = [
-                'php artisan app:register',
+                'orbit app:register',
                 escapeshellarg((string) ($input['name'] ?? '')),
                 '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
                 '--php-version='.escapeshellarg((string) ($input['php_version'] ?? '8.5')),
@@ -624,7 +738,7 @@ PHP;
         function run_app_root(string $name, array $input): array
         {
             return run_orbit_command(
-                'php artisan app:root '
+                'orbit app:root '
                     .escapeshellarg($name).' '
                     .escapeshellarg((string) ($input['root'] ?? '')).' --json'
             );
@@ -633,7 +747,7 @@ PHP;
         function run_app_agent_ide(string $name, array $input): array
         {
             return run_orbit_command(
-                'php artisan app:agent-ide '
+                'orbit app:agent-ide '
                     .escapeshellarg($name).' '
                     .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
             );
@@ -641,12 +755,12 @@ PHP;
 
         function run_app_remove(string $name): array
         {
-            return run_orbit_command('php artisan app:remove '.escapeshellarg($name).' --force --json');
+            return run_orbit_command('orbit app:remove '.escapeshellarg($name).' --force --json');
         }
 
         function run_activity_list(array $query): array
         {
-            $parts = ['php artisan activity:list --json'];
+            $parts = ['orbit activity:list --json'];
 
             foreach (['app', 'node', 'effect', 'correlation', 'limit'] as $option) {
                 $value = $query[$option] ?? null;
@@ -661,7 +775,7 @@ PHP;
 
         function run_workspace_history(?string $name, array $query): array
         {
-            $parts = ['php artisan workspace:history'];
+            $parts = ['orbit workspace:history'];
 
             if ($name !== null && $name !== '') {
                 $parts[] = escapeshellarg($name);
@@ -682,13 +796,13 @@ PHP;
 
         function run_workspace_log(string $run): array
         {
-            return run_orbit_command('php artisan workspace:log '.escapeshellarg($run).' --json');
+            return run_orbit_command('orbit workspace:log '.escapeshellarg($run).' --json');
         }
 
         function run_workspace_new(array $input): array
         {
             $parts = [
-                'php artisan workspace:new',
+                'orbit workspace:new',
                 escapeshellarg((string) ($input['name'] ?? '')),
             ];
 
@@ -711,7 +825,7 @@ PHP;
 
         function run_workspace_setup(array $input): array
         {
-            $parts = ['php artisan workspace:setup'];
+            $parts = ['orbit workspace:setup'];
             $name = $input['name'] ?? null;
 
             if (is_scalar($name) && (string) $name !== '') {
@@ -733,7 +847,7 @@ PHP;
 
         function run_workspace_steps(string $phase, array $query): array
         {
-            $parts = ["php artisan workspace-{$phase}-step:list"];
+            $parts = ["orbit workspace-{$phase}-step:list"];
             $app = $query['app'] ?? null;
             $path = $query['path'] ?? null;
 
@@ -750,7 +864,7 @@ PHP;
 
         function run_workspace_step_add(string $phase, array $input): array
         {
-            $parts = ["php artisan workspace-{$phase}-step:add"];
+            $parts = ["orbit workspace-{$phase}-step:add"];
 
             foreach ([
                 'app' => 'app',
@@ -774,7 +888,7 @@ PHP;
         function run_workspace_step_remove(string $phase, string $step, array $query): array
         {
             $parts = [
-                "php artisan workspace-{$phase}-step:remove",
+                "orbit workspace-{$phase}-step:remove",
                 '--step='.escapeshellarg($step),
                 '--force',
             ];
@@ -795,7 +909,7 @@ PHP;
         function run_workspace_remove(string $name, array $query, array $input): array
         {
             $parts = [
-                'php artisan workspace:remove',
+                'orbit workspace:remove',
                 escapeshellarg($name),
                 '--force',
             ];
@@ -920,7 +1034,7 @@ PHP;
                     parse_str($queryString, $query);
                 }
         
-                $parts = ['php artisan node:list --json'];
+                $parts = ['orbit node:list --json'];
         
                 foreach (['role', 'environment'] as $option) {
                     $value = $query[$option] ?? null;
@@ -1056,7 +1170,7 @@ PHP;
                     parse_str($queryString, $query);
                 }
         
-                $parts = ['php artisan app:list --json'];
+                $parts = ['orbit app:list --json'];
         
                 foreach (['node', 'environment'] as $option) {
                     $value = $query[$option] ?? null;
@@ -1411,6 +1525,32 @@ PHP;
             fclose($connection);
         }
         PHP_WRAP;
+
+        return str_replace(
+            ['__RUN_ORBIT_COMMAND__', '__STREAM_ORBIT_COMMAND__'],
+            [$runOrbitCommand, $streamOrbitCommand],
+            $script,
+        );
+    }
+
+    private static function isDockerTopology(E2EInstance $instance): bool
+    {
+        return $instance instanceof DockerInstance || $instance instanceof DockerBuildInstance;
+    }
+
+    private static function runtimeContainerName(E2EInstance $instance): string
+    {
+        return "{$instance->name()}-orbit-runtime";
+    }
+
+    /**
+     * @param  array<string, string>  $peerIdentityMap
+     */
+    private static function tlsServerTinkerCode(string $orbitPath, string $wireguardIdentity, string $bindAddress, string $certKey, array $peerIdentityMap = [], bool $dockerRuntime = false): string
+    {
+        $script = self::tlsServerScript($orbitPath, $wireguardIdentity, $bindAddress, $certKey, $peerIdentityMap, $dockerRuntime);
+
+        return preg_replace('/^<\?php\s*/', '', $script) ?? $script;
     }
 
     private static function dockerTopologyModeEnvCommand(): string
@@ -1426,57 +1566,40 @@ PHP;
     {
         return implode(' && ', [
             "(grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env)",
-            "(grep -Eq '^APP_KEY=base64:.+' .env || php artisan key:generate --force --no-interaction)",
+            "(grep -Eq '^APP_KEY=base64:.+' .env || orbit key:generate --force --no-interaction)",
             "grep -Eq '^APP_KEY=base64:.+' .env",
         ]);
     }
 
-    private static function stopServerScript(): string
+    private static function stopServerShellScript(): string
     {
-        return <<<'PHP'
-$matches = static function (string $command): bool {
-    if (str_contains($command, 'php -r')) {
-        return false;
-    }
+        return <<<'SH'
+set +e
+pids=""
 
-    $isPhpProcess = str_contains($command, 'php ');
-    $isGatewayHttp = str_contains($command, 'php artisan serve --host=') && str_contains($command, '--port=80');
-    $isQuietGatewayHttp = str_contains($command, 'php -d display_errors=0 -S ')
-        && str_contains($command, ':80')
-        && str_contains($command, '-http-router.php');
-    $isGatewayTls = str_contains($command, '/tmp/orbit-') && str_contains($command, '-tls.php');
+for file in /proc/[0-9]*/cmdline; do
+    pid="${file#/proc/}"
+    pid="${pid%%/*}"
 
-    return $isPhpProcess && ($isGatewayHttp || $isQuietGatewayHttp || $isGatewayTls);
-};
+    if [ "$pid" -le 1 ] || [ "$pid" -eq "$$" ]; then
+        continue
+    fi
 
-$pids = [];
+    command="$(tr '\000' ' ' < "$file" 2>/dev/null || true)"
 
-foreach (glob('/proc/[0-9]*/cmdline') ?: [] as $file) {
-    $pid = (int) basename(dirname($file));
+    case "$command" in
+        */tmp/orbit-*-http-router.php*|*/tmp/orbit-*-tls.php*|*orbit\ serve\ --host=*--port=80*|*php\ *artisan\ serve\ --host=*--port=80*)
+            pids="$pids $pid"
+            kill -TERM "$pid" >/dev/null 2>&1 || true
+            ;;
+    esac
+done
 
-    if ($pid <= 1 || $pid === getmypid()) {
-        continue;
-    }
+sleep 0.2
 
-    $cmdline = @file_get_contents($file);
-
-    if (! is_string($cmdline) || $cmdline === '') {
-        continue;
-    }
-
-    $command = str_replace("\0", ' ', $cmdline);
-
-    if ($matches($command)) {
-        $pids[] = $pid;
-        @posix_kill($pid, 15);
-    }
-}
-
-usleep(200000);
-
-foreach ($pids as $pid) {
-    @posix_kill($pid, 9);
-}
-PHP;
+for pid in $pids; do
+    kill -KILL "$pid" >/dev/null 2>&1 || true
+done
+SH;
     }
 }

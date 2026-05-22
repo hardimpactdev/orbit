@@ -20,7 +20,7 @@ it('updates node metadata from a control caller through the gateway api', functi
         $updateResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:update app-dev-1 --public-ipv4=203.0.113.45 --json',
+                'cd %s && orbit node:update app-dev-1 --public-ipv4=203.0.113.45 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -35,7 +35,7 @@ it('updates node metadata from a control caller through the gateway api', functi
         $metadataResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tinker --execute=%s',
+                'cd %s && orbit tinker --execute=%s',
                 escapeshellarg($topology->checkout('gateway')),
                 escapeshellarg('echo \App\Models\Node::query()->where("name", "app-dev-1")->value("public_ipv4");'),
             ),

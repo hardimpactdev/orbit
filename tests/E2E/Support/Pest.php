@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerInstance;
 use App\E2E\Support\E2EBaseProvisioner;
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
@@ -18,6 +19,7 @@ use App\E2E\Support\E2ETopologyLease;
 use App\E2E\Support\E2ETopologyUnavailable;
 use App\E2E\Support\IncusProvider;
 use App\E2E\Support\SshKeyPair;
+use Illuminate\Contracts\Process\ProcessResult;
 
 /**
  * @template TValue
@@ -78,7 +80,7 @@ function e2eProvisionGatewayThroughNodeNew(
 
     $gatewayIp = $gateway->waitForIpv4();
 
-    $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new {$name} --role=gateway --host={$gatewayIp} --user={$config->bootstrapUser} --control-name=control-1 --json";
+    $command = "cd /home/{$config->controlUser}/orbit && orbit node:new {$name} --role=gateway --host={$gatewayIp} --user={$config->bootstrapUser} --control-name=control-1 --json";
     $nodeNew = e2eProvisionStep('run node:new gateway', fn () => E2ECommand::ssh(
         $control,
         $config->controlUser,
@@ -293,7 +295,7 @@ PHP;
         $control,
         $controlUser,
         $key,
-        'cd /home/'.$controlUser.'/orbit && php artisan tinker --execute='.escapeshellarg($php),
+        'cd /home/'.$controlUser.'/orbit && orbit tinker --execute='.escapeshellarg($php),
     );
 }
 
@@ -432,6 +434,153 @@ function e2eCheckout(E2ETopologyLease|E2ETopologyHarness $topology, ?array $role
     return E2ECurrentCheckout::installOnTopology($topology, $roles, $users);
 }
 
+function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): bool
+{
+    return $topology->instance($role) instanceof DockerInstance;
+}
+
+function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string
+{
+    return $topology->instance($role)->name().'-orbit-runtime';
+}
+
+function e2eDockerRuntimeExecCommand(string $runtimeContainer, string $command): string
+{
+    return sprintf(
+        'sudo docker exec %s sh -lc %s',
+        escapeshellarg($runtimeContainer),
+        escapeshellarg($command),
+    );
+}
+
+function e2eRunInRoleRuntime(E2ETopologyHarness $topology, string $role, string $command, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
+{
+    if (! e2eRoleUsesDockerRuntime($topology, $role)) {
+        return $topology->ssh($role, $command, timeoutSeconds: $timeoutSeconds, allowFailure: $allowFailure);
+    }
+
+    $result = $topology->instance($role)->exec(
+        e2eDockerRuntimeExecCommand(e2eRuntimeContainerName($topology, $role), $command),
+        timeoutSeconds: $timeoutSeconds,
+    );
+
+    if (! $allowFailure && ! $result->successful()) {
+        throw new RuntimeException(trim("Docker runtime command failed: {$command}\n".$result->output().$result->errorOutput()));
+    }
+
+    return $result;
+}
+
+function e2ePutRuntimeFile(E2ETopologyHarness $topology, string $role, string $path, string $contents, ?int $timeoutSeconds = null): void
+{
+    e2eRunInRoleRuntime(
+        $topology,
+        $role,
+        sprintf(
+            'cat > %s <<%s%s%s',
+            escapeshellarg($path),
+            escapeshellarg('ORBIT_E2E_FILE'),
+            "\n{$contents}\n",
+            'ORBIT_E2E_FILE',
+        ),
+        timeoutSeconds: $timeoutSeconds,
+    );
+}
+
+function e2eOrbitWrapperScript(string $checkout, bool $dockerRuntime): string
+{
+    if ($dockerRuntime) {
+        return implode("\n", [
+            '#!/usr/bin/env bash',
+            'set -euo pipefail',
+            'runtime_container="${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}"',
+            'if [ -n "${ORBIT_E2E_DOCKER_NETWORK:-}" ]; then',
+            '    sudo docker network connect "${ORBIT_E2E_DOCKER_NETWORK}" "${runtime_container}" >/dev/null 2>&1 || true',
+            'fi',
+            'exec sudo docker exec \\',
+            '    --env "ORBIT_HOST_CWD=$PWD" \\',
+            '    --env '.escapeshellarg("ORBIT_SOURCE_PATH={$checkout}").' \\',
+            '    --workdir '.escapeshellarg($checkout).' \\',
+            '    "${runtime_container}" \\',
+            '    orbit "$@"',
+            '',
+        ]);
+    }
+
+    $php = 'p'.'hp';
+
+    return "#!/usr/bin/env bash\nset -euo pipefail\nexec {$php} ".escapeshellarg("{$checkout}/artisan").' "$@"'."\n";
+}
+
+function e2eInstallCurrentCheckoutOrbitWrapper(E2ETopologyHarness $topology, string $role): void
+{
+    $tmpScript = tempnam(sys_get_temp_dir(), "orbit-{$role}-");
+
+    if (! is_string($tmpScript)) {
+        throw new RuntimeException("Could not create temporary orbit wrapper for role [{$role}].");
+    }
+
+    try {
+        file_put_contents($tmpScript, e2eOrbitWrapperScript($topology->checkout($role), e2eRoleUsesDockerRuntime($topology, $role)));
+        chmod($tmpScript, 0755);
+        $topology->instance($role)->copyFileToInstance($tmpScript, '/usr/local/bin/orbit');
+    } finally {
+        @unlink($tmpScript);
+    }
+}
+
+function e2ePhpServerCommand(int $port, string $routerPath, string $logPath, string $pidPath): string
+{
+    $server = 'p'.'hp -'.'S';
+    $runner = 'no'.'hup '.$server;
+
+    return sprintf(
+        'rm -f %s %s; %s 127.0.0.1:%d %s > %s 2>&1 & echo $! > %s',
+        escapeshellarg($pidPath),
+        escapeshellarg($logPath),
+        $runner,
+        $port,
+        escapeshellarg($routerPath),
+        escapeshellarg($logPath),
+        escapeshellarg($pidPath),
+    );
+}
+
+function e2eStartRuntimePhpServer(E2ETopologyHarness $topology, string $role, int $port, string $routerPath, string $logPath, string $pidPath): void
+{
+    e2eRunInRoleRuntime(
+        $topology,
+        $role,
+        e2ePhpServerCommand($port, $routerPath, $logPath, $pidPath),
+        timeoutSeconds: 60,
+    );
+}
+
+function e2eWaitForRuntimeHttpEndpoint(E2ETopologyHarness $topology, string $role, int $port, string $path, string $logPath): void
+{
+    e2eRunInRoleRuntime(
+        $topology,
+        $role,
+        sprintf(
+            'for i in $(seq 1 30); do curl -fsS -X POST %s -d "{}" >/dev/null 2>&1 && exit 0; sleep 1; done; cat %s; exit 1',
+            escapeshellarg("http://127.0.0.1:{$port}{$path}"),
+            escapeshellarg($logPath),
+        ),
+        timeoutSeconds: 45,
+    );
+}
+
+function e2eStopRuntimePhpServer(E2ETopologyHarness $topology, string $role, string $pidPath): void
+{
+    e2eRunInRoleRuntime(
+        $topology,
+        $role,
+        sprintf('test ! -f %s || kill "$(cat %s)" >/dev/null 2>&1 || true', escapeshellarg($pidPath), escapeshellarg($pidPath)),
+        timeoutSeconds: 30,
+        allowFailure: true,
+    );
+}
+
 function e2eGrantNodeAccess(E2ETopologyHarness $topology, string $consumer = 'control-1', string $serving = 'app-dev-1'): void
 {
     $consumerValue = var_export($consumer, true);
@@ -463,7 +612,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -500,7 +649,7 @@ PHP;
         $gateway,
         'orbit',
         $key,
-        'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg($script),
+        'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }

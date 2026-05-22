@@ -16,7 +16,7 @@ it('removes a docker-managed tool from an app node through the gateway', functio
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:remove redis --node=app-dev-1 --force --json',
+                'cd %s && orbit tool:remove redis --node=app-dev-1 --force --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -31,7 +31,7 @@ it('removes a docker-managed tool from an app node through the gateway', functio
 
         $remaining = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->count();"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->count();"),
             timeoutSeconds: 120,
         );
 
@@ -91,7 +91,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

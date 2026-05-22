@@ -106,7 +106,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -134,7 +134,7 @@ it('reads workspace run logs from a non-gateway caller through the gateway api',
         $completedResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:log %d --json',
+                'cd %s && orbit workspace:log %d --json',
                 escapeshellarg($topology->checkout('control')),
                 $runIds['completed'],
             ),
@@ -143,7 +143,7 @@ it('reads workspace run logs from a non-gateway caller through the gateway api',
         $failedResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:log %d --json',
+                'cd %s && orbit workspace:log %d --json',
                 escapeshellarg($topology->checkout('control')),
                 $runIds['failed'],
             ),

@@ -409,7 +409,7 @@ function grantAuthorizationE2eTinker(E2ETopologyHarness $topology, string $scrip
 
     $result = $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 180,
     );
 

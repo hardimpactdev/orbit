@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerInstance;
+use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2ETopologyCache;
 use App\E2E\Support\E2ETopologyHarness;
@@ -21,6 +24,49 @@ afterEach(function (): void {
 it('loads e2e pest helper functions from the pest bootstrap', function (): void {
     expect(function_exists('e2eTopology'))->toBeTrue()
         ->and(function_exists('e2eCheckout'))->toBeTrue();
+});
+
+it('builds provider aware current checkout orbit wrappers', function (): void {
+    $docker = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: true);
+    $incus = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: false);
+
+    expect($docker)
+        ->toContain('sudo docker exec')
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit-current')
+        ->toContain("--workdir '/home/orbit/orbit-current'")
+        ->not->toContain('exec php')
+        ->not->toContain('php artisan')
+        ->and($incus)
+        ->toContain("exec php '/home/orbit/orbit-current/artisan'")
+        ->not->toContain('sudo docker exec');
+});
+
+it('runs provider aware runtime commands through Docker runtime siblings', function (): void {
+    Process::fake(['*' => Process::result()]);
+    Process::preventStrayProcesses();
+
+    $commands = [];
+    $harness = new E2ETopologyHarness(new E2ETopologyLease(
+        kind: E2ETopologyKind::ControlGateway,
+        control: e2ePestFakeInstance($commands, 'control'),
+        gateway: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-gateway', 'orbit-e2e-run'),
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        rebuild: fn () => throw new RuntimeException('not expected'),
+    ));
+
+    e2eRunInRoleRuntime($harness, 'gateway', e2ePhpServerCommand(
+        port: 48123,
+        routerPath: '/tmp/router.php',
+        logPath: '/tmp/router.log',
+        pidPath: '/tmp/router.pid',
+    ));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, "docker exec 'orbit-e2e-run-gateway' sh -lc")
+        && str_contains($process->command, 'orbit-e2e-run-gateway-orbit-runtime')
+        && str_contains($process->command, 'php -S 127.0.0.1:48123'));
 });
 
 it('wraps a topology lease with checkout and ssh helpers', function (): void {

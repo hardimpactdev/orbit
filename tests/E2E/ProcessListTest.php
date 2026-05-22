@@ -44,7 +44,7 @@ $app = \App\Models\App::query()->create([
 \App\Models\Process::query()->create([
     'app_id' => $app->id,
     'name' => 'queue',
-    'command' => 'php artisan queue:work',
+    'command' => 'orbit queue:work',
     'restart_policy' => \App\Enums\ProcessRestartPolicy::Always,
     'crash_notification' => \App\Enums\ProcessCrashNotification::None,
     'sort_order' => 20,
@@ -71,7 +71,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -93,7 +93,7 @@ it('lists app processes from a control caller through the gateway api', function
         $humanResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan process:list --app=docs',
+                'cd %s && orbit process:list --app=docs',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -108,7 +108,7 @@ it('lists app processes from a control caller through the gateway api', function
         $jsonResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan process:list --app=docs --json',
+                'cd %s && orbit process:list --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -129,7 +129,7 @@ it('lists app processes from a control caller through the gateway api', function
         $workspaceResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan process:list --app=docs --workspace=feature-docs --json',
+                'cd %s && orbit process:list --app=docs --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -143,14 +143,14 @@ it('lists app processes from a control caller through the gateway api', function
         // Empty state: app with no processes — clear processes on gateway then re-list
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("\\App\\Models\\Process::query()->delete(); echo 'cleared';"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("\\App\\Models\\Process::query()->delete(); echo 'cleared';"),
             timeoutSeconds: 120,
         );
 
         $emptyListResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan process:list --app=docs --json',
+                'cd %s && orbit process:list --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

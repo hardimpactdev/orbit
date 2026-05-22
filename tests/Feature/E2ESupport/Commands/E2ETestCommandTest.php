@@ -126,11 +126,11 @@ it('rejects docker worker counts that do not match configured host slots', funct
 it('rejects docker container caps below the largest configured host slot capacity', function (): void {
     withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:4,sidecar2:4',
-        'ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST' => '12',
+        'ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST' => '32',
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $this->artisan('e2e:test --dry-run --json --lanes=docker')
-            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 20')
+            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 40')
             ->assertFailed();
     });
 });
@@ -164,6 +164,45 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
         ->and($lane['test_files'])->toContain('tests/E2E/ToolCredentialsTest.php')
         ->and($lane['test_files'])->not->toContain('tests/E2E/ToolStartTest.php')
         ->and($lane['test_files'])->not->toContain('tests/E2E/RuntimeBackendHostInitTest.php');
+});
+
+it('does not select Docker E2E files with direct host PHP topology commands', function (): void {
+    $exitCode = Artisan::call('e2e:test', [
+        '--dry-run' => true,
+        '--json' => true,
+        '--lanes' => 'docker',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $lane = $payload['success']['data']['lanes'][0];
+    $files = [
+        ...$lane['test_files'],
+        'tests/E2E/Support/Pest.php',
+    ];
+
+    $patterns = [
+        'php artisan',
+        'php -S',
+        'nohup php',
+        'exec php',
+        '/timeout\s+\S+\s+php/',
+    ];
+
+    $violations = collect($files)
+        ->flatMap(function (string $file) use ($patterns): array {
+            $contents = file_get_contents(base_path($file)) ?: '';
+
+            return collect($patterns)
+                ->filter(fn (string $pattern): bool => str_starts_with($pattern, '/')
+                    ? preg_match($pattern, $contents) === 1
+                    : str_contains($contents, $pattern))
+                ->map(fn (string $pattern): string => "{$file}:{$pattern}")
+                ->all();
+        })
+        ->values()
+        ->all();
+
+    expect($exitCode)->toBe(0)
+        ->and($violations)->toBe([]);
 });
 
 it('includes the agent topology coverage in the incus lane', function (): void {

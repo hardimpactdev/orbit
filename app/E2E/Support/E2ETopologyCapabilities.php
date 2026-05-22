@@ -16,6 +16,7 @@ final readonly class E2ETopologyCapabilities
         public bool $systemd,
         public bool $hostMutation,
         public bool $kernelNetworking,
+        public bool $dockerSiblingContainers = false,
     ) {}
 
     public static function vm(): self
@@ -25,6 +26,7 @@ final readonly class E2ETopologyCapabilities
             systemd: true,
             hostMutation: true,
             kernelNetworking: true,
+            dockerSiblingContainers: true,
         );
     }
 
@@ -35,6 +37,7 @@ final readonly class E2ETopologyCapabilities
             systemd: false,
             hostMutation: false,
             kernelNetworking: false,
+            dockerSiblingContainers: true,
         );
     }
 
@@ -43,6 +46,7 @@ final readonly class E2ETopologyCapabilities
         return (! $required->realSsh || $this->realSsh)
             && (! $required->systemd || $this->systemd)
             && (! $required->hostMutation || $this->hostMutation)
-            && (! $required->kernelNetworking || $this->kernelNetworking);
+            && (! $required->kernelNetworking || $this->kernelNetworking)
+            && (! $required->dockerSiblingContainers || $this->dockerSiblingContainers);
     }
 }

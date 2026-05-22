@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -57,7 +57,7 @@ it('removes an app from a control caller through the gateway api', function (): 
         $create = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:new %s --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -71,7 +71,7 @@ it('removes an app from a control caller through the gateway api', function (): 
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:remove %s --force --json',
+                'cd %s && orbit app:remove %s --force --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -91,7 +91,7 @@ it('removes an app from a control caller through the gateway api', function (): 
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
                 'routes' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$name}.test')->count(),
             ], JSON_THROW_ON_ERROR);"),

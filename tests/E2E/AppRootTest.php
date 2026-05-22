@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -63,7 +63,7 @@ it('updates an app root from a control caller through the gateway api', function
         $register = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
                 escapeshellarg($path),
@@ -78,7 +78,7 @@ it('updates an app root from a control caller through the gateway api', function
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:root %s web --json',
+                'cd %s && orbit app:root %s web --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -99,7 +99,7 @@ it('updates an app root from a control caller through the gateway api', function
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'root' => \\App\\Models\\App::query()->where('name', '{$name}')->value('document_root'),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,

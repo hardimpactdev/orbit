@@ -17,7 +17,7 @@ it('reports unsupported_platform on Linux when given valid arguments', function 
         $control = $topology->instance('control');
         $key = $topology->lease()->sshKeyPair();
 
-        $result = $control->ssh($config->controlUser, $key, "cd {$checkout} && php artisan dns:resolve-tld test 10.6.0.7 --json");
+        $result = $control->ssh($config->controlUser, $key, "cd {$checkout} && orbit dns:resolve-tld test 10.6.0.7 --json");
 
         expect($result->successful())->toBeFalse(
             'Expected dns:resolve-tld to fail on Linux, but it succeeded. Output: '.$result->output().$result->errorOutput()
@@ -30,7 +30,7 @@ it('reports unsupported_platform on Linux when given valid arguments', function 
         expect($json['error'])->toHaveKey('code');
         expect($json['error']['code'])->toContain('unsupported_platform');
 
-        $result = $control->ssh($config->controlUser, $key, "cd {$checkout} && php artisan dns:resolve-tld --json");
+        $result = $control->ssh($config->controlUser, $key, "cd {$checkout} && orbit dns:resolve-tld --json");
 
         expect($result->successful())->toBeFalse(
             'Expected dns:resolve-tld without args to fail validation, but it succeeded. Output: '.$result->output().$result->errorOutput()

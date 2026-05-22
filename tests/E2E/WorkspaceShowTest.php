@@ -55,7 +55,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -77,7 +77,7 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
         $humanResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:show feature-docs --app=docs',
+                'cd %s && orbit workspace:show feature-docs --app=docs',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -93,7 +93,7 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
         $jsonResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:show feature-docs --app=docs --json',
+                'cd %s && orbit workspace:show feature-docs --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -112,7 +112,7 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
         $notFoundResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:show nonexistent-ws --app=docs --json',
+                'cd %s && orbit workspace:show nonexistent-ws --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

@@ -35,10 +35,11 @@ class E2EReapDockerCommand extends Command
         $resources = [
             'containers' => [],
             'networks' => [],
+            'volumes' => [],
         ];
 
         try {
-            foreach ($config->dockerHosts as $hostName) {
+            foreach ($this->dockerHosts($config) as $hostName) {
                 $host = new DockerHost($config, $hostName);
                 $containers = $this->listNames($host, sprintf(
                     'docker ps -a --format %s --filter %s',
@@ -47,6 +48,11 @@ class E2EReapDockerCommand extends Command
                 ), $config->instancePrefix);
                 $networks = $this->listNames($host, sprintf(
                     'docker network ls --format %s --filter %s',
+                    escapeshellarg('{{.Name}}'),
+                    escapeshellarg("name={$config->instancePrefix}-"),
+                ), $config->instancePrefix);
+                $volumes = $this->listNames($host, sprintf(
+                    'docker volume ls --format %s --filter %s',
                     escapeshellarg('{{.Name}}'),
                     escapeshellarg("name={$config->instancePrefix}-"),
                 ), $config->instancePrefix);
@@ -65,6 +71,15 @@ class E2EReapDockerCommand extends Command
                         'type' => 'network',
                         'host' => $hostName,
                         'name' => $network,
+                        'deleted' => false,
+                    ];
+                }
+
+                foreach ($volumes as $volume) {
+                    $resources['volumes'][] = [
+                        'type' => 'volume',
+                        'host' => $hostName,
+                        'name' => $volume,
                         'deleted' => false,
                     ];
                 }
@@ -89,7 +104,16 @@ class E2EReapDockerCommand extends Command
                     $network['deleted'] = true;
                 }
 
-                unset($container, $network);
+                foreach ($resources['volumes'] as &$volume) {
+                    $this->deleteResource(
+                        new DockerHost($config, $volume['host']),
+                        sprintf('docker volume rm %s', escapeshellarg($volume['name'])),
+                        "Could not delete Docker volume {$volume['name']} on {$volume['host']}",
+                    );
+                    $volume['deleted'] = true;
+                }
+
+                unset($container, $network, $volume);
             }
         } catch (RuntimeException $exception) {
             return $this->failDocker($exception->getMessage());
@@ -112,6 +136,18 @@ class E2EReapDockerCommand extends Command
         $this->renderHuman($result);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function dockerHosts(E2EConfig $config): array
+    {
+        if ($config->dockerHostSlots !== []) {
+            return array_keys($config->dockerHostSlots);
+        }
+
+        return $config->dockerHosts;
     }
 
     private function parseOlderThan(string $value): int
@@ -168,7 +204,8 @@ class E2EReapDockerCommand extends Command
      *     filter: string,
      *     resources: array{
      *         containers: list<array{type: string, host: string, name: string, deleted: bool}>,
-     *         networks: list<array{type: string, host: string, name: string, deleted: bool}>
+     *         networks: list<array{type: string, host: string, name: string, deleted: bool}>,
+     *         volumes: list<array{type: string, host: string, name: string, deleted: bool}>
      *     }
      * }  $result
      */
@@ -178,7 +215,7 @@ class E2EReapDockerCommand extends Command
             $this->line('Dry run. Pass --force to delete Docker E2E resources.');
         }
 
-        if ($result['resources']['containers'] === [] && $result['resources']['networks'] === []) {
+        if ($result['resources']['containers'] === [] && $result['resources']['networks'] === [] && $result['resources']['volumes'] === []) {
             $this->line('No Docker E2E resources found.');
 
             return;
@@ -192,6 +229,11 @@ class E2EReapDockerCommand extends Command
         foreach ($result['resources']['networks'] as $network) {
             $status = $network['deleted'] ? 'deleted' : 'stale';
             $this->line("{$status}: network {$network['name']} on {$network['host']}");
+        }
+
+        foreach ($result['resources']['volumes'] as $volume) {
+            $status = $volume['deleted'] ? 'deleted' : 'stale';
+            $this->line("{$status}: volume {$volume['name']} on {$volume['host']}");
         }
     }
 

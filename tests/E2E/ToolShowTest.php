@@ -15,7 +15,7 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:show redis --node=app-dev-1 --json',
+                'cd %s && orbit tool:show redis --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -45,7 +45,7 @@ it('shows a registered tool from gateway intent as human output', function (): v
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:show redis --node=app-dev-1',
+                'cd %s && orbit tool:show redis --node=app-dev-1',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -69,7 +69,7 @@ it('returns tool.not_found error for unknown tool name in the gateway registry',
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:show redis --node=app-dev-1 --json',
+                'cd %s && orbit tool:show redis --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -92,7 +92,7 @@ it('returns tool.unsupported_action error for an unsupported tool catalog name',
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:show not-a-real-tool --node=app-dev-1 --json',
+                'cd %s && orbit tool:show not-a-real-tool --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -118,7 +118,7 @@ it('includes live key in JSON output when --live flag is passed', function (): v
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:show redis --node=app-dev-1 --live --json',
+                'cd %s && orbit tool:show redis --node=app-dev-1 --live --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -158,7 +158,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

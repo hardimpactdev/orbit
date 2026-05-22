@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\DockerTopologyBuilder;
+use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyKind;
 use App\Services\E2E\DockerImageDistributor;
@@ -166,7 +167,8 @@ class E2EPrepareDockerHostsCommand extends Command
             'name' => 'runtime',
             'command' => 'composer e2e:prepare-docker-runtime -- --force',
             'images' => [
-                ['role' => 'runtime', 'image' => self::RuntimeImage],
+                ['role' => 'topology-runtime', 'image' => self::RuntimeImage],
+                ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
             ],
         ];
     }

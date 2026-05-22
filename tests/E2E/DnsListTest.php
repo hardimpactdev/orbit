@@ -16,7 +16,7 @@ it('lists Orbit-managed resolver overrides on a Linux control node', function ()
             "cd {$topology->checkout('control')} && mkdir -p storage/app/orbit/dnsmasq.d && printf 'address=/.test/10.6.0.7\n' > storage/app/orbit/dnsmasq.d/test.conf",
         );
 
-        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan dns:list --json");
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && orbit dns:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($payload['success']['data']['dns'])->toBe([

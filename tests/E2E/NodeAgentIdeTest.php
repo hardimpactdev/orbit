@@ -20,7 +20,7 @@ it('sets node agent IDE intent from a control caller through the gateway api', f
         $setResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:agent-ide app-dev-1 opencode --json',
+                'cd %s && orbit node:agent-ide app-dev-1 opencode --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -37,7 +37,7 @@ it('sets node agent IDE intent from a control caller through the gateway api', f
         $showResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:show app-dev-1 --json',
+                'cd %s && orbit node:show app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

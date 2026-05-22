@@ -16,7 +16,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
 
         $add = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan proxy:add ".escapeshellarg($domain).' --node=app-dev-1 --upstream=http://127.0.0.1:5173 --json',
+            "cd {$checkout} && orbit proxy:add ".escapeshellarg($domain).' --node=app-dev-1 --upstream=http://127.0.0.1:5173 --json',
             timeoutSeconds: 120,
         );
         $addPayload = proxyCommandPayload($add->output());
@@ -37,7 +37,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
 
         $list = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan proxy:list --node=app-dev-1 --filter=custom --json",
+            "cd {$checkout} && orbit proxy:list --node=app-dev-1 --filter=custom --json",
             timeoutSeconds: 120,
         );
         $routes = proxyCommandPayload($list->output())['success']['data']['routes'];
@@ -46,7 +46,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
 
         $missingConsent = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan proxy:remove ".escapeshellarg($domain).' --json || true',
+            "cd {$checkout} && orbit proxy:remove ".escapeshellarg($domain).' --json || true',
             timeoutSeconds: 120,
         );
         $missingConsentPayload = proxyCommandPayload($missingConsent->output());
@@ -55,7 +55,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
 
         $remove = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan proxy:remove ".escapeshellarg($domain).' --force --json',
+            "cd {$checkout} && orbit proxy:remove ".escapeshellarg($domain).' --force --json',
             timeoutSeconds: 120,
         );
         $removePayload = proxyCommandPayload($remove->output());
@@ -71,7 +71,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
 
         $after = $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan proxy:list --node=app-dev-1 --filter=custom --json",
+            "cd {$checkout} && orbit proxy:list --node=app-dev-1 --filter=custom --json",
             timeoutSeconds: 120,
         );
         $afterRoutes = proxyCommandPayload($after->output())['success']['data']['routes'];
@@ -80,7 +80,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
     } finally {
         $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan proxy:remove ".escapeshellarg($domain).' --force --json >/dev/null 2>&1 || true',
+            "cd {$checkout} && orbit proxy:remove ".escapeshellarg($domain).' --force --json >/dev/null 2>&1 || true',
             timeoutSeconds: 120,
         );
         $topology->cleanup();
@@ -91,7 +91,7 @@ function proxyCommandPrepareAppNode(E2ETopologyHarness $topology, string $checko
 {
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["status" => "active"]); echo "prepared";'),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["status" => "active"]); echo "prepared";'),
         timeoutSeconds: 120,
     );
 }

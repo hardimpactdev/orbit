@@ -627,15 +627,16 @@ init itself.
 `composer test:e2e:docker` runs with Pest parallel mode. The script fallback
 process count is `8`; the shared local `.env.e2e` uses
 `ORBIT_E2E_PARALLEL_PROCESSES=8` to match the sidecar1 and sidecar2 slot pool.
-Keep the value within Docker host capacity: a full topology uses four
-containers, so a host with
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16` can safely run four full-topology
-workers.
+Keep the value within Docker host capacity: each topology role starts both a
+node container and an `orbit-runtime` sibling. The largest Docker topology has
+five roles, so it reserves ten containers per worker; a host with four Docker
+slots needs `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=40` or higher.
 
-Historical measurement on 2026-05-19 with the tarball-only DNS-alias checkout path: the
-canary passed with `sidecar1:4,sidecar2:4`,
-`ORBIT_E2E_PARALLEL_PROCESSES=8`, and
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16` in `47.55s` real time.
+Historical measurement on 2026-05-19 with the tarball-only DNS-alias checkout
+path, before runtime sibling containers were accounted for, passed the canary
+with `sidecar1:4,sidecar2:4`, `ORBIT_E2E_PARALLEL_PROCESSES=8`, and a 16
+container cap in `47.55s` real time. Docker-first runtime now needs a 40
+container cap for that pool.
 The full Docker lane passed three consecutive runs with 81 tests / 727
 assertions in `113.45s`, `112.49s`, and `114.88s` real time
 (`113.61s` mean, `1.20s` sample stdev). A post-regression repair spot-check on
@@ -649,7 +650,7 @@ Earlier measurement at `sidecar1:5,sidecar2:5` with 10 workers regressed, so
 the recommended local sidecar pool stays at 8 workers. The Docker lane rejects
 measured runs where `ORBIT_E2E_PARALLEL_PROCESSES` does not match the total
 Docker host slots or where
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST < max(host slot count) * 4`.
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST < max(host slot count) * 10`.
 
 For multi-host parallelism, use host slots and set the Pest worker count to the
 total slot count:
@@ -799,7 +800,7 @@ ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2  # Recommended Docker daemon pool
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4  # Docker feature-test lease pool
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast # Build Docker images here, then import to Docker hosts
 ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias # Use Docker DNS aliases for transport
-ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=16  # Docker topology capacity per daemon
+ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=40  # Docker topology capacity per daemon
 ORBIT_E2E_PARALLEL_PROCESSES=8        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism

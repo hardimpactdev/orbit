@@ -62,7 +62,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -84,7 +84,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
         $humanResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:list',
+                'cd %s && orbit workspace:list',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -98,7 +98,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
         $jsonResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:list --json',
+                'cd %s && orbit workspace:list --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -116,7 +116,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
         $filteredResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:list --app=docs --json',
+                'cd %s && orbit workspace:list --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -131,7 +131,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
         $nodeResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:list --node=app-dev-1 --json',
+                'cd %s && orbit workspace:list --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -145,7 +145,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
         // Empty state: seed an app with no workspaces, then list with that app filter
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg(implode("\n", [
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg(implode("\n", [
                 '$nodes = \App\Models\Node::query()->whereIn(\'name\', [\'app-dev-1\'])->pluck(\'id\', \'name\');',
                 '\App\Models\App::query()->create([\'name\' => \'empty-app\', \'node_id\' => $nodes->get(\'app-dev-1\'), \'environment\' => \'development\', \'path\' => \'/srv/empty\', \'document_root\' => \'public\']);',
                 'echo \'seeded-empty\';',
@@ -156,7 +156,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
         $emptyResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:list --app=empty-app --json',
+                'cd %s && orbit workspace:list --app=empty-app --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

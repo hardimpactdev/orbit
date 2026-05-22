@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerInstance;
+use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\SshKeyPair;
@@ -83,7 +86,22 @@ it('runs gateway api shim commands as the orbit runtime user', function (): void
     expect($script)
         ->toContain('sudo -iu orbit bash -lc')
         ->toContain('mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs')
-        ->toContain('VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/storage/framework/views\').\' \'.$command;');
+        ->toContain('VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/storage/framework/views\').\' \'.$command;')
+        ->toContain('orbit node:new')
+        ->not->toContain('php artisan');
+});
+
+it('runs Docker gateway api shim commands directly inside orbit runtime', function (): void {
+    $reflection = new ReflectionClass(E2EGatewayApi::class);
+    $method = $reflection->getMethod('tlsServerTinkerCode');
+    $method->setAccessible(true);
+
+    $script = $method->invoke(null, '/home/orbit/orbit', '10.6.0.2', '0.0.0.0', 'gateway', [], true);
+
+    expect($script)
+        ->toContain("exec(\$script.' 2>&1'")
+        ->toContain("\$process = popen(\$script.' 2>&1'")
+        ->not->toContain('sudo -iu orbit bash -lc');
 });
 
 it('forwards node grant permissions through the gateway api shim', function (): void {
@@ -141,8 +159,132 @@ it('prepares runtime environment before issuing gateway api certificates', funct
         ->toContain("APP_KEY='")
         ->toContain('printf')
         ->toContain('APP_KEY=base64:.+')
-        ->toContain('php artisan key:generate --force --no-interaction')
+        ->toContain('orbit key:generate --force --no-interaction')
         ->not->toContain("grep -q '^APP_KEY=base64:' .env");
+});
+
+it('starts Docker gateway API support through runtime container commands without host PHP or host Caddy', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(
+        new DockerHost(E2EConfig::fromEnvironment()),
+        'orbit-e2e-run123-gateway',
+        'orbit-e2e-run123',
+    );
+
+    E2EGatewayApi::start(
+        $instance,
+        'docker-gateway-api',
+        gatewayIp: '10.6.0.2',
+        wireguardIdentity: '10.6.0.2',
+        bindAddress: '0.0.0.0',
+        certKey: 'gateway',
+        certSans: ['10.6.0.2'],
+    );
+
+    $setup = implode("\n", $commands);
+
+    $httpStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, 'orbit serve --host='));
+    $tlsWrite = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, 'cat >')
+        && str_contains($command, '/tmp/orbit-docker-gateway-api-tls.php'));
+    $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, 'orbit tinker --execute='));
+    $runtimeIdentity = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, '/home/orbit/.ssh/id_ed25519')
+        && str_contains($command, '/root/.ssh/id_ed25519'));
+
+    expect($setup)
+        ->toContain('orbit tinker --execute=')
+        ->toContain('orbit serve --host=')
+        ->toContain('sudo docker exec --detach')
+        ->toContain("'orbit-e2e-run123-gateway-orbit-runtime'")
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->not->toContain('php artisan')
+        ->not->toContain('php -S')
+        ->not->toContain('nohup php')
+        ->not->toContain('php -r')
+        ->not->toContain('systemctl stop caddy');
+
+    expect($runtimeIdentity)->toBeString()
+        ->toContain('install -d -m 700 /root/.ssh')
+        ->toContain('cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519');
+
+    expect(array_search($runtimeIdentity, $commands, strict: true))
+        ->toBeLessThan(array_search($httpStart, $commands, strict: true))
+        ->toBeLessThan(array_search($tlsStart, $commands, strict: true));
+
+    expect($httpStart)->toBeString()
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit');
+
+    expect($tlsWrite)->toBeString()
+        ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
+
+    expect($tlsStart)->toBeString()
+        ->toContain('/tmp/orbit-docker-gateway-api-tls.php')
+        ->not->toContain('sudo -iu orbit');
+});
+
+it('stops Docker gateway API TLS shim before restarting', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(
+        new DockerHost(E2EConfig::fromEnvironment()),
+        'orbit-e2e-run123-gateway',
+        'orbit-e2e-run123',
+    );
+
+    E2EGatewayApi::restart(
+        $instance,
+        'docker-gateway-api',
+        gatewayIp: '10.6.0.2',
+        wireguardIdentity: '10.6.0.2',
+        bindAddress: '0.0.0.0',
+        certKey: 'gateway',
+        certSans: ['10.6.0.2'],
+    );
+
+    $stop = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, '/proc/[0-9]*/cmdline'));
+    $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, 'orbit tinker --execute='));
+
+    expect($stop)->toBeString()
+        ->toContain('/tmp/orbit-')
+        ->toContain('-tls.php')
+        ->toContain('orbit\ serve\ --host=')
+        ->toContain('php\ *artisan\ serve\ --host=');
+
+    expect($tlsStart)->toBeString()
+        ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
+
+    expect(array_search($stop, $commands, strict: true))
+        ->toBeLessThan(array_search($tlsStart, $commands, strict: true));
+});
+
+it('stops Docker gateway API HTTP processes after the runtime entrypoint execs artisan serve', function (): void {
+    expect(gatewayStopScriptMatchesCommand(
+        'php /home/orbit/orbit/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
+    ))->toBeTrue();
 });
 
 it('can split gateway wireguard identity from bind address and cert key', function (): void {
@@ -269,6 +411,50 @@ function gatewayCanonicalPeerIp(string $script, string $peerIp): string
         }
 
         return implode("\n", $output);
+    } finally {
+        @unlink($file);
+    }
+}
+
+function gatewayStopScriptMatchesCommand(string $command): bool
+{
+    $reflection = new ReflectionClass(E2EGatewayApi::class);
+    $method = $reflection->getMethod('stopServerShellScript');
+    $method->setAccessible(true);
+    $script = $method->invoke(null);
+
+    preg_match('/case "\$command" in\s+(?<patterns>.+?)\)\s+pids=/s', $script, $matches);
+
+    if (! isset($matches['patterns'])) {
+        throw new RuntimeException('Gateway stop script is missing its process matcher.');
+    }
+
+    $file = tempnam(sys_get_temp_dir(), 'orbit-gateway-stop-');
+
+    if (! is_string($file)) {
+        throw new RuntimeException('Could not create temporary shell script.');
+    }
+
+    file_put_contents($file, implode("\n", [
+        '#!/usr/bin/env bash',
+        'command='.escapeshellarg($command),
+        'case "$command" in',
+        trim($matches['patterns']).') echo match ;;',
+        '*) echo miss ;;',
+        'esac',
+    ]));
+
+    try {
+        $output = [];
+        $exitCode = 0;
+
+        exec('bash '.escapeshellarg($file), $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            throw new RuntimeException('Gateway stop matcher shell check exited with code '.$exitCode.'.');
+        }
+
+        return trim(implode("\n", $output)) === 'match';
     } finally {
         @unlink($file);
     }

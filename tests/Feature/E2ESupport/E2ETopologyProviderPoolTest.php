@@ -95,6 +95,25 @@ it('treats every requested capability flag independently', function (): void {
         ->and($selection->provider()->name())->toBe('incus');
 });
 
+it('can select providers with Docker sibling container support', function (): void {
+    $pool = new E2ETopologyProviderPool([
+        fakeTopologyProvider('docker', true, E2ETopologyCapabilities::containerFeature()),
+    ]);
+
+    $required = new E2ETopologyCapabilities(
+        realSsh: false,
+        systemd: false,
+        hostMutation: false,
+        kernelNetworking: false,
+        dockerSiblingContainers: true,
+    );
+
+    $selection = $pool->select(E2ETopologyKind::Control, $required);
+
+    expect($selection->available())->toBeTrue()
+        ->and($selection->provider()->name())->toBe('docker');
+});
+
 it('can create a docker topology provider from environment config', function (): void {
     Process::fake([
         'command -v docker >/dev/null' => Process::result(exitCode: 1),

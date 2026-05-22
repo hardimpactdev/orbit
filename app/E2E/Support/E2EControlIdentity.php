@@ -25,7 +25,7 @@ PHP;
             $control,
             $controlUser,
             $key,
-            'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && php artisan tinker --execute='.escapeshellarg($php),
+            'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && orbit tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 60,
         );
     }

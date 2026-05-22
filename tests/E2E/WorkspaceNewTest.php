@@ -53,7 +53,7 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+            "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
             timeoutSeconds: 120,
         );
 
@@ -94,7 +94,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace:new %s --app=docs --json',
+                'cd %s && orbit workspace:new %s --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($workspaceName),
             ),
@@ -114,7 +114,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('lifecycle_status'),
                 'route_count' => \\App\\Models\\ProxyRoute::query()
                     ->where('workspace_id', \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('id'))

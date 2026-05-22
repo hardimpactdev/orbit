@@ -28,7 +28,8 @@ it('removes the obsolete local control node identity over the control user trans
         ->with(
             'control',
             $key,
-            m::on(fn (string $command): bool => str_contains($command, 'php artisan tinker --execute=')
+            m::on(fn (string $command): bool => str_contains($command, 'orbit tinker --execute=')
+                && ! str_contains($command, 'php artisan')
                 && str_contains($command, 'control-1')
                 && str_contains($command, 'role')
                 && str_contains($command, 'control')

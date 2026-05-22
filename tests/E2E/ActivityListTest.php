@@ -44,7 +44,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -65,7 +65,7 @@ it('reads gateway activity from a control caller through the gateway api', funct
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan activity:list --effect=destructive --json',
+                'cd %s && orbit activity:list --effect=destructive --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

@@ -71,7 +71,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -92,7 +92,7 @@ it('reads workspace setup and teardown step policy from a non-gateway caller thr
         $setupResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace-setup-step:list --app=docs --json',
+                'cd %s && orbit workspace-setup-step:list --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -100,7 +100,7 @@ it('reads workspace setup and teardown step policy from a non-gateway caller thr
         $teardownResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan workspace-teardown-step:list --app=docs --json',
+                'cd %s && orbit workspace-teardown-step:list --app=docs --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

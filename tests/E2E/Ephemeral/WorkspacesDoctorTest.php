@@ -21,7 +21,7 @@ it('reports workspace source drift from gateway intent', function (): void {
             'orbit',
             $topology->lease()->sshKeyPair(),
             sprintf(
-                'cd %s && php artisan doctor --node=app-dev-1 --family=workspace --json',
+                'cd %s && orbit doctor --node=app-dev-1 --family=workspace --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             180,
@@ -77,7 +77,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }

@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerInstance;
+use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ECurrentCheckout;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EPhaseTimer;
@@ -423,6 +426,70 @@ it('regenerates empty app keys while preparing remote checkout env files', funct
         ->toContain("grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env")
         ->toContain("grep -Eq '^APP_KEY=base64:.+' .env || php artisan key:generate --force --no-interaction --ansi")
         ->toContain("grep -Eq '^APP_KEY=base64:.+' .env");
+});
+
+it('installs the current checkout on Docker topology nodes through the orbit launcher', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run123-control', 'orbit-e2e-run123');
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+
+    E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+
+    $nodeInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'control' 'orbit-e2e-run123-control'"),
+    )));
+
+    expect($nodeInstallCommands)
+        ->toContain('orbit key:generate --force --no-interaction --ansi')
+        ->toContain('orbit migrate --force --ansi')
+        ->not->toContain('composer dump-autoload')
+        ->not->toContain('composer install')
+        ->not->toContain('php artisan')
+        ->not->toContain('nohup php')
+        ->not->toContain('php -S');
+});
+
+it('refreshes Docker gateway checkout host keys through the orbit launcher', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $host = new DockerHost(E2EConfig::fromEnvironment());
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $topology = new E2ETopologyLease(
+        kind: E2ETopologyKind::ControlGateway,
+        control: new DockerInstance($host, 'orbit-e2e-run123-control', 'orbit-e2e-run123'),
+        gateway: new DockerInstance($host, 'orbit-e2e-run123-gateway', 'orbit-e2e-run123'),
+        dev: null,
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+    );
+
+    E2ECurrentCheckout::installOnTopology($topology, roles: ['gateway']);
+
+    $gatewayInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'"),
+    )));
+
+    expect($gatewayInstallCommands)
+        ->toContain('orbit orbit:internal:pin-node-host-keys --json')
+        ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
+        ->not->toContain('composer install')
+        ->not->toContain('composer dump-autoload');
 });
 
 it('shares one 600 second timeout budget across split install phases', function (): void {

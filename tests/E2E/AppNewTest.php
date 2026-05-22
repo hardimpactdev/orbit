@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -56,7 +56,7 @@ it('creates a real app source directory from a control caller through the gatewa
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:new %s --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg($name),
             ),
@@ -86,7 +86,7 @@ it('creates a real app source directory from a control caller through the gatewa
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
                 'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,

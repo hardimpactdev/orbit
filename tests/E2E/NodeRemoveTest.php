@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -55,7 +55,7 @@ it('removes a node from a control caller through the gateway api', function (): 
         $removeResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:remove app-prod-1 --force --json',
+                'cd %s && orbit node:remove app-prod-1 --force --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
@@ -74,7 +74,7 @@ it('removes a node from a control caller through the gateway api', function (): 
         $showResult = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && (php artisan node:show app-prod-1 --json || true)',
+                'cd %s && (orbit node:show app-prod-1 --json || true)',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

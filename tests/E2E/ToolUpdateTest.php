@@ -16,7 +16,7 @@ it('updates a docker-managed tool on an app node through the gateway', function 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:update redis --node=app-dev-1 --expected-version=7.2 --json',
+                'cd %s && orbit tool:update redis --node=app-dev-1 --expected-version=7.2 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -32,7 +32,7 @@ it('updates a docker-managed tool on an app node through the gateway', function 
 
         $stored = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->value('expected_version');"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->value('expected_version');"),
             timeoutSeconds: 120,
         );
 
@@ -92,7 +92,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

@@ -15,7 +15,7 @@ it('reads managed tool credentials from gateway intent', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:credentials redis --node=app-dev-1 --json',
+                'cd %s && orbit tool:credentials redis --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -48,7 +48,7 @@ it('reads opencode-server credentials from gateway intent', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:credentials opencode-server --node=app-dev-1 --json',
+                'cd %s && orbit tool:credentials opencode-server --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -99,7 +99,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -132,7 +132,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

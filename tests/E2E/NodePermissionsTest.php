@@ -25,7 +25,7 @@ it('manages and lists node access permissions from the gateway', function (): vo
         $setResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan node:permissions control-1 app-dev-1 --preset=operator --json',
+                'cd %s && orbit node:permissions control-1 app-dev-1 --preset=operator --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -40,7 +40,7 @@ it('manages and lists node access permissions from the gateway', function (): vo
         $listResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan node:permissions control-1 app-dev-1 --json',
+                'cd %s && orbit node:permissions control-1 app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,

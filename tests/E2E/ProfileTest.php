@@ -46,7 +46,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -67,7 +67,7 @@ it('profiles an observable registered app target from a control caller', functio
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan profile docs --uri=/api/me --json',
+                'cd %s && orbit profile docs --uri=/api/me --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

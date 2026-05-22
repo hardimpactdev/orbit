@@ -34,7 +34,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -57,7 +57,7 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan activity:show %d --json',
+                'cd %s && orbit activity:show %d --json',
                 escapeshellarg($topology->checkout('control')),
                 $id,
             ),
@@ -94,7 +94,7 @@ it('shows one activity entry human output from a control caller', function (): v
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan activity:show %d',
+                'cd %s && orbit activity:show %d',
                 escapeshellarg($topology->checkout('control')),
                 $id,
             ),
@@ -122,7 +122,7 @@ it('returns validation_failed when id is missing from a control caller', functio
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan activity:show --json',
+                'cd %s && orbit activity:show --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,
@@ -150,7 +150,7 @@ it('returns validation_failed for an invalid id from a control caller', function
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan activity:show nope --json',
+                'cd %s && orbit activity:show nope --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 60,

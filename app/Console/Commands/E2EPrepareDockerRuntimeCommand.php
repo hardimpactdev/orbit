@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerTopologyProvider;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -17,31 +18,46 @@ class E2EPrepareDockerRuntimeCommand extends Command
 
     public function handle(): int
     {
-        $image = 'orbit-e2e-topology-runtime:current';
+        $images = [
+            [
+                'image' => 'orbit-e2e-topology-runtime:current',
+                'dockerfile' => base_path('docker/e2e/topology/Dockerfile'),
+            ],
+            [
+                'image' => DockerTopologyProvider::runtimeSiblingImage(),
+                'dockerfile' => base_path('docker/orbit-runtime/Dockerfile'),
+            ],
+        ];
 
-        $this->line("Docker runtime image: {$image}");
+        foreach ($images as $image) {
+            $this->line("Docker runtime image: {$image['image']}");
+        }
 
         if (! (bool) $this->option('force')) {
-            $this->line('Dry run. Pass --force to build the Docker runtime image.');
+            $this->line('Dry run. Pass --force to build the Docker runtime images.');
 
             return self::SUCCESS;
         }
 
-        $result = Process::timeout(1800)->run(sprintf(
-            'docker build -f %s -t %s %s',
-            escapeshellarg(base_path('docker/e2e/topology/Dockerfile')),
-            escapeshellarg($image),
-            escapeshellarg(base_path()),
-        ));
+        foreach ($images as $image) {
+            $result = Process::timeout(1800)->run(sprintf(
+                'docker build -f %s -t %s %s',
+                escapeshellarg($image['dockerfile']),
+                escapeshellarg($image['image']),
+                escapeshellarg(base_path()),
+            ));
 
-        if ($result->successful()) {
-            $this->info("Built {$image}.");
+            if ($result->successful()) {
+                $this->info("Built {$image['image']}.");
 
-            return self::SUCCESS;
+                continue;
+            }
+
+            $this->error($result->output().$result->errorOutput());
+
+            return self::FAILURE;
         }
 
-        $this->error($result->output().$result->errorOutput());
-
-        return self::FAILURE;
+        return self::SUCCESS;
     }
 }

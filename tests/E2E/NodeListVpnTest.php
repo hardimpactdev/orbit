@@ -25,7 +25,7 @@ it('lists the gateway-coupled vpn node from a control caller through the gateway
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:list --role=vpn --json',
+                'cd %s && orbit node:list --role=vpn --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,
