@@ -69,6 +69,9 @@ record.
 - **App agent IDE adapter:** Optional gateway-owned override of the owning
   node's default agent IDE adapter for app and workspace workflows. Set,
   cleared, and shown through `app:agent-ide`.
+- **App exec:** Explicit execution surface for PHP, Composer, or Artisan
+  commands inside the app's FrankenPHP runtime container. Owned by
+  `app:exec`. Host PHP and host Composer are not fallbacks.
 
 ## Lifecycle
 

@@ -27,6 +27,9 @@ The terms below define the core identity vocabulary for the workspace family.
   configuration, parent app configuration, and the selected PHP image. It
   serves the workspace route through FrankenPHP and runs workspace-scoped PHP
   and Composer commands.
+- **Workspace exec:** Explicit execution surface for PHP, Composer, or
+  Artisan commands inside the workspace runtime container. Owned by
+  `workspace:exec`. Host PHP and host Composer are not fallbacks.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.

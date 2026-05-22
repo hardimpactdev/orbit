@@ -15,6 +15,25 @@ return [
         'validation_failed',
     ],
     'products' => [
+        'app' => [
+            'exec_command_not_executable',
+            'exec_command_not_found',
+            'exec_container_not_running',
+            'exec_docker_unavailable',
+            'exec_node_unreachable',
+            'exec_unsupported_runtime',
+            'not_found',
+        ],
+        'workspace' => [
+            'ambiguous_name',
+            'exec_command_not_executable',
+            'exec_command_not_found',
+            'exec_container_not_running',
+            'exec_docker_unavailable',
+            'exec_node_unreachable',
+            'exec_unsupported_runtime',
+            'not_found',
+        ],
         'node' => [
             'field_role_incompatible',
             'gateway_api_error',

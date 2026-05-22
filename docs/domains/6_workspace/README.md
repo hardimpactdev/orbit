@@ -219,6 +219,12 @@ These commands manage the setup and teardown step policy that runs during worksp
 12. [`orbit workspace-teardown-step:list`](12_workspace-teardown-step-list/workspace-teardown-step-list.md)
 13. [`orbit workspace-teardown-step:remove`](13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
 
+### Container execution commands
+
+These commands run ad-hoc PHP, Composer, or Artisan commands inside a workspace runtime container.
+
+14. [`orbit workspace:exec [workspace] -- <command>`](14_workspace-exec/workspace-exec.md)
+
 ## Related
 
 These doctor commands verify the families that workspace commands depend on.

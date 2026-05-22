@@ -11,6 +11,8 @@ use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
+use App\Services\Runtime\OrbitHostCwdContext;
+use App\Services\Runtime\OrbitHostCwdResolver;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 
@@ -77,6 +79,14 @@ final class ServingNodeResolver
             return $app->node;
         }
 
+        foreach (['host_cwd', 'path', 'caller_cwd'] as $parameter) {
+            $app = $this->appFromPath($this->requestValue($request, $parameter));
+
+            if ($app instanceof OrbitApp) {
+                return $app->node;
+            }
+        }
+
         return null;
     }
 
@@ -93,7 +103,7 @@ final class ServingNodeResolver
             }
         }
 
-        foreach (['path', 'caller_cwd'] as $parameter) {
+        foreach (['host_cwd', 'path', 'caller_cwd'] as $parameter) {
             $workspace = $this->workspaceFromPath($this->requestValue($request, $parameter));
 
             if ($workspace instanceof Workspace) {
@@ -247,19 +257,33 @@ final class ServingNodeResolver
 
     private function workspaceFromPath(mixed $value): ?Workspace
     {
+        $context = $this->resolveCwd($value);
+
+        return $context?->workspace;
+    }
+
+    private function appFromPath(mixed $value): ?OrbitApp
+    {
+        $context = $this->resolveCwd($value);
+
+        if ($context === null) {
+            return null;
+        }
+
+        // Workspace match wins over parent-app match when the cwd is inside
+        // a workspace tree. AppOwning authorization mirrors that preference:
+        // a path inside a workspace authorizes against the workspace's
+        // parent app (which is the same node), not "some random app whose
+        // path happens to be a string prefix".
+        return $context->app;
+    }
+
+    private function resolveCwd(mixed $value): ?OrbitHostCwdContext
+    {
         if (! is_string($value) || trim($value) === '') {
             return null;
         }
 
-        $normalizedPath = rtrim($value, '/');
-
-        return Workspace::query()
-            ->with('app.node')
-            ->get()
-            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
-                $workspacePath = rtrim($workspace->path, '/');
-
-                return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
-            });
+        return app(OrbitHostCwdResolver::class)->resolve($value);
     }
 }

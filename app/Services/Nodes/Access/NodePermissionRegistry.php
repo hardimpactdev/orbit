@@ -40,6 +40,7 @@ final class NodePermissionRegistry
             'app:root',
             'app:update',
             'app:new',
+            'app:exec',
             'app:worker',
 
             // Cloudflare
@@ -182,6 +183,7 @@ final class NodePermissionRegistry
 
             // Workspace
             'workspace:*',
+            'workspace:exec',
             'workspace:history',
             'workspace:list',
             'workspace:log',
