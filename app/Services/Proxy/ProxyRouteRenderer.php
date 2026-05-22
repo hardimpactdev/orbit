@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\ProxyRoute;
 use App\Services\Runtime\OrbitCaddyContainer;
 use RuntimeException;
@@ -141,29 +142,80 @@ CADDY;
 
         $bind = $backendArtifact['bind'] ?? null;
         $documentRoot = $backendArtifact['document_root'] ?? null;
+        $runtimeUpstream = $backendArtifact['runtime_upstream'] ?? null;
         $phpSocket = $backendArtifact['php_socket'] ?? null;
+        $isAppKind = $route->kind === 'app';
+        $isStaticApp = $isAppKind && $route->app?->runtime_kind === AppRuntimeKind::Static;
 
         if (! is_string($bind) || $bind === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a bind address.");
         }
 
-        if (! is_string($documentRoot) || $documentRoot === '') {
-            throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a document root.");
-        }
-
-        if (! is_string($phpSocket) || $phpSocket === '') {
-            throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a PHP socket.");
-        }
-
         $this->validatedIpAddress($route, $bind);
-        $documentRoot = $this->validatedAbsolutePath($route, $documentRoot, 'backend artifact has an invalid document root.');
-        $phpSocket = $this->validatedAbsolutePath($route, $phpSocket, 'backend artifact has an invalid PHP socket path.');
 
         $pathBlocking = $route->app?->document_root === '.'
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
         $port = OrbitCaddyContainer::PrivateBackendPort;
+
+        if ($isAppKind && ! $isStaticApp) {
+            $runtimeUpstream = $this->deriveAppRuntimeUpstreamIfMissing($route, $runtimeUpstream);
+
+            if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
+                throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a runtime container upstream.");
+            }
+
+            $runtimeUpstream = $this->validatedHttpUpstream($route, $runtimeUpstream);
+
+            return <<<CADDY
+http://{$route->domain}:{$port} {
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+
+    reverse_proxy {$runtimeUpstream} {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY;
+        }
+
+        if (! is_string($documentRoot) || $documentRoot === '') {
+            throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a document root.");
+        }
+
+        $documentRoot = $this->validatedAbsolutePath($route, $documentRoot, 'backend artifact has an invalid document root.');
+
+        if ($isStaticApp) {
+            return <<<CADDY
+http://{$route->domain}:{$port} {
+    root * {$documentRoot}
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+    file_server
+}
+
+CADDY;
+        }
+
+        if (! is_string($phpSocket) || $phpSocket === '') {
+            throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a PHP socket.");
+        }
+
+        $phpSocket = $this->validatedAbsolutePath($route, $phpSocket, 'backend artifact has an invalid PHP socket path.');
 
         return <<<CADDY
 http://{$route->domain}:{$port} {
@@ -244,20 +296,71 @@ CADDY;
 
         $config = is_array($route->config) ? $route->config : [];
         $documentRoot = $config['document_root'] ?? null;
+        $runtimeUpstream = $config['runtime_upstream'] ?? null;
         $phpSocket = $config['php_socket'] ?? null;
         $tls = $this->tlsDirective($route);
+        $isAppKind = $route->kind === 'app';
+        $isStaticApp = $isAppKind && $route->app?->runtime_kind === AppRuntimeKind::Static;
+
+        $pathBlocking = $route->app?->document_root === '.'
+            ? 'import path_blocking_project_root'
+            : 'import path_blocking_public_root';
+
+        if ($isAppKind && ! $isStaticApp) {
+            $runtimeUpstream = $this->deriveAppRuntimeUpstreamIfMissing($route, $runtimeUpstream);
+
+            if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
+                throw new RuntimeException("Proxy route '{$route->domain}' is missing a runtime container upstream.");
+            }
+
+            $runtimeUpstream = $this->validatedHttpUpstream($route, $runtimeUpstream);
+
+            return <<<CADDY
+{$route->domain} {
+    {$tls}
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+
+    reverse_proxy {$runtimeUpstream} {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY;
+        }
 
         if (! is_string($documentRoot) || $documentRoot === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a document root.");
         }
 
+        if ($isStaticApp) {
+            return <<<CADDY
+{$route->domain} {
+    {$tls}
+    root * {$documentRoot}
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+    file_server
+}
+
+CADDY;
+        }
+
         if (! is_string($phpSocket) || $phpSocket === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a PHP socket.");
         }
-
-        $pathBlocking = $route->app?->document_root === '.'
-            ? 'import path_blocking_project_root'
-            : 'import path_blocking_public_root';
 
         return <<<CADDY
 {$route->domain} {
@@ -368,6 +471,49 @@ CADDY;
     {
         if ($this->containsUnsafeCharacters($value) || ! str_starts_with($value, '/')) {
             throw new RuntimeException("Proxy route '{$route->domain}' {$suffix}");
+        }
+
+        return $value;
+    }
+
+    /**
+     * Derive the FrankenPHP runtime container upstream from the app identity
+     * when the persisted route config has none. This backstops legacy app
+     * route rows (or backend artifacts) carried over from origin/main, where
+     * configs only contained `php_socket`. The migration backfills most
+     * rows; this method handles edge cases (adopted rows, restore from an
+     * older snapshot, app-only fixtures) so ProxyRouteFixer / doctor restore
+     * can repair instead of throwing. Returns the existing upstream if
+     * present; never revives php_fastcgi for app routes.
+     */
+    private function deriveAppRuntimeUpstreamIfMissing(ProxyRoute $route, mixed $current): ?string
+    {
+        if (is_string($current) && $current !== '') {
+            return $current;
+        }
+
+        $route->loadMissing('app');
+
+        if ($route->app === null) {
+            return null;
+        }
+
+        $slug = $route->app->name;
+
+        if (! is_string($slug) || $slug === '') {
+            return null;
+        }
+
+        return "http://orbit-app-{$slug}";
+    }
+
+    private function validatedHttpUpstream(ProxyRoute $route, string $value): string
+    {
+        if ($this->containsUnsafeCharacters($value)
+            || filter_var($value, FILTER_VALIDATE_URL) === false
+            || preg_match('#^https?://#', $value) !== 1
+        ) {
+            throw new RuntimeException("Proxy route '{$route->domain}' has an invalid runtime container upstream.");
         }
 
         return $value;

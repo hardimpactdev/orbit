@@ -47,8 +47,14 @@ it('updates app root intent and re-enacts runtime artifacts from a gateway calle
     ]);
 
     $remoteShell = new AppRootSequencedRemoteShell([
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        // network inspect (missing) + network create
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     app()->instance(RemoteShell::class, $remoteShell);
@@ -63,7 +69,9 @@ it('updates app root intent and re-enacts runtime artifacts from a gateway calle
 
     expect($exitCode)->toBe(0)
         ->and(App::query()->where('name', 'docs')->value('document_root'))->toBe('web')
-        ->and($remoteShell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
+        ->and($remoteShell->scripts[3])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($remoteShell->scripts[4])->toContain('docker run -d')
+        ->and($remoteShell->scripts[4])->toContain("'orbit-app-docs'")
         ->and($payload['success']['data']['result'])->toMatchArray([
             'hostname' => 'docs.test',
             'changed' => true,
@@ -301,7 +309,7 @@ it('prompts for missing human input and renders the progress tree', function ():
         ->expectsOutputToContain('┌  Updating App Root')
         ->expectsOutputToContain('○  Apply and verify root change')
         ->expectsOutputToContain('●  Applied and verified root change')
-        ->expectsOutputToContain('●  Applied PHP-FPM configuration')
+        ->expectsOutputToContain('●  Applied runtime container configuration')
         ->expectsOutputToContain('●  Applied proxy routes')
         ->expectsOutputToContain('└  App root updated')
         ->expectsOutputToContain("SUCCESS: Document root for app 'docs' updated to 'web'.")

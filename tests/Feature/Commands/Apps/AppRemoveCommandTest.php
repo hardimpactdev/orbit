@@ -73,8 +73,17 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
         'name' => 'laravel-scheduler',
     ]);
 
+    $inspectPayload = json_encode(['State' => ['Running' => true], 'Config' => ['Labels' => []]], JSON_THROW_ON_ERROR);
+
     $remoteShell = new AppRemoveSequencedRemoteShell([
+        // Container removal path: inspect (exists) + docker rm
+        new RemoteShellResult(exitCode: 0, stdout: $inspectPayload, stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // Runtime config file removal path: probe (present) + rm + probe (absent)
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        // Non-runtime cleanup script
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     app()->instance(RemoteShell::class, $remoteShell);
@@ -93,11 +102,14 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
         ->and(Process::query()->where('name', 'queue')->exists())->toBeFalse()
         ->and(Workspace::query()->where('name', 'feature-api')->exists())->toBeFalse()
         ->and(Schedule::query()->where('name', 'laravel-scheduler')->exists())->toBeFalse()
-        ->and($remoteShell->scripts)->toHaveCount(2)
-        ->and($remoteShell->scripts[0])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
-        ->and($remoteShell->scripts[1])->toContain('/etc/caddy/sites/docs.test.caddy')
-        ->and($remoteShell->scripts[1])->toContain('/etc/supervisor/conf.d/orbit_docs_main_queue.conf')
-        ->and($remoteShell->scripts[1])->toContain("rm -rf '/home/orbit/apps/docs'")
+        ->and($remoteShell->scripts[0])->toContain('docker container inspect')
+        ->and($remoteShell->scripts[1])->toContain("docker rm -f 'orbit-app-docs'")
+        ->and($remoteShell->scripts[2])->toContain("sudo test -e '/etc/orbit/apps/docs.ini'")
+        ->and($remoteShell->scripts[3])->toContain("sudo rm -f '/etc/orbit/apps/docs.ini'")
+        ->and(end($remoteShell->scripts))->toContain('/etc/caddy/sites/docs.test.caddy')
+        ->and(end($remoteShell->scripts))->toContain('/etc/supervisor/conf.d/orbit_docs_main_queue.conf')
+        ->and(end($remoteShell->scripts))->toContain("rm -rf '/home/orbit/apps/docs'")
+        ->and(implode("\n", $remoteShell->scripts))->not->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
         ->and($payload['success']['data']['app'])->toMatchArray([
             'name' => 'docs',
             'node' => 'app-1',
@@ -115,7 +127,7 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
             'workspaces_removed' => 1,
             'schedules_removed' => 1,
             'processes_removed' => 1,
-            'fpm_config_removed' => true,
+            'runtime_container_removed' => true,
             'runtime_config_removed' => true,
         ]);
 });
@@ -253,7 +265,7 @@ it('forwards app-node CLI callers through the typed gateway request without loca
                         'workspaces_removed' => 0,
                         'schedules_removed' => 0,
                         'processes_removed' => 0,
-                        'fpm_config_removed' => true,
+                        'runtime_container_removed' => true,
                         'runtime_config_removed' => true,
                     ],
                 ],
@@ -286,9 +298,17 @@ it('reports node cleanup drift as success warnings after intent removal', functi
         'adopted' => true,
     ]);
 
+    $inspectPayload = json_encode(['State' => ['Running' => true], 'Config' => ['Labels' => []]], JSON_THROW_ON_ERROR);
+
     app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'fpm failed', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'runtime failed', durationMs: 1),
+        // Container exists but cannot be removed
+        new RemoteShellResult(exitCode: 0, stdout: $inspectPayload, stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container in use', durationMs: 1),
+        // Runtime config probe (present) + rm fails
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+        // Non-runtime cleanup (best-effort)
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]));
 
     $exitCode = Artisan::call('app:remove', [
@@ -302,12 +322,167 @@ it('reports node cleanup drift as success warnings after intent removal', functi
     expect($exitCode)->toBe(0)
         ->and(App::query()->where('name', 'docs')->exists())->toBeFalse()
         ->and($payload['success']['data']['cleanup'])->toMatchArray([
-            'fpm_config_removed' => false,
+            'runtime_container_removed' => false,
             'runtime_config_removed' => false,
         ])
         ->and($payload['success']['meta']['warnings'])->toHaveCount(2)
-        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.fpm_config_extra')
+        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.runtime_container_extra')
         ->and($payload['success']['meta']['warnings'][1]['code'])->toBe('app.runtime_config_extra');
+});
+
+it('reports static apps as not removed without warnings since static apps have no managed runtime artifacts', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    App::factory()->static()->create([
+        'name' => 'marketing',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/marketing',
+        'document_root' => 'public',
+        'adopted' => false,
+    ]);
+
+    $remoteShell = new AppRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:remove', [
+        'app' => 'marketing',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['cleanup'])->toMatchArray([
+            'runtime_container_removed' => false,
+            'runtime_config_removed' => false,
+        ])
+        ->and($payload['success']['meta'] ?? [])->not->toHaveKey('warnings')
+        ->and(implode("\n", $remoteShell->scripts))->not->toContain('docker container inspect')
+        ->and(implode("\n", $remoteShell->scripts))->not->toContain("rm -f '/etc/orbit/apps/marketing.ini'")
+        ->and(implode("\n", $remoteShell->scripts))->not->toContain('docker rm');
+});
+
+it('reports an absent container and absent runtime config as not removed without emitting warnings', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'adopted' => true,
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
+        // Container inspect: docker proves absence with "No such object"
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such object: orbit-app-docs', durationMs: 1),
+        // Runtime config probe: proven absent
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        // Non-runtime cleanup script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:remove', [
+        'app' => 'docs',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['cleanup'])->toMatchArray([
+            'runtime_container_removed' => false,
+            'runtime_config_removed' => false,
+        ])
+        ->and($payload['success']['meta'] ?? [])->not->toHaveKey('warnings');
+});
+
+it('reports app.runtime_container_extra warning when the docker inspect probe fails for an unknown reason during cleanup', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'adopted' => true,
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
+        // Container inspect: docker daemon down - cannot prove absence
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.', durationMs: 1),
+        // Runtime config probe: proven absent
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        // Non-runtime cleanup script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:remove', [
+        'app' => 'docs',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['cleanup'])->toMatchArray([
+            'runtime_container_removed' => false,
+            'runtime_config_removed' => false,
+        ])
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.runtime_container_extra');
+});
+
+it('reports app.runtime_config_extra warning when the sudo runtime config probe fails for an unknown reason during cleanup', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'adopted' => true,
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
+        // Container inspect: proven absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such object: orbit-app-docs', durationMs: 1),
+        // Runtime config probe: sudo failure - cannot prove absence
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:error\n", stderr: 'sudo: a terminal is required to read the password', durationMs: 1),
+        // Non-runtime cleanup script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:remove', [
+        'app' => 'docs',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['cleanup'])->toMatchArray([
+            'runtime_container_removed' => false,
+            'runtime_config_removed' => false,
+        ])
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.runtime_config_extra');
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
@@ -350,7 +525,7 @@ it('forwards configured control callers through the typed gateway request', func
                         'workspaces_removed' => 0,
                         'schedules_removed' => 0,
                         'processes_removed' => 0,
-                        'fpm_config_removed' => true,
+                        'runtime_container_removed' => true,
                         'runtime_config_removed' => true,
                     ],
                 ],
@@ -446,17 +621,22 @@ it('renders drift details in human output when node cleanup leaves warnings', fu
         'adopted' => true,
     ]);
 
+    $inspectPayload = json_encode(['State' => ['Running' => true], 'Config' => ['Labels' => []]], JSON_THROW_ON_ERROR);
+
     app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'fpm failed', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'runtime failed', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: $inspectPayload, stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container in use', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]));
 
     $this->artisan('app:remove docs')
         ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
         ->expectsOutputToContain("App 'docs' removed")
         ->expectsOutputToContain('  Drift detected:')
-        ->expectsOutputToContain('  - app: App PHP-FPM configuration could not be removed during cleanup. (run `doctor --fix --family=app --restore`)')
-        ->expectsOutputToContain('  - app: Managed app runtime configuration could not be removed during cleanup. (run `doctor --fix --family=app --restore`)')
+        ->expectsOutputToContain("  - app: App runtime container for 'docs' could not be removed during cleanup. (run `doctor --fix --family=app --restore`)")
+        ->expectsOutputToContain("  - app: Managed app runtime configuration for 'docs' could not be removed during cleanup. (run `doctor --fix --family=app --restore`)")
         ->assertExitCode(0);
 });
 

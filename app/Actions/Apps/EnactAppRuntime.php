@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Contracts\RemoteShell;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
-use App\Services\Apps\AppFpmPoolRenderer;
-use App\Services\Php\PhpFpmServiceReloader;
-use App\Services\Php\PhpFpmSystemdHardening;
+use App\Services\Apps\AppRuntimeContainerApplyException;
+use App\Services\Apps\AppRuntimeContainerManager;
+use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Apps\AppRuntimeImageUnavailableException;
 use RuntimeException;
+use Throwable;
 
 final readonly class EnactAppRuntime
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private EnsureAppProxyRoute $ensureAppProxyRoute,
         private EnsureAppProcessRuntimeUnits $ensureAppProcessRuntimeUnits,
-        private AppFpmPoolRenderer $fpmPoolRenderer,
-        private PhpFpmServiceReloader $fpmServiceReloader,
-        private PhpFpmSystemdHardening $fpmSystemdHardening,
+        private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
+        private AppRuntimeContainerManager $appRuntimeContainerManager,
     ) {}
 
     /**
@@ -33,75 +33,66 @@ final readonly class EnactAppRuntime
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
 
-        $result = $this->remoteShell->run($app->node, sprintf(
-            'test -x %1$s || command -v %2$s >/dev/null 2>&1 || command -v %3$s >/dev/null 2>&1 || command -v php-fpm >/dev/null 2>&1',
-            escapeshellarg("/usr/sbin/php-fpm{$app->php_version}"),
-            escapeshellarg("php-fpm{$app->php_version}"),
-            escapeshellarg("php{$app->php_version}-fpm"),
-        ));
+        $warnings = [];
 
-        if ($result->successful()) {
-            $this->remoteShell->run($app->node, $this->renderFpmPoolScript($app));
-
-            return [
-                ...$this->ensureAppProxyRoute->handle($app),
-                ...$this->ensureAppProcessRuntimeUnits->handle($app),
-            ];
+        if ($app->runtime_kind === AppRuntimeKind::Php) {
+            try {
+                $container = $this->appRuntimeContainerRenderer->render($app);
+                $this->appRuntimeContainerManager->apply($app->node, $container);
+            } catch (AppRuntimeImageUnavailableException $exception) {
+                $warnings[] = $this->phpVersionUnavailableWarning($app, $exception);
+            } catch (AppRuntimeContainerApplyException $exception) {
+                $warnings[] = $this->runtimeContainerWarning($app, $exception->hadExistingContainer, $exception);
+            } catch (Throwable $exception) {
+                $warnings[] = $this->runtimeContainerWarning($app, hadExistingContainer: false, exception: $exception);
+            }
         }
 
-        return [[
-            'code' => 'app.php_version_unavailable',
-            'family' => 'app',
-            'message' => "PHP {$app->php_version} FPM is not available on '{$app->node->name}'. Run doctor to converge app runtime artifacts.",
-            'next_command' => 'doctor --fix --family=app --restore',
-        ]];
+        // Always record gateway-side intent for app-owned proxy routes and
+        // process units, even when the runtime container apply hit a
+        // retryable warning (image-unavailable, container apply failure).
+        // Without this, the warning tells the user to run
+        // `doctor --fix --family=app --restore` but app doctor cannot create
+        // a missing proxy route — proxy/process is the gateway's
+        // responsibility, not app doctor's. Static apps skip the runtime
+        // container apply path entirely; their file_server-only route is
+        // still recorded here.
+        return [
+            ...$warnings,
+            ...$this->ensureAppProxyRoute->handle($app),
+            ...$this->ensureAppProcessRuntimeUnits->handle($app),
+        ];
     }
 
-    private function renderFpmPoolScript(App $app): string
+    /**
+     * @return array<string, string>
+     */
+    private function runtimeContainerWarning(App $app, bool $hadExistingContainer, Throwable $exception): array
     {
-        $node = $app->node;
+        $code = $hadExistingContainer
+            ? 'app.runtime_container_mismatch'
+            : 'app.runtime_container_missing';
 
-        if ($node === null) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
-        }
+        $action = $hadExistingContainer ? 'recreated' : 'installed';
 
-        $poolPath = $this->fpmPoolRenderer->path($app);
-        $service = $this->fpmPoolRenderer->service($app);
-        $content = $this->fpmPoolRenderer->content($app);
-        $user = $this->fpmPoolRenderer->runtimeUser($app);
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $hardening = $this->fpmSystemdHardening->contentForNode($node, $app->php_version);
+        return [
+            'code' => $code,
+            'family' => 'app',
+            'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$app->node->name}': {$exception->getMessage()}",
+            'next_command' => 'doctor --fix --family=app --restore',
+        ];
+    }
 
-        return sprintf(
-            <<<'SH'
-set -e
-if ! id -u %s >/dev/null 2>&1; then
-    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
-fi
-sudo install -d -m 0750 -o %s -g %s %s
-sudo mkdir -p %s %s %s
-if [ -d %s ]; then sudo chown -R %s:%s %s; fi
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-%s
-%s
-SH,
-            escapeshellarg($user),
-            escapeshellarg($home),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($home),
-            escapeshellarg(dirname($poolPath)),
-            escapeshellarg(dirname($this->fpmPoolRenderer->socketPath($app))),
-            escapeshellarg(dirname($this->fpmPoolRenderer->logPath($app))),
-            escapeshellarg($app->path),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($app->path),
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg($poolPath),
-            $this->fpmSystemdHardening->installScript($app->php_version, $hardening),
-            $this->fpmServiceReloader->reloadOrRestartScript($service),
-        );
+    /**
+     * @return array<string, string>
+     */
+    private function phpVersionUnavailableWarning(App $app, AppRuntimeImageUnavailableException $exception): array
+    {
+        return [
+            'code' => 'app.php_version_unavailable',
+            'family' => 'app',
+            'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node->name}'. Make the image available, then run doctor.",
+            'next_command' => 'doctor --fix --family=app --restore',
+        ];
     }
 }

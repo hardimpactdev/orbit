@@ -43,6 +43,7 @@ describe('app:list JSON renderer contract', function (): void {
                 'path' => '/srv/docs',
                 'root' => 'public',
                 'repository' => null,
+                'runtime_kind' => 'php',
                 'php_version' => '8.5',
                 'adopted' => false,
                 'workspaces' => [
@@ -53,6 +54,27 @@ describe('app:list JSON renderer contract', function (): void {
                     ],
                 ],
             ]);
+    });
+
+    it('exposes runtime_kind=static for static apps', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        App::factory()->static()->create([
+            'name' => 'marketing',
+            'node_id' => $node->id,
+            'environment' => 'development',
+            'domain' => null,
+            'path' => '/srv/marketing',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => false,
+        ]);
+
+        $exitCode = Artisan::call('app:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['apps'][0]['name'])->toBe('marketing')
+            ->and($payload['success']['data']['apps'][0]['runtime_kind'])->toBe('static');
     });
 
     it('returns an empty apps array when no apps match', function (): void {

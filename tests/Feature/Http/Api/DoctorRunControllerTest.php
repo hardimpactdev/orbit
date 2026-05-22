@@ -198,7 +198,7 @@ describe('DoctorRunController', function (): void {
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
         ]);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("docs\t0\t0\t1\t1\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("docs\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
@@ -361,6 +361,17 @@ final class DoctorRunRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, "dir='/etc/orbit/apps'")) {
+            // Emit the probe sentinel so introspectNodeRuntimeConfigs reports
+            // the directory as proven-absent instead of treating empty stdout
+            // as an unknown sudo/probe failure.
+            return new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:absent\n", stderr: '', durationMs: 1);
+        }
+
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
         $stdout = $isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout;
 

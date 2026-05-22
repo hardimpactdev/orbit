@@ -37,7 +37,7 @@ it('renders the documented progress tree and completion summary', function (): v
         ->expectsOutputToContain('○  Create app source')
         ->expectsOutputToContain('●  Created app source')
         ->expectsOutputToContain('●  Applied and verified app registration')
-        ->expectsOutputToContain('●  Applied PHP-FPM configuration')
+        ->expectsOutputToContain('●  Applied runtime container configuration')
         ->expectsOutputToContain('●  Applied proxy routes')
         ->expectsOutputToContain("└  App 'docs' created")
         ->expectsOutputToContain("App 'docs' created successfully on node 'app-1'.")

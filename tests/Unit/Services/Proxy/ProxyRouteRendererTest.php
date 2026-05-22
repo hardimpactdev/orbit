@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -279,10 +280,15 @@ CADDY);
         (new ProxyRouteRenderer)->renderIngress($route);
     })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid TLS cert path.");
 
-    it('renders private backend routes whose artifact paths fall under orbit-caddy mounted host roots', function (): void {
+    it('renders private backend routes for PHP apps as HTTP reverse proxies to the FrankenPHP runtime container', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'example',
+            'document_root' => 'public',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
+            'app_id' => $app->id,
             'domain' => 'example.com',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -294,7 +300,8 @@ CADDY);
                         'domain' => 'example.com',
                         'bind' => '10.6.0.21',
                         'document_root' => '/home/orbit/sites/example/current/public',
-                        'php_socket' => '/home/orbit/.config/orbit/php/example.sock',
+                        'runtime_upstream' => 'http://orbit-app-example',
+                        'php_socket' => null,
                         'source_hash' => str_repeat('b', 64),
                     ],
                 ],
@@ -305,7 +312,6 @@ CADDY);
 
         expect($content)->toBe(<<<'CADDY'
 http://example.com:8081 {
-    root * /home/orbit/sites/example/current/public
     encode gzip
 
     import security_headers
@@ -313,11 +319,51 @@ http://example.com:8081 {
     import path_blocking_public_root
     import security_txt
     import cache_headers
-    php_fastcgi unix//home/orbit/.config/orbit/php/example.sock
-    file_server
+
+    reverse_proxy http://orbit-app-example {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
 }
 
 CADDY);
+    });
+
+    it('renders private backend routes for static apps as file_server only without PHP', function (): void {
+        $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->static()->create([
+            'name' => 'marketing',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'app_id' => $app->id,
+            'domain' => 'marketing.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'backend_artifacts' => [
+                    [
+                        'node_id' => $appNode->id,
+                        'domain' => 'marketing.test',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/marketing/current/public',
+                        'runtime_upstream' => null,
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+
+        expect($content)->toContain('file_server')
+            ->and($content)->toContain('root * /home/orbit/sites/marketing/current/public')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('reverse_proxy');
     });
 
     it('rejects private backend routes with invalid bind addresses', function (): void {
@@ -345,10 +391,15 @@ CADDY);
         (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid bind address.");
 
-    it('rejects private backend routes with unsafe document root paths', function (): void {
+    it('rejects static-app private backend routes with unsafe document root paths', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->static()->create([
+            'name' => 'example',
+            'document_root' => 'public',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
+            'app_id' => $app->id,
             'domain' => 'example.com',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -360,7 +411,8 @@ CADDY);
                         'domain' => 'example.com',
                         'bind' => '10.6.0.21',
                         'document_root' => "relative/path\n",
-                        'php_socket' => '/home/orbit/.config/orbit/php/example.sock',
+                        'runtime_upstream' => null,
+                        'php_socket' => null,
                         'source_hash' => str_repeat('b', 64),
                     ],
                 ],
@@ -370,10 +422,15 @@ CADDY);
         (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid document root.");
 
-    it('rejects private backend routes with unsafe php socket paths', function (): void {
+    it('rejects PHP-app private backend routes with unsafe runtime container upstream values', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'example',
+            'document_root' => 'public',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
+            'app_id' => $app->id,
             'domain' => 'example.com',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -385,7 +442,8 @@ CADDY);
                         'domain' => 'example.com',
                         'bind' => '10.6.0.21',
                         'document_root' => '/home/orbit/sites/example/current/public',
-                        'php_socket' => "/home/orbit/.config/orbit/php/example.sock\r\n",
+                        'runtime_upstream' => "http://orbit-app-example\r\n",
+                        'php_socket' => null,
                         'source_hash' => str_repeat('b', 64),
                     ],
                 ],
@@ -393,5 +451,99 @@ CADDY);
         ]);
 
         (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
-    })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid PHP socket path.");
+    })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid runtime container upstream.");
+
+    it('derives a FrankenPHP runtime upstream from the app identity for a legacy app route persisted with only php_socket (no runtime_upstream) and never emits php_fastcgi', function (): void {
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'legacy-docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/legacy-docs/public',
+                    // Legacy origin/main config: only php_socket, no runtime_upstream.
+                    'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                    'tls' => [
+                        'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+                    ],
+                ],
+            ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toContain('legacy-docs.test {')
+            // Renderer must derive runtime_upstream from the app identity
+            // so legacy routes do not throw before ProxyRouteFixer can repair.
+            ->and($content)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            // App routes never revert to php_fastcgi under the Docker-first model.
+            ->and($content)->not->toContain('php_fastcgi')
+            // file_server is reserved for static apps.
+            ->and($content)->not->toContain('file_server');
+    });
+
+    it('derives a FrankenPHP runtime upstream from the app identity for a legacy private backend artifact (no runtime_upstream)', function (): void {
+        $appNode = Node::factory()->create(['role' => 'app', 'wireguard_address' => '10.6.0.21']);
+        $app = App::factory()->for($appNode, 'node')->create(['name' => 'legacy-docs']);
+
+        $route = ProxyRoute::factory()
+            ->for($appNode, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'legacy-docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $appNode->id,
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/apps/legacy-docs/public',
+                            // Legacy artifact: only php_socket, no runtime_upstream.
+                            'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                        ],
+                    ],
+                ],
+            ]);
+
+        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+
+        expect($content)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('file_server');
+    });
+
+    it('still renders static app routes with file_server even when the persisted config carries a legacy php_socket', function (): void {
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'legacy-marketing']);
+
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'legacy-marketing.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/legacy-marketing/public',
+                    'php_socket' => '/var/run/php/orbit-legacy-marketing.sock',
+                    'tls' => [
+                        'cert_path' => '/etc/orbit/certs/legacy-marketing.test.crt',
+                        'key_path' => '/etc/orbit/certs/legacy-marketing.test.key',
+                    ],
+                ],
+            ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toContain('file_server')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('reverse_proxy');
+    });
 });

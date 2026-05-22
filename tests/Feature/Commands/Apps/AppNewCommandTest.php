@@ -65,7 +65,7 @@ it('creates source on the target app node before writing gateway app intent', fu
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(6)
+        ->and($remoteShell->runs)->toHaveCount(8)
         ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
         ->and($remoteShell->runs[0]['script'])->toContain("sudo install -d -m 755 -o 'orbit' -g 'orbit' '/home/orbit/apps' '/home/orbit/apps/docs'")
         ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
@@ -505,8 +505,58 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
     assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
+        // source create
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 127, stdout: '', stderr: "php-fpm missing\n", durationMs: 1),
+        // network inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script fails for some non-image reason
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: "container create failed\n", durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
+            'code' => 'app.runtime_container_missing',
+            'family' => 'app',
+            'next_command' => 'doctor --fix --family=app --restore',
+        ]);
+});
+
+it('keeps gateway app intent and reports app.php_version_unavailable warning when the FrankenPHP image is missing on the node', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+    ]);
+    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+
+    app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
+        // source create
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // network inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: definite "No such image"
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: dunglas/frankenphp:1-php8.5-bookworm', durationMs: 1),
     ]));
 
     $exitCode = Artisan::call('app:new', [
@@ -524,10 +574,11 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
             'code' => 'app.php_version_unavailable',
             'family' => 'app',
             'next_command' => 'doctor --fix --family=app --restore',
-        ]);
+        ])
+        ->and($payload['success']['meta']['warnings'][0]['message'])->toContain('dunglas/frankenphp:1-php8.5-bookworm');
 });
 
-it('renders and reloads an app php-fpm pool after app intent is durable', function (): void {
+it('converges a FrankenPHP app runtime container after app intent is durable', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
@@ -541,8 +592,16 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
     assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new SequencedRecordingRemoteShell([
+        // source create
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        // network inspect (missing) + network create
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     app()->instance(RemoteShell::class, $remoteShell);
@@ -554,19 +613,21 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
     ]);
 
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-    $fpmPool = base64_decode((string) str($remoteShell->scripts[2])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $runScript = $remoteShell->scripts[5];
+    $phpIni = base64_decode((string) str($runScript)->match("/printf %s\\s+'([A-Za-z0-9+\\/=]+)'/")->toString(), true);
 
     expect($exitCode)->toBe(0)
         ->and($payload['success']['meta']['warnings'])->toBe([])
-        ->and($remoteShell->scripts[1])->toContain('/usr/sbin/php-fpm8.5')
-        ->and($remoteShell->scripts[1])->toContain('php-fpm8.5')
-        ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
-        ->and($fpmPool)->toContain('[orbit-docs]')
-        ->and($fpmPool)->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
-        ->and($fpmPool)->toContain('listen.group = caddy')
-        ->and($remoteShell->scripts[2])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
-        ->and($remoteShell->scripts[2])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
-        ->and($remoteShell->scripts[2])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
+        ->and($remoteShell->scripts[1])->toContain('docker network inspect')
+        ->and($remoteShell->scripts[2])->toContain('docker network create')
+        ->and($remoteShell->scripts[3])->toContain('docker container inspect')
+        ->and($remoteShell->scripts[4])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($runScript)->toContain('docker run -d')
+        ->and($runScript)->toContain("'orbit-app-docs'")
+        ->and($runScript)->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($runScript)->toContain("'/etc/orbit/apps/docs.ini'")
+        ->and($phpIni)->toContain('opcache.enable=1')
+        ->and($phpIni)->toContain('realpath_cache_size=4096K');
 });
 
 it('records and enacts an app-owned proxy route after app intent is durable', function (): void {
@@ -584,8 +645,19 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
     assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     $remoteShell = new SequencedRecordingRemoteShell([
+        // source create
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        // network inspect (missing) + network create
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // EnsureAppProxyRoute: cat Caddyfile + write Caddyfile + site install
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
@@ -600,8 +672,8 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
     ]);
 
     $route = ProxyRoute::query()->where('domain', 'docs.test')->first();
-    $globalCaddyfile = base64_decode((string) str($remoteShell->scripts[4])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
-    $caddySite = base64_decode((string) str($remoteShell->scripts[5])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $globalCaddyfile = base64_decode((string) str($remoteShell->scripts[7])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $caddySite = base64_decode((string) str($remoteShell->scripts[8] ?? '')->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($exitCode)->toBe(0)
         ->and($route)->not->toBeNull()
@@ -610,25 +682,27 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         ->and($route?->kind)->toBe('app')
         ->and($route?->config)->toMatchArray([
             'document_root' => '/home/orbit/apps/docs/public',
-            'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+            'runtime_upstream' => 'http://orbit-app-docs',
+            'php_socket' => null,
             'tls' => [
                 'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
                 'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
             ],
         ])
         ->and($certificates->hosts)->toBe(['docs.test'])
-        ->and($remoteShell->scripts[3])->toContain('sudo cat /etc/caddy/Caddyfile')
+        ->and($remoteShell->scripts[6])->toContain('sudo cat /etc/caddy/Caddyfile')
         ->and($globalCaddyfile)->toContain('import /etc/caddy/sites/*.caddy')
         ->and($globalCaddyfile)->toContain('(security_headers)')
-        ->and($remoteShell->scripts[5])->toContain('/etc/caddy/sites/docs.test.caddy')
+        ->and($remoteShell->scripts[8] ?? '')->toContain('/etc/caddy/sites/docs.test.caddy')
         ->and($caddySite)->toContain('docs.test {')
         ->and($caddySite)->toContain('tls /home/orbit/.config/orbit/certs/docs.test.crt /home/orbit/.config/orbit/certs/docs.test.key')
-        ->and($caddySite)->toContain('root * /home/orbit/apps/docs/public')
-        ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+        ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs')
+        ->and($caddySite)->not->toContain('php_fastcgi')
+        ->and($caddySite)->not->toContain('file_server')
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite))
-        ->and($remoteShell->scripts[5])->toContain("docker restart 'orbit-caddy'")
-        ->and($remoteShell->scripts[5])->not->toContain('caddy reload')
-        ->and($remoteShell->scripts[5])->not->toContain('sudo systemctl reload caddy');
+        ->and($remoteShell->scripts[8] ?? '')->toContain("docker restart 'orbit-caddy'")
+        ->and($remoteShell->scripts[8] ?? '')->not->toContain('caddy reload')
+        ->and($remoteShell->scripts[8] ?? '')->not->toContain('sudo systemctl reload caddy');
 });
 
 it('uses the production domain as the app-owned proxy route domain', function (): void {
@@ -678,9 +752,18 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
     assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
+        // source create
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        // network inspect (missing) + network create
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // EnsureAppProxyRoute: cat Caddyfile + write Caddyfile + site install failure
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy restart failed', durationMs: 1),

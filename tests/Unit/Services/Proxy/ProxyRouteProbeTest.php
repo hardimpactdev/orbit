@@ -12,6 +12,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -689,6 +690,119 @@ describe('proxy adoption snapshot', function (): void {
                 'hash' => str_repeat('a', 64),
                 'body' => $body,
             ]);
+    });
+});
+
+describe('legacy php_fastcgi route convergence after Docker-first runtime backfill', function (): void {
+    it('reports proxy.route_mismatch when an observed legacy php_fastcgi Caddyfile hash differs from the post-backfill Docker-first reverse_proxy source_hash', function (): void {
+        // Simulates the post-migration state: the backfill recomputed
+        // source_hash to match Docker-first reverse_proxy content. The node
+        // still serves the OLD legacy php_fastcgi Caddyfile, so its observed
+        // hash should NOT match — proving doctor will detect drift and
+        // restore can converge to the Docker-first artifact.
+        $node = createTestAppHostNode();
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'legacy-docs',
+            'document_root' => 'public',
+        ]);
+
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'legacy-docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/legacy-docs/public',
+                    'runtime_upstream' => 'http://orbit-app-legacy-docs',
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+                    ],
+                ],
+            ]);
+
+        $dockerFirstHash = hash('sha256', (new ProxyRouteRenderer)->render($route));
+        $route->forceFill(['source_hash' => $dockerFirstHash])->save();
+
+        // The node returns a hash that represents the LEGACY php_fastcgi
+        // Caddyfile still on disk — different from the Docker-first hash.
+        $observedLegacyHash = str_repeat('f', 64);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "1\t{$observedLegacyHash}\t/etc/orbit/certs/legacy-docs.test.crt\t/etc/orbit/certs/legacy-docs.test.key\t1\t1\n",
+        );
+
+        $snapshot = (new ProxyRouteProbe($shell))->introspect($route);
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['expected_hash'] ?? null)->toBe($dockerFirstHash)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['observed_hash'] ?? null)->toBe($observedLegacyHash);
+    });
+
+    it('reports proxy.backend_route_mismatch when an observed legacy private-backend php_fastcgi Caddyfile hash differs from the post-backfill Docker-first backend_artifact source_hash', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active', 'wireguard_address' => '10.6.0.4']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active', 'wireguard_address' => '10.6.0.21']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($backend, 'app-production');
+        $app = App::factory()->create([
+            'name' => 'legacy-docs',
+            'document_root' => 'public',
+            'node_id' => $backend->id,
+        ]);
+
+        // Build a route with Docker-first backend_artifact source_hash (the
+        // value the backfill would have written for an ingress topology).
+        $artifact = [
+            'node_id' => $backend->id,
+            'bind' => '10.6.0.21',
+            'document_root' => '/home/orbit/apps/legacy-docs/public',
+            'runtime_upstream' => 'http://orbit-app-legacy-docs',
+            'php_socket' => null,
+        ];
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'legacy-docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => $app->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => ['node_id' => $backend->id, 'source_hash' => str_repeat('c', 64)],
+                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'backend_artifacts' => [array_merge($artifact, [
+                    'source_hash' => 'placeholder',
+                ])],
+            ],
+        ]);
+        $route->loadMissing('app');
+
+        $dockerFirstBackendHash = hash('sha256', (new ProxyRouteRenderer)->renderPrivateBackend($route, $artifact));
+        $config = $route->config;
+        $config['backend_artifacts'][0]['source_hash'] = $dockerFirstBackendHash;
+        $route->forceFill(['config' => $config])->save();
+
+        // Observed legacy backend hash on the backend node differs from the
+        // post-backfill expected hash.
+        $observedLegacyBackendHash = str_repeat('9', 64);
+        $snapshot = new ProbeSnapshot([
+            'legacy-docs.test' => [
+                'public' => ['route_exists' => true, 'route_hash' => str_repeat('a', 64)],
+                'router' => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
+                'backends' => [
+                    $backend->id => ['route_exists' => true, 'route_hash' => $observedLegacyBackendHash],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail['expected_hash'] ?? null)->toBe($dockerFirstBackendHash)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail['observed_hash'] ?? null)->toBe($observedLegacyBackendHash);
     });
 });
 

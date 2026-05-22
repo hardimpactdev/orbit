@@ -40,11 +40,16 @@ function todo314PathIsReachableFromContainer(string $path): bool
 }
 
 describe('orbit-caddy container coverage of route renderer outputs', function (): void {
-    it('mounts every host root that managed app/workspace ingress artifacts reference', function (): void {
+    it('proxies managed PHP app ingress artifacts to the FrankenPHP runtime container without mounting host paths', function (): void {
         $renderer = new ProxyRouteRenderer;
         $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
+            'app_id' => $app->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -55,7 +60,8 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
                     'domain' => 'docs.test',
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/sites/docs/current/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'php_socket' => null,
                     'source_hash' => str_repeat('a', 64),
                 ]],
                 'tls' => [
@@ -67,14 +73,12 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
 
         $artifact = $route->config['backend_artifacts'][0];
 
-        expect(todo314PathIsReachableFromContainer($artifact['document_root']))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer($artifact['php_socket']))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer($route->config['tls']['cert_path']))->toBeTrue()
+        expect(todo314PathIsReachableFromContainer($route->config['tls']['cert_path']))->toBeTrue()
             ->and(todo314PathIsReachableFromContainer($route->config['tls']['key_path']))->toBeTrue();
 
         expect($renderer->renderPrivateBackend($route, $artifact))
-            ->toContain('root * /home/orbit/sites/docs/current/public')
-            ->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+            ->toContain('reverse_proxy http://orbit-app-docs')
+            ->not->toContain('php_fastcgi')
             ->not->toContain('bind 10.6.0.21');
     });
 
@@ -161,8 +165,13 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     it('renders private backend listeners on an internal port that ingress does not publish publicly', function (): void {
         $renderer = new ProxyRouteRenderer;
         $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
+            'app_id' => $app->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -173,7 +182,8 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
                     'domain' => 'docs.test',
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/sites/docs/current/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'php_socket' => null,
                     'source_hash' => str_repeat('a', 64),
                 ]],
             ],

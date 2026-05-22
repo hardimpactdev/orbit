@@ -443,7 +443,7 @@ describe('doctor command contract', function (): void {
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
         ]);
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("docs\t0\t0\t1\t1\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("docs\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['app'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -710,7 +710,8 @@ describe('doctor command contract', function (): void {
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'php_socket' => null,
                     'source_hash' => str_repeat('b', 64),
                 ]],
             ],
@@ -1175,6 +1176,15 @@ final class DoctorProxyRemoteShell implements RemoteShell
     {
         $this->nodes[] = $node;
         $this->scripts[] = $script;
+
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, "dir='/etc/orbit/apps'")) {
+            // Probe sentinel for introspectNodeRuntimeConfigs: proven-absent.
+            return new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:absent\n", stderr: '', durationMs: 1);
+        }
 
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
         $nodeKey = $isNodeLevel ? 'node_'.$node->name : 'route_'.$node->name;

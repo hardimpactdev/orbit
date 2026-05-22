@@ -77,9 +77,16 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
     ]);
 
     $remoteShell = new AppRegisterSequencedRemoteShell([
+        // adopt path check
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        // network inspect (missing) + network create
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     app()->instance(RemoteShell::class, $remoteShell);
@@ -97,7 +104,9 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
 
     expect($exitCode)->toBe(0)
         ->and($remoteShell->scripts[0])->toContain("test -d '/home/orbit/apps/docs'")
-        ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
+        ->and($remoteShell->scripts[4])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($remoteShell->scripts[5])->toContain("'orbit-app-docs'")
+        ->and($remoteShell->scripts[5])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($app)->not->toBeNull()
         ->and($app?->node_id)->toBe($targetNode->id)
         ->and($app?->path)->toBe('/home/orbit/apps/docs')
@@ -143,8 +152,16 @@ it('converges an already registered app without changing repository metadata', f
     ]);
 
     app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
+        // adopt path check
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'php-fpm missing', durationMs: 1),
+        // network inspect (present)
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present (so we fall through to create which then fails)
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script fails
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container create failed', durationMs: 1),
     ]));
 
     $exitCode = Artisan::call('app:register', [
@@ -159,7 +176,7 @@ it('converges an already registered app without changing repository metadata', f
         ->and($payload['success']['data']['result']['action'])->toBe('converged')
         ->and($payload['success']['data']['app']['adopted'])->toBeTrue()
         ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
-        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.php_version_unavailable');
+        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.runtime_container_missing');
 });
 
 it('reports production domain activation as a retryable proxy warning', function (): void {
@@ -174,11 +191,7 @@ it('reports production domain activation as a retryable proxy warning', function
         'status' => 'active',
     ]);
 
-    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]));
+    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([]));
 
     $exitCode = Artisan::call('app:register', [
         'name' => 'docs',
@@ -249,11 +262,7 @@ it('renders production activation warnings in human output', function (): void {
         'status' => 'active',
     ]);
 
-    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]));
+    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([]));
 
     $this->artisan('app:register docs --node=app-1 --path=/home/docs/app --domain=docs.example.com')
         ->expectsConfirmation('Adopt existing app path?', 'yes')

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
@@ -19,6 +20,8 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
+use App\Services\Apps\NodeRuntimeConfigsProbeStatus;
+use App\Services\Apps\NodeRuntimeContainersProbeStatus;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
@@ -196,6 +199,106 @@ final readonly class DoctorReportRunner
 
                 foreach ($this->appsProbe->diff($app, $snapshot) as $entry) {
                     $issues[] = $this->appIssuePayload($entry, $app);
+                }
+            }
+
+            $containerProbe = $this->appsProbe->introspectNode($node);
+            $containerSnapshot = $containerProbe->containers;
+            $configProbe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
+            $configSnapshot = $configProbe->configs;
+
+            // Only active PHP apps are expected to own a FrankenPHP runtime
+            // container / managed runtime config on the node. Static apps
+            // have no runtime artifact, so a stale `orbit-app-<app>` or
+            // `/etc/orbit/apps/<app>.ini` for a static app slug must still
+            // be reported as extra.
+            $activePhpAppSlugs = App::query()
+                ->where('node_id', $node->id)
+                ->where('runtime_kind', AppRuntimeKind::Php->value)
+                ->pluck('name')
+                ->all();
+
+            // Proven-absent docker (no `docker` command on the node) yields
+            // an empty snapshot; orphan scan skips with no false positives.
+            // Unknown probe failure (daemon down, permission, SSH transport)
+            // must NOT be treated as a clean empty list — stale
+            // runtime_container_extra artifacts could be hidden. Surface it
+            // as a dedicated probe-failure drift instead, mirroring the
+            // runtime_config_probe_failed contract.
+            if ($containerProbe->status === NodeRuntimeContainersProbeStatus::Error) {
+                $issues[] = $this->annotateIssue([
+                    'family' => 'app',
+                    'node' => $node->name,
+                    'key' => 'app.runtime_container_probe_failed',
+                    'kind' => DriftKind::Unverifiable->value,
+                    'summary' => "App runtime container scan failed on node '{$node->name}'; stale orphan runtime containers cannot be detected.",
+                    'detail' => [
+                        'error' => $containerProbe->error,
+                    ],
+                ]);
+            } elseif ($containerProbe->status === NodeRuntimeContainersProbeStatus::Present) {
+                foreach ($containerSnapshot->keys() as $appSlug) {
+                    $appSlug = (string) $appSlug;
+
+                    if (in_array($appSlug, $activePhpAppSlugs, true)) {
+                        continue;
+                    }
+
+                    $issues[] = $this->annotateIssue([
+                        'family' => 'app',
+                        'node' => $node->name,
+                        'key' => 'app.runtime_container_extra',
+                        'kind' => DriftKind::Extra->value,
+                        'summary' => "App runtime container for '{$appSlug}' exists on node but no matching active PHP app record.",
+                        'detail' => [
+                            'app' => $appSlug,
+                            'container' => "orbit-app-{$appSlug}",
+                        ],
+                    ]);
+                }
+            }
+
+            // Proven-absent directory yields an empty snapshot; orphan scan
+            // skips with no false positives. Unknown probe failure (sudo /
+            // SSH / permission) must NOT be treated as a clean empty list —
+            // stale runtime_config_extra artifacts could be hidden. Surface
+            // it as a dedicated probe-failure drift instead.
+            if ($configProbe->status === NodeRuntimeConfigsProbeStatus::Error) {
+                $issues[] = $this->annotateIssue([
+                    'family' => 'app',
+                    'node' => $node->name,
+                    'key' => 'app.runtime_config_probe_failed',
+                    'kind' => DriftKind::Unverifiable->value,
+                    'summary' => "Managed runtime config directory probe failed on node '{$node->name}'; stale orphan configs cannot be detected.",
+                    'detail' => [
+                        'path' => '/etc/orbit/apps',
+                        'error' => $configProbe->error,
+                    ],
+                ]);
+            } elseif ($configProbe->status === NodeRuntimeConfigsProbeStatus::Present) {
+                foreach ($configSnapshot->keys() as $appSlug) {
+                    $appSlug = (string) $appSlug;
+
+                    if (in_array($appSlug, $activePhpAppSlugs, true)) {
+                        continue;
+                    }
+
+                    $observed = $configSnapshot->get($appSlug) ?? [];
+                    $path = is_string($observed['path'] ?? null)
+                        ? $observed['path']
+                        : "/etc/orbit/apps/{$appSlug}.ini";
+
+                    $issues[] = $this->annotateIssue([
+                        'family' => 'app',
+                        'node' => $node->name,
+                        'key' => 'app.runtime_config_extra',
+                        'kind' => DriftKind::Extra->value,
+                        'summary' => "Managed runtime config for '{$appSlug}' exists on node but no matching active PHP app record.",
+                        'detail' => [
+                            'app' => $appSlug,
+                            'path' => $path,
+                        ],
+                    ]);
                 }
             }
         }
@@ -782,10 +885,26 @@ final readonly class DoctorReportRunner
      */
     private function applyAppIssue(Node $node, string $key, array $detail): ?array
     {
+        if ($key === 'app.runtime_config_probe_failed') {
+            return $this->handleAppRuntimeConfigProbeFailed($node);
+        }
+
+        if ($key === 'app.runtime_container_probe_failed') {
+            return $this->handleAppRuntimeContainerProbeFailed($node);
+        }
+
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
 
         if ($appName === null) {
             return null;
+        }
+
+        if ($key === 'app.runtime_container_extra') {
+            return $this->handleAppExtraAction($node, $appName);
+        }
+
+        if ($key === 'app.runtime_config_extra') {
+            return $this->handleAppConfigExtraAction($node, $appName);
         }
 
         $app = App::query()
@@ -799,6 +918,171 @@ final readonly class DoctorReportRunner
         }
 
         return $this->handleAppAction($app, $this->driftEntryFromStoredParts('app', $key, $detail));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleAppExtraAction(Node $node, string $appSlug): ?array
+    {
+        try {
+            return $this->appsFixer->removeExtra($node, $appSlug);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'app',
+                'node' => $node->name,
+                'code' => 'app.runtime_container_extra',
+                'key' => 'app.runtime_container_extra',
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to remove extra app runtime container for {$appSlug}.",
+                'details' => [
+                    'app' => $appSlug,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    /**
+     * Re-probe the managed runtime config directory after a sudo/SSH/probe
+     * failure. If the probe now succeeds the drift clears; if it still fails
+     * the doctor run emits the probe-failed drift again so the operator can
+     * investigate the underlying daemon/permission issue.
+     *
+     * @return array<string, mixed>
+     */
+    private function handleAppRuntimeConfigProbeFailed(Node $node): array
+    {
+        try {
+            $probe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'app',
+                'node' => $node->name,
+                'code' => 'app.runtime_config_probe_failed',
+                'key' => 'app.runtime_config_probe_failed',
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to re-probe managed runtime config directory on {$node->name}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        if ($probe->status === NodeRuntimeConfigsProbeStatus::Error) {
+            return [
+                'family' => 'app',
+                'node' => $node->name,
+                'code' => 'app.runtime_config_probe_failed',
+                'key' => 'app.runtime_config_probe_failed',
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Managed runtime config directory probe still failing on {$node->name}.",
+                'details' => [
+                    'path' => '/etc/orbit/apps',
+                    'error' => $probe->error,
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'app',
+            'node' => $node->name,
+            'code' => 'app.runtime_config_probe_failed',
+            'key' => 'app.runtime_config_probe_failed',
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Re-probed managed runtime config directory on {$node->name}.",
+            'details' => [
+                'path' => '/etc/orbit/apps',
+                'status' => $probe->status->value,
+            ],
+        ];
+    }
+
+    /**
+     * Re-probe the node-wide app runtime container scan after a docker /
+     * SSH / permission failure. If the probe now succeeds the drift clears;
+     * if it still fails the doctor run emits the probe-failed drift again so
+     * the operator can investigate the underlying daemon/transport issue.
+     *
+     * @return array<string, mixed>
+     */
+    private function handleAppRuntimeContainerProbeFailed(Node $node): array
+    {
+        try {
+            $probe = $this->appsProbe->introspectNode($node);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'app',
+                'node' => $node->name,
+                'code' => 'app.runtime_container_probe_failed',
+                'key' => 'app.runtime_container_probe_failed',
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to re-probe app runtime container scan on {$node->name}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        if ($probe->status === NodeRuntimeContainersProbeStatus::Error) {
+            return [
+                'family' => 'app',
+                'node' => $node->name,
+                'code' => 'app.runtime_container_probe_failed',
+                'key' => 'app.runtime_container_probe_failed',
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "App runtime container scan still failing on {$node->name}.",
+                'details' => [
+                    'error' => $probe->error,
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'app',
+            'node' => $node->name,
+            'code' => 'app.runtime_container_probe_failed',
+            'key' => 'app.runtime_container_probe_failed',
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Re-probed app runtime container scan on {$node->name}.",
+            'details' => [
+                'status' => $probe->status->value,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleAppConfigExtraAction(Node $node, string $appSlug): ?array
+    {
+        try {
+            return $this->appsFixer->removeRuntimeConfigExtra($node, $appSlug);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'app',
+                'node' => $node->name,
+                'code' => 'app.runtime_config_extra',
+                'key' => 'app.runtime_config_extra',
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to remove extra managed app runtime config for {$appSlug}.",
+                'details' => [
+                    'app' => $appSlug,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
     }
 
     /**
@@ -1017,12 +1301,17 @@ final readonly class DoctorReportRunner
             'workspace.security.fs_permissions',
             'workspace.security.fpm_pool_isolation',
             'workspace.security.fpm_systemd_hardening',
-            'app.fpm_config_missing',
-            'app.fpm_config_mismatch',
+            'app.runtime_container_missing',
+            'app.runtime_container_mismatch',
+            'app.runtime_container_extra',
+            'app.runtime_config_missing',
+            'app.runtime_config_mismatch',
+            'app.runtime_config_extra',
+            'app.runtime_config_probe_failed',
+            'app.runtime_container_probe_failed',
             'app.security.system_user',
             'app.security.fs_permissions',
-            'app.security.fpm_pool_isolation',
-            'app.security.fpm_systemd_hardening',
+            'app.security.runtime_container_isolation',
             'firewall_rule.rule_missing',
             'firewall_rule.rule_mismatch',
             'tool.capability_missing',

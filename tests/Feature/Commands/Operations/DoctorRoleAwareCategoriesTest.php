@@ -349,7 +349,7 @@ describe('doctor role-aware categories', function (): void {
             'path' => '/home/orbit/apps/docs-b',
             'document_root' => 'public',
         ]);
-        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell("docs-a\t0\t0\t1\t1\t0\t0\n"));
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell("docs-a\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-a', '--family' => ['app'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -429,6 +429,13 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
     {
         if (str_contains($script, 'docker inspect') && str_contains($script, 'orbit-runtime')) {
             return new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=true\n", stderr: '', durationMs: 1);
+        }
+
+        if (
+            str_contains($script, 'docker container ls')
+            || str_contains($script, "dir='/etc/orbit/apps'")
+        ) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }
 
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');

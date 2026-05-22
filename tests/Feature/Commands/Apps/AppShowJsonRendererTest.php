@@ -37,6 +37,7 @@ describe('app:show JSON renderer contract', function (): void {
                 'path' => '/srv/docs',
                 'root' => 'public',
                 'repository' => 'git@github.com:orbit/docs.git',
+                'runtime_kind' => 'php',
                 'php_version' => '8.5',
                 'adopted' => false,
             ])

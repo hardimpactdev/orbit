@@ -214,6 +214,7 @@ final class AppStoreController implements Loggable
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
+            'runtime_kind' => $app->runtime_kind->value,
             'php_version' => $app->php_version,
             'adopted' => $app->adopted,
         ];

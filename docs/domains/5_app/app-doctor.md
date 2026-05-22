@@ -94,6 +94,8 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.runtime_config_mismatch` | Managed app runtime configuration exists but differs from gateway app configuration. |
 | `app.runtime_container_extra` | An Orbit-owned app runtime container exists on a node with an app role without matching active app configuration. |
 | `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
+| `app.runtime_config_probe_failed` | The managed runtime configuration directory could not be reliably scanned for orphan artifacts. Reported once per node so stale `app.runtime_config_extra` is not hidden. |
+| `app.runtime_container_probe_failed` | The node-wide app runtime container scan failed. Reported once per node so stale `app.runtime_container_extra` is not hidden. |
 | `app.production_user_missing` | A production app that requires app-user isolation has no matching app user or ownership policy. |
 | `app.production_user_mismatch` | Production app user, ownership, or runtime container identity differs from gateway app configuration. |
 | `app.security.system_user` | A production app is missing its expected runtime user or group. |
@@ -118,6 +120,8 @@ The table below shows what `doctor --restore` does for each fixable code.
 | `app.runtime_config_mismatch` | Rewrite managed app runtime configuration to match gateway app configuration. |
 | `app.runtime_container_extra` | Remove the stale Orbit-owned app runtime container when its encoded identity no longer maps to active app configuration. |
 | `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity no longer maps to active app configuration. |
+| `app.runtime_config_probe_failed` | Re-probe the directory. The drift clears if the underlying issue resolves; otherwise the action records a failed status with the error. |
+| `app.runtime_container_probe_failed` | Re-probe the runtime container scan. Clears if docker is reachable; otherwise the action records a failed status with the underlying error. |
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |
 | `app.production_user_mismatch` | Re-apply production app user, ownership, and runtime container identity from gateway app configuration. |
 | `app.security.system_user` | Restore the production app runtime user and group when the app configuration is complete. |

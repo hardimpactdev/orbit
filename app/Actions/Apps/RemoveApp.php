@@ -5,20 +5,25 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\RemoteShell;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeArtifactRemovalOutcome;
+use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class RemoveApp
 {
     public function __construct(
         private RemoteShell $remoteShell,
         private SupervisorProgramRenderer $supervisorProgramRenderer,
+        private AppRuntimeContainerManager $appRuntimeContainerManager,
     ) {}
 
     /**
@@ -30,7 +35,7 @@ final readonly class RemoveApp
      *         workspaces_removed: int,
      *         schedules_removed: int,
      *         processes_removed: int,
-     *         fpm_config_removed: bool,
+     *         runtime_container_removed: bool,
      *         runtime_config_removed: bool,
      *     },
      *     warnings: list<array<string, string>>
@@ -41,6 +46,8 @@ final readonly class RemoveApp
         $app->loadMissing(['node', 'processes']);
 
         $appPayload = $this->appPayload($app);
+        $appName = $app->name;
+        $isPhpApp = $app->runtime_kind === AppRuntimeKind::Php;
         $processProgramNames = $app->processes
             ->map(fn (Process $process): string => $this->supervisorProgramRenderer->programName($app, $process))
             ->values()
@@ -73,34 +80,51 @@ final readonly class RemoveApp
             }
         });
 
-        $fpmConfigRemoved = false;
-        $runtimeConfigRemoved = false;
+        $containerOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+        $configOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
         $warnings = [];
 
         if ($app->node !== null) {
-            $fpmResult = $this->remoteShell->run($app->node, $this->renderFpmRemovalScript($app));
-            $fpmConfigRemoved = $fpmResult->successful();
+            if ($isPhpApp) {
+                try {
+                    $containerOutcome = $this->appRuntimeContainerManager->remove($app->node, $appName);
+                } catch (Throwable) {
+                    $containerOutcome = AppRuntimeArtifactRemovalOutcome::FailedRemaining;
+                }
 
-            if (! $fpmConfigRemoved) {
+                try {
+                    $configOutcome = $this->appRuntimeContainerManager->removeRuntimeConfigFile($app->node, $appName);
+                } catch (Throwable) {
+                    $configOutcome = AppRuntimeArtifactRemovalOutcome::FailedRemaining;
+                }
+            }
+
+            if ($containerOutcome === AppRuntimeArtifactRemovalOutcome::FailedRemaining) {
                 $warnings[] = [
-                    'code' => 'app.fpm_config_extra',
+                    'code' => 'app.runtime_container_extra',
                     'family' => 'app',
-                    'message' => 'App PHP-FPM configuration could not be removed during cleanup.',
+                    'message' => "App runtime container for '{$appName}' could not be removed during cleanup.",
                     'next_command' => 'doctor --fix --family=app --restore',
                 ];
             }
 
-            $runtimeResult = $this->remoteShell->run($app->node, $this->renderRuntimeRemovalScript($app, $processProgramNames, $removeAppPath));
-            $runtimeConfigRemoved = $runtimeResult->successful();
-
-            if (! $runtimeConfigRemoved) {
+            if ($configOutcome === AppRuntimeArtifactRemovalOutcome::FailedRemaining) {
                 $warnings[] = [
                     'code' => 'app.runtime_config_extra',
                     'family' => 'app',
-                    'message' => 'Managed app runtime configuration could not be removed during cleanup.',
+                    'message' => "Managed app runtime configuration for '{$appName}' could not be removed during cleanup.",
                     'next_command' => 'doctor --fix --family=app --restore',
                 ];
             }
+
+            // Best-effort cleanup of non-runtime artifacts (caddy site,
+            // supervisor configs, optional app path). Failures here surface as
+            // proxy/process drift through their own families on the next
+            // doctor pass.
+            $this->remoteShell->run(
+                $app->node,
+                $this->renderNonRuntimeCleanupScript($app, $processProgramNames, $removeAppPath),
+            );
         }
 
         return [
@@ -111,8 +135,8 @@ final readonly class RemoveApp
                 'workspaces_removed' => $workspacesRemoved,
                 'schedules_removed' => $schedulesRemoved,
                 'processes_removed' => $processesRemoved,
-                'fpm_config_removed' => $fpmConfigRemoved,
-                'runtime_config_removed' => $runtimeConfigRemoved,
+                'runtime_container_removed' => $containerOutcome === AppRuntimeArtifactRemovalOutcome::Removed,
+                'runtime_config_removed' => $configOutcome === AppRuntimeArtifactRemovalOutcome::Removed,
             ],
             'warnings' => $warnings,
         ];
@@ -131,30 +155,16 @@ final readonly class RemoveApp
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
+            'runtime_kind' => $app->runtime_kind->value,
             'php_version' => $app->php_version,
             'adopted' => $app->adopted,
         ];
     }
 
-    private function renderFpmRemovalScript(App $app): string
-    {
-        $poolPath = "/etc/php/{$app->php_version}/fpm/pool.d/orbit-{$app->name}.conf";
-        $service = "php{$app->php_version}-fpm";
-
-        return sprintf(
-            <<<'SH'
-sudo rm -f %s
-sudo systemctl reload %s || sudo systemctl reload php-fpm || true
-SH,
-            escapeshellarg($poolPath),
-            escapeshellarg($service),
-        );
-    }
-
     /**
      * @param  list<string>  $processProgramNames
      */
-    private function renderRuntimeRemovalScript(App $app, array $processProgramNames, bool $removeAppPath): string
+    private function renderNonRuntimeCleanupScript(App $app, array $processProgramNames, bool $removeAppPath): string
     {
         $domain = parse_url($app->url(), PHP_URL_HOST) ?: $app->name;
         $commands = [

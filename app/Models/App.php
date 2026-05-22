@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Apps\AppRuntimeKind;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,7 @@ use Illuminate\Support\Str;
  * @property string $document_root
  * @property string|null $repository
  * @property string $php_version
+ * @property AppRuntimeKind $runtime_kind
  * @property bool $adopted
  * @property array<string, mixed>|null $agent_ide_config
  * @property string|null $latest_deployment_status
@@ -47,10 +49,15 @@ class App extends Model
         'document_root',
         'repository',
         'php_version',
+        'runtime_kind',
         'adopted',
         'agent_ide_config',
         'latest_deployment_status',
         'latest_deployment_run_id',
+    ];
+
+    protected $attributes = [
+        'runtime_kind' => 'php',
     ];
 
     #[\Override]
@@ -59,6 +66,7 @@ class App extends Model
         return [
             'adopted' => 'boolean',
             'agent_ide_config' => 'array',
+            'runtime_kind' => AppRuntimeKind::class,
         ];
     }
 

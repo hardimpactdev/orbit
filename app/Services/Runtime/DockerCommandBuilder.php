@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Runtime;
 
+use App\Services\Apps\AppRuntimeContainer;
+
 class DockerCommandBuilder
 {
     public function networkInspect(string $network): string
@@ -38,7 +40,7 @@ class DockerCommandBuilder
         return 'docker start '.$this->quote($name);
     }
 
-    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer $container): string
+    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer $container): string
     {
         $parts = [
             'docker run -d',

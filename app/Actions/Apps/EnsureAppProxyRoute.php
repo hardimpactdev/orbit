@@ -6,9 +6,11 @@ namespace App\Actions\Apps;
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -24,6 +26,7 @@ final readonly class EnsureAppProxyRoute
         private CaddyGlobalConfig $caddyGlobalConfig,
         private IngressResolver $ingressResolver,
         private ProxyRouteRenderer $proxyRouteRenderer,
+        private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
     ) {}
 
     /**
@@ -163,7 +166,8 @@ final readonly class EnsureAppProxyRoute
     /**
      * @param  array{
      *     document_root: string,
-     *     php_socket: string,
+     *     runtime_upstream?: string|null,
+     *     php_socket?: string|null,
      *     tls: array{cert_path: string, key_path: string},
      * }  $config
      */
@@ -172,6 +176,34 @@ final readonly class EnsureAppProxyRoute
         $pathBlocking = $app->document_root === '.'
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
+
+        if ($app->runtime_kind === AppRuntimeKind::Php) {
+            $upstream = $config['runtime_upstream'] ?? null;
+
+            if (! is_string($upstream) || $upstream === '') {
+                throw new RuntimeException("App '{$app->name}' route is missing a runtime container upstream.");
+            }
+
+            return <<<CADDY
+{$domain} {
+    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+
+    reverse_proxy {$upstream} {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY;
+        }
 
         return <<<CADDY
 {$domain} {
@@ -184,7 +216,6 @@ final readonly class EnsureAppProxyRoute
     {$pathBlocking}
     import security_txt
     import cache_headers
-    php_fastcgi unix/{$config['php_socket']}
     file_server
 }
 
@@ -247,24 +278,20 @@ SH,
         return "{$app->name}.{$tld}";
     }
 
-    private function socketPath(App $app): string
-    {
-        $user = $app->node?->user ?: 'orbit';
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-
-        return "{$home}/.config/orbit/php/{$app->name}.sock";
-    }
-
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
     private function routeArtifact(App $app, string $domain): array
     {
+        $isPhp = $app->runtime_kind === AppRuntimeKind::Php;
+        $runtimeUpstream = $isPhp ? $this->appRuntimeContainerRenderer->upstreamUrl($app) : null;
+
         if ($app->environment !== 'production') {
             $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($app->node, $domain);
             $config = [
                 'document_root' => $app->documentRootPath(),
-                'php_socket' => $this->socketPath($app),
+                'runtime_upstream' => $runtimeUpstream,
+                'php_socket' => null,
                 'tls' => [
                     'cert_path' => $certificatePaths['cert'],
                     'key_path' => $certificatePaths['key'],
@@ -282,7 +309,8 @@ SH,
             'domain' => $domain,
             'bind' => $app->node->wireguard_address,
             'document_root' => $app->documentRootPath(),
-            'php_socket' => $this->socketPath($app),
+            'runtime_upstream' => $runtimeUpstream,
+            'php_socket' => null,
         ];
         $config = [
             'placement' => 'ingress',

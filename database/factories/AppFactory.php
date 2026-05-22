@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -24,8 +25,16 @@ class AppFactory extends Factory
             'document_root' => 'public',
             'repository' => null,
             'php_version' => '8.5',
+            'runtime_kind' => AppRuntimeKind::Php,
             'adopted' => false,
             'agent_ide_config' => null,
         ];
+    }
+
+    public function static(): static
+    {
+        return $this->state(fn (): array => [
+            'runtime_kind' => AppRuntimeKind::Static,
+        ]);
     }
 }

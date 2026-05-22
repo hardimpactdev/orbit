@@ -171,7 +171,8 @@ describe('ProxyRouteFixer', function (): void {
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'php_socket' => null,
                     'source_hash' => str_repeat('b', 64),
                 ]],
             ],
@@ -192,7 +193,8 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->nodes[0]->is($backend))->toBeTrue()
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.backend.caddy')
             ->and($caddySite)->not->toContain('bind 10.6.0.21')
-            ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock');
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs')
+            ->and($caddySite)->not->toContain('php_fastcgi');
     });
 
     it('does not repair backend routes without an explicit matching backend node id', function (array $detail): void {
@@ -293,7 +295,8 @@ describe('ProxyRouteFixer', function (): void {
             'source_hash' => str_repeat('0', 64),
             'config' => [
                 'document_root' => '/home/orbit/apps/docs/public',
-                'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                'runtime_upstream' => 'http://orbit-app-docs',
+                'php_socket' => null,
                 'tls' => 'internal',
             ],
         ]);
@@ -316,7 +319,8 @@ describe('ProxyRouteFixer', function (): void {
         ])
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
             ->and($caddySite)->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
-            ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs')
+            ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($certificates->hosts)->toBe(['docs.test'])
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe((new ProxyRouteRenderer)->sourceHash($route));
@@ -362,6 +366,87 @@ describe('ProxyRouteFixer', function (): void {
         ])
             ->and($certificates->hosts)->toBe(['docs.test'])
             ->and($shell->scripts)->toBe([]);
+    });
+
+    it('restores a legacy app route persisted with only php_socket by deriving the FrankenPHP runtime upstream from the app identity (instead of throwing)', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'legacy-docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/legacy-docs/public',
+                    // origin/main legacy persisted config: only php_socket, no runtime_upstream
+                    'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                    'tls' => [
+                        'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+                    ],
+                ],
+            ]);
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['status'])->toBe('completed')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            ->and($caddySite)->not->toContain('php_fastcgi')
+            ->and($caddySite)->not->toContain('file_server');
+    });
+
+    it('restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the app identity', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        $app = App::factory()->for($backend, 'node')->create(['name' => 'legacy-docs']);
+        $route = ProxyRoute::factory()
+            ->for($edge, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'legacy-docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $backend->id,
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/apps/legacy-docs/public',
+                            // legacy backend artifact: php_socket only, no runtime_upstream
+                            'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                        ],
+                    ],
+                ],
+            ]);
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.backend_route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'backend mismatch',
+            detail: ['backend_node_id' => $backend->id],
+        ));
+
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['status'])->toBe('completed')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            ->and($caddySite)->not->toContain('php_fastcgi');
     });
 });
 

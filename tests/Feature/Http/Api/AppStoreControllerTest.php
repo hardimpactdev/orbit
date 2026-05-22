@@ -80,10 +80,11 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.data.result.action', 'created')
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
+            ->assertJsonPath('success.data.app.runtime_kind', 'php')
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->runs)->toHaveCount(6);
+            ->and($remoteShell->runs)->toHaveCount(8);
     });
 
     it('rejects app creation when the caller lacks app:new on the target app node', function (): void {
@@ -276,7 +277,8 @@ describe('AppStoreController', function (): void {
             ->and($route->config['backend_artifacts'][0]['node_id'])->toBe($targetNode->id)
             ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')
             ->and($route->config['backend_artifacts'][0]['document_root'])->toBe('/home/docs/app/public')
-            ->and($route->config['backend_artifacts'][0]['php_socket'])->toBe('/home/orbit/.config/orbit/php/docs.sock')
+            ->and($route->config['backend_artifacts'][0]['runtime_upstream'])->toBe('http://orbit-app-docs')
+            ->and($route->config['backend_artifacts'][0]['php_socket'])->toBeNull()
             ->and($route->config['backend_artifacts'][0]['source_hash'])->toHaveLength(64)
             ->and($route->source_hash)->toHaveLength(64)
             ->and(collect($remoteShell->runs)->pluck('node')->all())->toContain($ingress->id, $router->id, $targetNode->id)

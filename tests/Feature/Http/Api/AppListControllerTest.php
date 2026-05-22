@@ -200,6 +200,7 @@ describe('AppListController', function (): void {
                 'path' => '/srv/docs',
                 'root' => 'public',
                 'repository' => null,
+                'runtime_kind' => 'php',
                 'php_version' => '8.5',
                 'adopted' => false,
                 'workspaces' => [
@@ -210,6 +211,29 @@ describe('AppListController', function (): void {
                     ],
                 ],
             ]);
+    });
+
+    it('returns runtime_kind=static for static apps', function (): void {
+        $caller = createAppListCallerNode(['role' => 'control']);
+        assignAppListGatewayRole($caller);
+        $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
+
+        App::factory()->static()->create([
+            'name' => 'marketing',
+            'node_id' => $node->id,
+            'environment' => 'development',
+            'domain' => null,
+            'path' => '/srv/marketing',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => false,
+        ]);
+
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.apps.0.name', 'marketing')
+            ->assertJsonPath('success.data.apps.0.runtime_kind', 'static');
     });
 
     it('rejects unauthenticated requests', function (): void {
