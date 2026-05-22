@@ -71,12 +71,10 @@ it('installs Orbit CA leaf certificates into the node Orbit cert directory', fun
         ->and($script)->toContain('sudo install -d -m 0755 \'/home/deploy/.config/orbit/certs\'')
         ->and($script)->toContain('sudo chmod 0644 \'/home/deploy/.config/orbit/certs/cta.example.test.crt\'')
         ->and($script)->toContain('sudo chmod 0600 \'/home/deploy/.config/orbit/certs/cta.example.test.key\'')
-        ->and($script)->toContain('systemctl show caddy -p Group --value')
-        ->and($script)->toContain('systemctl show caddy -p User --value')
-        ->and($script)->toContain('id -gn "$orbit_caddy_user"')
-        ->and($script)->toContain('getent group caddy')
-        ->and($script)->toContain('sudo chgrp "$orbit_caddy_group" \'/home/deploy\' \'/home/deploy/.config\' \'/home/deploy/.config/orbit\' \'/home/deploy/.config/orbit/certs\' \'/home/deploy/.config/orbit/certs/cta.example.test.key\'')
-        ->and($script)->toContain('sudo chmod 0640 \'/home/deploy/.config/orbit/certs/cta.example.test.key\'');
+        ->and($script)->not->toContain('systemctl show caddy')
+        ->and($script)->not->toContain('orbit_caddy_group')
+        ->and($script)->not->toContain('getent group caddy')
+        ->and($script)->not->toContain('chgrp');
 });
 
 final class OrbitSiteCertificateInstallerTestShell implements RemoteShell

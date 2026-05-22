@@ -32,7 +32,6 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
             cert: File::get($local['cert']),
             keyPath: $remote['key'],
             key: File::get($local['key']),
-            traversalDirs: $this->traversalDirsFor($node, dirname($remote['cert'])),
         ), ['throw' => true]);
 
         return $remote;
@@ -53,13 +52,8 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         ];
     }
 
-    /**
-     * @param  list<string>  $traversalDirs
-     */
-    private function installScript(string $certPath, string $cert, string $keyPath, string $key, array $traversalDirs): string
+    private function installScript(string $certPath, string $cert, string $keyPath, string $key): string
     {
-        $dirs = implode(' ', array_map(escapeshellarg(...), $traversalDirs));
-
         return sprintf(
             <<<'SH'
 set -e
@@ -68,24 +62,6 @@ printf %%s %s | base64 -d | sudo tee %s >/dev/null
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo chmod 0644 %s
 sudo chmod 0600 %s
-orbit_caddy_group=""
-if command -v systemctl >/dev/null 2>&1 && systemctl cat caddy >/dev/null 2>&1; then
-    orbit_caddy_group=$(systemctl show caddy -p Group --value 2>/dev/null | awk 'NF{print $1; exit}')
-    if [ -z "$orbit_caddy_group" ]; then
-        orbit_caddy_user=$(systemctl show caddy -p User --value 2>/dev/null | awk 'NF{print $1; exit}')
-        if [ -n "$orbit_caddy_user" ] && [ "$orbit_caddy_user" != "root" ]; then
-            orbit_caddy_group=$(id -gn "$orbit_caddy_user" 2>/dev/null || true)
-        fi
-    fi
-fi
-if [ -z "$orbit_caddy_group" ] && getent group caddy >/dev/null 2>&1; then
-    orbit_caddy_group="caddy"
-fi
-if [ -n "$orbit_caddy_group" ]; then
-    sudo chgrp "$orbit_caddy_group" %s %s
-    sudo chmod g+rx %s
-    sudo chmod 0640 %s
-fi
 SH,
             escapeshellarg(dirname($certPath)),
             escapeshellarg(base64_encode($cert)),
@@ -94,26 +70,7 @@ SH,
             escapeshellarg($keyPath),
             escapeshellarg($certPath),
             escapeshellarg($keyPath),
-            $dirs,
-            escapeshellarg($keyPath),
-            $dirs,
-            escapeshellarg($keyPath),
         );
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function traversalDirsFor(Node $node, string $certDir): array
-    {
-        $home = $this->nodeHome($node);
-
-        return array_values(array_unique([
-            $home,
-            "{$home}/.config",
-            "{$home}/.config/orbit",
-            $certDir,
-        ]));
     }
 
     private function nodeHome(Node $node): string
