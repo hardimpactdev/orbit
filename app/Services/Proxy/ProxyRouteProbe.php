@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class ProxyRouteProbe
 {
@@ -188,6 +189,132 @@ BASH;
         }
 
         return new ProbeSnapshot($items);
+    }
+
+    /**
+     * Probe the orbit-caddy container on a serving node. Returns a single
+     * snapshot keyed by the canonical container name with `runtime_status`
+     * (one of `available`, `no_docker`, `daemon_unavailable`),
+     * `container_exists`, and `container_running` flags. Host caddy.service is
+     * intentionally never inspected — orbit-caddy is the steady-state runtime.
+     *
+     * The script tag `# orbit-proxy-doctor:caddy-container-probe` lets test
+     * fakes and other tooling identify this probe unambiguously even when
+     * other code paths invoke `docker container inspect orbit-caddy` (e.g.
+     * CaddyTool::updateScript).
+     */
+    public function introspectCaddyContainer(Node $node): ProbeSnapshot
+    {
+        $caddyName = (new OrbitContainerNames)->caddy();
+
+        $script = sprintf(
+            <<<'BASH'
+# orbit-proxy-doctor:caddy-container-probe
+container=%s
+runtime="available"
+exists="false"
+running="false"
+
+if ! command -v docker >/dev/null 2>&1; then
+    runtime="no_docker"
+elif ! docker info >/dev/null 2>&1; then
+    runtime="daemon_unavailable"
+else
+    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
+        exists="true"
+        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
+        if [ "$state" = "true" ]; then
+            running="true"
+        fi
+    fi
+fi
+printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
+BASH,
+            escapeshellarg($caddyName),
+        );
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => false]);
+        $parts = explode("\t", trim($result->stdout), 3);
+        $runtimeStatus = ($parts[0] ?? '') !== '' ? $parts[0] : 'unknown';
+
+        return new ProbeSnapshot([
+            $caddyName => [
+                'runtime_status' => $runtimeStatus,
+                'container_exists' => ($parts[1] ?? '') === 'true',
+                'container_running' => ($parts[2] ?? '') === 'true',
+            ],
+        ]);
+    }
+
+    /**
+     * Compare the observed orbit-caddy container state on a serving node
+     * against the expectation that it must exist and be running for mounted
+     * proxy route artifacts to take effect.
+     *
+     * @return list<DriftEntry>
+     */
+    public function diffCaddyContainer(Node $node, ProbeSnapshot $snapshot): array
+    {
+        $caddyName = (new OrbitContainerNames)->caddy();
+        $observed = $snapshot->get($caddyName);
+
+        if (! is_array($observed)) {
+            return [];
+        }
+
+        $runtimeStatus = is_string($observed['runtime_status'] ?? null)
+            ? $observed['runtime_status']
+            : 'available';
+
+        if ($runtimeStatus !== 'available') {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.docker_runtime_unavailable',
+                    kind: DriftKind::Divergent,
+                    summary: $runtimeStatus === 'no_docker'
+                        ? "Docker CLI is not installed on {$node->name}; orbit-caddy cannot be probed."
+                        : "Docker daemon is unreachable on {$node->name}; orbit-caddy cannot be probed.",
+                    detail: [
+                        'container' => $caddyName,
+                        'node' => $node->name,
+                        'runtime_status' => $runtimeStatus,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['container_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.caddy_container_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Proxy runtime container {$caddyName} is missing on {$node->name}.",
+                    detail: [
+                        'container' => $caddyName,
+                        'node' => $node->name,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['container_running'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.caddy_container_down',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy runtime container {$caddyName} is not running on {$node->name}.",
+                    detail: [
+                        'container' => $caddyName,
+                        'node' => $node->name,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
     }
 
     public function snapshotForAdopt(Node $node): ProbeSnapshot

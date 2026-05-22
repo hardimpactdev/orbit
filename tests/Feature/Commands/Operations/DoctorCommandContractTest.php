@@ -1186,6 +1186,11 @@ final class DoctorProxyRemoteShell implements RemoteShell
             return new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:absent\n", stderr: '', durationMs: 1);
         }
 
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            // Default: orbit-caddy container is healthy on serving nodes.
+            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+        }
+
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
         $nodeKey = $isNodeLevel ? 'node_'.$node->name : 'route_'.$node->name;
         $stdout = $this->perNodeStdout[$nodeKey] ?? ($isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout);

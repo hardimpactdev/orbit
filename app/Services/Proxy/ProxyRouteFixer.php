@@ -8,8 +8,10 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Runtime\OrbitContainerNames;
 use App\Tools\CaddyTool;
 
 final readonly class ProxyRouteFixer
@@ -326,6 +328,107 @@ SH,
             escapeshellarg($keyPath),
             CaddyTool::reloadCommand(),
         );
+    }
+
+    /**
+     * Restore the orbit-caddy container on a serving node when proxy probing
+     * reports the container is missing or stopped. `proxy.caddy_container_down`
+     * starts the existing container; `proxy.caddy_container_missing` reconciles
+     * the container from its managed spec so mounted route artifacts are
+     * served again.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function fixCaddyContainer(Node $node, DriftEntry $entry): ?array
+    {
+        $caddyName = (new OrbitContainerNames)->caddy();
+
+        if ($entry->key === 'proxy.caddy_container_down') {
+            $script = 'docker start '.escapeshellarg($caddyName);
+
+            $this->remoteShell->run($node, $script, ['throw' => true]);
+
+            return [
+                'family' => 'proxy',
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => "Started orbit-caddy container on {$node->name}.",
+                'details' => [
+                    'container' => $caddyName,
+                ],
+            ];
+        }
+
+        if ($entry->key === 'proxy.caddy_container_missing') {
+            $spec = $this->managedCaddyContainerSpec($node);
+
+            if ($spec === null) {
+                return [
+                    'family' => 'proxy',
+                    'node' => $node->name,
+                    'code' => $entry->key,
+                    'key' => $entry->key,
+                    'mode' => 'fix',
+                    'status' => 'refused',
+                    'summary' => "Refusing to recreate orbit-caddy on {$node->name}: node has no managed orbit-caddy tool record. Run node role baseline convergence first.",
+                    'details' => [
+                        'container' => $caddyName,
+                        'reason' => 'no_managed_caddy_tool',
+                    ],
+                ];
+            }
+
+            $script = (new CaddyTool)->updateScript(['container' => $spec]);
+
+            $this->remoteShell->run($node, $script, ['throw' => true]);
+
+            return [
+                'family' => 'proxy',
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => "Reconciled orbit-caddy container on {$node->name}.",
+                'details' => [
+                    'container' => $caddyName,
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve the node's managed orbit-caddy container spec. The role baseline
+     * persists role-specific port bindings (public ingress vs private node vs
+     * default) into NodeTool.config.container; reconcile must use that spec so
+     * the recreated container matches what the role baseline expects.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function managedCaddyContainerSpec(Node $node): ?array
+    {
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->first();
+
+        if (! $tool instanceof NodeTool) {
+            return null;
+        }
+
+        $config = is_array($tool->config) ? $tool->config : [];
+        $container = $config['container'] ?? null;
+
+        if (! is_array($container) || $container === []) {
+            return null;
+        }
+
+        return $container;
     }
 
     /**

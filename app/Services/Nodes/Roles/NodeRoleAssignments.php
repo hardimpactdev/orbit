@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Roles\RoleBaselines\ManagesNodeToolBaseline;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -185,6 +186,18 @@ class NodeRoleAssignments
     {
         return $this->nodeIsGateway($node)
             || $this->nodeHasActiveAppHostRole($node);
+    }
+
+    /**
+     * Roles whose baseline provisions an orbit-caddy container on the node.
+     * Mirrors {@see ManagesNodeToolBaseline::defaultOrbitCaddyContainer()}:
+     * gateway and app-host nodes get a private/default spec; ingress nodes
+     * get the public-ingress spec.
+     */
+    public function nodeHostsOrbitCaddy(Node $node): bool
+    {
+        return $this->nodeCanServeGatewayOrAppHostWorkloads($node)
+            || $this->nodeCanServeIngress($node);
     }
 
     public function nodeCanHostManagedTools(Node $node): bool

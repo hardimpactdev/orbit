@@ -9,10 +9,12 @@ use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
@@ -404,6 +406,130 @@ describe('ProxyRouteFixer', function (): void {
             ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs')
             ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($caddySite)->not->toContain('file_server');
+    });
+
+    it('starts the orbit-caddy container on the serving node when proxy.caddy_container_down is reported', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
+            $node,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.caddy_container_down',
+                kind: DriftKind::Divergent,
+                summary: 'orbit-caddy is not running',
+                detail: ['container' => 'orbit-caddy', 'node' => 'app-1'],
+            ),
+        );
+
+        expect($action)->toMatchArray([
+            'family' => 'proxy',
+            'node' => 'app-1',
+            'key' => 'proxy.caddy_container_down',
+            'status' => 'completed',
+        ])
+            ->and($shell->nodes[0]->is($node))->toBeTrue()
+            ->and($shell->scripts[0])->toContain("docker start 'orbit-caddy'")
+            ->and($shell->scripts[0])->not->toContain('systemctl')
+            ->and($shell->scripts[0])->not->toContain('caddy.service');
+    });
+
+    it('reconciles the orbit-caddy container on the serving node using the per-node managed spec when proxy.caddy_container_missing is reported', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'wireguard_address' => '10.6.0.21']);
+        // Persist a role-specific spec on the NodeTool record so the fixer
+        // recreates orbit-caddy with the per-node bindings (private node) and
+        // not the generic default spec.
+        $managedSpec = OrbitCaddyContainer::forPrivateNode('10.6.0.21')->spec();
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'config' => ['container' => $managedSpec],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
+            $node,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.caddy_container_missing',
+                kind: DriftKind::Missing,
+                summary: 'orbit-caddy is absent',
+                detail: ['container' => 'orbit-caddy', 'node' => 'app-1'],
+            ),
+        );
+
+        expect($action)->toMatchArray([
+            'family' => 'proxy',
+            'node' => 'app-1',
+            'key' => 'proxy.caddy_container_missing',
+            'status' => 'completed',
+        ])
+            ->and($shell->nodes[0]->is($node))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('orbit-caddy')
+            ->and($shell->scripts[0])->toContain('docker run')
+            // Per-node spec includes WireGuard-bound port publish; the default
+            // spec does not. This proves the fixer used the managed spec.
+            ->and($shell->scripts[0])->toContain('10.6.0.21:80:80')
+            ->and($shell->scripts[0])->not->toContain('systemctl');
+    });
+
+    it('refuses to recreate orbit-caddy when the node has no managed caddy tool record', function (): void {
+        $node = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
+            $node,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.caddy_container_missing',
+                kind: DriftKind::Missing,
+                summary: 'orbit-caddy is absent',
+                detail: ['container' => 'orbit-caddy', 'node' => 'app-2'],
+            ),
+        );
+
+        expect($action)->toMatchArray([
+            'family' => 'proxy',
+            'node' => 'app-2',
+            'key' => 'proxy.caddy_container_missing',
+            'status' => 'refused',
+        ])
+            ->and($action['details']['reason'])->toBe('no_managed_caddy_tool')
+            ->and($shell->scripts)->toBe([])
+            ->and($shell->nodes)->toBe([]);
+    });
+
+    it('uses the public-ingress spec when the node is an ingress role host', function (): void {
+        $node = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'wireguard_address' => '10.6.0.4']);
+        NodeRoleAssignment::factory()->create(['node_id' => $node->id, 'role' => 'ingress', 'status' => 'active']);
+        // Spec containing public-ingress port bindings (80/443/443 udp +
+        // wireguard backend port). These do not appear in the default spec.
+        $managedSpec = OrbitCaddyContainer::forPublicIngress('10.6.0.4')->spec();
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'config' => ['container' => $managedSpec],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
+            $node,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.caddy_container_missing',
+                kind: DriftKind::Missing,
+                summary: 'orbit-caddy is absent',
+                detail: ['container' => 'orbit-caddy', 'node' => 'edge-1'],
+            ),
+        );
+
+        expect($action['status'])->toBe('completed')
+            ->and($shell->scripts[0])->toContain('80:80')
+            ->and($shell->scripts[0])->toContain('443:443')
+            ->and($shell->scripts[0])->toContain('10.6.0.4:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort);
     });
 
     it('restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the app identity', function (): void {

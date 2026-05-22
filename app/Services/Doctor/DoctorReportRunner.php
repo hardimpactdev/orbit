@@ -332,6 +332,21 @@ final readonly class DoctorReportRunner
                 }
             }
 
+            if ($node->status === 'active' && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
+                $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
+
+                foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
+                    $issues[] = $this->annotateIssue([
+                        'family' => $entry->family,
+                        'node' => $node->name,
+                        'key' => $entry->key,
+                        'kind' => $entry->kind->value,
+                        'summary' => $entry->summary,
+                        'detail' => $entry->detail ?? [],
+                    ]);
+                }
+            }
+
             if ($node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
                 $snapshot = $this->proxyRouteProbe->introspectNode($node);
                 $dbDomains = ProxyRoute::query()->where('node_id', $node->id)->pluck('domain')->all();
@@ -1124,6 +1139,10 @@ final readonly class DoctorReportRunner
             ));
         }
 
+        if (in_array($key, ['proxy.caddy_container_missing', 'proxy.caddy_container_down'], true)) {
+            return $this->handleProxyCaddyContainerAction($mode, $node, $this->driftEntryFromIssue($issue));
+        }
+
         $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
 
         if ($domain === null) {
@@ -1139,6 +1158,33 @@ final readonly class DoctorReportRunner
         }
 
         return $this->handleProxyAction($mode, $route, $this->driftEntryFromIssue($issue));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleProxyCaddyContainerAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode === 'verify') {
+            return null;
+        }
+
+        try {
+            return $this->proxyRouteFixer->fixCaddyContainer($node, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
     }
 
     /**
@@ -1295,6 +1341,8 @@ final readonly class DoctorReportRunner
             'proxy.backend_route_mismatch',
             'proxy.tls_missing',
             'proxy.tls_mismatch',
+            'proxy.caddy_container_missing',
+            'proxy.caddy_container_down',
             'workspace.fpm_config_missing',
             'workspace.fpm_config_mismatch',
             'workspace.security.system_user',

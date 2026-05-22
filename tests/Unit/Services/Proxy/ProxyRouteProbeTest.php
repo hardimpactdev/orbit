@@ -693,6 +693,119 @@ describe('proxy adoption snapshot', function (): void {
     });
 });
 
+describe('orbit-caddy container readiness', function (): void {
+    it('inspects the orbit-caddy container on a serving node without probing host caddy.service', function (): void {
+        $node = createTestAppHostNode();
+        $shell = new ProxyProbeCaddyContainerShell('available', 'true', 'true');
+
+        $snapshot = (new ProxyRouteProbe($shell))->introspectCaddyContainer($node);
+
+        expect($snapshot->get('orbit-caddy'))->toMatchArray([
+            'runtime_status' => 'available',
+            'container_exists' => true,
+            'container_running' => true,
+        ])
+            ->and($shell->scripts[0])->toContain('docker container inspect')
+            ->and($shell->scripts[0])->toContain('orbit-caddy')
+            ->and($shell->scripts[0])->toContain('orbit-proxy-doctor:caddy-container-probe')
+            ->and($shell->scripts[0])->not->toContain('systemctl')
+            ->and($shell->scripts[0])->not->toContain('caddy.service');
+    });
+
+    it('reports proxy.caddy_container_missing when the container is absent on the serving node', function (): void {
+        $node = createTestAppHostNode();
+        $snapshot = new ProbeSnapshot([
+            'orbit-caddy' => [
+                'runtime_status' => 'available',
+                'container_exists' => false,
+                'container_running' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.caddy_container_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing')?->detail)->toMatchArray([
+                'container' => 'orbit-caddy',
+                'node' => $node->name,
+            ]);
+    });
+
+    it('reports proxy.caddy_container_down when the container exists but is not running', function (): void {
+        $node = createTestAppHostNode();
+        $snapshot = new ProbeSnapshot([
+            'orbit-caddy' => [
+                'runtime_status' => 'available',
+                'container_exists' => true,
+                'container_running' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.caddy_container_down')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_down')?->detail)->toMatchArray([
+                'container' => 'orbit-caddy',
+                'node' => $node->name,
+            ]);
+    });
+
+    it('reports no orbit-caddy container drift when the container exists and is running', function (): void {
+        $node = createTestAppHostNode();
+        $snapshot = new ProbeSnapshot([
+            'orbit-caddy' => [
+                'runtime_status' => 'available',
+                'container_exists' => true,
+                'container_running' => true,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+
+        expect($drift)->toBe([]);
+    });
+
+    it('reports proxy.docker_runtime_unavailable (not container_missing) when docker CLI is absent on the node', function (): void {
+        $node = createTestAppHostNode();
+        $snapshot = new ProbeSnapshot([
+            'orbit-caddy' => [
+                'runtime_status' => 'no_docker',
+                'container_exists' => false,
+                'container_running' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->detail)->toMatchArray([
+                'container' => 'orbit-caddy',
+                'node' => $node->name,
+                'runtime_status' => 'no_docker',
+            ])
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_down'))->toBeNull();
+    });
+
+    it('reports proxy.docker_runtime_unavailable (not container_missing) when the docker daemon is unreachable on the node', function (): void {
+        $node = createTestAppHostNode();
+        $snapshot = new ProbeSnapshot([
+            'orbit-caddy' => [
+                'runtime_status' => 'daemon_unavailable',
+                'container_exists' => false,
+                'container_running' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->detail['runtime_status'])->toBe('daemon_unavailable')
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))->toBeNull();
+    });
+});
+
 describe('legacy php_fastcgi route convergence after Docker-first runtime backfill', function (): void {
     it('reports proxy.route_mismatch when an observed legacy php_fastcgi Caddyfile hash differs from the post-backfill Docker-first reverse_proxy source_hash', function (): void {
         // Simulates the post-migration state: the backfill recomputed
@@ -814,6 +927,9 @@ final class ProxyProbeRecordingRemoteShell implements RemoteShell
     /** @var list<array<string, mixed>> */
     public array $options = [];
 
+    /** @var list<string> */
+    public array $scripts = [];
+
     public function __construct(
         private readonly string $stdout,
     ) {}
@@ -824,8 +940,40 @@ final class ProxyProbeRecordingRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->nodes[] = $node;
+        $this->scripts[] = $script;
         $this->options[] = $options;
 
         return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final class ProxyProbeCaddyContainerShell implements RemoteShell
+{
+    /** @var list<Node> */
+    public array $nodes = [];
+
+    /** @var list<string> */
+    public array $scripts = [];
+
+    public function __construct(
+        private readonly string $runtimeOutput,
+        private readonly string $existsOutput,
+        private readonly string $runningOutput,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->nodes[] = $node;
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: $this->runtimeOutput."\t".$this->existsOutput."\t".$this->runningOutput."\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }

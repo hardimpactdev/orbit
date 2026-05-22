@@ -24,6 +24,13 @@ return [
             'app:register',
         ],
     ],
+    'proxy.docker_runtime_unavailable' => [
+        'family' => 'proxy',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=node --restore',
+        ],
+    ],
     'workspace.remove_failed' => [
         'family' => 'workspace',
         'kind' => 'command_handoff',

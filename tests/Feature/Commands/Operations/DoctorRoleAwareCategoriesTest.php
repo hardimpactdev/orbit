@@ -393,6 +393,125 @@ describe('doctor role-aware categories', function (): void {
             ->and($issueNodes)->not->toContain('app-b');
     });
 
+    it('reports proxy.caddy_container_down when orbit-caddy is stopped on an app host serving proxy routes', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        $appHost = createRoleAwareAppHostNode('app-a');
+        App::factory()->create([
+            'name' => 'docs-a',
+            'node_id' => $appHost->id,
+            'path' => '/home/orbit/apps/docs-a',
+            'document_root' => 'public',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appHost->id,
+            'domain' => 'docs-a.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        $shell = new RoleAwareDoctorRemoteShell(
+            perRouteStdout: "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/docs-a.test.crt\t/etc/orbit/certs/docs-a.test.key\t1\t1\n",
+            caddyContainerStdout: "available\ttrue\tfalse\n",
+        );
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-a', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $issues = $payload['error']['data']['doctor']['issues'];
+        $caddyIssue = collect($issues)->firstWhere('key', 'proxy.caddy_container_down');
+
+        expect($caddyIssue)->not->toBeNull()
+            ->and($caddyIssue['node'])->toBe('app-a');
+    });
+
+    it('probes orbit-caddy on ingress-only nodes (not just gateway/app hosts)', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        $edge = createRoleAwareIngressNode('edge-1');
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://10.6.0.2:80'], 'upstream' => 'http://10.6.0.2:80'],
+        ]);
+        $shell = new RoleAwareDoctorRemoteShell(
+            perRouteStdout: "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/docs.test.crt\t/etc/orbit/certs/docs.test.key\t1\t1\n",
+            caddyContainerStdout: "available\ttrue\tfalse\n",
+        );
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'edge-1', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $issues = $payload['error']['data']['doctor']['issues'];
+        $caddyIssue = collect($issues)->firstWhere('key', 'proxy.caddy_container_down');
+
+        expect($caddyIssue)->not->toBeNull()
+            ->and($caddyIssue['node'])->toBe('edge-1');
+    });
+
+    it('restores a stopped orbit-caddy container through doctor --restore (not a skipped action)', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        $appHost = createRoleAwareAppHostNode('app-a');
+        ProxyRoute::factory()->create([
+            'node_id' => $appHost->id,
+            'domain' => 'docs-a.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        $shell = new RoleAwareDoctorRemoteShell(
+            perRouteStdout: "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/docs-a.test.crt\t/etc/orbit/certs/docs-a.test.key\t1\t1\n",
+            caddyContainerStdout: "available\ttrue\tfalse\n",
+        );
+        app()->instance(RemoteShell::class, $shell);
+
+        Artisan::call('doctor', [
+            '--node' => 'app-a',
+            '--family' => ['proxy'],
+            '--restore' => true,
+            '--key' => 'proxy.caddy_container_down',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $doctor = $payload['success']['data']['doctor'] ?? $payload['error']['data']['doctor'];
+        $caddyAction = collect($doctor['actions'])->firstWhere('key', 'proxy.caddy_container_down');
+
+        expect($caddyAction)->not->toBeNull()
+            ->and($caddyAction['status'])->toBe('completed')
+            ->and($caddyAction['status'])->not->toBe('skipped');
+    });
+
+    it('does not probe host caddy.service during a proxy doctor run because orbit-caddy is the runtime', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        $appHost = createRoleAwareAppHostNode('app-a');
+        ProxyRoute::factory()->create([
+            'node_id' => $appHost->id,
+            'domain' => 'docs-a.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        $shell = new RoleAwareDoctorRemoteShell(
+            perRouteStdout: "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/docs-a.test.crt\t/etc/orbit/certs/docs-a.test.key\t1\t1\n",
+        );
+        app()->instance(RemoteShell::class, $shell);
+
+        Artisan::call('doctor', ['--node' => 'app-a', '--family' => ['proxy'], '--json' => true]);
+
+        foreach ($shell->scripts as $script) {
+            expect($script)->not->toContain('systemctl status caddy.service')
+                ->and($script)->not->toContain('systemctl is-active caddy')
+                ->and($script)->not->toContain('systemctl reload caddy');
+        }
+    });
+
     it('scopes workspace family probes to the target node only', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
         $appA = createRoleAwareAppHostNode('app-a');
@@ -416,10 +535,14 @@ describe('doctor role-aware categories', function (): void {
 
 final class RoleAwareDoctorRemoteShell implements RemoteShell
 {
+    /** @var list<string> */
+    public array $scripts = [];
+
     public function __construct(
         private readonly string $perRouteStdout = '',
         private readonly string $nodeLevelStdout = '',
         private readonly int $exitCode = 0,
+        private readonly string $caddyContainerStdout = "available\ttrue\ttrue\n",
     ) {}
 
     /**
@@ -427,6 +550,8 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         if (str_contains($script, 'docker inspect') && str_contains($script, 'orbit-runtime')) {
             return new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=true\n", stderr: '', durationMs: 1);
         }
@@ -436,6 +561,10 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
             || str_contains($script, "dir='/etc/orbit/apps'")
         ) {
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return new RemoteShellResult(exitCode: 0, stdout: $this->caddyContainerStdout, stderr: '', durationMs: 1);
         }
 
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
