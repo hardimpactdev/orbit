@@ -1,0 +1,14 @@
+**
+
+!docker/
+!docker/orbit-runtime/
+!docker/orbit-runtime/Dockerfile
+!docker/orbit-runtime/Dockerfile.dockerignore
+!docker/orbit-runtime/entrypoint.sh
+
+.env*
+vendor/**
+node_modules/**
+storage/app/orbit/ca/**
+storage/app/orbit/certs/**
+storage/app/orbit/keys/**
