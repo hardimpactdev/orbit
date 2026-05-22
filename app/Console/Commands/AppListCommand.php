@@ -137,13 +137,14 @@ class AppListCommand extends Command
         return [
             'name' => $app->name,
             'node' => $app->node?->name,
-            'environment' => $app->environment,
             'url' => $app->url(),
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
             'runtime_kind' => $app->runtime_kind->value,
             'php_version' => $app->php_version,
+            'worker_enabled' => $app->worker_enabled,
+            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
             'adopted' => $app->adopted,
             'workspaces' => $this->workspacePayloads($app),
         ];
@@ -195,7 +196,6 @@ class AppListCommand extends Command
             $currentNode = $node;
             $rows[] = [
                 $app['name'],
-                $app['environment'],
                 $app['url'],
                 'expected',
             ];
@@ -208,7 +208,6 @@ class AppListCommand extends Command
             foreach ($workspaces as $index => $workspace) {
                 $rows[] = [
                     ($index === $lastWorkspaceIndex ? '└─ ' : '├─ ').(string) ($workspace['name'] ?? ''),
-                    $app['environment'],
                     $workspace['url'] ?? '-',
                     $workspace['lifecycle_status'] ?? '-',
                 ];
@@ -224,7 +223,7 @@ class AppListCommand extends Command
     private function renderNodeTable(string $node, array $rows): void
     {
         $this->line("Node: {$node}");
-        table(['NAME', 'ENVIRONMENT', 'URL', 'STATUS'], $rows);
+        table(['NAME', 'URL', 'STATUS'], $rows);
     }
 
     /**

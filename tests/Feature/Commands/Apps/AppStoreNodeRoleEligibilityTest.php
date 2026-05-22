@@ -82,10 +82,10 @@ describe('AppStore node role eligibility', function (): void {
         ], [], [], ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.app.environment', 'development')
             ->assertJsonPath('success.data.app.node', $target->name);
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue();
+        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
+            ->and(App::query()->where('name', 'docs')->value('environment'))->toBe('development');
     });
 
     it('accepts a node with active app-production for production app creation', function (): void {
@@ -123,7 +123,6 @@ describe('AppStore node role eligibility', function (): void {
         ], [], [], ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.app.environment', 'production')
             ->assertJsonPath('success.data.app.url', 'https://docs.example.com');
 
         expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');

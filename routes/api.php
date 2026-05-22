@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\AppRemoveController;
 use App\Http\Controllers\Api\AppRootController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
+use App\Http\Controllers\Api\AppWorkerController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\CloudflareController;
 use App\Http\Controllers\Api\DatabaseConnectionController;
@@ -174,6 +175,9 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps/prune', AppPruneController::class);
         Route::post('/apps/{app}/agent-ide', AppAgentIdeController::class);
         Route::post('/apps/{app}/root', AppRootController::class);
+        Route::get('/apps/{app}/worker', [AppWorkerController::class, 'show']);
+        Route::post('/apps/{app}/worker/enable', [AppWorkerController::class, 'enable']);
+        Route::post('/apps/{app}/worker/disable', [AppWorkerController::class, 'disable']);
         Route::delete('/apps/{app}', AppRemoveController::class);
         Route::get('/apps/{app}', AppShowController::class);
         Route::get('/tools', ToolListController::class);

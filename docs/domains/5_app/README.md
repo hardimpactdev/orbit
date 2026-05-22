@@ -155,7 +155,7 @@ The following commands are available in the `app` family.
    contract exists in the current converted surface.
 9. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
 10. Planned Docker-first runtime command: `orbit app:exec [app] -- <command>`.
-11. Planned Docker-first worker commands: `orbit app:worker show|enable|disable`.
+11. [`orbit app:worker show|enable|disable [app]`](11_app-worker/app-worker.md)
 
 ## Related
 

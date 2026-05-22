@@ -117,12 +117,14 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
         ->and($payload['success']['data']['app'])->toMatchArray([
             'name' => 'docs',
             'node' => 'app-1',
-            'environment' => 'development',
             'url' => 'https://docs.test',
             'path' => '/home/orbit/apps/docs',
             'root' => 'public',
             'repository' => null,
+            'runtime_kind' => 'php',
             'php_version' => '8.5',
+            'worker_enabled' => false,
+            'worker_config' => null,
             'adopted' => true,
         ])
         ->and($payload['success']['meta'])->toMatchArray([
@@ -204,8 +206,8 @@ it('reports production domain activation as a retryable proxy warning', function
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($payload['success']['data']['app']['environment'])->toBe('production')
         ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com')
+        ->and(App::query()->where('name', 'docs')->value('environment'))->toBe('production')
         ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
         ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
             'code' => 'proxy.domain_inactive',
@@ -364,12 +366,14 @@ it('forwards app-node CLI callers through the typed gateway request without loca
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
                         'repository' => null,
+                        'runtime_kind' => 'php',
                         'php_version' => '8.5',
+                        'worker_enabled' => false,
+                        'worker_config' => null,
                         'adopted' => true,
                     ],
                 ],
@@ -419,12 +423,14 @@ it('forwards configured control callers through the typed gateway request', func
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
                         'repository' => null,
+                        'runtime_kind' => 'php',
                         'php_version' => '8.5',
+                        'worker_enabled' => false,
+                        'worker_config' => null,
                         'adopted' => true,
                     ],
                 ],

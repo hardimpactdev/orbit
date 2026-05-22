@@ -113,7 +113,6 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
         ->and($payload['success']['data']['app'])->toMatchArray([
             'name' => 'docs',
             'node' => 'app-1',
-            'environment' => 'development',
             'url' => 'https://docs.test',
             'path' => '/home/orbit/apps/docs',
             'root' => 'public',
@@ -251,7 +250,6 @@ it('forwards app-node CLI callers through the typed gateway request without loca
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
@@ -511,7 +509,6 @@ it('forwards configured control callers through the typed gateway request', func
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',

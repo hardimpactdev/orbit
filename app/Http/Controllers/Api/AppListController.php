@@ -165,13 +165,14 @@ final readonly class AppListController implements Loggable
         return $apps->map(fn (App $app): array => [
             'name' => $app->name,
             'node' => $app->node?->name,
-            'environment' => $app->environment,
             'url' => $app->url(),
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
             'runtime_kind' => $app->runtime_kind->value,
             'php_version' => $app->php_version,
+            'worker_enabled' => $app->worker_enabled,
+            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
             'adopted' => $app->adopted,
             'workspaces' => $this->workspacePayloads($app),
         ])->all();

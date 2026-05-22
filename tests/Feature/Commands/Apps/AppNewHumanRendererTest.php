@@ -41,7 +41,6 @@ it('renders the documented progress tree and completion summary', function (): v
         ->expectsOutputToContain('●  Applied proxy routes')
         ->expectsOutputToContain("└  App 'docs' created")
         ->expectsOutputToContain("App 'docs' created successfully on node 'app-1'.")
-        ->expectsOutputToContain('Environment: development')
         ->expectsOutputToContain('URL: https://docs.test')
         ->assertExitCode(0);
 });

@@ -93,7 +93,6 @@ describe('app:list base contract', function (): void {
                             [
                                 'name' => 'docs',
                                 'node' => 'app-1',
-                                'environment' => 'development',
                                 'url' => 'https://docs.test',
                                 'path' => '/srv/docs',
                                 'root' => 'public',

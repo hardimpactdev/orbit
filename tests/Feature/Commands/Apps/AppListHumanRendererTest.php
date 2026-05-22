@@ -24,7 +24,7 @@ describe('app:list human renderer contract', function (): void {
             ->and($output)->toContain('Node: app-1')
             ->and($output)->toContain('docs')
             ->and($output)->toContain('site')
-            ->and($output)->toContain('ENVIRONMENT')
+            ->and($output)->not->toContain('ENVIRONMENT')
             ->and($output)->toContain('URL')
             ->and($output)->toContain('STATUS')
             ->and($output)->not->toContain('"success"');

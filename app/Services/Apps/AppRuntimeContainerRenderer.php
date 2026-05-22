@@ -12,6 +12,13 @@ use InvalidArgumentException;
 
 final readonly class AppRuntimeContainerRenderer
 {
+    /**
+     * Canonical name of the Laravel Octane FrankenPHP worker file. Generated
+     * by `php artisan octane:install --server=frankenphp` and resolved
+     * relative to the app's configured `document_root`.
+     */
+    public const WorkerFileName = 'frankenphp-worker.php';
+
     public function __construct(
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
@@ -79,7 +86,7 @@ final readonly class AppRuntimeContainerRenderer
      */
     private function environmentFor(App $app): array
     {
-        return [
+        $environment = [
             // FrankenPHP-consumed envs: SERVER_NAME sets the Caddy listener
             // address; SERVER_ROOT sets the document root served inside the
             // container. Together they make app:root and app:new actually
@@ -90,6 +97,58 @@ final readonly class AppRuntimeContainerRenderer
             'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
             'ORBIT_PHP_VERSION' => $app->php_version,
         ];
+
+        if ($app->worker_enabled) {
+            $environment = array_merge($environment, $this->workerEnvironmentFor($app));
+        }
+
+        return $environment;
+    }
+
+    /**
+     * Worker-mode env vars are emitted only when worker_enabled is true. The
+     * stored worker_config is the single source of truth; classic mode is
+     * the default and emits none of these vars.
+     *
+     * Active levers:
+     * - `FRANKENPHP_CONFIG`: FrankenPHP natively reads this as a Caddyfile
+     *   snippet at boot and switches the runtime into worker mode against the
+     *   Laravel Octane FrankenPHP worker file. The directive uses the
+     *   documented inline form `worker FILE [NUM]`.
+     * - `MAX_REQUESTS`: Laravel's stock `public/frankenphp-worker.php` reads
+     *   `$_SERVER['MAX_REQUESTS']` and recycles the worker after that many
+     *   requests.
+     *
+     * @return array<string, string>
+     */
+    private function workerEnvironmentFor(App $app): array
+    {
+        $config = $app->workerConfig();
+        $workerFile = $this->frankenPhpWorkerFilePath($app);
+
+        return [
+            'FRANKENPHP_CONFIG' => $this->frankenPhpConfigDirective($workerFile, $config->workers),
+            'MAX_REQUESTS' => (string) $config->maxRequests,
+        ];
+    }
+
+    /**
+     * Render the FrankenPHP `worker` directive in the documented inline form
+     * `worker FILE [NUM]`. `auto` (or any non-positive count) omits NUM so
+     * FrankenPHP picks a default based on CPU count.
+     */
+    private function frankenPhpConfigDirective(string $workerFile, string|int $workers): string
+    {
+        if (is_string($workers) || $workers <= 0) {
+            return "worker {$workerFile}";
+        }
+
+        return "worker {$workerFile} {$workers}";
+    }
+
+    public function frankenPhpWorkerFilePath(App $app): string
+    {
+        return $this->documentRootInContainer($app).'/'.self::WorkerFileName;
     }
 
     public function documentRootInContainer(App $app): string
@@ -101,5 +160,21 @@ final readonly class AppRuntimeContainerRenderer
         }
 
         return AppRuntimeContainer::SourceTarget.'/'.$documentRoot;
+    }
+
+    /**
+     * Worker file path relative to the app source root. Renderer and the
+     * readiness validator must agree on this so what readiness checks
+     * matches what the runtime points `FRANKENPHP_CONFIG` at.
+     */
+    public static function workerFileRelativeToSource(App $app): string
+    {
+        $documentRoot = trim((string) $app->document_root, '/');
+
+        if ($documentRoot === '' || $documentRoot === '.') {
+            return self::WorkerFileName;
+        }
+
+        return $documentRoot.'/'.self::WorkerFileName;
     }
 }

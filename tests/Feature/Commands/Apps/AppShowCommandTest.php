@@ -184,7 +184,7 @@ describe('app:show command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('┌  App: docs')
             ->and($output)->toContain('├  Domain')
-            ->and($output)->toContain('├  Environment')
+            ->and($output)->not->toContain('Environment')
             ->and($output)->toContain('├  Node')
             ->and($output)->toContain('└  Routes')
             ->and($output)->not->toContain('+---');

@@ -24,4 +24,18 @@ return [
             'app:register',
         ],
     ],
+    'workspace.remove_failed' => [
+        'family' => 'workspace',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'workspace:remove',
+        ],
+    ],
+    'workspace.teardown_step_failed' => [
+        'family' => 'workspace',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=workspace --restore',
+        ],
+    ],
 ];

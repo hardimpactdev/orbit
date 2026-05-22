@@ -81,6 +81,8 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
             ->assertJsonPath('success.data.app.runtime_kind', 'php')
+            ->assertJsonPath('success.data.app.worker_enabled', false)
+            ->assertJsonPath('success.data.app.worker_config', null)
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
@@ -252,8 +254,10 @@ describe('AppStoreController', function (): void {
         ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.app.environment', 'production')
+            ->assertJsonPath('success.data.app.url', 'https://docs.example.com')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.domain_inactive');
+
+        expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
 
         $route = ProxyRoute::query()->where('domain', 'docs.example.com')->firstOrFail();
 

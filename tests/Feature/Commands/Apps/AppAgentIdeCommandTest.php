@@ -343,7 +343,6 @@ it('forwards configured control callers through the typed gateway request', func
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
@@ -401,7 +400,6 @@ it('queries gateway adapter choices before prompting configured control callers'
                         [
                             'name' => 'docs',
                             'node' => 'app-1',
-                            'environment' => 'development',
                             'url' => 'https://docs.test',
                             'path' => '/home/orbit/apps/docs',
                             'root' => 'public',
@@ -435,7 +433,6 @@ it('queries gateway adapter choices before prompting configured control callers'
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
@@ -494,7 +491,6 @@ it('fails before adapter prompt when configured control callers cannot fetch ada
                         [
                             'name' => 'docs',
                             'node' => 'app-1',
-                            'environment' => 'development',
                             'url' => 'https://docs.test',
                             'path' => '/home/orbit/apps/docs',
                             'root' => 'public',

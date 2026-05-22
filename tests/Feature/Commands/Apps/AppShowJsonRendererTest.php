@@ -32,13 +32,14 @@ describe('app:show JSON renderer contract', function (): void {
             ->and($payload['success']['data']['app'])->toBe([
                 'name' => 'docs',
                 'node' => 'app-1',
-                'environment' => 'production',
                 'url' => 'https://docs.example.com',
                 'path' => '/srv/docs',
                 'root' => 'public',
                 'repository' => 'git@github.com:orbit/docs.git',
                 'runtime_kind' => 'php',
                 'php_version' => '8.5',
+                'worker_enabled' => false,
+                'worker_config' => null,
                 'adopted' => false,
             ])
             ->and($payload['success']['data']['details']['workspaces'])->toBe([])

@@ -68,7 +68,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    side effects.
 3. **Result assembly.** Return the app record and the durable gateway configuration
    the app owns:
-   - app registry: name, environment, owning node, repository, app path,
+   - app registry: name, owning node, repository, app path,
      document root, PHP version, primary domain;
    - agent IDE configuration: effective adapter and resolution source;
    - related configuration owned by the app: workspaces, processes, and app-owned

@@ -85,6 +85,9 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
+            ->assertJsonPath('success.data.app.runtime_kind', 'php')
+            ->assertJsonPath('success.data.app.worker_enabled', false)
+            ->assertJsonPath('success.data.app.worker_config', null)
             ->assertJsonPath('success.meta.node', 'app-1')
             ->assertJsonPath('success.meta.warnings', []);
 

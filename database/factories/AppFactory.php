@@ -26,6 +26,8 @@ class AppFactory extends Factory
             'repository' => null,
             'php_version' => '8.5',
             'runtime_kind' => AppRuntimeKind::Php,
+            'worker_enabled' => false,
+            'worker_config' => null,
             'adopted' => false,
             'agent_ide_config' => null,
         ];
@@ -35,6 +37,17 @@ class AppFactory extends Factory
     {
         return $this->state(fn (): array => [
             'runtime_kind' => AppRuntimeKind::Static,
+        ]);
+    }
+
+    public function workerEnabled(?array $config = null): static
+    {
+        return $this->state(fn (): array => [
+            'worker_enabled' => true,
+            'worker_config' => $config ?? [
+                'workers' => 'auto',
+                'max_requests' => 500,
+            ],
         ]);
     }
 }

@@ -73,12 +73,14 @@ it('creates source on the target app node before writing gateway app intent', fu
         ->and($payload['success']['data']['app'])->toMatchArray([
             'name' => 'docs',
             'node' => 'app-1',
-            'environment' => 'development',
             'url' => 'https://docs.test',
             'path' => '/home/orbit/apps/docs',
             'root' => 'public',
             'repository' => null,
+            'runtime_kind' => 'php',
             'php_version' => '8.5',
+            'worker_enabled' => false,
+            'worker_config' => null,
             'adopted' => false,
         ])
         ->and($payload['success']['meta']['warnings'])->toBe([]);
@@ -235,7 +237,10 @@ it('uses a visible control-mode default node based on active app-development pay
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
                         'repository' => null,
+                        'runtime_kind' => 'php',
                         'php_version' => '8.5',
+                        'worker_enabled' => false,
+                        'worker_config' => null,
                         'adopted' => false,
                     ],
                 ],
@@ -293,8 +298,8 @@ it('accepts active app-production nodes for production app creation on the gatew
 
     expect($exitCode)->toBe(0)
         ->and(collect($remoteShell->runs)->pluck('node')->all())->toContain($router->id, $targetNode->id)
-        ->and($payload['success']['data']['app']['environment'])->toBe('production')
-        ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com');
+        ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com')
+        ->and(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
 });
 
 it('rejects gateway-local app creation on database-only nodes', function (): void {
@@ -899,7 +904,10 @@ it('forwards configured control callers through the typed gateway request', func
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
                         'repository' => null,
+                        'runtime_kind' => 'php',
                         'php_version' => '8.5',
+                        'worker_enabled' => false,
+                        'worker_config' => null,
                         'adopted' => false,
                     ],
                 ],

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Apps\PhpWorkerConfig;
 use App\Enums\Apps\AppRuntimeKind;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -23,6 +24,8 @@ use Illuminate\Support\Str;
  * @property string|null $repository
  * @property string $php_version
  * @property AppRuntimeKind $runtime_kind
+ * @property bool $worker_enabled
+ * @property array<string, mixed>|null $worker_config
  * @property bool $adopted
  * @property array<string, mixed>|null $agent_ide_config
  * @property string|null $latest_deployment_status
@@ -50,6 +53,8 @@ class App extends Model
         'repository',
         'php_version',
         'runtime_kind',
+        'worker_enabled',
+        'worker_config',
         'adopted',
         'agent_ide_config',
         'latest_deployment_status',
@@ -58,6 +63,7 @@ class App extends Model
 
     protected $attributes = [
         'runtime_kind' => 'php',
+        'worker_enabled' => false,
     ];
 
     #[\Override]
@@ -67,7 +73,14 @@ class App extends Model
             'adopted' => 'boolean',
             'agent_ide_config' => 'array',
             'runtime_kind' => AppRuntimeKind::class,
+            'worker_enabled' => 'boolean',
+            'worker_config' => 'array',
         ];
+    }
+
+    public function workerConfig(): PhpWorkerConfig
+    {
+        return PhpWorkerConfig::fromArray(is_array($this->worker_config) ? $this->worker_config : []);
     }
 
     /**

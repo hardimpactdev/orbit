@@ -212,6 +212,49 @@ it('reports no stale workspaces when all are active', function (): void {
     expect($payload['success']['data']['stale_workspaces'])->toBe([]);
 });
 
+it('surfaces a structured workspace.remove_failed warning when a stale workspace removal throws', function (): void {
+    Workspace::create([
+        'app_id' => 1,
+        'name' => 'stale-ws',
+        'path' => '/home/nckrtl/apps/demo/stale-ws',
+        'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+    ]);
+
+    // Force the inner RemoveWorkspace action to throw by short-circuiting
+    // the workspace delete; PruneAppWorkspaces catches the RuntimeException
+    // and emits the workspace.remove_failed handoff warning.
+    Workspace::deleting(function (Workspace $workspace): void {
+        if ($workspace->name === 'stale-ws') {
+            throw new RuntimeException('container teardown denied');
+        }
+    });
+
+    $exitCode = Artisan::call('app:prune', [
+        'app' => 'demo',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['stale_workspaces'][0])->toMatchArray([
+            'name' => 'stale-ws',
+            'removed' => false,
+        ])
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
+            'code' => 'workspace.remove_failed',
+            'family' => 'workspace',
+            'next_command' => 'workspace:remove stale-ws --app=demo --force',
+        ])
+        ->and($payload['success']['meta']['warnings'][0]['message'])->toContain("Failed to remove workspace 'stale-ws'")
+        ->and($payload['success']['meta']['warnings'][0]['message'])->toContain('container teardown denied');
+
+    // State unchanged: the workspace row survived because removal failed.
+    expect(Workspace::query()->where('name', 'stale-ws')->exists())->toBeTrue();
+});
+
 it('renders human output without json', function (): void {
     Workspace::create([
         'app_id' => 1,

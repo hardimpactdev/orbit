@@ -180,6 +180,7 @@ final class NodePermissionPresets
             'app:root',
             'app:update',
             'app:new',
+            'app:worker',
             'workspace:read',
             'workspace:write',
             'workspace:new',
@@ -255,6 +256,7 @@ final class NodePermissionPresets
             'app:root',
             'app:update',
             'app:new',
+            'app:worker',
 
             // Cloudflare
             'cf:cache:flush',

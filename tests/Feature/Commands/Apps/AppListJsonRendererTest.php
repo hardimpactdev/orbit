@@ -38,13 +38,14 @@ describe('app:list JSON renderer contract', function (): void {
             ->and($payload['success']['data']['apps'][0])->toBe([
                 'name' => 'docs',
                 'node' => 'app-1',
-                'environment' => 'development',
                 'url' => 'https://docs.test',
                 'path' => '/srv/docs',
                 'root' => 'public',
                 'repository' => null,
                 'runtime_kind' => 'php',
                 'php_version' => '8.5',
+                'worker_enabled' => false,
+                'worker_config' => null,
                 'adopted' => false,
                 'workspaces' => [
                     [
