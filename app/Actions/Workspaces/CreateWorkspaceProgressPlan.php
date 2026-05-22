@@ -127,6 +127,26 @@ final class CreateWorkspaceProgressPlan
                 },
             ],
             [
+                'key' => 'install_workspace_runtime_container',
+                'label' => 'Install workspace runtime container',
+                'doneLabel' => 'Installed workspace runtime container',
+                'run' => function (): string {
+                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
+                        return 'skip:Workspace source was not provisioned.';
+                    }
+
+                    $warning = $this->setupWorkspace->enactRuntimeContainer($this->workspace, $this->node);
+
+                    if ($warning !== null) {
+                        $this->warnings[] = $warning;
+
+                        return 'skip:'.$warning['message'];
+                    }
+
+                    return 'ready';
+                },
+            ],
+            [
                 'key' => 'run_workspace_setup_steps',
                 'label' => 'Run workspace setup steps',
                 'doneLabel' => 'Ran workspace setup steps',

@@ -6,6 +6,7 @@ namespace App\Actions\Workspaces;
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
@@ -23,6 +24,10 @@ use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Services\Workspaces\WorkspaceRoleGuard;
+use App\Services\Workspaces\WorkspaceRuntimeContainerApplyException;
+use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
+use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
+use App\Services\Workspaces\WorkspaceRuntimeImageUnavailableException;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use RuntimeException;
 use Throwable;
@@ -35,6 +40,8 @@ final readonly class SetupWorkspace
         private WorkspaceFpmPoolRenderer $fpmRenderer,
         private PhpFpmServiceReloader $fpmServiceReloader,
         private PhpFpmSystemdHardening $fpmSystemdHardening,
+        private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
+        private WorkspaceRuntimeContainerManager $runtimeContainerManager,
         private WorkspaceSetupStepRunner $stepRunner,
         private WorkspaceReadinessProbe $readinessProbe,
         private RuntimeBackendProbe $runtimeBackendProbe,
@@ -76,10 +83,19 @@ final readonly class SetupWorkspace
         $routeWarnings = $this->registerProxyRoutes($workspace);
         $warnings = array_merge($warnings, $routeWarnings);
 
-        // Phase 3: Artifact Enactment (FPM pool)
+        // Phase 3a: PHP-FPM pool convergence — proxy routes still target the
+        // FPM socket until the workspace proxy cutover (ORBIT-RUNTIME-06C /
+        // todo 336). Keeping FPM artifacts ensures freshly set-up workspaces
+        // remain reachable through their existing proxy route.
         $fpmWarning = $this->enactFpmPool($workspace, $node);
         if ($fpmWarning !== null) {
             $warnings[] = $fpmWarning;
+        }
+
+        // Phase 3b: Runtime Container Convergence (FrankenPHP for PHP workspaces)
+        $runtimeWarning = $this->enactRuntimeContainer($workspace, $node);
+        if ($runtimeWarning !== null) {
+            $warnings[] = $runtimeWarning;
         }
 
         // Phase 4: Setup Steps
@@ -155,6 +171,12 @@ final readonly class SetupWorkspace
     }
 
     /**
+     * Converge the legacy PHP-FPM pool used by current workspace proxy routes.
+     * The proxy renderer still uses `php_fastcgi unix/<socket>` for workspaces
+     * until the FPM→FrankenPHP proxy cutover (ORBIT-RUNTIME-06C / todo 336).
+     * Removing FPM convergence here would leave proxy routes pointing at a
+     * socket that does not exist.
+     *
      * @return array{code: string, family: string, message: string, next_command: string}|null
      */
     public function enactFpmPool(Workspace $workspace, Node $node): ?array
@@ -211,6 +233,56 @@ SH,
             'message' => 'PHP-FPM pool configuration was not enacted. Run doctor to converge workspace artifacts.',
             'next_command' => 'doctor --fix --family=workspace --restore',
         ];
+    }
+
+    /**
+     * Converge the FrankenPHP runtime container for PHP workspaces. Static /
+     * non-PHP workspaces inherit the parent app's runtime kind and do not get
+     * a runtime container.
+     *
+     * @return array{code: string, family: string, message: string, next_command: string}|null
+     */
+    public function enactRuntimeContainer(Workspace $workspace, Node $node): ?array
+    {
+        $workspace->loadMissing('app');
+        $app = $workspace->app;
+
+        if (! $app instanceof App || $app->runtime_kind !== AppRuntimeKind::Php) {
+            return null;
+        }
+
+        try {
+            $container = $this->runtimeContainerRenderer->render($workspace);
+            $this->runtimeContainerManager->apply($node, $container);
+        } catch (WorkspaceRuntimeImageUnavailableException $exception) {
+            return [
+                'code' => 'workspace.php_version_unavailable',
+                'family' => 'workspace',
+                'message' => "PHP {$exception->phpVersion} runtime image '{$exception->image}' is not available on node '{$node->name}'. Make the image available, then run doctor.",
+                'next_command' => 'doctor --fix --family=workspace --restore',
+            ];
+        } catch (WorkspaceRuntimeContainerApplyException $exception) {
+            $code = $exception->hadExistingContainer
+                ? 'workspace.runtime_container_mismatch'
+                : 'workspace.runtime_container_missing';
+            $action = $exception->hadExistingContainer ? 'recreated' : 'installed';
+
+            return [
+                'code' => $code,
+                'family' => 'workspace',
+                'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be {$action} on '{$node->name}': {$exception->getMessage()}",
+                'next_command' => 'doctor --fix --family=workspace --restore',
+            ];
+        } catch (Throwable $exception) {
+            return [
+                'code' => 'workspace.runtime_container_missing',
+                'family' => 'workspace',
+                'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be installed on '{$node->name}': {$exception->getMessage()}",
+                'next_command' => 'doctor --fix --family=workspace --restore',
+            ];
+        }
+
+        return null;
     }
 
     /**

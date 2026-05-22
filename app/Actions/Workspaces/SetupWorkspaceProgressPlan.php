@@ -110,6 +110,22 @@ final class SetupWorkspaceProgressPlan
                     return 'ready';
                 },
             ],
+            [
+                'key' => 'install_workspace_runtime_container',
+                'label' => 'Install workspace runtime container',
+                'doneLabel' => 'Installed workspace runtime container',
+                'run' => function (): string {
+                    $warning = $this->setupWorkspace->enactRuntimeContainer($this->workspace, $this->node);
+
+                    if ($warning !== null) {
+                        $this->warnings[] = $warning;
+
+                        return 'skip:'.$warning['message'];
+                    }
+
+                    return 'ready';
+                },
+            ],
         ];
 
         if ($this->hasSetupSteps()) {

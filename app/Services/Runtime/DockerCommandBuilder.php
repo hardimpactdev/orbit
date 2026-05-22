@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Runtime;
 
 use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
 
 class DockerCommandBuilder
 {
@@ -40,7 +41,7 @@ class DockerCommandBuilder
         return 'docker start '.$this->quote($name);
     }
 
-    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer $container): string
+    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer $container): string
     {
         $parts = [
             'docker run -d',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
@@ -170,6 +171,53 @@ it('rejects unsupported php version', function (): void {
     $response->assertJsonPath('error.meta.field', 'php_version');
 });
 
+it('converges both FPM pool and FrankenPHP runtime container when creating a php workspace (runtime)', function (): void {
+    $shell = new WorkspaceStoreRuntimeContainerShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call('POST', '/api/workspaces', [
+        'name' => 'feature-runtime',
+        'app' => 'demo',
+        'base' => 'main',
+    ], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+
+    $response->assertCreated();
+
+    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
+    $combined = implode("\n", $scripts);
+
+    // Runtime container must converge AND legacy FPM pool must remain
+    // installed until ORBIT-RUNTIME-06C (todo 336) cuts the workspace proxy
+    // over from `php_fastcgi unix/<socket>` to the FrankenPHP container.
+    expect($combined)->toContain("'orbit-ws-demo-feature-runtime'")
+        ->and($combined)->toContain('docker run -d')
+        ->and($combined)->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
+        ->and($combined)->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
+});
+
+it('skips runtime container convergence for static workspaces during create (runtime)', function (): void {
+    App::query()->where('name', 'demo')->update([
+        'runtime_kind' => AppRuntimeKind::Static->value,
+    ]);
+
+    $shell = new WorkspaceStoreRuntimeContainerShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call('POST', '/api/workspaces', [
+        'name' => 'feature-static',
+        'app' => 'demo',
+        'base' => 'main',
+    ], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+
+    $response->assertCreated();
+
+    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
+    $combined = implode("\n", $scripts);
+
+    expect($combined)->not->toContain("'orbit-ws-demo-feature-static'")
+        ->and($combined)->not->toContain('docker run -d');
+});
+
 it('rejects unauthenticated requests', function (): void {
     $this->call('POST', '/api/workspaces', [
         'name' => 'feature-a',
@@ -193,6 +241,23 @@ final class WorkspaceStoreTestShell implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class WorkspaceStoreRuntimeContainerShell implements RemoteShell
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->calls[] = ['node' => $node, 'script' => $script, 'options' => $options];
+
+        if (str_contains($script, 'docker image inspect')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1);
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

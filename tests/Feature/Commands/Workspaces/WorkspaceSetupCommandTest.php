@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Http\Gateway\Requests\Workspaces\SetupWorkspaceRequest;
 use App\Http\Gateway\WorkspaceSetupGatewayStreamClient;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
@@ -274,6 +276,7 @@ it('renders the documented progress tree and final tree state for human output',
         ->expectsOutputToContain('●  Applied and verified workspace registration')
         ->expectsOutputToContain('●  Registered proxy routes')
         ->expectsOutputToContain('●  Installed PHP-FPM artifacts')
+        ->expectsOutputToContain('●  Installed workspace runtime container')
         ->expectsOutputToContain('●  Checked workspace readiness')
         ->expectsOutputToContain('└  Workspace ready and available at: https://feature-tree.demo.beast')
         ->doesntExpectOutputToContain("Workspace 'feature-tree' is already converged on node 'app-1'. No changes were needed.")
@@ -316,6 +319,70 @@ it('renders the active workspace setup step in the human progress tree', functio
         ->assertSuccessful();
 });
 
+it('converges both FPM pool and FrankenPHP runtime container for php workspaces during setup (runtime)', function (): void {
+    Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-runtime',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-runtime',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    $shell = new WorkspaceSetupRuntimeContainerShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $exitCode = Artisan::call('workspace:setup', [
+        'name' => 'feature-runtime',
+        '--app' => 'demo',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['action'])->toBe('set_up');
+
+    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
+    $combined = implode("\n", $scripts);
+
+    // Runtime container must converge AND legacy FPM pool must remain
+    // installed because workspace proxy routes still target the FPM socket
+    // until the ORBIT-RUNTIME-06C proxy cutover (todo 336).
+    expect($combined)->toContain("'orbit-ws-demo-feature-runtime'")
+        ->and($combined)->toContain('docker run -d')
+        ->and($combined)->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
+        ->and($combined)->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
+});
+
+it('skips runtime container convergence for static workspaces (runtime)', function (): void {
+    App::query()->where('name', 'demo')->update([
+        'runtime_kind' => AppRuntimeKind::Static->value,
+    ]);
+
+    Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-static',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-static',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    $shell = new WorkspaceSetupRuntimeContainerShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $exitCode = Artisan::call('workspace:setup', [
+        'name' => 'feature-static',
+        '--app' => 'demo',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
+    $combined = implode("\n", $scripts);
+
+    expect($combined)->not->toContain("'orbit-ws-demo-feature-static'")
+        ->and($combined)->not->toContain('docker run -d');
+});
+
 it('reports workspace not found', function (): void {
     $exitCode = Artisan::call('workspace:setup', [
         'name' => 'missing',
@@ -334,6 +401,23 @@ final class WorkspaceSetupTestShell implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class WorkspaceSetupRuntimeContainerShell implements RemoteShell
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->calls[] = ['node' => $node, 'script' => $script, 'options' => $options];
+
+        if (str_contains($script, 'docker image inspect')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1);
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

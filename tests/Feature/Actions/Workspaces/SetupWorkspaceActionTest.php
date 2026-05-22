@@ -110,6 +110,40 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
         ->and($fpmScript)->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
 });
 
+it('enacts the FrankenPHP runtime container alongside FPM during php workspace setup', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    $runScript = collect($shell->scripts)
+        ->first(fn (string $script): bool => str_contains($script, 'docker run -d')
+            && str_contains($script, "'orbit-ws-demo-feature-a'"));
+
+    // Both the legacy FPM pool (still consumed by the proxy route until the
+    // ORBIT-RUNTIME-06C cutover) and the new FrankenPHP runtime container
+    // must converge for PHP workspaces. Until the proxy renderer points at
+    // the runtime container, removing FPM would orphan the proxy socket.
+    expect($runScript)
+        ->toContain('docker run -d')
+        ->and($runScript)->toContain("'orbit-ws-demo-feature-a'")
+        ->and($runScript)->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($runScript)->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeTrue();
+});
+
 it('registers workspace proxy routes against the rendered workspace PHP-FPM socket', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
