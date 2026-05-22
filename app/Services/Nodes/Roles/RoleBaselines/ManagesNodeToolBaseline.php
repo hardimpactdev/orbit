@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 
 trait ManagesNodeToolBaseline
@@ -20,7 +24,10 @@ trait ManagesNodeToolBaseline
         }
     }
 
-    protected function convergeTool(Node $node, string $tool, string $expectedState = 'running'): void
+    /**
+     * @param  array<string, mixed>|null  $config
+     */
+    protected function convergeTool(Node $node, string $tool, string $expectedState = 'running', ?array $config = null): void
     {
         if (! $this->toolCatalog()->supports($tool)) {
             return;
@@ -34,9 +41,14 @@ trait ManagesNodeToolBaseline
             [
                 'expected_state' => $expectedState,
                 'expected_version' => null,
-                'config' => null,
+                'config' => $config ?? $this->defaultToolConfig($tool, $node),
             ],
         );
+    }
+
+    protected function convergeOrbitCaddy(Node $node): void
+    {
+        $this->convergeTool($node, 'caddy');
     }
 
     /**
@@ -60,4 +72,47 @@ trait ManagesNodeToolBaseline
     }
 
     abstract protected function toolCatalog(): ToolCatalog;
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function defaultToolConfig(string $tool, Node $node): ?array
+    {
+        if ($tool !== 'caddy') {
+            return null;
+        }
+
+        return [
+            'container' => $this->defaultOrbitCaddyContainer($node)->spec(),
+        ];
+    }
+
+    private function defaultOrbitCaddyContainer(Node $node): OrbitCaddyContainer
+    {
+        $wireGuardAddress = is_string($node->wireguard_address)
+            ? trim($node->wireguard_address)
+            : '';
+
+        if ($this->nodeHasIngressRole($node)) {
+            return OrbitCaddyContainer::forPublicIngress($wireGuardAddress !== '' ? $wireGuardAddress : null);
+        }
+
+        if ($wireGuardAddress === '') {
+            return OrbitCaddyContainer::default();
+        }
+
+        return OrbitCaddyContainer::forPrivateNode($wireGuardAddress);
+    }
+
+    private function nodeHasIngressRole(Node $node): bool
+    {
+        return NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', NodeRoleName::Ingress->value)
+            ->whereIn('status', [
+                NodeRoleStatus::Pending->value,
+                NodeRoleStatus::Active->value,
+            ])
+            ->exists();
+    }
 }

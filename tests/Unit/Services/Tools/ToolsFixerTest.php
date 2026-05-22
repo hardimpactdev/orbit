@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Tools\ToolsFixer;
@@ -49,7 +50,7 @@ describe('ToolsFixer', function (): void {
             'key' => 'tool.lifecycle_state_mismatch',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and($shell->scripts)->toBe(['sudo systemctl start caddy']);
+        ])->and($shell->scripts)->toBe(["docker start 'orbit-caddy'"]);
     });
 
     it('skips issue codes without catalog-declared repair commands', function (): void {
@@ -246,6 +247,37 @@ describe('ToolsFixer', function (): void {
         expect($action)->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
+
+    it('reconciles missing or drifted orbit-caddy containers through the declared container spec', function (string $key): void {
+        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: $key,
+            kind: $key === 'tool.container_missing' ? DriftKind::Missing : DriftKind::Divergent,
+            summary: 'orbit-caddy container drift',
+            detail: ['tool' => 'caddy'],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'tool',
+            'node' => 'app-1',
+            'key' => $key,
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain('docker container inspect')
+            ->and($shell->scripts[0])->toContain('10.6.0.50:80:80')
+            ->and($shell->scripts[0])->toContain('orbit.caddy.spec_hash');
+    })->with([
+        'missing container' => ['tool.container_missing'],
+        'drifted container spec' => ['tool.container_spec_mismatch'],
+    ]);
 });
 
 describe('agent tool fixes', function (): void {
@@ -479,7 +511,7 @@ function agentToolDriftEntry(string $key): DriftEntry
  */
 function toolsFixerAgentRouteConfig(string $tool): array
 {
-    $upstream = 'http://127.0.0.1:8080';
+    $upstream = 'http://host.docker.internal:8080';
 
     return [
         'target' => ['type' => 'upstream', 'value' => $upstream],

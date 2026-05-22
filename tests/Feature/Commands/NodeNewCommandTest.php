@@ -146,14 +146,12 @@ describe('node:new', function (): void {
             ?string &$bootstrapInput = null,
             string $gatewayPlatformOutput = 'ubuntu_24-04',
             int $gatewayPlatformExitCode = 0,
-            int $gatewayRuntimeExitCode = 0,
-            string $gatewayRuntimeErrorOutput = '',
             ?string &$localWireGuardConfig = null,
         ): void {
             $privateKeys = ['gateway-private-key', 'control-private-key'];
             $publicKeys = ['gateway-public-key', 'control-public-key'];
 
-            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys, $gatewayPlatformOutput, $gatewayPlatformExitCode, $gatewayRuntimeExitCode, $gatewayRuntimeErrorOutput, &$localWireGuardConfig) {
+            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys, $gatewayPlatformOutput, $gatewayPlatformExitCode, &$localWireGuardConfig) {
                 if ($process->command === 'wg genkey') {
                     return Process::result(output: array_shift($privateKeys)."\n");
                 }
@@ -192,13 +190,6 @@ describe('node:new', function (): void {
                     return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
                 }
 
-                if (str_contains($process->command, 'docker-compose-v2') && str_contains($process->command, 'docker compose version')) {
-                    return Process::result(
-                        errorOutput: $gatewayRuntimeErrorOutput,
-                        exitCode: $gatewayRuntimeExitCode,
-                    );
-                }
-
                 if (str_contains($process->command, 'tee /etc/wireguard/wg-orbit.conf')) {
                     $localWireGuardConfig = (string) $process->input;
 
@@ -225,7 +216,7 @@ describe('node:new', function (): void {
         }
     });
 
-    it('ships a local installer for control nodes', function (): void {
+    it('ships a Docker-first local installer for control nodes', function (): void {
         $installer = base_path('bin/install-orbit');
         $contents = file_get_contents($installer);
 
@@ -240,30 +231,29 @@ describe('node:new', function (): void {
 
         expect($help->successful())->toBeTrue($help->errorOutput())
             ->and($help->output())->not->toContain('--role=')
-            ->and($help->output())->toContain('--php=8.5')
+            ->and($help->output())->not->toContain('--php=')
             ->and($help->output())->toContain('--source-archive=PATH')
             ->and($help->output())->toContain('--verbose')
             ->and($help->output())->toContain('A new control node runs it')
             ->and($help->output())->toContain('Gateway and app roles are provisioned by node:new')
-            ->and($contents)->toContain('packages.sury.org/php')
-            ->and($contents)->toContain('sury-php.gpg')
-            ->and($contents)->toContain('php${PHP_VERSION}-cli')
-            ->and($contents)->toContain('php${PHP_VERSION}-fpm')
+            ->and($help->output())->toContain('Docker-first runtime')
+            ->and($contents)->toContain('install_docker_engine_ubuntu')
+            ->and($contents)->toContain('orbit-runtime:current')
+            ->and($contents)->toContain('caddy:2-alpine')
             ->and($contents)->toContain('openssh-client')
             ->and($contents)->toContain('wireguard-tools')
-            ->and($contents)->toContain('caddy');
+            ->and($contents)->not->toContain('packages.sury.org/php')
+            ->and($contents)->not->toContain('-fpm')
+            ->and($contents)->not->toContain('apt-get install -y caddy');
     });
 
     it('renders installer failures with Orbit-style progress and stable error codes', function (): void {
         $installer = base_path('bin/install-orbit');
-        $result = Process::run(escapeshellarg($installer).' --php=8.4 --path=/tmp/orbit-test --bin=/tmp/orbit-test --no-sudo');
+        $result = Process::run(escapeshellarg($installer).' --not-a-real-flag');
 
         expect($result->failed())->toBeTrue()
-            ->and($result->output())->toContain('┌ Orbit install')
-            ->and($result->output())->toContain('◉  Validate installer input')
-            ->and($result->output())->not->toContain('+ ')
             ->and($result->errorOutput())->toContain('error [validation_failed]')
-            ->and($result->errorOutput())->toContain('--php must be: 8.5');
+            ->and($result->errorOutput())->toContain('unknown option: --not-a-real-flag');
     });
 
     it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
@@ -271,7 +261,7 @@ describe('node:new', function (): void {
         $bootstrapInput = null;
         $localWireGuardConfig = null;
 
-        ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput, 'ubuntu_24-04', 0, 0, '', $localWireGuardConfig);
+        ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput, 'ubuntu_24-04', 0, $localWireGuardConfig);
         $identityMock = ($this->fakeGatewayApiVerification)();
 
         $exitCode = Artisan::call('node:new', [
@@ -443,64 +433,62 @@ describe('node:new', function (): void {
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
             && ! str_contains($process->command, '--role=')
             && str_contains($process->command, '--source-archive=')
+            && str_contains($process->command, '--gateway')
             && str_contains($process->command, 'sudo su -'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
-            && str_contains($process->command, 'orbit:internal:bootstrap-gateway-local'));
+            && str_contains($process->command, 'orbit orbit:internal:bootstrap-gateway-local'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')
             && str_contains($process->command, '--identity-json=-')
             && str_contains($process->command, '--metadata-json')
             && ! str_contains($process->command, 'gateway-private-key')
             && ! str_contains($process->command, 'control-private-key'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
-            && str_contains($process->command, 'orbit:internal:detect-platform --update-local-node'));
+            && str_contains($process->command, 'orbit orbit:internal:detect-platform --update-local-node'));
+
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && str_contains($process->command, 'php artisan'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, "'orbit'@'192.0.2.10'")
             && str_contains($process->command, '99-orbit-hardening.conf')
             && str_contains($process->command, 'PermitRootLogin no')
             && str_contains($process->command, 'AllowUsers ${RUNTIME_USER}'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
-            && str_contains($process->command, 'docker-compose-v2')
-            && str_contains($process->command, 'sqlite3')
-            && str_contains($process->command, 'usermod -aG docker')
-            && str_contains($process->command, 'docker compose version'));
+
+        // node:new no longer reaches over SSH to install host docker.io,
+        // host sqlite3, or run a separate docker-compose readiness probe:
+        // bin/install-orbit is the single source of truth for the host
+        // Docker engine, and the runtime database lives inside orbit-runtime.
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && (str_contains($process->command, 'docker.io')
+                || str_contains($process->command, 'docker-compose-v2')
+                || str_contains($process->command, 'docker-compose-plugin install')
+                || str_contains($process->command, 'apt-get -o DPkg::Lock::Timeout=300 install -y -qq')
+                || (str_contains($process->command, 'apt-get') && str_contains($process->command, ' sqlite3'))));
 
         $identityMock->assertSent(ShowGatewayIdentityRequest::class);
     });
 
-    it('fails before gateway bootstrap when container runtime dependencies cannot be prepared', function (): void {
-        ($this->fakeFirstGatewayProcesses)(
-            bootstrapOutput: $this->mockCaCert,
-            gatewayRuntimeExitCode: 1,
-            gatewayRuntimeErrorOutput: 'Unable to locate package docker-compose-v2',
-        );
+    it('does not install host docker.io or host sqlite3 after the Docker-first installer ran', function (): void {
+        ($this->fakeFirstGatewayProcesses)($this->mockCaCert);
+        ($this->fakeGatewayApiVerification)();
 
-        $exitCode = Artisan::call('node:new', [
-            'name' => 'gateway-runtime-fail',
+        Artisan::call('node:new', [
+            'name' => 'gateway-1',
             '--role' => 'gateway',
-            '--host' => '192.0.2.15',
+            '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
 
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toBe([
-                'error' => [
-                    'code' => 'node.provisioning_incomplete',
-                    'message' => "Gateway host '192.0.2.15' could not prepare container runtime dependencies.",
-                    'meta' => [
-                        'host' => '192.0.2.15',
-                        'step' => 'gateway_runtime_dependencies',
-                        'error' => 'Unable to locate package docker-compose-v2',
-                    ],
-                ],
-            ])
-            ->and(DB::table('nodes')->count())->toBe(0);
-
-        Process::assertDidntRun(fn ($process): bool => str_contains($process->command, 'orbit:internal:bootstrap-gateway-local'));
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'docker.io'));
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'apt-get')
+            && str_contains($process->command, ' sqlite3'));
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'docker-compose-v2'));
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'docker compose version'));
+        Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && str_contains($process->command, 'sudo usermod -aG docker')
+            && ! str_contains($process->command, 'install-orbit'));
     });
 
     it('converges an already bootstrapped first gateway without duplicating trust install', function (): void {

@@ -36,6 +36,8 @@ interface ToolDefinition
      *     images?: list<string>,
      *     version_command?: string,
      *     service?: string,
+     *     container?: string,
+     *     image?: string,
      *     update_command?: string,
      *     repair_commands?: array<string, string>,
      * }

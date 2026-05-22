@@ -327,13 +327,15 @@ it('registers the e2e artisan commands', function (): void {
     }
 });
 
-it('installs the PHP toolchain via the reachable sury.org repo on Ubuntu', function (): void {
+it('installs Docker via the reachable docker.com repo on Ubuntu instead of host PHP toolchains', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 
     expect($script)
-        ->toContain('packages.sury.org/php')
-        ->toContain('sury-php.gpg')
-        ->toContain('APT::Update::Error-Mode=any')
+        ->toContain('download.docker.com')
+        ->toContain('docker.gpg')
+        ->toContain('docker-ce')
+        ->not->toContain('packages.sury.org/php')
+        ->not->toContain('sury-php.gpg')
         ->not->toContain('ppa.launchpadcontent.net')
         ->not->toContain('keyserver.ubuntu.com')
         ->not->toContain('add-apt-repository');
@@ -378,10 +380,12 @@ TEXT;
     ]);
 });
 
-it('installs Supervisor as a platform prerequisite for runtime backend hosts', function (): void {
+it('does not install host Supervisor because runtime processes live inside Docker containers', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 
-    expect($script)->toContain('supervisor');
+    expect($script)
+        ->not->toContain('supervisor')
+        ->toContain('orbit-runtime:current');
 });
 
 it('installs the SSH client as a control-node provisioning prerequisite', function (): void {
@@ -390,11 +394,13 @@ it('installs the SSH client as a control-node provisioning prerequisite', functi
     expect($script)->toContain('openssh-client');
 });
 
-it('does not install the SQLite CLI as a universal host prerequisite', function (): void {
+it('does not install the SQLite CLI or host PHP because SQLite is bound through the orbit-runtime container', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 
     expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
-        ->and($script)->toContain('"php${PHP_VERSION}-sqlite3"');
+        ->and($script)->not->toContain('php8.5-sqlite3')
+        ->and($script)->not->toContain('-sqlite3"')
+        ->and($script)->toContain('orbit-runtime:current');
 });
 
 it('aligns orbit checkout ownership with the home parent so non-root users can write', function (): void {

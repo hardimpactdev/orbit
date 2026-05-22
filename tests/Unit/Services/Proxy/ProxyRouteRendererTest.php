@@ -12,7 +12,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('ProxyRouteRenderer', function (): void {
-    it('renders custom upstream routes as Caddy sites with Orbit TLS paths', function (): void {
+    it('renders custom upstream routes as Caddy sites with Orbit TLS paths and normalizes host loopback for container reachability', function (): void {
         $node = Node::factory()->create(['role' => 'app']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -26,8 +26,33 @@ describe('ProxyRouteRenderer', function (): void {
 
         expect($content)->toContain('vite.docs.test {')
             ->and($content)->toContain('tls /etc/orbit/certs/vite.docs.test.crt /etc/orbit/certs/vite.docs.test.key')
-            ->and($content)->toContain('reverse_proxy http://127.0.0.1:5173')
+            ->and($content)->toContain('reverse_proxy http://host.docker.internal:5173')
+            ->and($content)->not->toContain('127.0.0.1')
             ->and((new ProxyRouteRenderer)->sourceHash($route))->toBe(hash('sha256', $content));
+    });
+
+    it('normalizes localhost upstreams to the orbit-caddy host gateway hostname', function (): void {
+        $node = Node::factory()->create(['role' => 'app']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'mail.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://localhost:8025'], 'upstream' => 'http://localhost:8025'],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)
+            ->toContain('reverse_proxy http://host.docker.internal:8025')
+            ->not->toContain('http://localhost')
+            ->not->toContain('127.0.0.1');
+    });
+
+    it('leaves non-loopback upstreams untouched', function (): void {
+        expect(ProxyRouteRenderer::normalizeHostLoopback('http://10.6.0.21:80'))->toBe('http://10.6.0.21:80')
+            ->and(ProxyRouteRenderer::normalizeHostLoopback('https://example.com:443/api'))->toBe('https://example.com:443/api')
+            ->and(ProxyRouteRenderer::normalizeHostLoopback('http://127.0.0.1.example.com:80'))->toBe('http://127.0.0.1.example.com:80');
     });
 
     it('renders custom redirect routes with redirect codes', function (): void {
@@ -166,7 +191,6 @@ CADDY);
 
         expect($content)->toBe(<<<'CADDY'
 http://example.com {
-    bind 10.6.0.2
     encode gzip
 
     reverse_proxy http://10.6.0.21:80 {
@@ -179,6 +203,33 @@ http://example.com {
 
 CADDY);
     });
+
+    it('rejects router routes whose upstream host is not a valid IP address', function (): void {
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'example.com',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://gateway:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => 42,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ],
+                ],
+            ],
+        ]);
+
+        (new ProxyRouteRenderer)->renderRouterRoute($route);
+    })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid bind address.");
 
     it('rejects ingress routes with invalid router upstream urls', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
@@ -228,7 +279,7 @@ CADDY);
         (new ProxyRouteRenderer)->renderIngress($route);
     })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid TLS cert path.");
 
-    it('renders private backend routes bound to the wireguard address', function (): void {
+    it('renders private backend routes whose artifact paths fall under orbit-caddy mounted host roots', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -253,8 +304,7 @@ CADDY);
         $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
         expect($content)->toBe(<<<'CADDY'
-http://example.com {
-    bind 10.6.0.21
+http://example.com:8081 {
     root * /home/orbit/sites/example/current/public
     encode gzip
 

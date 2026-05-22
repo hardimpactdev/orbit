@@ -8,6 +8,7 @@ use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Runtime\OrbitCaddyContainer;
 use DomainException;
 
 final readonly class IngressResolver
@@ -47,7 +48,9 @@ final readonly class IngressResolver
             throw new DomainException('App-production backend node requires a WireGuard address for ingress.');
         }
 
-        return "http://{$wireguardAddress}:80";
+        $port = OrbitCaddyContainer::PrivateBackendPort;
+
+        return "http://{$wireguardAddress}:{$port}";
     }
 
     public function router(): Node

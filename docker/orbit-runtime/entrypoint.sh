@@ -26,6 +26,22 @@ run_orbit() {
     exec php "$orbit_artisan" "$@"
 }
 
+wait_for_source() {
+    while [ ! -f "$orbit_artisan" ]; do
+        printf 'orbit-runtime: waiting for Orbit source at %s\n' "$source_path" >&2
+        sleep 1
+    done
+}
+
+start_gateway_http_server() {
+    local host="${ORBIT_API_HOST:-0.0.0.0}"
+    local port="${ORBIT_API_PORT:-8080}"
+
+    printf 'orbit-runtime: starting gateway API server on %s:%s\n' "$host" "$port" >&2
+
+    php "$orbit_artisan" serve --host="$host" --port="$port" --no-reload &
+}
+
 run_scheduler() {
     scheduler_args=("orbit-scheduler")
 
@@ -33,10 +49,11 @@ run_scheduler() {
         scheduler_args+=("--sleep-seconds=${ORBIT_SCHEDULER_SLEEP_SECONDS}")
     fi
 
-    while [ ! -f "$orbit_artisan" ]; do
-        printf 'orbit-runtime: waiting for Orbit source at %s\n' "$source_path" >&2
-        sleep 1
-    done
+    wait_for_source
+
+    if truthy "${ORBIT_IS_GATEWAY:-}"; then
+        start_gateway_http_server
+    fi
 
     run_orbit "${scheduler_args[@]}"
 }

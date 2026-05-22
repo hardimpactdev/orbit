@@ -35,7 +35,7 @@ beforeEach(function (): void {
     {
         public int $calls = 0;
 
-        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
+        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit', bool $asGateway = false): OrbitHostInstallResult
         {
             $this->calls++;
 

@@ -49,8 +49,11 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'completed',
         ])
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/vite.docs.test.caddy')
-            ->and($caddySite)->toContain('reverse_proxy http://127.0.0.1:5173')
-            ->and($shell->scripts[0])->toContain('sudo systemctl reload caddy')
+            ->and($caddySite)->toContain('reverse_proxy http://host.docker.internal:5173')
+            ->and($caddySite)->not->toContain('127.0.0.1')
+            ->and($shell->scripts[0])->toContain("docker restart 'orbit-caddy'")
+            ->and($shell->scripts[0])->not->toContain('caddy reload')
+            ->and($shell->scripts[0])->not->toContain('sudo systemctl reload caddy')
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
@@ -144,7 +147,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($action['node'])->toBe('gateway-1')
             ->and($shell->nodes[0]->is($router))->toBeTrue()
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
-            ->and($caddySite)->toContain('bind 10.6.0.2')
+            ->and($caddySite)->not->toContain('bind 10.6.0.2')
             ->and($caddySite)->toContain('reverse_proxy http://10.6.0.21:80')
             ->and($route->refresh()->config['router_artifact']['source_hash'])->toBe(hash('sha256', $caddySite));
     });
@@ -188,7 +191,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($action['node'])->toBe('web-1')
             ->and($shell->nodes[0]->is($backend))->toBeTrue()
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.backend.caddy')
-            ->and($caddySite)->toContain('bind 10.6.0.21')
+            ->and($caddySite)->not->toContain('bind 10.6.0.21')
             ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock');
     });
 
@@ -270,7 +273,9 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])->toContain('getent group caddy')
             ->and($shell->scripts[0])->toContain("sudo chgrp \"\$orbit_caddy_group\" '/etc/orbit/certs/vite.docs.test.key'")
             ->and($shell->scripts[0])->toContain("sudo chmod 0640 '/etc/orbit/certs/vite.docs.test.key'")
-            ->and($shell->scripts[0])->toContain('sudo systemctl reload caddy');
+            ->and($shell->scripts[0])->toContain("docker restart 'orbit-caddy'")
+            ->and($shell->scripts[0])->not->toContain('caddy reload')
+            ->and($shell->scripts[0])->not->toContain('sudo systemctl reload caddy');
     });
 
     it('re-applies app proxy routes from gateway intent', function (): void {

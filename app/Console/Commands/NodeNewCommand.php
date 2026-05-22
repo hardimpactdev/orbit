@@ -2149,52 +2149,6 @@ SCRIPT,
         return null;
     }
 
-    private function ensureGatewayRuntimeDependencies(string $host, string $sshUser, string $runtimeUser): ?int
-    {
-        $script = sprintf(
-            <<<'SCRIPT'
-set -e
-RUNTIME_USER=%s
-if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! command -v sqlite3 >/dev/null 2>&1; then
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io docker-compose-v2 sqlite3
-    elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io docker-compose-plugin sqlite3
-    else
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io sqlite3
-    fi
-fi
-if getent group docker >/dev/null 2>&1; then
-    sudo usermod -aG docker "$RUNTIME_USER"
-fi
-sudo systemctl enable --now docker >/dev/null
-sudo -H -u "$RUNTIME_USER" bash -lc 'docker compose version >/dev/null'
-SCRIPT,
-            escapeshellarg($runtimeUser),
-        );
-
-        $dependencies = Process::timeout(900)->run($this->ssh(
-            user: $sshUser,
-            host: $host,
-            command: $script,
-        ));
-
-        if ($dependencies->successful()) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Gateway host '{$host}' could not prepare container runtime dependencies.",
-            meta: [
-                'host' => $host,
-                'step' => 'gateway_runtime_dependencies',
-                'error' => trim($dependencies->errorOutput()."\n".$dependencies->output()) ?: null,
-            ],
-        );
-    }
-
     private function gatewaySshPublicKey(): string|int
     {
         $publicKey = Process::timeout(30)->run('ssh-keygen -y -f ~/.ssh/id_ed25519');
@@ -2277,7 +2231,7 @@ SCRIPT,
             ],
         ], JSON_THROW_ON_ERROR);
 
-        $installation = $installer->install($host, $sshUser, $runtimeUser);
+        $installation = $installer->install($host, $sshUser, $runtimeUser, asGateway: true);
 
         if (! $installation->successful) {
             return $this->installerFailure(
@@ -2298,21 +2252,10 @@ SCRIPT,
             return $sshAuthorization;
         }
 
-        $gatewayRuntimeDependencies = $this->ensureGatewayRuntimeDependencies(
-            host: $host,
-            sshUser: $sshUser,
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($gatewayRuntimeDependencies)) {
-            return $gatewayRuntimeDependencies;
-        }
-
         $gatewayTld = $this->resolveGatewayTld();
 
         $bootstrapCommand = sprintf(
-            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json',
-            escapeshellarg("/home/{$runtimeUser}/orbit"),
+            'orbit orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json',
             escapeshellarg($name),
             escapeshellarg($gatewayAddress),
             escapeshellarg($host),
@@ -2840,10 +2783,7 @@ SCRIPT,
 
     private function detectRemotePlatform(string $host, string $sshUser, string $runtimeUser): string|int
     {
-        $detectCommand = sprintf(
-            'cd %s && php artisan orbit:internal:detect-platform --update-local-node',
-            escapeshellarg("/home/{$runtimeUser}/orbit"),
-        );
+        $detectCommand = 'orbit orbit:internal:detect-platform --update-local-node';
 
         $command = $sshUser === $runtimeUser
             ? $detectCommand

@@ -5,10 +5,20 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Models\ProxyRoute;
+use App\Services\Runtime\OrbitCaddyContainer;
 use RuntimeException;
 
 final readonly class ProxyRouteRenderer
 {
+    /**
+     * Container hostname Caddy resolves to the Docker host gateway so custom
+     * proxy routes that historically targeted host loopback (127.0.0.1 /
+     * localhost) keep reaching the host backend after orbit-caddy moved into
+     * a Docker container. The orbit-caddy container configures the
+     * matching `--add-host host.docker.internal:host-gateway` entry.
+     */
+    public const HostLoopbackHostname = 'host.docker.internal';
+
     public function render(ProxyRoute $route): string
     {
         if ($this->usesIngressPlacement($route)) {
@@ -77,13 +87,13 @@ CADDY;
             throw new RuntimeException('Proxy route router upstream requires a url.');
         }
 
-        $bind = parse_url($this->validatedRouterUrl($routerUrl), PHP_URL_HOST);
+        $routerHost = parse_url($this->validatedRouterUrl($routerUrl), PHP_URL_HOST);
 
-        if (! is_string($bind) || $bind === '') {
+        if (! is_string($routerHost) || $routerHost === '') {
             throw new RuntimeException('Proxy route router upstream requires a valid bind address.');
         }
 
-        $bind = $this->validatedIpAddress($route, $bind);
+        $this->validatedIpAddress($route, $routerHost);
 
         if (! is_array($backendPool) || $backendPool === []) {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a router backend pool.");
@@ -109,7 +119,6 @@ CADDY;
 
         return <<<CADDY
 http://{$route->domain} {
-    bind {$bind}
     encode gzip
 
     reverse_proxy {$upstreams} {
@@ -146,7 +155,7 @@ CADDY;
             throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a PHP socket.");
         }
 
-        $bind = $this->validatedIpAddress($route, $bind);
+        $this->validatedIpAddress($route, $bind);
         $documentRoot = $this->validatedAbsolutePath($route, $documentRoot, 'backend artifact has an invalid document root.');
         $phpSocket = $this->validatedAbsolutePath($route, $phpSocket, 'backend artifact has an invalid PHP socket path.');
 
@@ -154,9 +163,10 @@ CADDY;
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
+        $port = OrbitCaddyContainer::PrivateBackendPort;
+
         return <<<CADDY
-http://{$route->domain} {
-    bind {$bind}
+http://{$route->domain}:{$port} {
     root * {$documentRoot}
     encode gzip
 
@@ -181,6 +191,8 @@ CADDY;
             throw new RuntimeException("Proxy route '{$route->domain}' is missing an upstream target.");
         }
 
+        $upstream = $this->normalizeHostLoopback($upstream);
+
         $tls = $this->tlsDirective($route);
 
         return <<<CADDY
@@ -190,6 +202,19 @@ CADDY;
 }
 
 CADDY;
+    }
+
+    /**
+     * Rewrite host-loopback authorities so persisted custom upstreams keep
+     * reaching the host from inside the orbit-caddy container.
+     */
+    public static function normalizeHostLoopback(string $upstream): string
+    {
+        return preg_replace_callback(
+            '~(?<scheme>https?://)(?<host>127\.0\.0\.1|localhost)(?=$|[:/?\#])~i',
+            fn (array $matches): string => $matches['scheme'].self::HostLoopbackHostname,
+            $upstream,
+        ) ?? $upstream;
     }
 
     private function renderRedirect(ProxyRoute $route): string

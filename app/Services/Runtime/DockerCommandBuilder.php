@@ -38,10 +38,12 @@ class DockerCommandBuilder
         return 'docker start '.$this->quote($name);
     }
 
-    public function runDetached(OrbitRuntimeContainer $container): string
+    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer $container): string
     {
         $parts = [
             'docker run -d',
+            '--pull',
+            $this->quote('never'),
             '--name',
             $this->quote($container->name()),
             '--restart',
@@ -49,6 +51,18 @@ class DockerCommandBuilder
             '--network',
             $this->quote($container->network()),
         ];
+
+        if ($container instanceof OrbitCaddyContainer) {
+            foreach ($container->publishedPorts() as $port) {
+                $parts[] = '--publish';
+                $parts[] = $this->quote($port);
+            }
+
+            foreach ($container->extraHosts() as $host => $address) {
+                $parts[] = '--add-host';
+                $parts[] = $this->quote("{$host}:{$address}");
+            }
+        }
 
         foreach ($container->networkAliases() as $alias) {
             $parts[] = '--network-alias';

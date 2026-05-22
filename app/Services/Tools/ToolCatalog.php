@@ -57,6 +57,20 @@ final readonly class ToolCatalog
     public function logCommand(string $tool, int $lines, bool $follow = false): ?string
     {
         $metadata = $this->probeMetadata($tool);
+        $container = is_string($metadata['container'] ?? null)
+            ? $metadata['container']
+            : null;
+        $lineCount = max(1, $lines);
+
+        if ($container !== null && $container !== '') {
+            return sprintf(
+                'docker logs --tail %s%s %s 2>&1',
+                escapeshellarg((string) $lineCount),
+                $follow ? ' -f' : '',
+                escapeshellarg($container),
+            );
+        }
+
         $service = is_string($metadata['service'] ?? null)
             ? $metadata['service']
             : null;
@@ -64,8 +78,6 @@ final readonly class ToolCatalog
         if ($service === null || $service === '') {
             return null;
         }
-
-        $lineCount = max(1, $lines);
 
         if (! $follow) {
             return sprintf(
@@ -178,6 +190,8 @@ final readonly class ToolCatalog
      *     images?: list<string>,
      *     version_command?: string,
      *     service?: string,
+     *     container?: string,
+     *     image?: string,
      *     update_command?: string,
      *     repair_commands?: array<string, string>,
      * }|null

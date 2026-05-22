@@ -9,6 +9,7 @@ use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyKind;
 use App\Services\E2E\DockerImageDistributor;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -169,6 +170,7 @@ class E2EPrepareDockerHostsCommand extends Command
             'images' => [
                 ['role' => 'topology-runtime', 'image' => self::RuntimeImage],
                 ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
+                ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
             ],
         ];
     }

@@ -56,7 +56,9 @@ describe('tool:start command contract', function (): void {
                 'expected_state' => 'running',
             ])
             ->and($shell->scripts)->toHaveCount(1)
-            ->and($shell->scripts[0])->toContain('systemctl start caddy');
+            ->and($shell->scripts[0])->toContain('docker start')
+            ->and($shell->scripts[0])->toContain('orbit-caddy')
+            ->and($shell->scripts[0])->not->toContain('systemctl');
     });
 
     it('renders the documented human progress tree', function (): void {

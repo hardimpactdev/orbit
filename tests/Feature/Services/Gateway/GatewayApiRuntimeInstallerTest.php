@@ -4,11 +4,29 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
+
+function gatewayApiInstallerPathIsCaddyVisible(string $path, OrbitCaddyContainer $container): bool
+{
+    foreach ($container->mounts() as $mount) {
+        $target = $mount['target'];
+
+        if ($path === $target) {
+            return true;
+        }
+
+        if (str_starts_with($path, rtrim($target, '/').'/')) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 describe('GatewayApiRuntimeInstaller', function (): void {
     beforeEach(function (): void {
@@ -33,10 +51,9 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         }
     });
 
-    it('issues a leaf certificate and installs the caddy-backed gateway API runtime', function (): void {
+    it('issues a leaf certificate and routes the gateway API through orbit-caddy to orbit-runtime', function (): void {
         $writtenGlobalCaddyfile = null;
         $writtenGatewayApiCaddyfile = null;
-        $writtenFpmPool = null;
         $caDir = storage_path('app/orbit/ca');
         $certsDir = storage_path('app/orbit/certs');
 
@@ -47,11 +64,7 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
         File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
 
-        Process::fake(function ($process) use (&$writtenGlobalCaddyfile, &$writtenGatewayApiCaddyfile, &$writtenFpmPool) {
-            if (str_contains($process->command, 'tee /etc/php/8.5/fpm/pool.d/orbit-api.conf')) {
-                $writtenFpmPool = (string) $process->input;
-            }
-
+        Process::fake(function ($process) use (&$writtenGlobalCaddyfile, &$writtenGatewayApiCaddyfile) {
             if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {
                 $writtenGlobalCaddyfile = (string) $process->input;
             }
@@ -67,32 +80,133 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
 
         expect($writtenGlobalCaddyfile)->toContain('(security_headers)')
-            ->and($writtenGlobalCaddyfile)->toContain('(profiling_headers)')
-            ->and($writtenGlobalCaddyfile)->toContain('(path_blocking_public_root)')
-            ->and($writtenGlobalCaddyfile)->toContain('(path_blocking_project_root)')
-            ->and($writtenGlobalCaddyfile)->toContain('(security_txt)')
-            ->and($writtenGlobalCaddyfile)->toContain('(cache_headers)')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/*.caddy')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/sites/*.caddy')
             ->and($writtenGatewayApiCaddyfile)->toContain('https://10.6.0.2:443')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('bind 10.6.0.2')
             ->and($writtenGatewayApiCaddyfile)->toContain('tls '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.crt '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.key')
-            ->and($writtenGatewayApiCaddyfile)->toContain('root * /home/orbit/orbit/public')
-            ->and($writtenGatewayApiCaddyfile)->toContain('php_fastcgi unix//run/php/orbit-api.sock')
-            ->and($writtenFpmPool)->toContain('[orbit-api]')
-            ->and($writtenFpmPool)->toContain('user = orbit')
-            ->and($writtenFpmPool)->toContain('listen.group = caddy')
-            ->and($writtenFpmPool)->toContain('chdir = /home/orbit/orbit');
+            ->and($writtenGatewayApiCaddyfile)->toContain('reverse_proxy http://orbit-runtime:8080')
+            ->and($writtenGatewayApiCaddyfile)->not->toContain('php_fastcgi')
+            ->and($writtenGatewayApiCaddyfile)->not->toContain('php-fpm')
+            ->and($writtenGatewayApiCaddyfile)->not->toContain('orbit-api.sock');
+    });
 
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'openssl x509 -checkend'));
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'sudo usermod -aG orbit caddy'));
-        Process::assertRan('sudo tee /etc/php/8.5/fpm/pool.d/orbit-api.conf > /dev/null');
+    it('reloads the orbit-caddy container and never installs or restarts host PHP-FPM or host Caddy', function (): void {
+        $caDir = storage_path('app/orbit/ca');
+        $certsDir = storage_path('app/orbit/certs');
+
+        File::ensureDirectoryExists($caDir);
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$caDir}/root.key", 'test-root-key');
+        File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
+
+        Process::fake([
+            '*' => Process::result(),
+        ]);
+        Process::preventStrayProcesses();
+
+        app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
+
         Process::assertRan('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites');
-        Process::assertRan('sudo tee /etc/caddy/Caddyfile > /dev/null');
         Process::assertRan('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null');
-        Process::assertRan('sudo systemctl restart php8.5-fpm');
-        Process::assertRan('sudo systemctl restart caddy');
-        Process::assertRan('sudo systemctl enable caddy');
+        Process::assertRan("docker restart 'orbit-caddy'");
+
+        Process::assertNotRan(fn ($process): bool => is_string($process->command)
+            && str_contains($process->command, 'systemctl'));
+        Process::assertNotRan(fn ($process): bool => is_string($process->command)
+            && str_contains($process->command, 'php-fpm'));
+        Process::assertNotRan(fn ($process): bool => is_string($process->command)
+            && str_contains($process->command, 'php8.5-fpm'));
+        Process::assertNotRan(fn ($process): bool => is_string($process->command)
+            && str_contains($process->command, 'tee /etc/php/'));
+        Process::assertNotRan(fn ($process): bool => is_string($process->command)
+            && str_contains($process->command, 'usermod -aG orbit caddy'));
+    });
+
+    it('rewrites runtime-container storage_path cert paths to the host path that lives under an orbit-caddy bind mount', function (): void {
+        $hostOrbit = '/home/orbit/orbit';
+        $sourcePath = '/opt/orbit';
+        $writtenGatewayApiCaddyfile = null;
+
+        // Simulate running inside orbit-runtime: storage_path() points at
+        // /opt/orbit/storage and ORBIT_HOST_PATH tells us where that lives
+        // on the host bind source.
+        $containerStorage = "{$sourcePath}/storage";
+        $tempContainerRoot = sys_get_temp_dir().'/orbit-gateway-api-host-translate-'.uniqid();
+        mkdir($tempContainerRoot, 0777, true);
+        app()->useStoragePath($tempContainerRoot);
+
+        // OrbitCaService reads storage_path() to issue the leaf, so prepare
+        // CA material at the test storage path, then assert the *rendered*
+        // Caddyfile points at the host-translated location.
+        $caDir = storage_path('app/orbit/ca');
+        $certsDir = storage_path('app/orbit/certs');
+        File::ensureDirectoryExists($caDir);
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$caDir}/root.key", 'test-root-key');
+        File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
+
+        Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
+            if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
+                $writtenGatewayApiCaddyfile = (string) $process->input;
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+
+        // The translation rule is "/opt/orbit/X → $ORBIT_HOST_PATH/X". For
+        // this test we point storage to a non-/opt path; the installer
+        // should leave non-/opt paths untouched, which keeps existing
+        // host-direct installs working. To exercise the live translation we
+        // also assert the helper directly.
+        putenv("ORBIT_HOST_PATH={$hostOrbit}");
+
+        try {
+            app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
+        } finally {
+            putenv('ORBIT_HOST_PATH');
+
+            if (is_dir($tempContainerRoot)) {
+                File::deleteDirectory($tempContainerRoot);
+            }
+        }
+
+        // Storage path under temp dir isn't /opt/orbit, so paths are
+        // returned unchanged here. The host-path translation logic is
+        // covered explicitly below with a hand-built container path.
+        expect($writtenGatewayApiCaddyfile)->toContain('tls '.$certsDir.'/10.6.0.2.crt');
+
+        $reflection = new ReflectionClass(GatewayApiRuntimeInstaller::class);
+        $method = $reflection->getMethod('caddyVisiblePath');
+        $method->setAccessible(true);
+        $instance = app(GatewayApiRuntimeInstaller::class);
+
+        putenv("ORBIT_HOST_PATH={$hostOrbit}");
+
+        try {
+            $translatedCert = $method->invoke($instance, "{$containerStorage}/app/orbit/certs/10.6.0.2.crt");
+            $translatedKey = $method->invoke($instance, "{$containerStorage}/app/orbit/certs/10.6.0.2.key");
+            $translatedExact = $method->invoke($instance, $sourcePath);
+            $passthrough = $method->invoke($instance, '/etc/orbit/certs/external.crt');
+        } finally {
+            putenv('ORBIT_HOST_PATH');
+        }
+
+        expect($translatedCert)->toBe("{$hostOrbit}/storage/app/orbit/certs/10.6.0.2.crt")
+            ->and($translatedKey)->toBe("{$hostOrbit}/storage/app/orbit/certs/10.6.0.2.key")
+            ->and($translatedExact)->toBe($hostOrbit)
+            ->and($passthrough)->toBe('/etc/orbit/certs/external.crt');
+
+        $caddyContainer = OrbitCaddyContainer::forPrivateNode('10.6.0.2');
+
+        expect(gatewayApiInstallerPathIsCaddyVisible($translatedCert, $caddyContainer))->toBeTrue('translated cert path must fall under an orbit-caddy bind mount')
+            ->and(gatewayApiInstallerPathIsCaddyVisible($translatedKey, $caddyContainer))->toBeTrue('translated key path must fall under an orbit-caddy bind mount')
+            ->and(gatewayApiInstallerPathIsCaddyVisible($passthrough, $caddyContainer))->toBeTrue('paths already under /etc/orbit/* must remain Caddy-visible without translation');
     });
 
     it('preserves an existing global Caddyfile and only ensures managed imports and snippets', function (): void {

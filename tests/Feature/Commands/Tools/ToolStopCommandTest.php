@@ -87,7 +87,9 @@ describe('tool:stop command contract', function (): void {
                 'expected_state' => 'installed',
             ])
             ->and($shell->scripts)->toHaveCount(1)
-            ->and($shell->scripts[0])->toContain('systemctl stop caddy');
+            ->and($shell->scripts[0])->toContain('docker stop')
+            ->and($shell->scripts[0])->toContain('orbit-caddy')
+            ->and($shell->scripts[0])->not->toContain('systemctl');
     });
 
     it('rejects tools without a stop action before changing intent', function (): void {

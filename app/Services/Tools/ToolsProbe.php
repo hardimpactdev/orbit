@@ -16,6 +16,7 @@ use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Throwable;
 
 final readonly class ToolsProbe
@@ -54,6 +55,7 @@ final readonly class ToolsProbe
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
+        $container = $metadata['container'] ?? null;
         $configPath = $this->managedConfigPath($tool);
         $secretPath = $this->managedSecretPath($tool);
         $php = <<<'PHP'
@@ -61,6 +63,7 @@ $payload = json_decode(stream_get_contents(STDIN), true);
 $binary = (string) ($payload['binary'] ?? '');
 $versionCommand = (string) ($payload['version_command'] ?? '');
 $service = (string) ($payload['service'] ?? '');
+$container = (string) ($payload['container'] ?? '');
 $configPath = (string) ($payload['config_path'] ?? '');
 $secretPath = (string) ($payload['secret_path'] ?? '');
 $path = trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
@@ -75,6 +78,9 @@ $configExists = '';
 $configHash = '';
 $secretExists = '';
 $secretHash = '';
+$containerExists = '';
+$containerState = '';
+$containerSpecHash = '';
 
 if ($versionCommand !== '') {
     $version = trim((string) shell_exec($versionCommand.' 2>/dev/null | head -n 1'));
@@ -83,6 +89,26 @@ if ($versionCommand !== '') {
 if ($service !== '') {
     exec('systemctl is-active --quiet '.escapeshellarg($service).' 2>/dev/null', $output, $exitCode);
     $state = $exitCode === 0 ? 'running' : 'stopped';
+}
+
+if ($container !== '') {
+    $inspectJson = trim((string) shell_exec('docker container inspect --format '.escapeshellarg('{{json .}}').' '.escapeshellarg($container).' 2>/dev/null'));
+
+    if ($inspectJson === '') {
+        $containerExists = '0';
+        $containerState = 'missing';
+    } else {
+        $inspect = json_decode($inspectJson, true);
+        $containerExists = '1';
+
+        if (is_array($inspect)) {
+            $running = $inspect['State']['Running'] ?? false;
+            $containerState = $running === true ? 'running' : 'stopped';
+            $state = $containerState;
+            $labels = is_array($inspect['Config']['Labels'] ?? null) ? $inspect['Config']['Labels'] : [];
+            $containerSpecHash = is_string($labels['orbit.caddy.spec_hash'] ?? null) ? $labels['orbit.caddy.spec_hash'] : '';
+        }
+    }
 }
 
 if ($configPath !== '') {
@@ -95,7 +121,7 @@ if ($secretPath !== '') {
     $secretHash = $secretExists === '1' ? hash_file('sha256', $secretPath) : '';
 }
 
-printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $path, $version, $state, $configExists, $configHash, $secretExists, $secretHash);
+printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $path, $version, $state, $configExists, $configHash, $secretExists, $secretHash, $containerExists, $containerState, $containerSpecHash);
 PHP;
 
         $script = 'php -r '.escapeshellarg($php);
@@ -106,22 +132,27 @@ PHP;
                 'binary' => $binary,
                 'version_command' => is_string($versionCommand) ? $versionCommand : '',
                 'service' => is_string($service) ? $service : '',
+                'container' => is_string($container) ? $container : '',
                 'config_path' => $configPath ?? '',
                 'secret_path' => $secretPath ?? '',
             ], JSON_THROW_ON_ERROR),
         ]);
-        $parts = explode("\t", trim($result->stdout), 7);
+        $parts = explode("\t", trim($result->stdout), 10);
+        $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
 
         return new ProbeSnapshot([
             $tool->name => [
                 'installed' => $result->successful(),
                 'path' => ($parts[0] ?? '') !== '' ? $parts[0] : null,
                 'version' => ($parts[1] ?? '') !== '' ? $parts[1] : null,
-                'state' => ($parts[2] ?? '') !== '' ? $parts[2] : null,
+                'state' => $containerState ?? (($parts[2] ?? '') !== '' ? $parts[2] : null),
                 'config_exists' => ($parts[3] ?? '') !== '' ? $parts[3] === '1' : null,
                 'config_hash' => ($parts[4] ?? '') !== '' ? $parts[4] : null,
                 'secret_exists' => ($parts[5] ?? '') !== '' ? $parts[5] === '1' : null,
                 'secret_hash' => ($parts[6] ?? '') !== '' ? $parts[6] : null,
+                'container_exists' => ($parts[7] ?? '') !== '' ? $parts[7] === '1' : null,
+                'container_state' => $containerState,
+                'container_spec_hash' => ($parts[9] ?? '') !== '' ? $parts[9] : null,
             ],
         ]);
     }
@@ -187,6 +218,7 @@ BASH;
             ...$this->checkNodeEligibility($tool),
             ...$this->checkDefinition($tool),
             ...$this->checkCapabilityPresence($tool, $snapshot),
+            ...$this->checkContainerState($tool, $snapshot),
             ...$this->checkVersionState($tool, $snapshot),
             ...$this->checkLifecycleState($tool, $snapshot),
             ...$this->checkConfigState($tool, $snapshot),
@@ -350,6 +382,68 @@ BASH;
     /**
      * @return list<DriftEntry>
      */
+    private function checkContainerState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        $expectedHash = $this->expectedContainerSpecHash($tool);
+
+        if ($expectedHash === null) {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['installed'] ?? null) !== true) {
+            return [];
+        }
+
+        $containerName = $this->expectedContainerName($tool) ?? $tool->name;
+
+        if (($observed['container_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.container_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} container {$containerName} is missing.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'container' => $containerName,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['container_exists'] ?? null) !== true) {
+            return [];
+        }
+
+        $observedHash = is_string($observed['container_spec_hash'] ?? null)
+            ? $observed['container_spec_hash']
+            : null;
+
+        if ($observedHash !== null && hash_equals($expectedHash, $observedHash)) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.container_spec_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Tool {$tool->name} container {$containerName} differs from gateway intent.",
+                detail: [
+                    'tool' => $tool->name,
+                    'container' => $containerName,
+                    'expected_hash' => $expectedHash,
+                    'observed_hash' => $observedHash,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkLifecycleState(NodeTool $tool, ProbeSnapshot $snapshot): array
     {
         if (! in_array($tool->expected_state, ['running', 'stopped'], true)) {
@@ -359,6 +453,10 @@ BASH;
         $observed = $snapshot->get($tool->name);
 
         if (($observed['installed'] ?? null) !== true) {
+            return [];
+        }
+
+        if (($observed['container_exists'] ?? null) === false) {
             return [];
         }
 
@@ -445,6 +543,33 @@ BASH;
         $path = $managedConfig['path'] ?? null;
 
         return is_string($path) && $path !== '' ? $path : null;
+    }
+
+    private function expectedContainerSpecHash(NodeTool $tool): ?string
+    {
+        $config = is_array($tool->config) ? $tool->config : [];
+        $container = is_array($config['container'] ?? null) ? $config['container'] : null;
+
+        if ($container === null) {
+            return null;
+        }
+
+        if ($tool->name === 'caddy') {
+            return OrbitCaddyContainer::fromConfig($container)->specHash();
+        }
+
+        $hash = $container['spec_hash'] ?? null;
+
+        return is_string($hash) && $hash !== '' ? $hash : null;
+    }
+
+    private function expectedContainerName(NodeTool $tool): ?string
+    {
+        $config = is_array($tool->config) ? $tool->config : [];
+        $container = is_array($config['container'] ?? null) ? $config['container'] : [];
+        $name = $container['name'] ?? null;
+
+        return is_string($name) && $name !== '' ? $name : null;
     }
 
     private function managedConfigHash(NodeTool $tool): ?string
@@ -643,7 +768,7 @@ BASH;
      */
     private function agentProxyRouteConfig(string $tool): array
     {
-        $upstream = 'http://127.0.0.1:8080';
+        $upstream = 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
 
         return [
             'target' => ['type' => 'upstream', 'value' => $upstream],

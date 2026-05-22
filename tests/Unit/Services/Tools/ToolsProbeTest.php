@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolsProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -52,7 +53,7 @@ function createToolsProbeAgentNode(): Node
  */
 function toolsProbeAgentRouteConfig(string $tool): array
 {
-    $upstream = 'http://127.0.0.1:8080';
+    $upstream = 'http://host.docker.internal:8080';
 
     return [
         'target' => ['type' => 'upstream', 'value' => $upstream],
@@ -207,6 +208,75 @@ describe('ToolsProbe', function (): void {
             ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
                 'expected_state' => 'running',
                 'observed_state' => 'stopped',
+            ]);
+    });
+
+    it('inspects orbit-caddy container state instead of only checking the docker binary', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $shell = new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\tstopped\t{$container->specHash()}\n",
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect($shell->scripts[0])->toContain('docker container inspect')
+            ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
+                'expected_state' => 'running',
+                'observed_state' => 'stopped',
+            ]);
+    });
+
+    it('detects missing orbit-caddy containers separately from missing docker capability', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t0\tmissing\t\n",
+        ));
+
+        $drift = $probe->diff($tool, $probe->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.container_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.capability_missing'))->toBeNull();
+    });
+
+    it('detects orbit-caddy container spec hash drift', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\trunning\t".str_repeat('b', 64)."\n",
+        ));
+
+        $drift = $probe->diff($tool, $probe->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.container_spec_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.container_spec_mismatch')?->detail)->toMatchArray([
+                'expected_hash' => $container->specHash(),
+                'observed_hash' => str_repeat('b', 64),
             ]);
     });
 
@@ -415,7 +485,7 @@ describe('ToolsProbe', function (): void {
             ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
                 'tool' => 'openclaw',
                 'domain' => 'openclaw.agent',
-                'expected_upstream' => 'http://127.0.0.1:8080',
+                'expected_upstream' => 'http://host.docker.internal:8080',
                 'observed_upstream' => 'http://127.0.0.1:9999',
             ]);
     });
@@ -463,18 +533,25 @@ describe('ToolsProbe', function (): void {
     });
 });
 
-final readonly class ToolsProbeRemoteShell implements RemoteShell
+final class ToolsProbeRemoteShell implements RemoteShell
 {
+    /** @var list<string> */
+    public array $scripts;
+
     public function __construct(
         private int $exitCode = 0,
         private string $stdout = '',
-    ) {}
+    ) {
+        $this->scripts = [];
+    }
 
     /**
      * @param  array<string, mixed>  $options
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
     }
 }

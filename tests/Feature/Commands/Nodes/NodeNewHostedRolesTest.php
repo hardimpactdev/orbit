@@ -38,7 +38,7 @@ beforeEach(function (): void {
     {
         public int $calls = 0;
 
-        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
+        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit', bool $asGateway = false): OrbitHostInstallResult
         {
             $this->calls++;
 
@@ -252,7 +252,7 @@ it('pins the host key before provisioning and persists the canonical steady-stat
 it('rolls back the provisional node row when host provisioning fails', function (): void {
     $this->fakeInstaller = new class extends OrbitHostInstaller
     {
-        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
+        public function install(string $host, string $sshUser, string $runtimeUser = 'orbit', bool $asGateway = false): OrbitHostInstallResult
         {
             return new OrbitHostInstallResult(
                 successful: false,

@@ -71,7 +71,7 @@ describe('IngressResolver', function (): void {
             'wireguard_address' => '10.6.0.21',
         ]);
 
-        expect(app(IngressResolver::class)->backendUrl($web))->toBe('http://10.6.0.21:80');
+        expect(app(IngressResolver::class)->backendUrl($web))->toBe('http://10.6.0.21:8081');
     });
 
     it('resolves the active router node for ingress routes', function (): void {

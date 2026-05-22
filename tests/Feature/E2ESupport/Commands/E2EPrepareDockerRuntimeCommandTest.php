@@ -14,13 +14,14 @@ it('documents docker runtime image preparation without force', function (): void
     $this->artisan('e2e:prepare-docker-runtime')
         ->expectsOutputToContain('orbit-e2e-topology-runtime:current')
         ->expectsOutputToContain('orbit-runtime:current')
+        ->expectsOutputToContain('caddy:2-alpine')
         ->expectsOutputToContain('Dry run')
         ->assertExitCode(0);
 
     Process::assertNothingRan();
 });
 
-it('builds the docker runtime image when forced', function (): void {
+it('builds the orbit runtime images and pulls the official Caddy image when forced', function (): void {
     Process::fake([
         '*' => Process::result(),
     ]);
@@ -28,6 +29,7 @@ it('builds the docker runtime image when forced', function (): void {
     $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Built orbit-e2e-topology-runtime:current.')
         ->expectsOutputToContain('Built orbit-runtime:current.')
+        ->expectsOutputToContain('Pulled caddy:2-alpine.')
         ->assertSuccessful();
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
@@ -41,6 +43,28 @@ it('builds the docker runtime image when forced', function (): void {
         && str_contains($process->command, 'docker/orbit-runtime/Dockerfile')
         && str_contains($process->command, 'orbit-runtime:current')
         && str_contains($process->command, base_path()));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker pull')
+        && str_contains($process->command, "'caddy:2-alpine'"));
+
+    Process::assertNotRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker build')
+        && str_contains($process->command, 'caddy:2-alpine'));
+});
+
+it('keeps the Caddy image local so docker run --pull never can start the container on a fresh node', function (): void {
+    Process::fake([
+        '*' => Process::result(),
+    ]);
+
+    $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
+        ->expectsOutputToContain('Pulled caddy:2-alpine.')
+        ->assertSuccessful();
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker pull')
+        && str_contains($process->command, "'caddy:2-alpine'"));
 });
 
 it('installs a Docker-first orbit launcher without a host PHP fallback', function (): void {

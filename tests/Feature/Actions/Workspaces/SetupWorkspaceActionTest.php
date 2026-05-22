@@ -135,6 +135,9 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
 
     expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
         ->and($caddySite)->toContain("php_fastcgi unix/{$socket}")
+        ->and((string) $siteScript)->toContain("docker restart 'orbit-caddy'")
+        ->and((string) $siteScript)->not->toContain('caddy reload')
+        ->and((string) $siteScript)->not->toContain('sudo systemctl reload caddy')
         ->and($route?->config['php_socket'])->toBe($socket)
         ->and($route?->config['tls'])->toBe([
             'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
@@ -219,7 +222,7 @@ it('registers production workspace routes on ingress with a private backend site
             [
                 'node_id' => 1,
                 'node' => 'gateway',
-                'url' => 'http://10.6.0.21:80',
+                'url' => 'http://10.6.0.21:8081',
             ],
         ])
         ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')

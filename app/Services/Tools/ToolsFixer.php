@@ -36,6 +36,7 @@ final readonly class ToolsFixer
         $result = match ($entry->key) {
             'tool.config_missing', 'tool.config_mismatch' => $this->runRepairCommand($tool, $this->configRepairCommand($tool), $entry),
             'tool.credentials_missing', 'tool.credentials_mismatch' => $this->runRepairCommand($tool, $this->secretRepairCommand($tool), $entry),
+            'tool.container_missing', 'tool.container_spec_mismatch' => $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry),
             'tool.agent_route_missing' => $this->fixAgentRoute($tool, $entry),
             'tool.agent_credentials_missing' => $this->fixAgentCredentials($tool, $entry),
             'tool.agent_user_missing' => $this->fixAgentUser($tool, $entry),
@@ -106,10 +107,17 @@ final readonly class ToolsFixer
         }
 
         $command = $key === 'update'
-            ? ($metadata['update_command'] ?? null)
+            ? $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : [])
             : ($commands[$key] ?? null);
 
         return is_string($command) && $command !== '' ? $command : null;
+    }
+
+    private function containerRepairCommand(NodeTool $tool): ?string
+    {
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        return $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : []);
     }
 
     private function configRepairCommand(NodeTool $tool): ?string
@@ -233,7 +241,7 @@ SH,
      */
     private function agentProxyRouteConfig(string $tool): array
     {
-        $upstream = 'http://127.0.0.1:8080';
+        $upstream = 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
 
         return [
             'target' => ['type' => 'upstream', 'value' => $upstream],

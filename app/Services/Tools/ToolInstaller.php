@@ -186,7 +186,7 @@ final readonly class ToolInstaller
     {
         $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
         $domain = $tld !== '' ? "{$tool}.{$tld}" : $tool;
-        $upstream = $config['upstream'] ?? 'http://127.0.0.1:8080';
+        $upstream = $config['upstream'] ?? 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
 
         $existing = ProxyRoute::query()
             ->where('domain', $domain)

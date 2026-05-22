@@ -270,7 +270,7 @@ describe('AppStoreController', function (): void {
                 [
                     'node_id' => $targetNode->id,
                     'node' => 'app-1',
-                    'url' => 'http://10.6.0.21:80',
+                    'url' => 'http://10.6.0.21:8081',
                 ],
             ])
             ->and($route->config['backend_artifacts'][0]['node_id'])->toBe($targetNode->id)

@@ -23,7 +23,7 @@ class OrbitHostInstaller
         $this->pinnedNode = $node;
     }
 
-    public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
+    public function install(string $host, string $sshUser, string $runtimeUser = 'orbit', bool $asGateway = false): OrbitHostInstallResult
     {
         $localArchive = $this->buildSourceArchive();
         $remotePrefix = '/tmp/orbit-install-'.Str::lower(Str::random(8));
@@ -80,13 +80,15 @@ class OrbitHostInstaller
             }
 
             $remoteHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
+            $installerFlags = $asGateway ? ' --gateway' : '';
             $installCommand = sprintf(
-                "set -e; trap 'rm -f %s %s' EXIT; bash %s --path=%s --source-archive=%s",
+                "set -e; trap 'rm -f %s %s' EXIT; bash %s --path=%s --source-archive=%s%s",
                 escapeshellarg($remoteInstaller),
                 escapeshellarg($remoteArchive),
                 escapeshellarg($remoteInstaller),
                 escapeshellarg("{$remoteHome}/orbit"),
                 escapeshellarg($remoteArchive),
+                $installerFlags,
             );
 
             $command = $executionUser === $runtimeUser

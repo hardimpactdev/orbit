@@ -264,7 +264,7 @@ describe('tool:install agent tool eligibility', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($route)->not->toBeNull()
-            ->and($route->config['upstream'])->toBe('http://127.0.0.1:8080')
+            ->and($route->config['upstream'])->toBe('http://host.docker.internal:8080')
             ->and($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route));
     });
 });

@@ -10,6 +10,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
+use App\Tools\CaddyTool;
 
 final readonly class ProxyRouteFixer
 {
@@ -203,10 +204,11 @@ final readonly class ProxyRouteFixer
             <<<'SH'
 sudo install -d -m 0755 /etc/caddy/sites
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo systemctl reload caddy
+%s
 SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
+            CaddyTool::reloadCommand(),
         );
     }
 
@@ -331,7 +333,7 @@ if [ -n "$orbit_caddy_group" ]; then
     sudo chgrp "$orbit_caddy_group" %s
     sudo chmod 0640 %s
 fi
-sudo systemctl reload caddy
+%s
 SH,
             escapeshellarg(base64_encode($cert)),
             escapeshellarg($certPath),
@@ -341,6 +343,7 @@ SH,
             escapeshellarg($keyPath),
             escapeshellarg($keyPath),
             escapeshellarg($keyPath),
+            CaddyTool::reloadCommand(),
         );
     }
 
@@ -358,11 +361,12 @@ SH,
 sudo rm -f %s
 sudo rm -f %s
 sudo rm -f %s
-sudo systemctl reload caddy || true
+%s || true
 SH,
             escapeshellarg($sitePath),
             escapeshellarg($certPath),
             escapeshellarg($keyPath),
+            CaddyTool::reloadCommand(),
         );
 
         $this->remoteShell->run($node, $script, ['throw' => true]);

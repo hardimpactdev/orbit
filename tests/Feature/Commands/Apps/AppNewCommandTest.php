@@ -626,7 +626,9 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         ->and($caddySite)->toContain('root * /home/orbit/apps/docs/public')
         ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite))
-        ->and($remoteShell->scripts[5])->toContain('sudo systemctl reload caddy');
+        ->and($remoteShell->scripts[5])->toContain("docker restart 'orbit-caddy'")
+        ->and($remoteShell->scripts[5])->not->toContain('caddy reload')
+        ->and($remoteShell->scripts[5])->not->toContain('sudo systemctl reload caddy');
 });
 
 it('uses the production domain as the app-owned proxy route domain', function (): void {
@@ -681,7 +683,7 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy restart failed', durationMs: 1),
     ]));
 
     $exitCode = Artisan::call('app:new', [

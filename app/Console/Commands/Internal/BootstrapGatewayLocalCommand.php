@@ -31,7 +31,7 @@ use RuntimeException;
     {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
     {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
     {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
-    {--skip-runtime-install : Skip PHP-FPM, Caddy, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
+    {--skip-runtime-install : Skip orbit-caddy gateway API site write, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
     {--skip-wireguard-install : Skip gateway WireGuard interface installation for Docker E2E topology preparation}')]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command

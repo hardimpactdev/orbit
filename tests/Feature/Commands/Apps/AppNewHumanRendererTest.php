@@ -108,7 +108,7 @@ it('renders warning retry hints in human output', function (): void {
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy restart failed', durationMs: 1),
     ]));
 
     $this->artisan('app:new docs --node=app-1')
@@ -138,8 +138,8 @@ final class AppNewHumanSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        if (str_contains($script, 'sudo systemctl reload caddy')) {
-            return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1);
+        if (str_contains($script, "docker restart 'orbit-caddy'")) {
+            return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy restart failed', durationMs: 1);
         }
 
         return new RemoteShellResult(

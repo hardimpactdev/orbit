@@ -5,13 +5,11 @@ set -Eeuo pipefail
 TARGET_DIR="${ORBIT_INSTALL_PATH:-$HOME/orbit}"
 REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
 BRANCH="${ORBIT_BRANCH:-main}"
-PHP_VERSION="${ORBIT_PHP_VERSION:-8.5}"
-SURY_PHP_REPO_URL="https://packages.sury.org/php"
-SURY_PHP_KEYRING_PATH="/etc/apt/keyrings/sury-php.gpg"
 SOURCE_ARCHIVE=""
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
+GATEWAY_MODE="${ORBIT_INSTALL_GATEWAY:-0}"
 VERBOSE=0
 LOG_FILE="${ORBIT_INSTALL_LOG:-}"
 CURRENT_STEP=""
@@ -20,20 +18,26 @@ usage() {
     cat <<'HELP'
 usage: bin/install-orbit [options]
 
-Install the Orbit CLI and its control-node runtime prerequisites on the current host.
+Install the Orbit CLI and its Docker-first runtime prerequisites on the
+current host. The installer prepares Docker, the Orbit source checkout, the
+orbit-runtime and orbit-caddy container images, starts the orbit-runtime
+container, and runs migrations inside the container. No host PHP, host
+Composer, host Caddy, or host PHP-FPM is installed.
 
 Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
   --repo=URL                   Git repository to clone when no source archive is provided.
   --branch=NAME                Git branch to clone or update. Defaults to "main".
-  --php=8.5                    PHP CLI version to install on Ubuntu.
-                               Only 8.5 is supported (sury.org noble).
   --source-archive=PATH        Extract this Orbit source tarball instead of cloning.
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
-  --skip-prerequisites         Skip apt/brew prerequisite installation. Intended
-                               for prepared E2E images that already contain
-                               runtime packages.
+  --skip-prerequisites         Skip Docker / package prerequisite installation.
+                               Intended for prepared E2E images that already
+                               contain runtime packages.
+  --gateway                    Start orbit-runtime with ORBIT_IS_GATEWAY=1 so
+                               the gateway API HTTP listener is brought up
+                               alongside the scheduler. Pass on first-gateway
+                               provisioning.
   --no-sudo                    Run package and symlink commands without sudo.
   --verbose                    Stream underlying command output.
   -h, --help                   Show this help text.
@@ -121,11 +125,17 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Validate installer input\n'
     printf '  │\n'
-    printf '  ○  Install platform prerequisites\n'
+    printf '  ○  Install Docker prerequisites\n'
     printf '  │\n'
     printf '  ○  Install Orbit source\n'
     printf '  │\n'
-    printf '  ○  Bootstrap Laravel runtime\n'
+    printf '  ○  Prepare orbit-runtime and orbit-caddy images\n'
+    printf '  │\n'
+    printf '  ○  Bootstrap Orbit runtime in the container\n'
+    printf '  │\n'
+    printf '  ○  Start orbit-runtime container\n'
+    printf '  │\n'
+    printf '  ○  Run migrations inside orbit-runtime\n'
     printf '  │\n'
     printf '  ○  Align orbit checkout ownership\n'
     printf '  │\n'
@@ -177,9 +187,6 @@ parse_args() {
             --branch=*)
                 BRANCH="${1#*=}"
                 ;;
-            --php=*)
-                PHP_VERSION="${1#*=}"
-                ;;
             --source-archive=*)
                 SOURCE_ARCHIVE="${1#*=}"
                 ;;
@@ -188,6 +195,9 @@ parse_args() {
                 ;;
             --skip-prerequisites)
                 SKIP_PREREQUISITES=1
+                ;;
+            --gateway)
+                GATEWAY_MODE=1
                 ;;
             --no-sudo)
                 USE_SUDO=0
@@ -211,31 +221,6 @@ parse_args() {
 validate_args() {
     [ -n "$TARGET_DIR" ] || fail validation_failed "--path is required"
     [ -n "$LINK_PATH" ] || fail validation_failed "--bin is required"
-
-    case "$PHP_VERSION" in
-        8.5)
-            ;;
-        *)
-            fail validation_failed "--php must be: 8.5"
-            ;;
-    esac
-}
-
-ubuntu_php_package_available() {
-    apt-cache show "php${PHP_VERSION}-cli" >/dev/null 2>&1
-}
-
-install_sury_php_repo() {
-    local source_line
-    local codename
-
-    codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
-    source_line="deb [signed-by=${SURY_PHP_KEYRING_PATH}] ${SURY_PHP_REPO_URL}/ ${codename} main"
-
-    sudo_run install -d -m 0755 /etc/apt/keyrings
-    sudo_shell "curl -fsSL --retry 3 --retry-delay 2 ${SURY_PHP_REPO_URL}/apt.gpg -o /tmp/sury-php.gpg.armor && gpg --batch --yes --dearmor -o ${SURY_PHP_KEYRING_PATH} /tmp/sury-php.gpg.armor && rm -f /tmp/sury-php.gpg.armor"
-    sudo_run chmod 0644 "${SURY_PHP_KEYRING_PATH}"
-    sudo_shell "printf '%s\n' $(quote "$source_line") > /etc/apt/sources.list.d/sury-php.list"
 }
 
 wait_for_cloud_init() {
@@ -252,51 +237,93 @@ install_ubuntu_prerequisites() {
     sudo_run apt-get update
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
-        caddy \
         curl \
         git \
         gnupg \
         openssh-client \
-        supervisor \
         tar \
         unzip \
         wireguard \
         wireguard-tools
 
-    if ! ubuntu_php_package_available; then
-        install_sury_php_repo
-        sudo_run apt-get -o 'APT::Update::Error-Mode=any' update
+    install_docker_engine_ubuntu
+}
+
+install_docker_engine_ubuntu() {
+    local needs_install=0
+    if ! command -v docker >/dev/null 2>&1; then
+        needs_install=1
     fi
 
-    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        ca-certificates \
-        caddy \
-        composer \
-        curl \
-        git \
-        openssh-client \
-        "php${PHP_VERSION}-bcmath" \
-        "php${PHP_VERSION}-cli" \
-        "php${PHP_VERSION}-curl" \
-        "php${PHP_VERSION}-fpm" \
-        "php${PHP_VERSION}-intl" \
-        "php${PHP_VERSION}-mbstring" \
-        "php${PHP_VERSION}-sqlite3" \
-        "php${PHP_VERSION}-xml" \
-        "php${PHP_VERSION}-zip" \
-        supervisor \
-        tar \
-        unzip \
-        wireguard \
-        wireguard-tools
-    sudo_run update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
+    if [ "$needs_install" = "1" ]; then
+        local keyring="/etc/apt/keyrings/docker.gpg"
+        local codename
+        codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+
+        sudo_run install -d -m 0755 /etc/apt/keyrings
+        sudo_shell "curl -fsSL --retry 3 --retry-delay 2 https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg.armor && gpg --batch --yes --dearmor -o ${keyring} /tmp/docker.gpg.armor && rm -f /tmp/docker.gpg.armor"
+        sudo_run chmod 0644 "${keyring}"
+        sudo_shell "printf 'deb [arch=%s signed-by=%s] https://download.docker.com/linux/ubuntu %s stable\n' \"\$(dpkg --print-architecture)\" \"${keyring}\" \"${codename}\" > /etc/apt/sources.list.d/docker.list"
+        sudo_run apt-get update
+        sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            docker-ce \
+            docker-ce-cli \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-compose-plugin
+        sudo_run systemctl enable --now docker
+    fi
+
+    grant_runtime_user_docker_access
+}
+
+grant_runtime_user_docker_access() {
+    # Add the user that runs Orbit commands to the docker group so steady-state
+    # use of `orbit` does not need sudo. The current shell will not gain the
+    # new group membership in this session — install-orbit therefore continues
+    # to invoke docker via sudo through `docker_cli` so the install path is
+    # valid before group membership is picked up by a future login.
+    local current_user
+    current_user="$(id -un)"
+
+    if [ "$current_user" = "root" ]; then
+        return
+    fi
+
+    if ! getent group docker >/dev/null 2>&1; then
+        # docker-ce should have created this group; in case it didn't (or
+        # docker is supplied through an alternate mechanism), keep going so
+        # later steps surface the real error.
+        return
+    fi
+
+    if id -nG "$current_user" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+        return
+    fi
+
+    sudo_run usermod -aG docker "$current_user"
+}
+
+# Wrapper around `docker` that picks the right access path for install-time
+# use. The runtime user is added to the docker group above, but that
+# membership is not visible until the next login, so we transparently sudo
+# during install. After install, the host launcher (`bin/orbit`) runs as the
+# user's interactive session and uses the docker group directly.
+docker_cli() {
+    if [ "$(id -u)" -eq 0 ] || [ "$USE_SUDO" != "1" ]; then
+        docker "$@"
+        return
+    fi
+
+    sudo -n docker "$@"
 }
 
 install_macos_prerequisites() {
     require_command brew
 
     run brew update
-    run brew install php composer git
+    run brew install git
+    require_command docker
 }
 
 install_prerequisites() {
@@ -320,6 +347,14 @@ install_prerequisites() {
             fail node.unsupported_platform "unsupported operating system: $(uname -s)"
             ;;
     esac
+}
+
+require_docker() {
+    require_command docker
+
+    if ! docker_cli info >/dev/null 2>&1; then
+        fail validation_failed "Docker daemon is not reachable; start Docker before running install-orbit"
+    fi
 }
 
 install_source() {
@@ -353,12 +388,19 @@ install_source() {
     run git clone --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
 }
 
-bootstrap_laravel() {
-    local target
+build_runtime_images() {
+    require_docker
 
-    target="$(quote "$TARGET_DIR")"
+    run docker_cli build \
+        -f "$TARGET_DIR/docker/orbit-runtime/Dockerfile" \
+        -t "orbit-runtime:current" \
+        "$TARGET_DIR"
 
-    run bash -lc "cd $target && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader"
+    run docker_cli pull "caddy:2-alpine"
+}
+
+bootstrap_runtime() {
+    require_docker
 
     if [ ! -f "$TARGET_DIR/.env" ]; then
         run cp "$TARGET_DIR/.env.example" "$TARGET_DIR/.env"
@@ -370,8 +412,113 @@ bootstrap_laravel() {
         run touch "$TARGET_DIR/database/database.sqlite"
     fi
 
-    run bash -lc "cd $target && grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction"
-    run bash -lc "cd $target && php artisan migrate --force --no-interaction"
+    run docker_cli run --rm \
+        --pull never \
+        -v "$TARGET_DIR":/opt/orbit \
+        orbit-runtime:current \
+        composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+    run docker_cli run --rm \
+        --pull never \
+        -v "$TARGET_DIR":/opt/orbit \
+        orbit-runtime:current \
+        bash -lc "grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction"
+}
+
+container_env_contains() {
+    local needle="$1"
+    local env_output
+
+    # Capture docker output before piping into grep so pipefail does not
+    # turn a SIGPIPE-on-early-grep-match into a false negative.
+    env_output="$(docker_cli container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' orbit-runtime 2>/dev/null || true)"
+
+    grep -qxF -- "$needle" <<<"$env_output"
+}
+
+prepare_orbit_caddy_host_paths() {
+    # orbit-runtime mounts /etc/caddy and /etc/orbit (rw) so the gateway
+    # bootstrap inside the container can mutate the same host paths that
+    # orbit-caddy reads. Docker `--mount type=bind` requires the source to
+    # exist, so prepare it on the host first.
+    sudo_run install -d -m 0755 \
+        /etc/caddy \
+        /etc/caddy/orbit \
+        /etc/caddy/sites \
+        /etc/orbit \
+        /etc/orbit/certs
+}
+
+start_runtime_container() {
+    require_docker
+    prepare_orbit_caddy_host_paths
+
+    if ! docker_cli network inspect orbit-network >/dev/null 2>&1; then
+        run docker_cli network create \
+            --label "orbit.managed=true" \
+            --label "orbit.network.kind=runtime" \
+            orbit-network
+    fi
+
+    local gateway_env=()
+    if [ "$GATEWAY_MODE" = "1" ]; then
+        gateway_env=(--env "ORBIT_IS_GATEWAY=1")
+    fi
+
+    if docker_cli container inspect orbit-runtime >/dev/null 2>&1; then
+        local needs_recreate=0
+
+        if [ "$GATEWAY_MODE" = "1" ] && ! container_env_contains "ORBIT_IS_GATEWAY=1"; then
+            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_IS_GATEWAY=1; recreating to enable the gateway API listener\n' >&2
+            needs_recreate=1
+        fi
+
+        if [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_HOST_PATH=$TARGET_DIR"; then
+            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_HOST_PATH=%s; recreating so host-path-aware operations work\n' "$TARGET_DIR" >&2
+            needs_recreate=1
+        fi
+
+        if [ "$needs_recreate" = "1" ]; then
+            run docker_cli rm -f orbit-runtime
+        else
+            local running
+            running="$(docker_cli container inspect --format '{{.State.Running}}' orbit-runtime 2>/dev/null || true)"
+
+            if [ "$running" != "true" ]; then
+                run docker_cli start orbit-runtime
+            fi
+
+            return
+        fi
+    fi
+
+    run docker_cli run -d \
+        --pull never \
+        --name orbit-runtime \
+        --restart unless-stopped \
+        --network orbit-network \
+        --network-alias orbit-runtime \
+        --label "orbit.managed=true" \
+        --label "orbit.container.kind=runtime" \
+        --env "ORBIT_SOURCE_PATH=/opt/orbit" \
+        --env "ORBIT_HOST_PATH=$TARGET_DIR" \
+        "${gateway_env[@]}" \
+        --mount "type=bind,source=$TARGET_DIR,target=/opt/orbit" \
+        --mount "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock" \
+        --mount "type=bind,source=/etc/caddy,target=/etc/caddy" \
+        --mount "type=bind,source=/etc/orbit,target=/etc/orbit" \
+        orbit-runtime:current
+}
+
+run_migrations_in_container() {
+    require_docker
+
+    run docker_cli exec \
+        --env "ORBIT_HOST_CWD=$TARGET_DIR" \
+        --env "ORBIT_HOST_UID=$(id -u)" \
+        --env "ORBIT_HOST_GID=$(id -g)" \
+        orbit-runtime \
+        php /opt/orbit/artisan migrate --force --no-interaction
 }
 
 link_orbit() {
@@ -390,6 +537,13 @@ link_orbit() {
 verify_install() {
     if [ ! -x "$TARGET_DIR/bin/orbit" ]; then
         fail validation_failed "Orbit launcher is not executable: $TARGET_DIR/bin/orbit"
+    fi
+
+    local running
+    running="$(docker_cli container inspect --format '{{.State.Running}}' orbit-runtime 2>/dev/null || true)"
+
+    if [ "$running" != "true" ]; then
+        fail validation_failed "orbit-runtime container is not running after install"
     fi
 }
 
@@ -430,7 +584,7 @@ main() {
     validate_args
     complete_step
 
-    start_step "Install platform prerequisites"
+    start_step "Install Docker prerequisites"
     install_prerequisites
     complete_step
 
@@ -438,8 +592,20 @@ main() {
     install_source
     complete_step
 
-    start_step "Bootstrap Laravel runtime"
-    bootstrap_laravel
+    start_step "Prepare orbit-runtime and orbit-caddy images"
+    build_runtime_images
+    complete_step
+
+    start_step "Bootstrap Orbit runtime in the container"
+    bootstrap_runtime
+    complete_step
+
+    start_step "Start orbit-runtime container"
+    start_runtime_container
+    complete_step
+
+    start_step "Run migrations inside orbit-runtime"
+    run_migrations_in_container
     complete_step
 
     start_step "Align orbit checkout ownership"
@@ -457,4 +623,6 @@ main() {
     finish_tree
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+    main "$@"
+fi

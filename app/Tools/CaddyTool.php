@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
+use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Runtime\DockerCommandBuilder;
+use App\Services\Runtime\OrbitCaddyContainer;
+
 final class CaddyTool extends BaseTool
 {
     public function slug(): string
@@ -25,27 +29,119 @@ final class CaddyTool extends BaseTool
 
     public function reconfigureScript(array $config = []): string
     {
-        return "#!/usr/bin/env bash\n# orbit reconfigure caddy\nsudo caddy reload --config /etc/caddy/Caddyfile";
+        $container = $this->container($config);
+
+        return self::reloadCommand($container->name());
+    }
+
+    public static function reloadCommand(string $container = 'orbit-caddy'): string
+    {
+        return 'docker restart '.escapeshellarg($container);
     }
 
     public function updateScript(array $config = []): string
     {
-        return 'export DEBIAN_FRONTEND=noninteractive && sudo apt-get update -qq && sudo apt-get install --only-upgrade -y caddy 2>/dev/null';
+        $container = $this->container($config);
+        $commands = new DockerCommandBuilder;
+        $containerName = escapeshellarg($container->name());
+        $imageName = escapeshellarg($container->image());
+
+        return implode("\n", [
+            'set -e',
+            sprintf(
+                'if ! docker image inspect %s >/dev/null 2>&1; then',
+                $imageName,
+            ),
+            sprintf(
+                '    printf %%s\\\\n %s >&2',
+                escapeshellarg(sprintf(
+                    'orbit-caddy: local Docker image %s is missing; run "php artisan orbit:internal:build-runtime-images" or "docker pull %s" before reconciling the orbit-caddy container.',
+                    $container->image(),
+                    $container->image(),
+                )),
+            ),
+            '    exit 69',
+            'fi',
+            sprintf(
+                'if ! %s >/dev/null 2>&1; then %s; fi',
+                $commands->networkInspect($container->network()),
+                $commands->networkCreate($container->network()),
+            ),
+            $this->hostConfigPreparationScript($container),
+            'expected_hash='.escapeshellarg($container->specHash()),
+            sprintf('if ! %s >/dev/null 2>&1; then', $commands->containerInspect($container->name())),
+            '    '.$commands->runDetached($container),
+            '    exit 0',
+            'fi',
+            sprintf(
+                'actual_hash="$(docker container inspect --format %s %s 2>/dev/null || true)"',
+                escapeshellarg('{{ index .Config.Labels "'.OrbitCaddyContainer::SpecHashLabel.'" }}'),
+                $containerName,
+            ),
+            'if [ "$actual_hash" != "$expected_hash" ]; then',
+            '    '.$commands->containerRemove($container->name()),
+            '    '.$commands->runDetached($container),
+            '    exit 0',
+            'fi',
+            sprintf(
+                'running="$(docker container inspect --format %s %s 2>/dev/null || true)"',
+                escapeshellarg('{{ .State.Running }}'),
+                $containerName,
+            ),
+            'if [ "$running" != "true" ]; then',
+            '    '.$commands->containerStart($container->name()),
+            'fi',
+        ]);
     }
 
     #[\Override]
     public function probeMetadata(): array
     {
+        $container = OrbitCaddyContainer::default();
+
         return [
-            'binary' => 'caddy',
-            'version_command' => 'caddy version',
-            'service' => 'caddy',
-            'update_command' => $this->updateScript(),
-            'repair_commands' => $this->serviceRepairCommands(
-                service: 'caddy',
-                restart: true,
-                reload: 'sudo caddy reload --config /etc/caddy/Caddyfile',
-            ),
+            'binary' => 'docker',
+            'version_command' => 'docker --version',
+            'container' => $container->name(),
+            'image' => $container->image(),
+            'update_command' => $this->updateScript(['container' => $container->spec()]),
+            'repair_commands' => [
+                'lifecycle_running' => 'docker start '.escapeshellarg($container->name()),
+                'lifecycle_stopped' => 'docker stop '.escapeshellarg($container->name()),
+                'lifecycle_restarted' => 'docker restart '.escapeshellarg($container->name()),
+                'lifecycle_reloaded' => $this->reconfigureScript(['container' => $container->spec()]),
+            ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function container(array $config): OrbitCaddyContainer
+    {
+        $container = is_array($config['container'] ?? null)
+            ? $config['container']
+            : [];
+
+        return OrbitCaddyContainer::fromConfig($container);
+    }
+
+    private function hostConfigPreparationScript(OrbitCaddyContainer $container): string
+    {
+        $directories = implode(' ', array_map(
+            escapeshellarg(...),
+            $container->hostMountDirectories(),
+        ));
+
+        return sprintf(
+            <<<'SH'
+sudo install -d -m 0755 %s
+if [ ! -f /etc/caddy/Caddyfile ]; then
+    printf %%s %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null
+fi
+SH,
+            $directories,
+            escapeshellarg(base64_encode((new CaddyGlobalConfig)->fresh())),
+        );
     }
 }

@@ -33,7 +33,7 @@ it('runs one scheduler daemon tick on demand', function (): void {
         ->assertSuccessful();
 });
 
-it('starts the scheduler as the gateway orbit-runtime default process', function (): void {
+it('starts the scheduler as the gateway orbit-runtime default process alongside the gateway HTTP server', function (): void {
     $root = sys_get_temp_dir().'/orbit-scheduler-runtime-'.bin2hex(random_bytes(6));
     $source = "{$root}/source";
     $bin = "{$root}/bin";
@@ -46,7 +46,16 @@ it('starts the scheduler as the gateway orbit-runtime default process', function
     file_put_contents("{$source}/artisan", "<?php\n");
     file_put_contents("{$bin}/php", <<<'BASH'
 #!/usr/bin/env bash
-printf 'argv=%s\n' "$*" > "$PHP_CAPTURE"
+printf 'argv=%s\n' "$*" >> "$PHP_CAPTURE"
+
+for arg do
+    case "$arg" in
+        serve)
+            exit 0
+            ;;
+    esac
+done
+
 exit 42
 BASH);
     file_put_contents("{$bin}/sleep", <<<'BASH'
@@ -77,6 +86,8 @@ BASH);
             ->toBe(42, $process->getOutput().$process->getErrorOutput())
             ->and(file_get_contents($capture))
             ->toContain("argv={$source}/artisan orbit-scheduler --sleep-seconds=7")
+            ->toContain('serve')
+            ->toContain('--port=8080')
             ->and(file_exists($sleepCapture))->toBeFalse();
     } finally {
         (new SymfonyProcess(['rm', '-rf', $root]))->run();

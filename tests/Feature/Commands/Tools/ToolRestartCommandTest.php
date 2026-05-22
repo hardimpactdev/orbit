@@ -54,7 +54,7 @@ describe('tool:restart command contract', function (): void {
                 'expected_state' => 'running',
                 'version' => '2.10.2',
             ])
-            ->and($shell->scripts)->toBe(['sudo systemctl restart caddy']);
+            ->and($shell->scripts)->toBe(["docker restart 'orbit-caddy'"]);
     });
 
     it('falls back to stop then start when no native restart command exists', function (): void {

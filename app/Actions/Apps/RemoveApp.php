@@ -11,6 +11,7 @@ use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Processes\SupervisorProgramRenderer;
+use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\DB;
 
 final readonly class RemoveApp
@@ -170,7 +171,7 @@ SH,
             $commands[] = 'sudo supervisorctl update || true';
         }
 
-        $commands[] = 'sudo systemctl reload caddy || true';
+        $commands[] = CaddyTool::reloadCommand().' || true';
 
         if ($removeAppPath) {
             $commands[] = 'rm -rf '.escapeshellarg($app->path);

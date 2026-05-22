@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Runtime\DockerCommandBuilder;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Runtime\OrbitRuntimeContainerRenderer;
 use Tests\TestCase;
@@ -22,6 +23,7 @@ it('builds escaped docker run commands for rendered runtime containers', functio
     $command = (new DockerCommandBuilder)->runDetached($container);
 
     expect($command)->toStartWith('docker run -d ')
+        ->toContain('--pull '.escapeshellarg('never'))
         ->toContain('--name '.escapeshellarg('orbit-runtime'))
         ->toContain('--restart '.escapeshellarg('unless-stopped'))
         ->toContain('--network '.escapeshellarg('orbit-network'))
@@ -45,6 +47,22 @@ it('quotes docker mount fields containing csv separators and quotes', function (
     expect($command)
         ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/Orbit, ""Repo""",target=/opt/orbit'))
         ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/Orbit, ""Repo""/database/database.sqlite",target=/opt/orbit/database/database.sqlite'));
+});
+
+it('emits route-artifact mounts, port publishing, and extra hosts for orbit-caddy containers', function (): void {
+    $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+
+    $command = (new DockerCommandBuilder)->runDetached($container);
+
+    expect($command)->toStartWith('docker run -d ')
+        ->toContain('--name '.escapeshellarg('orbit-caddy'))
+        ->toContain('--publish '.escapeshellarg('10.6.0.50:80:80'))
+        ->toContain('--publish '.escapeshellarg('10.6.0.50:443:443'))
+        ->toContain('--publish '.escapeshellarg('10.6.0.50:443:443/udp'))
+        ->toContain('--add-host '.escapeshellarg('host.docker.internal:host-gateway'))
+        ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/caddy/sites,target=/etc/caddy/sites,readonly'))
+        ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/orbit,target=/etc/orbit,readonly'))
+        ->toContain('--mount '.escapeshellarg('type=bind,source=/home,target=/home,readonly'));
 });
 
 it('escapes docker lifecycle command arguments', function (): void {

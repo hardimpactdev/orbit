@@ -5,14 +5,39 @@ declare(strict_types=1);
 namespace App\Services\Gateway;
 
 use App\Services\Ca\OrbitCaService;
+use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Runtime\OrbitContainerNames;
+use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
+/**
+ * Docker-first gateway API runtime installer.
+ *
+ * The gateway API is the gateway `orbit-runtime` container, exposed through
+ * the gateway `orbit-caddy` container. The installer issues the leaf
+ * certificate, writes the gateway-API Caddy site that orbit-caddy serves on
+ * the WireGuard address, and reloads orbit-caddy. It does not install or
+ * restart host PHP, host PHP-FPM, or host Caddy.
+ *
+ * @see docs/domains/2_gateway/README.md — "The gateway API runtime is the
+ *     gateway `orbit-runtime` container, exposed on the Orbit network
+ *     through the gateway `orbit-caddy` container."
+ */
 class GatewayApiRuntimeInstaller
 {
+    /**
+     * HTTP port the gateway's `orbit-runtime` container listens on for the
+     * typed Orbit API. `orbit-caddy` reverse-proxies HTTPS gateway traffic
+     * to this internal HTTP port over the orbit-network bridge.
+     */
+    public const RuntimeApiPort = 8080;
+
     public function __construct(
         private readonly OrbitCaService $caService,
         private readonly CaddyGlobalConfig $caddyGlobalConfig,
+        private readonly CaddyTool $caddyTool = new CaddyTool,
+        private readonly OrbitContainerNames $containerNames = new OrbitContainerNames,
     ) {}
 
     public function install(string $wireguardAddress, string $phpVersion = '8.5', string $orbitPath = ''): void
@@ -21,63 +46,84 @@ class GatewayApiRuntimeInstaller
             throw new RuntimeException("Invalid WireGuard API address: {$wireguardAddress}");
         }
 
-        if (! preg_match('/^\d+\.\d+$/', $phpVersion)) {
-            throw new RuntimeException("Invalid PHP-FPM version: {$phpVersion}");
-        }
-
-        $orbitPath = $orbitPath !== '' ? $orbitPath : base_path();
         $leaf = $this->caService->issueLeaf($wireguardAddress);
 
-        $this->runRequired($this->grantCaddyAccessScript($leaf['cert'], $leaf['key']), 'grant Caddy access to Orbit TLS files');
-        $this->runRequiredWithInput(
-            "sudo tee /etc/php/{$phpVersion}/fpm/pool.d/orbit-api.conf > /dev/null",
-            $this->fpmPool($orbitPath),
-            'write Orbit API PHP-FPM pool',
-        );
-        $this->runRequired('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites', 'prepare Caddy config directories');
-        $this->ensureGlobalCaddyfile();
+        $this->ensureOrbitCaddyContainer($wireguardAddress);
         $this->runRequiredWithInput('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null', $this->gatewayApiCaddyfile(
             wireguardAddress: $wireguardAddress,
-            orbitPath: $orbitPath,
-            certPath: $leaf['cert'],
-            keyPath: $leaf['key'],
+            certPath: $this->caddyVisiblePath($leaf['cert']),
+            keyPath: $this->caddyVisiblePath($leaf['key']),
         ), 'write Orbit API Caddy config');
-        $this->runRequired("sudo systemctl restart php{$phpVersion}-fpm", 'restart PHP-FPM');
-        $this->runRequired('sudo systemctl restart caddy', 'restart Caddy');
-        $this->runRequired('sudo systemctl enable caddy', 'enable Caddy');
+        $this->runRequired(CaddyTool::reloadCommand($this->containerNames->caddy()), 'reload orbit-caddy container');
     }
 
-    private function fpmPool(string $orbitPath): string
+    /**
+     * Translate a path that the runtime container sees under
+     * `/opt/orbit/...` into the host path that the same file lives at,
+     * so orbit-caddy can read it through its `/home` bind mount. When the
+     * installer is run outside the container (no ORBIT_HOST_PATH), the
+     * original path is returned unchanged.
+     */
+    private function caddyVisiblePath(string $containerPath): string
     {
-        return <<<FPM
-[orbit-api]
-user = orbit
-group = orbit
-listen = /run/php/orbit-api.sock
-listen.owner = orbit
-listen.group = caddy
-listen.mode = 0660
-pm = ondemand
-pm.max_children = 8
-pm.process_idle_timeout = 10s
-chdir = {$orbitPath}
+        $hostPath = trim((string) getenv('ORBIT_HOST_PATH'));
+        $sourcePath = '/opt/orbit';
 
-FPM;
+        if ($hostPath === '' || $hostPath === $sourcePath) {
+            return $containerPath;
+        }
+
+        if ($containerPath === $sourcePath) {
+            return $hostPath;
+        }
+
+        if (str_starts_with($containerPath, $sourcePath.'/')) {
+            return $hostPath.substr($containerPath, strlen($sourcePath));
+        }
+
+        return $containerPath;
+    }
+
+    /**
+     * Converge the gateway orbit-caddy container from the role-appropriate
+     * `OrbitCaddyContainer::forPrivateNode($wireguardAddress)` spec before
+     * the gateway-API site is written. Without this, fresh gateway hosts
+     * end up with no orbit-caddy container to restart and bootstrap fails
+     * silently into a host caddy fallback.
+     */
+    private function ensureOrbitCaddyContainer(string $wireguardAddress): void
+    {
+        $container = OrbitCaddyContainer::forPrivateNode($wireguardAddress, $this->containerNames);
+
+        $this->runRequired('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites', 'prepare Caddy config directories');
+        $this->ensureGlobalCaddyfile();
+
+        $script = $this->caddyTool->updateScript(['container' => $container->spec()]);
+
+        $this->runShellScript($script, 'converge orbit-caddy container');
     }
 
     private function gatewayApiCaddyfile(
         string $wireguardAddress,
-        string $orbitPath,
         string $certPath,
         string $keyPath,
     ): string {
+        $runtimeAlias = $this->containerNames->runtime();
+        $port = self::RuntimeApiPort;
+
         return <<<CADDY
 https://{$wireguardAddress}:443 {
     tls {$certPath} {$keyPath}
-    root * {$orbitPath}/public
     encode zstd gzip
-    php_fastcgi unix//run/php/orbit-api.sock
-    file_server
+
+    request_header -X-Forwarded-For
+    request_header -X-Real-IP
+    request_header -Forwarded
+
+    reverse_proxy http://{$runtimeAlias}:{$port} {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+    }
 }
 
 CADDY;
@@ -107,29 +153,6 @@ CADDY;
         throw new RuntimeException("Failed to read {$path}: ".$this->output($result->errorOutput(), $result->output()));
     }
 
-    private function grantCaddyAccessScript(string $certPath, string $keyPath): string
-    {
-        $paths = [
-            dirname(base_path()),
-            base_path(),
-            storage_path(),
-            storage_path('app'),
-            storage_path('app/orbit'),
-            dirname($certPath),
-        ];
-
-        $chmodDirs = implode(' ', array_map(escapeshellarg(...), array_unique($paths)));
-        $chmodFiles = escapeshellarg($certPath).' '.escapeshellarg($keyPath);
-
-        return <<<BASH
-if id caddy >/dev/null 2>&1 && getent group orbit >/dev/null 2>&1; then
-    sudo usermod -aG orbit caddy
-    sudo chmod g+rx {$chmodDirs}
-    sudo chmod g+r {$chmodFiles}
-fi
-BASH;
-    }
-
     private function runRequired(string $command, string $step): void
     {
         $result = Process::timeout(60)->run($command);
@@ -144,6 +167,17 @@ BASH;
     private function runRequiredWithInput(string $command, string $input, string $step): void
     {
         $result = Process::timeout(60)->input($input)->run($command);
+
+        if ($result->successful()) {
+            return;
+        }
+
+        throw new RuntimeException("Failed to {$step}: ".$this->output($result->errorOutput(), $result->output()));
+    }
+
+    private function runShellScript(string $script, string $step): void
+    {
+        $result = Process::timeout(180)->input($script)->run('bash -s');
 
         if ($result->successful()) {
             return;

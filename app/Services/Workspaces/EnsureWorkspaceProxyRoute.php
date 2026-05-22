@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Tools\CaddyTool;
 use RuntimeException;
 use Throwable;
 
@@ -219,10 +220,11 @@ CADDY;
             <<<'SH'
 sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo systemctl reload caddy
+%s
 SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
+            CaddyTool::reloadCommand(),
         );
     }
 

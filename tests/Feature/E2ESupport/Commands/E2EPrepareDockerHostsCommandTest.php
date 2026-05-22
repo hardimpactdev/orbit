@@ -104,9 +104,10 @@ it('builds docker images once on the build host and distributes them to runner h
         ->and($buildRuns[1]['command'])->toContain('composer e2e:prepare-docker-topology -- --force')
         ->and($distributions)->toHaveCount(1)
         ->and($distributions[0]['hosts'])->toBe(['sidecar1', 'sidecar2'])
-        ->and($distributions[0]['images'])->toHaveCount(6)
+        ->and($distributions[0]['images'])->toHaveCount(7)
         ->and($distributions[0]['images'][0])->toBe(['role' => 'topology-runtime', 'image' => 'orbit-e2e-topology-runtime:current'])
-        ->and($distributions[0]['images'][1])->toBe(['role' => 'orbit-runtime', 'image' => 'orbit-runtime:current']);
+        ->and($distributions[0]['images'][1])->toBe(['role' => 'orbit-runtime', 'image' => 'orbit-runtime:current'])
+        ->and($distributions[0]['images'][2])->toBe(['role' => 'orbit-caddy', 'image' => 'caddy:2-alpine']);
 });
 
 it('rejects multiple docker image build hosts to keep topology images combined', function (): void {
