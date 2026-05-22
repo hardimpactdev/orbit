@@ -34,6 +34,15 @@ Internet
   -> private WireGuard route to router
   -> router orbit-caddy for `websocket.orbit` and websocket backend pools
   -> Laravel Reverb in a Docker runtime container managed by Orbit
+
+Public S3:
+
+Internet
+  -> public 443
+  -> ingress edge orbit-caddy
+  -> private WireGuard route to router
+  -> router orbit-caddy for `s3.orbit`, public S3 host relay, and S3 backend pool
+  -> RustFS in a Docker runtime container rendered by Orbit
 ```
 
 The sections below walk through each layer of the stack in the same order as the table.
@@ -59,6 +68,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | `orbit-caddy` on `app-production` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
+| S3 service backend | RustFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -198,6 +208,40 @@ topologies: `client-gateway-appdev-websocket` for private
 Reverb and Redis on the Docker substrate and must not add host PHP, host Caddy,
 PHP-FPM, or host Supervisor to make realtime assertions pass.
 
+### S3 runtime
+
+The `s3` role runs RustFS for fleet object storage. RustFS runs in a Docker
+runtime container rendered by Orbit's Docker-first runtime container services;
+it is not rendered from role-local Docker Compose and does not use host package
+installation as a fallback. The container uses the `rustfs/rustfs` image,
+mounts the role-owned `data_path` as `/data`, and binds the S3 API only to the
+node's WireGuard address on port `9000`. The RustFS console is not publicly
+exposed in v1.
+
+The `router` role owns `s3.orbit`, the S3 backend pool, upload-compatible proxy
+settings, and private router-to-RustFS routing. Apps and VPN clients use
+`https://s3.orbit`. Public S3 clients use operator-published hosts such as
+`https://s3.example.com`; `ingress` terminates public TLS and forwards those
+hosts to `router`, never directly to S3 nodes.
+
+Router and ingress proxy rendering for S3 must preserve the original `Host`
+header and forwarded protocol headers so S3 signatures are validated against
+the requested endpoint. S3 routes must allow large uploads and avoid request
+buffering that would make object uploads fail before RustFS receives them.
+
+S3 credentials are service-level RustFS credentials stored on the `rustfs` tool
+row. V1 does not create per-app bucket credentials, bucket lifecycle commands,
+virtual-hosted bucket routes, wildcard DNS/TLS for bucket hostnames, distributed
+RustFS, or HA guarantees.
+
+Focused S3 E2E coverage uses dedicated Docker-first prepared topologies:
+`client-gateway-appdev-s3` for private `s3.orbit` assertions, and
+`client-gateway-appdev-ingress-s3` for public
+`ingress -> router -> s3` assertions. Those topologies must keep RustFS on the
+Docker-first runtime substrate and must not add role-local Docker Compose, host
+Caddy, host PHP, PHP-FPM, or host Supervisor to make object-storage assertions
+pass.
+
 ### Process manager
 
 PHP app and workspace processes use Docker process runtime units by default. Each Docker-backed process becomes an Orbit-managed sidecar container that uses the same app/workspace runtime boundary, PHP version, mounted source, and environment as the web runtime. Docker restart policy and Orbit lifecycle hooks restart crashed processes and capture stdout/stderr surfaced by `process:logs`.
@@ -237,7 +281,7 @@ This centralizes observability: every scheduled run's result lands in the gatewa
 
 ### Service containers
 
-Docker is the baseline substrate for Orbit runtime containers and backing services. Orbit uses Docker for `orbit-runtime`, `orbit-caddy`, FrankenPHP app/workspace containers, Docker process runtime units, databases, caches, mail servers, Laravel Reverb containers for the `websocket` role, S3-compatible services, and similar backing infrastructure. Docker E2E topologies use sibling containers through the host Docker socket, not Docker-in-Docker.
+Docker is the baseline substrate for Orbit runtime containers and backing services. Orbit uses Docker for `orbit-runtime`, `orbit-caddy`, FrankenPHP app/workspace containers, Docker process runtime units, databases, caches, mail servers, Laravel Reverb containers for the `websocket` role, RustFS containers for the `s3` role, and similar backing infrastructure. Docker E2E topologies use sibling containers through the host Docker socket, not Docker-in-Docker.
 
 ### Agent runtime
 
@@ -284,7 +328,7 @@ When the client already has a WireGuard identity issued by an existing gateway, 
 
 ### Platform and roles
 
-The Orbit CLI runs on macOS and Ubuntu. The `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, and `websocket` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
+The Orbit CLI runs on macOS and Ubuntu. The `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, and `s3` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
 
 The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same node.
 

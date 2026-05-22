@@ -60,7 +60,9 @@ These rules govern every command contract in this directory.
   `redis:*`. Database connection inventory, env convergence, schema
   inspection, audited SQL execution, and database backup/restore workflows
   belong to `database:*` instead of `mysql:*` or `postgres:*` command
-  families.
+  families. `s3:*` owns role-backed object-storage publication and service
+  credentials for the RustFS-backed S3 role; generic RustFS lifecycle remains
+  under `tool:*`.
 - Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.
 - The CLI is a thin gateway client. Every command call is a request to the
   gateway over HTTPS, regardless of which machine the operator runs it on. The
@@ -293,17 +295,15 @@ side effects begin.
 - Interactive input mode asks for confirmation unless `--force` is supplied.
   The prompt is rendered after target and subject resolution and before any
   side effect.
-- Input mode that is neither JSON nor interactive, without `--force`, fails before side
-  effects with `validation_failed`, `meta.field=force`, and
+- Non-interactive input mode without `--force` fails before side effects with
+  `validation_failed`, `meta.field=force`, and
   `meta.reason=destructive_consent_required`.
 - `--force` is explicit destructive consent in any mode and skips the
   interactive confirmation prompt.
-- `--json` mode implies destructive consent. The JSON one-shot caller has
-  explicitly opted into automation, so requiring `--force --json` is redundant.
-  Ordinary input validation, target resolution, authorization, and existence
-  checks still apply.
+- `--json` selects the JSON renderer and forces non-interactive input mode
+  only. It does not imply destructive consent.
 - `--json` does not change any other semantic: it does not create hidden target
-  fallbacks, skip validation, or bypass authorization.
+  fallbacks, skip validation, bypass authorization, or bypass `--force`.
 
 Progress trees for destructive commands still start after input resolution and
 destructive consent, before cleanup side effects. Pre-confirmation gateway reads
@@ -635,7 +635,8 @@ operations on top of the foundation.
 
 ### Runtime integration and observability domains
 
-These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs, DNS, and activity logs.
+These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs,
+DNS, activity logs, and the object-storage workflows owned by the S3 role.
 
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
@@ -643,3 +644,4 @@ These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs, DN
 16. [Agent IDE](15_agent-ide/README.md)
 17. [DNS](16_dns/README.md)
 18. [Activity](17_activity/README.md)
+19. [S3](19_s3/README.md)

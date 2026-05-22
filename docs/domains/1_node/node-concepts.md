@@ -14,10 +14,10 @@ Each term below has a precise meaning in the node command family.
   configuration and WireGuard identity material. Any node can act as a client
   when it runs the Orbit CLI; the term emphasizes the CLI-caller perspective.
 - **Node role:** A fixed code-defined bundle attached through a role
-  assignment. The nine roles are `gateway` (singleton authority), `vpn` and
+  assignment. The ten roles are `gateway` (singleton authority), `vpn` and
   `router` (gateway-coupled infrastructure), `app-development`,
-  `app-production`, `database`, `agent`, `ingress`, and `websocket`. The
-  latter six are workload roles.
+  `app-production`, `database`, `agent`, `ingress`, `websocket`, and `s3`.
+  The latter seven are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
   durable Orbit state, the typed API, root CA material, node access policy, and
   doctor convergence. It is stored as a role assignment, but normal
@@ -52,15 +52,19 @@ Each term below has a precise meaning in the node command family.
   container managed by Orbit, binds only to its WireGuard address, receives
   traffic through router-owned private service routes, and uses Redis selected
   from a `database` role node.
+- **S3 role:** Private workload role for object storage with an S3-compatible
+  API. An S3 node runs one RustFS instance in a Docker runtime container
+  rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
+  receives private and public S3 traffic through router-owned service routes.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-development`,
-  `app-production`, `database`, `ingress`, and `websocket`. Selectable only during
-  `node:new`.
+  `app-production`, `database`, `ingress`, `websocket`, and `s3`. Selectable
+  only during `node:new`.
 - **Ingress role:** Workload role that owns public production HTTP
   ingress, public Caddy route artifacts, public TLS, and public edge
   hardening. It forwards public routes to `router` and may coexist with
   `app-production`, but conflicts with `gateway`, `vpn`, `router`,
-  `app-development`, `database`, and `agent`.
+  `app-development`, `database`, `agent`, and `s3`.
 - **Role assignability:** Flag on a role that decides whether it may be
   selected by `node:new`, by `node role:add`, or by both. `agent` is
   assignable through `node:new` only; gateway-coupled infrastructure roles
@@ -105,15 +109,16 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
-| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
-| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket` |
-| `app-development` | `database`, `websocket` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket` |
-| `database` | `app-development`, `websocket` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket` |
-| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket` |
+| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `app-development` | `database`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket`, `s3` |
+| `database` | `app-development`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket`, `s3` |
+| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket`, `s3` |
 | `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
+| `s3` | `app-development`, `database`, `websocket` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
@@ -141,6 +146,7 @@ require, read, and write.
 | `agent` | — | `tld` (default `agent` during interactive `node:new` setup) |
 | `ingress` | — | — |
 | `websocket` | `redis_node_id` | — |
+| `s3` | `data_path` | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and write the same node-level field. This shared field keeps the data
@@ -165,6 +171,9 @@ configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
 `redis_node_id` references the active `database` role node whose managed Redis
 service backs Reverb scaling for the `websocket` role. The websocket role uses
 that Redis service but does not install or own Redis.
+`data_path` defaults to `/srv/orbit/s3/data`. It is the host path mounted into
+the RustFS container as `/data` and is role-owned persistent data. Removing the
+role without `--purge-data` must not delete this path.
 
 ## Role Baselines
 
@@ -180,6 +189,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
+| `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -217,6 +227,7 @@ Each role is supported on a specific set of host platforms.
 | `agent` | Ubuntu |
 | `ingress` | Ubuntu |
 | `websocket` | Ubuntu |
+| `s3` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's gateway role assignment or

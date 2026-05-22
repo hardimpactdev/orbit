@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `tool`, `custom`, or `redirect`. |
+| `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, `tool`, `custom`, or `redirect`. |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible node slug used as serving-node filter. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -40,7 +40,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Filter Rules
 
 - `all` includes every visible route.
-- `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, and `tool`
+- `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, and `tool`
   filter by owner type.
 - `custom` filters user-authored upstream routes with owner `custom` and kind
   `proxy`.

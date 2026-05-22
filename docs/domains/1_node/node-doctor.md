@@ -123,6 +123,12 @@ The node probe reads gateway node records and checks these layers:
    by Orbit, private backend certificate material, WireGuard-only binding, and
    router-facing readiness. The websocket role does not install or own Redis.
 
+   For `s3`, assignments have a valid absolute `data_path` setting, a supported
+   platform, WireGuard identity, and role convergence status. The node family
+   verifies the role assignment and the data path for that role only. RustFS tool
+   rows, service credentials, and containers belong to the tool family; S3
+   service routes and backend pools belong to the proxy family.
+
    `database` and `gateway` assignments have no role settings in v1.
 14. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` nodes when `--self` inspects the CLI's
@@ -194,6 +200,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
+| `node.s3_data_path_invalid` | An active `s3` role assignment has a missing, relative, or otherwise invalid `data_path` setting. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
 | `node.security.host_key.<node>` | A managed Linux node has no pinned host key, a mismatched host key, or host-key metadata that cannot be verified. First pin is adoptable only with explicit operator consent. |

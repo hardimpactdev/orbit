@@ -10,7 +10,8 @@ These terms define the types of routes that the proxy family owns and manages.
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
 - **Route owner:** The domain that owns route lifecycle. One of `app`,
-  `app-websocket`, `workspace`, `gateway`, `websocket`, `tool`, or `custom`.
+  `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, `tool`, or
+  `custom`.
 - **Route kind:** Route behavior at ingress. One of `app`, `workspace`,
   `internal`, `proxy`, or `redirect`.
 - **App route:** Proxy route whose owner is an app and whose kind is `app`.
@@ -34,6 +35,13 @@ These terms define the types of routes that the proxy family owns and manages.
 - **WebSocket service route:** Private router route for `websocket.orbit`,
   owned by `websocket`. It targets the websocket backend pool owned by the
   router and is the stable private publishing endpoint apps use.
+- **Public S3 route:** Public S3 route whose owner is `s3` and whose kind is
+  `proxy`. It is rendered on an `ingress` node, forwards to `router`, preserves
+  S3 request metadata needed for uploads, and must not target a concrete s3
+  node.
+- **S3 service route:** Private router route for `s3.orbit`, owned by `s3`. It
+  targets the S3 backend pool owned by the router and is the stable private S3
+  endpoint apps and VPN clients use.
 - **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
   It terminates public HTTPS and reverse proxies to the active `router` over
   WireGuard.
@@ -50,6 +58,10 @@ These terms define the types of routes that the proxy family owns and manages.
   as `https://ws-1.websocket.orbit:8080`, owned by `router`. V1 creates one
   active backend but stores a pool shape so later multi-node Reverb scaling does
   not change app or browser configuration.
+- **S3 backend pool:** Ordered list of RustFS backend URLs, such as
+  `http://storage-1.s3.orbit:9000`, owned by `router`. V1 creates one active
+  backend but stores a pool shape so later S3 scaling does not change app or
+  client configuration.
 
 ## TLS
 
@@ -94,9 +106,13 @@ These terms define what the proxy family owns and what remains outside its scope
 - **Proxy-family boundaries:** Proxy commands own the unified ingress
   registry, route TLS configuration, ingress contracts, and convergence of derived
   proxy and TLS artifacts. They do not own app, app WebSocket binding,
-  workspace, gateway, websocket service, or tool identity, do not create or
-  remove owner-side records, and do not manage TCP tool service endpoints or
-  firewall policy. Public WebSocket hosts are
-  ingress routes that forward to router. Router owns `websocket.orbit`,
-  websocket backend pools, and private router-to-websocket TLS verification.
-  Ingress must not route directly to websocket role nodes.
+  workspace, gateway, websocket service, S3 service, or tool identity, do not
+  create or remove owner-side records, and do not manage TCP tool service
+  endpoints or firewall policy.
+
+  Public WebSocket hosts are ingress routes that forward to router. Router owns
+  `websocket.orbit`, websocket backend pools, and private router-to-websocket
+  TLS verification. Public S3 hosts are ingress routes that forward to router.
+  Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy settings,
+  and private router-to-RustFS routing. Ingress must not route directly to
+  websocket or s3 role nodes.

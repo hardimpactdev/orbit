@@ -10,7 +10,7 @@ You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--redis-node=] [--json]
+orbit node role:add [node] [role] [--tld=] [--redis-node=] [--s3-data-path=<path>] [--json]
 ```
 
 ## Behavior
@@ -28,6 +28,9 @@ This command validates the role assignment, applies role-local options, and repo
 - `app-development` requires `--tld`.
 - `websocket` requires `--redis-node`; the selected node must have an active
   `database` role and Redis expected or installed.
+- `s3` accepts optional `--s3-data-path`; it defaults to
+  `/srv/orbit/s3/data`, must be absolute, and is mounted into RustFS as
+  `/data`.
 - `app-production` and `database` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.
 - Configured non-gateway callers forward through the typed gateway API and need

@@ -31,8 +31,9 @@ family.
 
 Docker is infrastructure for `postgres`, `mysql`, `redis`, `mailpit`, the
 compatibility `reverb` tool, the `websocket` role's Laravel Reverb runtime
-container, and `dns`. It is not itself a database, cache, mail, realtime, or
-DNS configuration owner.
+container, the `s3` role's RustFS runtime container, and `dns`. It is not
+itself a database, cache, mail, realtime, object-storage, or DNS configuration
+owner.
 
 ## Doctor Relationship
 

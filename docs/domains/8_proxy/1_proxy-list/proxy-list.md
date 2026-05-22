@@ -16,8 +16,8 @@ orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
 
 `proxy:list` shows the unified HTTP ingress registry. By default it includes
 app routes, app WebSocket routes, workspace routes, gateway/internal routes,
-websocket service routes, tool-owned routes, custom upstream routes, and
-redirects.
+websocket service routes, S3 service and public host routes, tool-owned routes,
+custom upstream routes, and redirects.
 
 Use `--filter` to narrow the list:
 
@@ -29,6 +29,7 @@ Use `--filter` to narrow the list:
 | `workspace` | Workspace-owned hostnames. |
 | `gateway` | Gateway-owned internal routes such as the gateway API ingress. |
 | `websocket` | Router-owned private websocket service routes such as `websocket.orbit`. |
+| `s3` | S3 public host routes and router-owned private S3 service routes such as `s3.orbit`. |
 | `tool` | Tool-owned proxy routes for node tools or services. |
 | `custom` | User-authored upstream routes created by `proxy:add --upstream`. |
 | `redirect` | User-authored redirect routes created by `proxy:add --redirect`. |

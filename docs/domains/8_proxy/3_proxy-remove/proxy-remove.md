@@ -16,7 +16,7 @@ orbit proxy:remove <domain> [--force] [--json]
 
 `proxy:remove` removes user-authored custom proxy routes and custom redirect
 routes. It does not remove routes owned by apps, app WebSocket bindings,
-workspaces, gateways, websocket services, or tools.
+workspaces, gateways, websocket services, S3 services, or tools.
 
 Redirects are removed through the same command as custom upstream routes.
 

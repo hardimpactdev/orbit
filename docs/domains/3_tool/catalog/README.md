@@ -53,6 +53,9 @@ Admitted examples:
 - Database connection inventory, env convergence, schema inspection, audited
   SQL execution, and database backup/restore workflows belong to `database:*`,
   not separate `mysql:*` and `postgres:*` families.
+- `s3:*` owns role-backed object-storage publication and service credentials
+  for the RustFS-backed S3 role. Generic RustFS lifecycle, logs, updates, and
+  inventory remain under `tool:*`.
 
 ## Required Baseline Tools
 
@@ -67,10 +70,15 @@ create them from scratch unless the tool file says otherwise.
 | [`viteplus`](viteplus.md) | Development frontend runtime helper |
 | [`gh`](gh.md) | GitHub CLI utility |
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
+| [`rustfs`](rustfs.md) | RustFS object storage runtime materialized by the `s3` role |
 
 PHP, Composer, and Caddy runtime capabilities live in Orbit-managed
 containers. Supervisor is available only as an explicit residual process
 runtime where configured, not as a required baseline tool.
+
+RustFS is a role baseline service tool, not a standalone app helper. It is
+materialized by the `s3` role and uses Orbit's Docker-first runtime container
+rendering model.
 
 ## Installable Tools
 

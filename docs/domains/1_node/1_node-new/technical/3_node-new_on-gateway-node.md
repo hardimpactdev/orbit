@@ -28,6 +28,10 @@ execution.
   role, the shared host-provisioning preconditions for that app role apply.
 - For canonical role requests that include `database` alone, no
   SSH/bootstrap-only inputs are required.
+- For canonical `--role=s3`, `node_new.name`, `node_new.role`,
+  `node_new.host`, `node_new.user`, and `node_new.s3_data_path` can be
+  resolved, the target host is reachable over SSH as `node_new.user`, and the
+  data path is absolute.
 - For legacy `--role=app`, `node_new.name`, `node_new.role`,
   `node_new.environment`, `node_new.host`, and `node_new.user` can be
   resolved, and the target host is reachable over SSH as `node_new.user`.
@@ -37,8 +41,8 @@ execution.
 - For legacy `--role=app --environment=development`, the gateway can use the
   internal DNS applier for the node family to converge `*.{node_new.tld}` to
   the node's WireGuard address without exposing a public resolver.
-- For canonical or legacy app-hosting requests, the target host platform is
-  supported for the requested role set.
+- For canonical or legacy host-provisioned workload requests, the target host
+  platform is supported for the requested role set.
 - For `--role=gateway`, `node_new.host` can be resolved and is compatible with
   the requested gateway identity before convergence or adoption begins.
 - For `--role=gateway` when adoption is used, `node_new.user` can be
@@ -64,7 +68,8 @@ side effects that the gateway owns begin.
 | `app-production` | Provision or adopt an app-production node over SSH, then create the role assignment. |
 | `database` | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
 | `websocket` | Provision or adopt a private websocket node over SSH, then create the role assignment with `redis_node_id`. |
-| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database`, `app-development` + `websocket`, `database` + `websocket`, `app-development` + `database` + `websocket`, and `app-production` + `ingress`. |
+| `s3` | Provision or adopt a private S3 node over SSH, then create the role assignment with `data_path`. |
+| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database`, `app-development` + `websocket`, `app-development` + `s3`, `database` + `websocket`, `database` + `s3`, `websocket` + `s3`, `app-development` + `database` + `websocket`, `app-development` + `database` + `s3`, `app-development` + `websocket` + `s3`, `database` + `websocket` + `s3`, `app-development` + `database` + `websocket` + `s3`, and `app-production` + `ingress`. |
 | `app` | Legacy compatibility path. Provision or adopt a node with an app role over SSH using `node_new.environment`, then create the mapped role assignment. |
 
 ## Gateway Authority Rules
@@ -134,7 +139,7 @@ and development TLD mapping when applicable. Managed firewall configuration and
 drift belong to the `firewall_rule` family after the node exists.
 
 For canonical `--role=app-development`, `--role=app-production`,
-`--role=websocket`, compatible repeated role sets that include those
+`--role=websocket`, `--role=s3`, compatible repeated role sets that include those
 host-provisioned roles, and legacy `--role=app`:
 
 1. Resolve `node_new.name`, `node_new.host`, and `node_new.user`.
@@ -148,16 +153,18 @@ host-provisioned roles, and legacy `--role=app`:
 5. When the role set includes `websocket`, resolve `node_new.redis_node` and
    verify that it references an active `database` role node with Redis expected
    or installed.
-6. Verify the target host is reachable over SSH.
-7. Verify the target host platform is supported for every requested role.
-8. Install or converge the Orbit runtime.
-9. Mint or verify WireGuard identity.
-10. Register node configuration, including `nodes.tld` for development nodes.
-11. Configure the node's local TLD default for development nodes.
-12. Use the internal DNS applier for the node family to create or converge
+6. When the role set includes `s3`, resolve `node_new.s3_data_path` with the
+   default `/srv/orbit/s3/data` when omitted and verify that it is absolute.
+7. Verify the target host is reachable over SSH.
+8. Verify the target host platform is supported for every requested role.
+9. Install or converge the Orbit runtime.
+10. Mint or verify WireGuard identity.
+11. Register node configuration, including `nodes.tld` for development nodes.
+12. Configure the node's local TLD default for development nodes.
+13. Use the internal DNS applier for the node family to create or converge
    the development DNS mapping that the gateway owns for `*.{node_new.tld}` to the node's WireGuard
    address.
-13. Verify node readiness.
+14. Verify node readiness.
 
 The development DNS configuration model that the gateway owns is derived from the
 active development app-role row, not from a public DNS command record. The

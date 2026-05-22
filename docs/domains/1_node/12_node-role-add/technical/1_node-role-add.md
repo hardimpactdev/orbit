@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--redis-node=] [--json]
+orbit node role:add [node] [role] [--tld=] [--redis-node=] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
 | `tld` | `--tld` | Required for `app-development`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
+| `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Absolute host path mounted into RustFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
 ## Behavior Contract
@@ -45,6 +46,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - `app-development` requires `--tld`.
 - `websocket` requires `--redis-node`. The resolved node must have an active
   `database` role and Redis expected or installed.
+- `s3` accepts optional `--s3-data-path`. The resolved path defaults to
+  `/srv/orbit/s3/data`, must be absolute, is stored as `settings.data_path`,
+  and is mounted into RustFS as `/data`.
 - `app-production`, `database`, and other roles reject role-local options they
   do not support.
 - Role conflicts are validated by `NodeRoleAssignmentService`.

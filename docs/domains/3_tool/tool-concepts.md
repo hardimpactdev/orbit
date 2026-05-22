@@ -18,7 +18,11 @@ These terms define the core vocabulary used across tool command contracts and th
   credential behavior, and supported tool actions.
 - **Tool category:** Catalog-declared classification for a tool, such as
   `always`, `runtime`, `database`, `cache`, `development`, `communication`,
-  `infrastructure`, or `agent`. Used by authorization and routing rules.
+  `infrastructure`, `storage`, or `agent`. Used by authorization and routing
+  rules.
+- **Storage tool category:** Tool category `storage`. Tools in this category
+  back object-storage services owned by a role and expose service credentials
+  and WireGuard-private endpoints through their catalog entry.
 - **Agent tool category:** Tool category `agent`. Tools in this category are
   first-party autonomous agent runtimes (`openclaw`, `hermes`) that require
   the `agent` node role and run as the shared unprivileged

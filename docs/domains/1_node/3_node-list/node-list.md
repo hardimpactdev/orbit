@@ -11,7 +11,7 @@ availability.
 ## Usage
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|app|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|s3|app|control>] [--environment=<development|production>] [--doctor] [--json]
 ```
 
 Run from any node with gateway visibility. No arguments are required.
@@ -36,7 +36,7 @@ This section defines each accepted filter and output flag for `node:list`.
 
 Filters by effective role assignment. Accepts a single current role value:
 `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`,
-`agent`, `ingress`, or `websocket`. Legacy aliases still supported by the
+`agent`, `ingress`, `websocket`, or `s3`. Legacy aliases still supported by the
 command are `app`, which matches both app host roles, and `control`, which
 matches nodes without an active role assignment. Comma-separated input is
 rejected.

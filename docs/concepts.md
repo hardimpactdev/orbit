@@ -28,11 +28,16 @@ owning family concept document.
 - **Router role** — gateway-coupled infrastructure role that owns private `.orbit` DNS/service hostnames, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Ingress role** — workload role that owns public production HTTP ingress, public `orbit-caddy` route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
+- **S3 role** — private workload role that runs one RustFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-production` nodes are production runtime backends: they own app files, FrankenPHP app containers, Docker process runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
 - **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
 - **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_app/app-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
+- **S3 service endpoint** — stable router-owned private HTTPS endpoint `https://s3.orbit` for Orbit-managed S3-compatible object storage. See [S3 Concepts](domains/19_s3/s3-concepts.md).
+- **RustFS backend** — the RustFS runtime behind the `s3` role, reached by router through the S3 backend pool. See [S3 Concepts](domains/19_s3/s3-concepts.md).
+- **S3 public host** — operator-published HTTPS hostname such as `s3.example.com` that `ingress` forwards to `router` for S3 traffic. See [S3 Concepts](domains/19_s3/s3-concepts.md).
+- **S3 service credentials** — service-level RustFS access key and secret material stored on the `rustfs` tool row. See [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **Orbit launcher** — host `orbit` executable that runs commands inside the local `orbit-runtime` container and passes `ORBIT_HOST_CWD`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit runtime container** — one `orbit-runtime` container per node; it is the CLI execution target and, on the gateway, the API and scheduler runtime. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -92,6 +97,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent role**
 - **Ingress role**
 - **WebSocket role**
+- **S3 role**
 - **Gateway-coupled infrastructure role**
 - **Orbit launcher**
 - **Orbit runtime container**
@@ -258,6 +264,9 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **App WebSocket route**
 - **WebSocket service route**
 - **WebSocket backend pool**
+- **Public S3 route**
+- **S3 service route**
+- **S3 backend pool**
 - **Orbit-managed TLS**
 - **Route leaf certificate**
 - **Intermediate CA certificate**
@@ -303,6 +312,24 @@ Source: [Database Concepts](domains/18_database/database-concepts.md).
 - **Database query execution**
 - **SQLite locality**
 - **Database-family boundaries**
+<!-- /concept-index -->
+
+## S3 Concepts
+
+Source: [S3 Concepts](domains/19_s3/s3-concepts.md).
+
+<!-- concept-index:domains/19_s3/s3-concepts.md -->
+- **S3 command domain**
+- **S3 role**
+- **RustFS backend**
+- **S3 service endpoint**
+- **S3 backend pool**
+- **S3 public host**
+- **S3 route publication**
+- **S3 service credentials**
+- **S3 role data path**
+- **S3-domain boundaries**
+- **S3-domain exclusions**
 <!-- /concept-index -->
 
 ## Deploy Concepts
@@ -455,6 +482,7 @@ Source: [Tool Concepts](domains/3_tool/tool-concepts.md).
 - **Tool catalog**
 - **Tool definition**
 - **Tool category**
+- **Storage tool category**
 - **Agent tool category**
 - **Tool row**
 - **Required baseline tool**

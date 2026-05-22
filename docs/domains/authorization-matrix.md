@@ -89,6 +89,9 @@ authority](../architecture.md#gateway-implicit-authority).
 | `proxy:add` | `proxy:add` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `proxy:list` | `proxy:read` | target node or each visible route owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `proxy:remove` | `proxy:remove` | route owning node | None | `authorization_failed` | Standard missing-permission meta plus route |
+| `s3:credentials` | `tool:credentials` | selected active S3 node | V1 tool-backed permission for the `rustfs` tool row | `authorization_failed` | Standard missing-permission meta plus selected node and tool |
+| `s3:publish` | `tool:reconfigure` | selected active S3 node | V1 tool-backed permission; mutates S3-owned proxy publication intent through router and ingress route convergence | `authorization_failed` | Standard missing-permission meta plus selected node, host, and tool |
+| `s3:unpublish` | `tool:reconfigure` | selected active S3 node | V1 tool-backed permission; `--force` required in non-interactive mode, including `--json` | `authorization_failed` | Standard missing-permission meta plus selected node, host, and tool |
 | `schedule:add` | `schedule:add` | schedule target node or app owning node | None | `authorization_failed` | Standard missing-permission meta plus schedule target |
 | `schedule:list` | `schedule:read` | schedule target node or app owning node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `schedule:logs` | `schedule:read` | schedule target node or app owning node | None | `authorization_failed` | Standard missing-permission meta plus schedule |

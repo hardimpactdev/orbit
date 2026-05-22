@@ -12,15 +12,15 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
 - Every proxy route has an owner: `app`, `app-websocket`, `workspace`,
-  `gateway`, `websocket`, `tool`, or `custom`.
+  `gateway`, `websocket`, `s3`, `tool`, or `custom`.
 - Every proxy route has a kind: `app`, `workspace`, `internal`, `proxy`, or
   `redirect`.
 - `proxy:list` shows all proxy routes by default, including app routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `tool`,
-  `custom`, and `redirect`.
+  `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`,
+  `tool`, `custom`, and `redirect`.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - App WebSocket routes are visible through proxy commands but edited through
@@ -30,6 +30,11 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - Router-owned websocket service routes are visible through proxy commands but
   edited by websocket route convergence. Router owns `websocket.orbit`,
   websocket backend pools, and private router-to-websocket TLS verification.
+- S3 public hosts and router-owned S3 service routes are visible through proxy
+  commands but edited by S3 route convergence. Public S3 hosts are `ingress`
+  routes that forward to `router`; they must not route directly to s3 role
+  nodes. Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
+  settings, and private router-to-RustFS routing.
 - Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP tool
   service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
   endpoints owned by the tool catalog and do not appear as HTTP proxy routes.
@@ -111,6 +116,9 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
 - **WebSocket backend pool:** Ordered list of TLS websocket backend URLs, such
   as `https://ws-1.websocket.orbit:8080`, owned by `router`. V1 creates one
   target but stores a list.
+- **S3 backend pool:** Ordered list of RustFS backend URLs, such as
+  `http://storage-1.s3.orbit:9000`, owned by `router`. V1 creates one target
+  but stores a list.
 
 ## TLS Authority Model
 
@@ -158,10 +166,10 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
 | `kind` | `app`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `tool`, or `custom` | Domain that owns route lifecycle. |
-| `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, websocket service, or tool identity when applicable. |
+| `owner.type` | `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, `tool`, or `custom` | Domain that owns route lifecycle. |
+| `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, websocket service, S3 service, or tool identity when applicable. |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, or `tool`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, `s3`, or `tool`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
@@ -181,3 +189,4 @@ Each command links to its public documentation and technical contract.
 - [`orbit app:*`](../5_app/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
+- [`orbit s3:*`](../19_s3/README.md)

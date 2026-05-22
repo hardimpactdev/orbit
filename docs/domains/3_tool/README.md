@@ -52,7 +52,8 @@ These rules govern what the tool command family owns and what it may not touch.
   operations may use `redis:*`. Database connection inventory, env convergence,
   schema inspection, audited SQL execution, and backup/restore where
   applicable belong to the `database:*` family, not per-database command
-  families.
+  families. S3 publication and service credential workflows belong to the
+  `s3:*` family; generic RustFS lifecycle and inventory remain under `tool:*`.
 
 ## Supported Tool Catalog
 
@@ -76,6 +77,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`redis`](catalog/redis.md) | Redis | Docker service | Installable and removable by Orbit | `cache` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; superseded by the `websocket` role for fleet realtime | `communication` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`rustfs`](catalog/rustfs.md) | RustFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
 | [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
@@ -83,9 +85,12 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless
-a future tool definition explicitly changes their support model. Installable
-tools are provisioned by `tool:install`, removed by `tool:remove`, and verified
-by `doctor --family=tool`.
+a future tool definition explicitly changes their support model. Role baseline
+service tools, such as `rustfs`, are materialized by their owning role and may
+only be installed or reconverged through `tool:*` when the target node already
+has the required active role. Installable tools are provisioned by
+`tool:install`, removed by `tool:remove`, and verified by
+`doctor --family=tool`.
 
 The `dns` tool is the runtime capability behind the VPN-facing DNS substrate;
 its container, port, and config lifecycle are verified by `doctor --family=tool`.

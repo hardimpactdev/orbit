@@ -37,6 +37,10 @@ requested intent change is explicit after a tool is managed.
 ### Tool configuration and apply rules
 
 - Verifies the tool supports managed installation on the target node.
+- For role baseline service tools, verifies the target node already has the
+  required active role. `tool:install rustfs` requires an active `s3` role and
+  reconverges the RustFS role baseline instead of creating a standalone
+  object-storage service.
 - Requires an explicit target source: `--node`, `--app`, local `node:default`,
   or interactive target selection. Non-interactive mode without a target source
   fails with `validation_failed`.
@@ -71,6 +75,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
+| Required role missing | The selected role baseline service tool requires an active role that the target node does not have, such as `rustfs` requiring `s3`. | `error.code=validation_failed`; `error.meta.field=node`; `error.meta.required_role=<role>` |
 | Unsupported status value | `--status` is not `installed` or `running`. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
 | Missing target source | Non-interactive input provides no `--node`, `--app`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
