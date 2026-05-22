@@ -17,6 +17,10 @@ it('starts Docker build topology nodes with the host Docker socket and runtime c
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
 
@@ -59,6 +63,10 @@ it('builds Docker topology state through the host orbit launcher', function (): 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
 
@@ -86,6 +94,10 @@ it('commits Docker build topology images from node image-layer state instead of 
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
 
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
@@ -117,6 +129,10 @@ it('does not use host PHP or host Caddy paths while building Docker gateway topo
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
 
@@ -133,6 +149,81 @@ it('does not use host PHP or host Caddy paths while building Docker gateway topo
         ->not->toContain('nohup php')
         ->not->toContain('php -r')
         ->not->toContain('systemctl stop caddy');
+});
+
+it('defines downstream small topology role matrices without requiring future role runtime classes', function (): void {
+    expect(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdev))->toBe(['control', 'gateway', 'dev'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevIngress))->toBe(['control', 'gateway', 'dev', 'ingress'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['control', 'gateway', 'dev', 'websocket'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevS3))->toBe(['control', 'gateway', 'dev', 's3'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3))->toBe(['control', 'gateway', 'dev', 'ingress', 'websocket', 's3']);
+});
+
+it('accepts client named aliases for downstream small topology fixtures', function (): void {
+    expect(E2ETopologyKind::tryFromInput('client-gateway-appdev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
+        ->and(E2ETopologyKind::tryFromInput('client-gateway-appdev-ingress'))->toBe(E2ETopologyKind::OperatorGatewayAppdevIngress)
+        ->and(E2ETopologyKind::tryFromInput('client-gateway-appdev-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
+        ->and(E2ETopologyKind::tryFromInput('client-gateway-appdev-s3'))->toBe(E2ETopologyKind::OperatorGatewayAppdevS3)
+        ->and(E2ETopologyKind::tryFromInput('client-gateway-appdev-ingress-websocket-s3'))->toBe(E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3);
+});
+
+it('seeds appdev docker topology with database role and Redis expectation for future websocket tests', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::OperatorGatewayAppdev);
+
+    $setup = implode("\n", $commands);
+
+    expect($setup)
+        ->toContain('NodeRoleName::Database')
+        ->toContain('NodeTool::query()->updateOrCreate')
+        ->toContain('redis')
+        ->toContain('expected_state')
+        ->toContain('running');
+});
+
+it('bakes downstream future-role topology placement without websocket or s3 runtime commands', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    $manifest = (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3, 'dns-alias');
+
+    expect(array_column($manifest, 'role'))->toBe(['control', 'gateway', 'dev', 'ingress', 'websocket', 's3'])
+        ->and($manifest[4]['image'])->toBe('orbit-e2e-topology:operator_gateway_app-dev_ingress_websocket_s3-websocket-dns-alias-current')
+        ->and($manifest[5]['image'])->toBe('orbit-e2e-topology:operator_gateway_app-dev_ingress_websocket_s3-s3-dns-alias-current');
+
+    $setup = implode("\n", $commands);
+
+    expect($setup)
+        ->toContain("--name 'orbit-e2e-build-operator_gateway_app-dev_ingress_websocket_s3-websocket'")
+        ->toContain("--name 'orbit-e2e-build-operator_gateway_app-dev_ingress_websocket_s3-s3'")
+        ->toContain("--network-alias 'websocket'")
+        ->toContain("--network-alias 's3'")
+        ->not->toContain('bake-websocket')
+        ->not->toContain('bake-s3')
+        ->not->toContain('reverb')
+        ->not->toContain('rustfs');
 });
 
 it('builds operator_gateway prepared images through transient docker resources', function (): void {

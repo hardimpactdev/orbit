@@ -47,6 +47,52 @@ it('satisfies the prepared control-gateway-dev topology contract', function (): 
     }
 })->group('e2e-topology-contract-operator_gateway_app-dev', 'e2e-topology-contract-control-gateway-dev');
 
+it('satisfies the prepared control-gateway-dev-ingress topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevIngress);
+
+    try {
+        expectPreparedDevTopology($topology, $config);
+        expectPreparedIngressPlacement($topology);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-dev_ingress');
+
+it('satisfies the prepared control-gateway-dev-websocket topology scaffold', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevWebsocket);
+
+    try {
+        expectPreparedDevServiceScaffold($topology, $config, ['websocket']);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-dev_websocket');
+
+it('satisfies the prepared control-gateway-dev-s3 topology scaffold', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevS3);
+
+    try {
+        expectPreparedDevServiceScaffold($topology, $config, ['s3']);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-dev_s3');
+
+it('satisfies the prepared control-gateway-dev-ingress-websocket-s3 topology scaffold', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3);
+
+    try {
+        expectPreparedDevServiceScaffold($topology, $config, ['websocket', 's3']);
+        expectPreparedIngressPlacement($topology);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-dev_ingress_websocket_s3');
+
 it('satisfies the prepared control-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevAppprod);
@@ -128,6 +174,7 @@ function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config
     $devNode = E2EGatewayApi::getNode($gateway, 'app-dev-1');
 
     expectPreparedAppNode($devNode, 'development', 'test');
+    expectPreparedDevDatabaseAndRedis($topology);
 }
 
 function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -149,6 +196,35 @@ function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $confi
     expectPreparedAppNode($prodNode, 'production', null);
 }
 
+/**
+ * @param  list<string>  $futureRoles
+ */
+function expectPreparedDevServiceScaffold(E2ETopologyLease $topology, E2EConfig $config, array $futureRoles): void
+{
+    expectPreparedDevTopology($topology, $config);
+
+    foreach ($futureRoles as $role) {
+        $instance = $topology->instance($role);
+
+        if ($instance === null) {
+            throw new RuntimeException("Prepared topology did not return a {$role} placement handle.");
+        }
+
+        expectPreparedOrbitCli($instance, 'orbit', $topology->sshKeyPair());
+    }
+}
+
+function expectPreparedIngressPlacement(E2ETopologyLease $topology): void
+{
+    $ingress = $topology->ingress();
+
+    if ($ingress === null) {
+        throw new RuntimeException('Prepared topology did not return an ingress handle.');
+    }
+
+    expectPreparedOrbitCli($ingress, 'orbit', $topology->sshKeyPair());
+}
+
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
 {
     $orbitPath = "/home/{$user}/orbit";
@@ -159,6 +235,55 @@ function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair 
         $key,
         'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version >/dev/null',
     );
+}
+
+function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
+{
+    $gateway = $topology->gateway();
+
+    if ($gateway === null) {
+        throw new RuntimeException('Prepared dev topology did not return a gateway handle.');
+    }
+
+    $state = readPreparedDevServiceState($gateway);
+
+    expect($state['roles'])->toContain('app-development')
+        ->and($state['roles'])->toContain('database')
+        ->and($state['redis_expected_state'])->toBe('running');
+}
+
+/**
+ * @return array{roles: list<string>, redis_expected_state: string|null}
+ */
+function readPreparedDevServiceState(E2EInstance $gateway): array
+{
+    $php = <<<'PHP'
+$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+
+echo json_encode([
+    'roles' => $node->roleAssignments()
+        ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+        ->orderBy('role')
+        ->pluck('role')
+        ->values()
+        ->all(),
+    'redis_expected_state' => \App\Models\NodeTool::query()
+        ->where('node_id', $node->id)
+        ->where('name', 'redis')
+        ->value('expected_state'),
+], JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = E2ECommand::orbit(
+        $gateway,
+        'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
+        'Could not read prepared appdev service state',
+    );
+
+    /** @var array{roles: list<string>, redis_expected_state: string|null} $state */
+    $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $state;
 }
 
 /**

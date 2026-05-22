@@ -203,10 +203,13 @@ or own Redis.
 Focused WebSocket E2E coverage uses dedicated Docker-first prepared
 topologies: `client-gateway-appdev-websocket` for private
 `websocket.orbit` assertions, and
-`client-gateway-appdev-ingress-websocket` for public
-`ingress -> router -> websocket` assertions. Those topologies must keep
-Reverb and Redis on the Docker substrate and must not add host PHP, host Caddy,
-PHP-FPM, or host Supervisor to make realtime assertions pass.
+`client-gateway-appdev-ingress-websocket-s3` for public
+`ingress -> router -> websocket` assertions. The ingress topology intentionally
+models `websocket` and `s3` as compatible future dev-service placements; it
+does not require either role runtime to exist before the role-specific command
+work lands. Those topologies must keep Reverb and Redis on the Docker
+substrate and must not add host PHP, host Caddy, PHP-FPM, or host Supervisor
+to make realtime assertions pass.
 
 ### S3 runtime
 
@@ -236,11 +239,13 @@ RustFS, or HA guarantees.
 
 Focused S3 E2E coverage uses dedicated Docker-first prepared topologies:
 `client-gateway-appdev-s3` for private `s3.orbit` assertions, and
-`client-gateway-appdev-ingress-s3` for public
-`ingress -> router -> s3` assertions. Those topologies must keep RustFS on the
-Docker-first runtime substrate and must not add role-local Docker Compose, host
-Caddy, host PHP, PHP-FPM, or host Supervisor to make object-storage assertions
-pass.
+`client-gateway-appdev-ingress-websocket-s3` for public
+`ingress -> router -> s3` assertions. The ingress topology intentionally models
+`websocket` and `s3` as compatible future dev-service placements; it does not
+require either role runtime to exist before the role-specific command work
+lands. Those topologies must keep RustFS on the Docker-first runtime substrate
+and must not add role-local Docker Compose, host Caddy, host PHP, PHP-FPM, or
+host Supervisor to make object-storage assertions pass.
 
 ### Process manager
 

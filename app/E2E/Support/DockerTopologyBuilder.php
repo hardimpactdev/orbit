@@ -118,6 +118,10 @@ final readonly class DockerTopologyBuilder
             E2ETopologyKind::Operator => ['control'],
             E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
             E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevIngress => ['control', 'gateway', 'dev', 'ingress'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['control', 'gateway', 'dev', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevS3 => ['control', 'gateway', 'dev', 's3'],
+            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3 => ['control', 'gateway', 'dev', 'ingress', 'websocket', 's3'],
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
@@ -338,6 +342,7 @@ final readonly class DockerTopologyBuilder
             $hostKeyHost = $this->hostKeyHostOption('dev', $mode);
 
             E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.4 --tld=test --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            $this->seedAppdevDatabaseAndRedis($gateway, $key);
         }
 
         if (isset($containers['ingress'])) {
@@ -371,13 +376,13 @@ final readonly class DockerTopologyBuilder
      */
     private function seedRemoteShellSshAccess(DockerBuildInstance $gateway, array $containers): void
     {
-        if (! isset($containers['dev']) && ! isset($containers['prod']) && ! isset($containers['ingress'])) {
+        if (! $this->hasManagedSshRole($containers)) {
             return;
         }
 
         $publicKey = $this->gatewayPublicKey($gateway);
 
-        foreach (['dev', 'prod', 'ingress'] as $role) {
+        foreach ($this->managedSshRoles() as $role) {
             if (! isset($containers[$role])) {
                 continue;
             }
@@ -439,7 +444,7 @@ final readonly class DockerTopologyBuilder
     {
         $targets = [];
 
-        foreach (['dev', 'prod', 'ingress', 'agent'] as $role) {
+        foreach ([...$this->managedSshRoles(), 'agent'] as $role) {
             if (! isset($containers[$role])) {
                 continue;
             }
@@ -485,6 +490,8 @@ SH;
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',
             'ingress' => '10.6.0.7',
+            'websocket' => '10.6.0.9',
+            's3' => '10.6.0.10',
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
     }
@@ -503,6 +510,17 @@ SH;
         }
 
         return $this->ipForRole($role);
+    }
+
+    private function seedAppdevDatabaseAndRedis(DockerBuildInstance $gateway, SshKeyPair $key): void
+    {
+        E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            $key,
+            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            timeoutSeconds: 120,
+        );
     }
 
     private function composerLockHash(): string
@@ -534,6 +552,28 @@ SH;
     private function runtimeContainerName(string $nodeContainer): string
     {
         return "{$nodeContainer}-orbit-runtime";
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function managedSshRoles(): array
+    {
+        return ['dev', 'prod', 'ingress', 'websocket', 's3'];
+    }
+
+    /**
+     * @param  array<string, DockerBuildInstance>  $containers
+     */
+    private function hasManagedSshRole(array $containers): bool
+    {
+        foreach ($this->managedSshRoles() as $role) {
+            if (isset($containers[$role])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function mustRun(string $command, string $message, ?int $timeoutSeconds = null): ProcessResult

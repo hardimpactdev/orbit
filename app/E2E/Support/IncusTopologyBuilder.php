@@ -201,6 +201,25 @@ class IncusTopologyBuilder
                 E2ETopologyKind::Control => $this->buildControlStage($key),
                 E2ETopologyKind::ControlGateway => $this->buildGatewayStage($key),
                 E2ETopologyKind::ControlGatewayDev => $this->buildDevelopmentAppStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevIngress => $this->buildDevelopmentIngressStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevWebsocket => $this->buildDevelopmentServiceScaffoldStage(
+                    $key,
+                    E2ETopologyKind::OperatorGatewayAppdev,
+                    ['control', 'gateway', 'dev'],
+                    ['websocket'],
+                ),
+                E2ETopologyKind::OperatorGatewayAppdevS3 => $this->buildDevelopmentServiceScaffoldStage(
+                    $key,
+                    E2ETopologyKind::OperatorGatewayAppdev,
+                    ['control', 'gateway', 'dev'],
+                    ['s3'],
+                ),
+                E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3 => $this->buildDevelopmentServiceScaffoldStage(
+                    $key,
+                    E2ETopologyKind::OperatorGatewayAppdevIngress,
+                    ['control', 'gateway', 'dev', 'ingress'],
+                    ['websocket', 's3'],
+                ),
                 E2ETopologyKind::ControlGatewayDevProd => $this->buildProductionAppStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildAgentStage($key),
                 E2ETopologyKind::OperatorGatewayAppprodIngress => $this->buildIngressProductionStage($key),
@@ -242,6 +261,43 @@ class IncusTopologyBuilder
      */
     private function stagesThrough(E2ETopologyKind $target): array
     {
+        if ($target === E2ETopologyKind::OperatorGatewayAppdevIngress) {
+            return [
+                E2ETopologyKind::Control,
+                E2ETopologyKind::ControlGateway,
+                E2ETopologyKind::ControlGatewayDev,
+                E2ETopologyKind::OperatorGatewayAppdevIngress,
+            ];
+        }
+
+        if ($target === E2ETopologyKind::OperatorGatewayAppdevWebsocket) {
+            return [
+                E2ETopologyKind::Control,
+                E2ETopologyKind::ControlGateway,
+                E2ETopologyKind::ControlGatewayDev,
+                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+            ];
+        }
+
+        if ($target === E2ETopologyKind::OperatorGatewayAppdevS3) {
+            return [
+                E2ETopologyKind::Control,
+                E2ETopologyKind::ControlGateway,
+                E2ETopologyKind::ControlGatewayDev,
+                E2ETopologyKind::OperatorGatewayAppdevS3,
+            ];
+        }
+
+        if ($target === E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3) {
+            return [
+                E2ETopologyKind::Control,
+                E2ETopologyKind::ControlGateway,
+                E2ETopologyKind::ControlGatewayDev,
+                E2ETopologyKind::OperatorGatewayAppdevIngress,
+                E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3,
+            ];
+        }
+
         if ($target === E2ETopologyKind::OperatorGatewayAppprodIngress) {
             return [
                 E2ETopologyKind::Control,
@@ -421,6 +477,7 @@ class IncusTopologyBuilder
             'development',
             'test',
         ));
+        $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway'], $key));
         $this->timer->measure('dev.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
@@ -451,6 +508,58 @@ class IncusTopologyBuilder
             withIngress: true,
         ));
         $this->timer->measure('prod.real-wireguard', fn () => $this->installRealWireGuard($instances));
+
+        return $instances;
+    }
+
+    /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildDevelopmentIngressStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['control', 'gateway', 'dev'], $key);
+
+        $this->timer->measure('appdev-ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('appdev-ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-appdev-ingress'));
+        $this->timer->measure('appdev-ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
+        $this->timer->measure('appdev-ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+
+        $ingress = $this->launchBlankRole('ingress', $key, E2ETopologyKind::OperatorGatewayAppdevIngress);
+        $ingressIp = $this->timer->measure('ingress.ipv4', fn (): string => $ingress->waitForIpv4());
+        $instances['ingress'] = $ingress;
+
+        $this->timer->measure('ingress.node-new', fn () => $this->runIngressNodeNew(
+            $instances['control'],
+            $key,
+            'edge-1',
+            $ingressIp,
+        ));
+        $this->timer->measure('appdev-ingress.real-wireguard', fn () => $this->installRealWireGuard($instances));
+
+        return $instances;
+    }
+
+    /**
+     * @param  list<string>  $baseRoles
+     * @param  list<string>  $futureRoles
+     * @return array<string, IncusInstance>
+     */
+    private function buildDevelopmentServiceScaffoldStage(SshKeyPair $key, E2ETopologyKind $baseKind, array $baseRoles, array $futureRoles): array
+    {
+        $instances = $this->startTemplateRoles($baseRoles, $key, $baseKind);
+
+        foreach ($futureRoles as $role) {
+            $instance = $this->launchBlankRole($role, $key);
+            $instances[$role] = $instance;
+
+            $this->timer->measure("{$role}.provision", fn () => $this->host->provisionInstance(
+                $instance->name(),
+                'app',
+                (string) $this->remoteBundleDir,
+            ));
+        }
+
+        $this->timer->measure('appdev-service-scaffold.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
     }
@@ -585,6 +694,17 @@ PHP;
             $this->host->config->controlUser,
             $key,
             'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
+    private function seedAppdevDatabaseAndRedis(IncusInstance $gateway, SshKeyPair $key): void
+    {
+        E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            $key,
+            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
             timeoutSeconds: 120,
         );
     }
@@ -1005,7 +1125,7 @@ PHP;
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress'] as $role) {
+        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress', 'websocket', 's3'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -1019,6 +1139,8 @@ PHP;
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
             isset($instances['ingress']) ? 'ingress' : null,
+            isset($instances['websocket']) ? 'websocket' : null,
+            isset($instances['s3']) ? 's3' : null,
         ])));
     }
 
@@ -1034,6 +1156,8 @@ PHP;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
         $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
+        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
+        $s3 = isset($instances['s3']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -1051,6 +1175,10 @@ PHP;
             agentPublicKey: $agent['public_key'] ?? null,
             ingressPrivateKey: $ingress['private_key'] ?? null,
             ingressPublicKey: $ingress['public_key'] ?? null,
+            websocketPrivateKey: $websocket['private_key'] ?? null,
+            websocketPublicKey: $websocket['public_key'] ?? null,
+            s3PrivateKey: $s3['private_key'] ?? null,
+            s3PublicKey: $s3['public_key'] ?? null,
         );
     }
 

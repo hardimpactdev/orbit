@@ -15,6 +15,10 @@ final readonly class IncusTopologyTemplate
             E2ETopologyKind::Control => ['control'],
             E2ETopologyKind::ControlGateway => ['control', 'gateway'],
             E2ETopologyKind::ControlGatewayDev => ['control', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevIngress => ['control', 'gateway', 'dev', 'ingress'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['control', 'gateway', 'dev', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevS3 => ['control', 'gateway', 'dev', 's3'],
+            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3 => ['control', 'gateway', 'dev', 'ingress', 'websocket', 's3'],
             E2ETopologyKind::ControlGatewayDevProd => ['control', 'gateway', 'dev', 'prod'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
@@ -23,6 +27,13 @@ final readonly class IncusTopologyTemplate
 
     public static function templateName(E2ETopologyKind $kind, string $role): string
     {
+        if (in_array($kind, [
+            E2ETopologyKind::OperatorGatewayAppdevIngress,
+            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3,
+        ], true) && $role === 'ingress') {
+            return 'orbit-template-appdev-ingress';
+        }
+
         if ($kind === E2ETopologyKind::OperatorGatewayAppprodIngress) {
             return match ($role) {
                 'control' => 'orbit-template-ingress-control',

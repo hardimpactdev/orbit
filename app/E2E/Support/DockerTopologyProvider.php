@@ -127,6 +127,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             resourceLease: $resourceLease,
             agent: $instances['agent'] ?? null,
             ingress: $instances['ingress'] ?? null,
+            additionalInstances: $this->additionalInstancesFrom($instances),
         );
     }
 
@@ -162,6 +163,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::Operator => ['control'],
             E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
             E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevIngress => ['control', 'gateway', 'dev', 'ingress'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['control', 'gateway', 'dev', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevS3 => ['control', 'gateway', 'dev', 's3'],
+            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3 => ['control', 'gateway', 'dev', 'ingress', 'websocket', 's3'],
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
@@ -484,6 +489,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
             'ingress' => '10.6.0.7',
+            'websocket' => '10.6.0.8',
+            's3' => '10.6.0.9',
         ];
 
         $map = [];
@@ -601,6 +608,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($gatewayIp),
             ), timeoutSeconds: 120);
+            $this->seedAppdevDatabaseAndRedis($gateway, $key);
         }
 
         if (isset($instances['ingress'])) {
@@ -658,6 +666,17 @@ PHP;
             'control',
             $key,
             'cd /home/control/orbit && orbit tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
+    private function seedAppdevDatabaseAndRedis(DockerInstance $gateway, SshKeyPair $key): void
+    {
+        E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            $key,
+            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
             timeoutSeconds: 120,
         );
     }
@@ -746,5 +765,14 @@ PHP;
         return getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias'
             ? 'dns-alias'
             : 'legacy-retarget';
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     * @return array<string, DockerInstance>
+     */
+    private function additionalInstancesFrom(array $instances): array
+    {
+        return array_diff_key($instances, array_flip(['control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
     }
 }

@@ -119,6 +119,41 @@ it('can include an agent peer with a stable WireGuard address', function (): voi
         ]);
 });
 
+it('can include future dev service peers with stable WireGuard addresses', function (): void {
+    $mesh = E2EWireGuardMesh::standard(
+        gatewayProviderIp: '10.231.0.11',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
+        controlPrivateKey: 'control-private',
+        controlPublicKey: 'control-public',
+        websocketPrivateKey: 'websocket-private',
+        websocketPublicKey: 'websocket-public',
+        s3PrivateKey: 's3-private',
+        s3PublicKey: 's3-public',
+    );
+
+    $peers = $mesh->wgEasyPeers();
+
+    expect($mesh->addressFor('websocket'))->toBe('10.6.0.8')
+        ->and($mesh->addressFor('s3'))->toBe('10.6.0.9')
+        ->and($mesh->peerConfig('websocket'))->toContain('Address = 10.6.0.8/24')
+        ->and($mesh->peerConfig('s3'))->toContain('Address = 10.6.0.9/24')
+        ->and($peers)->toHaveCount(4)
+        ->and($peers[2])->toMatchArray([
+            'name' => 'websocket',
+            'private_key' => 'websocket-private',
+            'public_key' => 'websocket-public',
+            'address' => '10.6.0.8',
+        ])
+        ->and($peers[3])->toMatchArray([
+            'name' => 's3',
+            'private_key' => 's3-private',
+            'public_key' => 's3-public',
+            'address' => '10.6.0.9',
+        ]);
+});
+
 it('installs and restarts wg-orbit for a role', function (): void {
     $commands = [];
     $instance = m::mock(E2EInstance::class);

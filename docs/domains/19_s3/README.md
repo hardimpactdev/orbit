@@ -63,8 +63,9 @@ The S3 command domain does not own a state family in v1.
 Focused S3 E2E coverage uses two prepared topologies:
 
 - `client-gateway-appdev-s3` for private `s3.orbit` routing and credentials.
-- `client-gateway-appdev-ingress-s3` for public host publication through
-  ingress.
+- `client-gateway-appdev-ingress-websocket-s3` for public host publication
+  through ingress. This fixture also reserves compatible future websocket
+  placement without requiring the websocket role runtime to exist.
 
 ## Concepts
 

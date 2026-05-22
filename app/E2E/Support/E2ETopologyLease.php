@@ -18,6 +18,7 @@ final class E2ETopologyLease
      * @param  (\Closure(E2EPhaseTimer): void)|null  $snapshotReset
      * @param  (\Closure(E2EPhaseTimer): void)|null  $bulkCleanup
      * @param  (\Closure(E2EPhaseTimer): void)|null  $teardown
+     * @param  array<string, E2EInstance>  $additionalInstances
      */
     public function __construct(
         private readonly E2ETopologyKind $kind,
@@ -34,6 +35,7 @@ final class E2ETopologyLease
         private readonly ?E2EResourceLease $resourceLease = null,
         private ?E2EInstance $agent = null,
         private ?E2EInstance $ingress = null,
+        private array $additionalInstances = [],
     ) {}
 
     public function kind(): E2ETopologyKind
@@ -76,6 +78,19 @@ final class E2ETopologyLease
         return $this->ingress;
     }
 
+    public function instance(string $role): ?E2EInstance
+    {
+        return match ($role) {
+            'control' => $this->control,
+            'gateway' => $this->gateway,
+            'dev' => $this->dev,
+            'prod' => $this->prod,
+            'agent' => $this->agent,
+            'ingress' => $this->ingress,
+            default => $this->additionalInstances[$role] ?? null,
+        };
+    }
+
     public function sshKeyPair(): SshKeyPair
     {
         return $this->sshKeyPair;
@@ -100,7 +115,7 @@ final class E2ETopologyLease
                 if ($this->bulkCleanup !== null) {
                     ($this->bulkCleanup)($timer);
                 } else {
-                    foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod, 'agent' => $this->agent, 'ingress' => $this->ingress] as $role => $instance) {
+                    foreach ($this->allInstances() as $role => $instance) {
                         if ($instance !== null) {
                             $timer->measure("cleanup.{$role}", fn () => $instance->delete());
                         }
@@ -150,6 +165,7 @@ final class E2ETopologyLease
             $this->prod = $instances['prod'] ?? null;
             $this->agent = $instances['agent'] ?? null;
             $this->ingress = $instances['ingress'] ?? null;
+            $this->additionalInstances = $this->additionalInstancesFrom($instances);
             $this->snapshotReset = $payload['snapshotReset'];
             $this->cleaned = false;
             $this->finalized = false;
@@ -170,6 +186,35 @@ final class E2ETopologyLease
             $this->prod?->name(),
             $this->agent?->name(),
             $this->ingress?->name(),
+            ...array_map(
+                static fn (E2EInstance $instance): string => $instance->name(),
+                array_values($this->additionalInstances),
+            ),
         ]));
+    }
+
+    /**
+     * @return array<string, E2EInstance|null>
+     */
+    private function allInstances(): array
+    {
+        return [
+            'control' => $this->control,
+            'gateway' => $this->gateway,
+            'dev' => $this->dev,
+            'prod' => $this->prod,
+            'agent' => $this->agent,
+            'ingress' => $this->ingress,
+            ...$this->additionalInstances,
+        ];
+    }
+
+    /**
+     * @param  array<string, E2EInstance>  $instances
+     * @return array<string, E2EInstance>
+     */
+    private function additionalInstancesFrom(array $instances): array
+    {
+        return array_diff_key($instances, array_flip(['control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
     }
 }

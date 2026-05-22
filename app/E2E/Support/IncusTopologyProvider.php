@@ -20,6 +20,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private const string IngressWireGuardIp = '10.6.0.7';
 
+    private const string WebsocketWireGuardIp = '10.6.0.8';
+
+    private const string S3WireGuardIp = '10.6.0.9';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -107,6 +111,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             resourceLease: $resourceLease,
             agent: $instances['agent'] ?? null,
             ingress: $instances['ingress'] ?? null,
+            additionalInstances: $this->additionalInstancesFrom($instances),
         );
     }
 
@@ -311,7 +316,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress'] as $role) {
+        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress', 'websocket', 's3'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -325,6 +330,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
             isset($instances['ingress']) ? 'ingress' : null,
+            isset($instances['websocket']) ? 'websocket' : null,
+            isset($instances['s3']) ? 's3' : null,
         ])));
     }
 
@@ -340,6 +347,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
         $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
+        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
+        $s3 = isset($instances['s3']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -357,6 +366,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             agentPublicKey: $agent['public_key'] ?? null,
             ingressPrivateKey: $ingress['private_key'] ?? null,
             ingressPublicKey: $ingress['public_key'] ?? null,
+            websocketPrivateKey: $websocket['private_key'] ?? null,
+            websocketPublicKey: $websocket['public_key'] ?? null,
+            s3PrivateKey: $s3['private_key'] ?? null,
+            s3PublicKey: $s3['public_key'] ?? null,
         );
     }
 
@@ -387,6 +400,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 120);
+            $this->seedAppdevDatabaseAndRedis($gateway, $sshKeyPair);
         }
 
         if (isset($instances['ingress'])) {
@@ -456,6 +470,26 @@ PHP;
         );
     }
 
+    private function seedAppdevDatabaseAndRedis(IncusInstance $gateway, SshKeyPair $sshKeyPair): void
+    {
+        E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            $sshKeyPair,
+            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            timeoutSeconds: 120,
+        );
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     * @return array<string, IncusInstance>
+     */
+    private function additionalInstancesFrom(array $instances): array
+    {
+        return array_diff_key($instances, array_flip(['control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
+    }
+
     /**
      * @param  array<string, IncusInstance>  $instances
      */
@@ -467,7 +501,7 @@ PHP;
             return;
         }
 
-        foreach (['dev', 'prod', 'ingress'] as $role) {
+        foreach (['dev', 'prod', 'ingress', 'websocket', 's3'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -523,7 +557,10 @@ PHP;
             'control' => self::ControlWireGuardIp,
             'dev' => self::DevWireGuardIp,
             'prod' => self::ProdWireGuardIp,
+            'agent' => self::AgentWireGuardIp,
             'ingress' => self::IngressWireGuardIp,
+            'websocket' => self::WebsocketWireGuardIp,
+            's3' => self::S3WireGuardIp,
             default => throw new \RuntimeException("Unknown topology role [{$role}]."),
         };
     }

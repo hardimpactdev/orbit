@@ -629,13 +629,13 @@ process count is `8`; the shared local `.env.e2e` uses
 `ORBIT_E2E_PARALLEL_PROCESSES=8` to match the sidecar1 and sidecar2 slot pool.
 Keep the value within Docker host capacity: each topology role starts both a
 node container and an `orbit-runtime` sibling. The largest Docker topology has
-five roles, so it reserves ten containers per worker; a host with four Docker
-slots needs `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=40` or higher.
+six roles, so it reserves twelve containers per worker; a host with four Docker
+slots needs `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=48` or higher.
 
 Historical measurement on 2026-05-19 with the tarball-only DNS-alias checkout
 path, before runtime sibling containers were accounted for, passed the canary
 with `sidecar1:4,sidecar2:4`, `ORBIT_E2E_PARALLEL_PROCESSES=8`, and a 16
-container cap in `47.55s` real time. Docker-first runtime now needs a 40
+container cap in `47.55s` real time. Docker-first runtime now needs a 48
 container cap for that pool.
 The full Docker lane passed three consecutive runs with 81 tests / 727
 assertions in `113.45s`, `112.49s`, and `114.88s` real time
@@ -650,7 +650,7 @@ Earlier measurement at `sidecar1:5,sidecar2:5` with 10 workers regressed, so
 the recommended local sidecar pool stays at 8 workers. The Docker lane rejects
 measured runs where `ORBIT_E2E_PARALLEL_PROCESSES` does not match the total
 Docker host slots or where
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST < max(host slot count) * 10`.
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST < max(host slot count) * 12`.
 
 For multi-host parallelism, use host slots and set the Pest worker count to the
 total slot count:
@@ -800,7 +800,7 @@ ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2  # Recommended Docker daemon pool
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4  # Docker feature-test lease pool
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast # Build Docker images here, then import to Docker hosts
 ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias # Use Docker DNS aliases for transport
-ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=40  # Docker topology capacity per daemon
+ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=48  # Docker topology capacity per daemon
 ORBIT_E2E_PARALLEL_PROCESSES=8        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism
@@ -866,8 +866,8 @@ in more than one backend pool and the backend families must not overlap. The
 local setup keeps Beast in `ORBIT_E2E_EXCLUSIVE_HOSTS` for the opt-in overflow
 case: Beast Docker overflow waits while Beast is running Incus E2E, and Incus
 waits while Docker is using Beast. Same-backend slots still run concurrently, so
-`beast:2` can host two Docker feature workers with the default container cap
-when no Incus lease is active.
+`beast:2` can host two Docker feature workers when its container cap is at least
+24 and no Incus lease is active.
 
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` treats each key as
 `location/server-type/image` and applies all three values before creating

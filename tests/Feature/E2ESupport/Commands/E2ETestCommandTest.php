@@ -130,9 +130,24 @@ it('rejects docker container caps below the largest configured host slot capacit
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $this->artisan('e2e:test --dry-run --json --lanes=docker')
-            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 40')
+            ->expectsOutputToContain('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least 48')
             ->assertFailed();
     });
+});
+
+it('documents the default docker container cap required by the largest host slot topology', function (): void {
+    $example = collect(file(base_path('.env.e2e.example'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [])
+        ->reject(fn (string $line): bool => str_starts_with(trim($line), '#'))
+        ->mapWithKeys(function (string $line): array {
+            [$key, $value] = explode('=', $line, 2);
+
+            return [$key => $value];
+        })
+        ->all();
+
+    expect($example['ORBIT_E2E_DOCKER_HOST_SLOTS'])->toBe('sidecar1:4,sidecar2:4')
+        ->and($example['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('8')
+        ->and($example['ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST'])->toBe('48');
 });
 
 it('disables pest parallel mode for a single docker process', function (): void {

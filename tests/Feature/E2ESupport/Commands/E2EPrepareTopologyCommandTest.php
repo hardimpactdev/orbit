@@ -156,6 +156,10 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
     ['operator', 1],
     ['operator_gateway', 2],
     ['operator_gateway_app-dev', 3],
+    ['operator_gateway_app-dev_ingress', 4],
+    ['operator_gateway_app-dev_websocket', 4],
+    ['operator_gateway_app-dev_s3', 4],
+    ['operator_gateway_app-dev_ingress_websocket_s3', 6],
     ['operator_gateway_app-dev_app-prod', 4],
     ['operator_gateway_app-prod_ingress', 4],
     ['control', 1],
@@ -168,7 +172,7 @@ it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress. Legacy control topology names are accepted as aliases.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_s3, operator_gateway_app-dev_ingress_websocket_s3, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress. Legacy control and client topology names are accepted as aliases.',
         ],
     ], JSON_THROW_ON_ERROR);
 
