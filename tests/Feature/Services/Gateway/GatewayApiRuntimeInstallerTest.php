@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Runtime\OrbitRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -64,7 +67,16 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
         File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
 
-        Process::fake(function ($process) use (&$writtenGlobalCaddyfile, &$writtenGatewayApiCaddyfile) {
+        Process::fake(function ($process) use (&$writtenGlobalCaddyfile, &$writtenGatewayApiCaddyfile
+        ) {
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
             if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {
                 $writtenGlobalCaddyfile = (string) $process->input;
             }
@@ -91,6 +103,66 @@ describe('GatewayApiRuntimeInstaller', function (): void {
             ->and($writtenGatewayApiCaddyfile)->not->toContain('orbit-api.sock');
     });
 
+    it('ensures the orbit-runtime container before writing the gateway API Caddy config', function (): void {
+        $caDir = storage_path('app/orbit/ca');
+        $certsDir = storage_path('app/orbit/certs');
+
+        File::ensureDirectoryExists($caDir);
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$caDir}/root.key", 'test-root-key');
+        File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
+
+        $builder = new DockerCommandBuilder;
+        $renderer = new OrbitRuntimeContainerRenderer(new OrbitContainerNames);
+        $runtimeContainer = $renderer->render(
+            orbitCheckoutPath: '/home/orbit/orbit',
+            gatewayDatabasePath: '/home/orbit/orbit/database/database.sqlite',
+        );
+
+        $invocations = [];
+
+        Process::fake(function ($process) use ($builder, $runtimeContainer, &$invocations) {
+            $invocations[] = $process->command;
+
+            if ($process->command === $builder->networkInspect($runtimeContainer->network())) {
+                return Process::result(exitCode: 1);
+            }
+
+            if ($process->command === $builder->containerInspect($runtimeContainer->name())) {
+                return Process::result(exitCode: 1);
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+
+        app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
+
+        $runtimeCreateIndex = null;
+        $caddyConfigWriteIndex = null;
+        $caddyRestartIndex = null;
+
+        foreach ($invocations as $i => $command) {
+            if ($command === $builder->runDetached($runtimeContainer)) {
+                $runtimeCreateIndex = $i;
+            }
+            if (str_contains($command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
+                $caddyConfigWriteIndex = $i;
+            }
+            if ($command === "docker restart 'orbit-caddy'") {
+                $caddyRestartIndex = $i;
+            }
+        }
+
+        expect($runtimeCreateIndex)->not->toBeNull('orbit-runtime container must be created')
+            ->and($caddyConfigWriteIndex)->not->toBeNull('gateway API Caddy config must be written')
+            ->and($caddyRestartIndex)->not->toBeNull('orbit-caddy must be restarted')
+            ->and($runtimeCreateIndex)->toBeLessThan($caddyConfigWriteIndex, 'orbit-runtime must be created before the Caddy config is written')
+            ->and($caddyConfigWriteIndex)->toBeLessThan($caddyRestartIndex, 'Caddy config must be written before orbit-caddy is restarted');
+    });
+
     it('reloads the orbit-caddy container and never installs or restarts host PHP-FPM or host Caddy', function (): void {
         $caDir = storage_path('app/orbit/ca');
         $certsDir = storage_path('app/orbit/certs');
@@ -102,9 +174,17 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
         File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
 
-        Process::fake([
-            '*' => Process::result(),
-        ]);
+        Process::fake(function ($process) {
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            return Process::result();
+        });
         Process::preventStrayProcesses();
 
         app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
@@ -151,6 +231,14 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
 
         Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
             if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
                 $writtenGatewayApiCaddyfile = (string) $process->input;
             }
@@ -235,6 +323,14 @@ import /etc/caddy/sites/*.caddy
 import /etc/caddy/orbit/orbit-web.caddy
 import /etc/caddy/orbit/tld-proxies.caddy
 CADDY);
+            }
+
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
             }
 
             if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {

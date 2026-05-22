@@ -35,11 +35,13 @@ The gateway bootstrap runs in this order:
 
 1. WireGuard kernel + interface install.
 2. Root CA materialized.
-3. Gateway runtime containers (`orbit-runtime` + `orbit-caddy`).
-4. **`wg-easy` container started.**
-5. **`orbit-dns` container started inside wg-easy's network namespace,
+3. Gateway `orbit-runtime` container created and started.
+4. Gateway `orbit-caddy` container created, started, and configured to route
+   HTTPS gateway traffic to `orbit-runtime` over the Docker network.
+5. **`wg-easy` container started.**
+6. **`orbit-dns` container started inside wg-easy's network namespace,
    with the initial `dnsmasq.conf` rendered from current fleet state.**
-6. Gateway environment marked (`ORBIT_IS_GATEWAY=true`).
+7. Gateway environment marked (`ORBIT_IS_GATEWAY=true`).
 
 `wg-easy` must come up before `orbit-dns`: `orbit-dns` uses
 `network_mode: container:wg-easy`, which pins the netns of the wg-easy

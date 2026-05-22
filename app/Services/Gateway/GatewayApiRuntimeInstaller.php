@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Services\Gateway;
 
 use App\Services\Ca\OrbitCaService;
+use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Runtime\OrbitRuntimeContainerManager;
+use App\Services\Runtime\OrbitRuntimeContainerRenderer;
 use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -38,6 +41,8 @@ class GatewayApiRuntimeInstaller
         private readonly CaddyGlobalConfig $caddyGlobalConfig,
         private readonly CaddyTool $caddyTool = new CaddyTool,
         private readonly OrbitContainerNames $containerNames = new OrbitContainerNames,
+        private readonly OrbitRuntimeContainerRenderer $runtimeRenderer = new OrbitRuntimeContainerRenderer(new OrbitContainerNames),
+        private readonly OrbitRuntimeContainerManager $runtimeManager = new OrbitRuntimeContainerManager(new DockerCommandBuilder),
     ) {}
 
     public function install(string $wireguardAddress, string $phpVersion = '8.5', string $orbitPath = ''): void
@@ -48,6 +53,7 @@ class GatewayApiRuntimeInstaller
 
         $leaf = $this->caService->issueLeaf($wireguardAddress);
 
+        $this->ensureOrbitRuntimeContainer($orbitPath);
         $this->ensureOrbitCaddyContainer($wireguardAddress);
         $this->runRequiredWithInput('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null', $this->gatewayApiCaddyfile(
             wireguardAddress: $wireguardAddress,
@@ -82,6 +88,25 @@ class GatewayApiRuntimeInstaller
         }
 
         return $containerPath;
+    }
+
+    /**
+     * Converge the gateway orbit-runtime container before orbit-caddy is
+     * configured to route to it. The runtime container mounts the Orbit
+     * checkout and the gateway database so the API can serve from inside
+     * the container.
+     */
+    private function ensureOrbitRuntimeContainer(string $orbitPath): void
+    {
+        $resolvedPath = $orbitPath !== '' ? $orbitPath : base_path();
+        $databasePath = $resolvedPath.'/database/database.sqlite';
+
+        $container = $this->runtimeRenderer->render(
+            orbitCheckoutPath: $resolvedPath,
+            gatewayDatabasePath: $databasePath,
+        );
+
+        $this->runtimeManager->apply($container);
     }
 
     /**

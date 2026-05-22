@@ -27,9 +27,12 @@ drift repair. Gateway commands may repair caller-local gateway trust, but they
 do not create a gateway doctor family.
 
 The gateway API runtime is the gateway `orbit-runtime` container, exposed on
-the Orbit network through the gateway `orbit-caddy` container. Gateway commands
-verify and trust that API; they do not install host PHP, host Caddy, or
-PHP-FPM gateway fallbacks.
+the Orbit network through the gateway `orbit-caddy` container. Gateway bootstrap
+ensures `orbit-runtime` is created and running before `orbit-caddy` is
+configured to route HTTPS gateway traffic to it. Gateway commands verify and
+trust that API; they do not install host PHP, host Caddy, or PHP-FPM gateway
+fallbacks, and the gateway API path does not render PHP-FPM sockets or
+`php_fastcgi` upstream configuration.
 
 ## Domain Rules
 

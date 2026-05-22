@@ -93,6 +93,14 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
                 $shellScripts[] = (string) $process->input;
             }
 
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
             return Process::result();
         });
         Process::preventStrayProcesses();
@@ -124,6 +132,14 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         Process::fake(function ($process) use (&$shellScripts) {
             if (is_string($process->command) && $process->command === 'bash -s') {
                 $shellScripts[] = (string) $process->input;
+            }
+
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
             }
 
             return Process::result();
@@ -164,6 +180,14 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
             if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
                 $writtenGatewayApiCaddyfile = (string) $process->input;
+            }
+
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
             }
 
             return Process::result();
@@ -288,6 +312,14 @@ CADDY;
 
             if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {
                 $writtenGlobalCaddyfile = (string) $process->input;
+            }
+
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
             }
 
             return Process::result();

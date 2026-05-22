@@ -1511,7 +1511,7 @@ describe('adoption', function (): void {
 
     it('snapshots available app runtime readiness for adopt', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "4.2.5\n", stderr: '', durationMs: 1),
         ]);
         $probe = new NodesProbe(remoteShell: $remoteShell);
 
@@ -1537,7 +1537,7 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.runtime_missing'))->toBe([
             'available' => true,
             'exit_code' => 0,
-            'output' => 'supervisor OK',
+            'output' => '4.2.5',
         ]);
         expect($remoteShell->scripts)->toBe([
             'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
@@ -1546,7 +1546,7 @@ describe('adoption', function (): void {
 
     it('snapshots unavailable app runtime readiness for adopt', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'command not found: supervisorctl', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1571,7 +1571,7 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.runtime_missing'))->toBe([
             'available' => false,
             'exit_code' => 127,
-            'output' => 'missing supervisorctl',
+            'output' => 'command not found: supervisorctl',
         ]);
     });
 
