@@ -54,6 +54,12 @@ These terms define per-process behavioral rules that apply to every derived runt
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available.
+- **Process runtime selection:** Process-definition field that records which
+  backend renders the derived runtime units. Allowed values are `docker` and
+  `supervisor`. When a process is added without an explicit runtime, the
+  default is derived from the owning app's runtime kind: PHP apps default to
+  `docker`; non-PHP apps default to `supervisor`. Existing processes keep their
+  stored runtime until `process:edit --runtime=<docker|supervisor>` changes it.
 
 ## Events
 

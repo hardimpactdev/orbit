@@ -37,6 +37,16 @@ The node has Docker process runtime support available and responsive. Explicit
 fails, the probe stops and reports `process.runtime_backend_unavailable`
 instead of cascading to downstream checks.
 
+> **Known scope limit (ORBIT-RUNTIME-08A):** Live Docker container probing
+> lands with the lifecycle/log work in ORBIT-RUNTIME-08B (todo 338). Until
+> then, `doctor --family=process` only inspects runtime artifacts for
+> `process.runtime=supervisor` units. Docker-runtime processes still receive
+> gateway-side checks (record completeness, owner-app validity, runtime
+> context identity) but their live container state is intentionally not
+> surfaced as drift here. This avoids false-positive supervisor drift for
+> the new Docker default while the matching Docker probe layer is being
+> built.
+
 ### Runtime-unit identity
 
 Each expected runtime context maps to exactly one runtime unit name that Orbit owns, using `orbit_<app>_<workspace|main>_<process>`.

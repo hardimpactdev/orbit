@@ -7,10 +7,12 @@ namespace App\Actions\Processes;
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Contracts\RemoteShell;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
+use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 
 final readonly class EditProcess
@@ -19,10 +21,11 @@ final readonly class EditProcess
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
         private RemoteShell $remoteShell,
+        private ProcessDockerRuntimeManager $dockerManager,
     ) {}
 
     /**
-     * @param  array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification}  $changes
+     * @param  array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(App $app, string $name, array $changes, bool $restart): array
@@ -58,6 +61,11 @@ final readonly class EditProcess
             $changed[] = 'crash_notification';
         }
 
+        if (isset($changes['runtime']) && $process->runtime !== $changes['runtime']) {
+            $process->runtime = $changes['runtime'];
+            $changed[] = 'runtime';
+        }
+
         $process->save();
         $app->unsetRelation('processes');
         $warnings = $this->ensureRuntimeUnits->handle($app);
@@ -66,7 +74,7 @@ final readonly class EditProcess
         if ($restart) {
             $warnings = [
                 ...$warnings,
-                ...$this->restartRuntimeUnits($app, $runtimeUnits),
+                ...$this->restartRuntimeUnits($app, $process, $runtimeUnits),
             ];
         }
 
@@ -78,6 +86,7 @@ final readonly class EditProcess
                     'command' => $process->command,
                     'restart_policy' => $process->restart_policy->value,
                     'crash_notification' => $process->crash_notification->value,
+                    'runtime' => $process->runtime->value,
                 ],
                 'changed' => $changed,
                 'runtime_units' => $runtimeUnits,
@@ -87,10 +96,16 @@ final readonly class EditProcess
     }
 
     /**
+     * Restart the rendered runtime units after a successful apply. The
+     * lifecycle backend is dispatched by `$process->runtime` so Docker
+     * processes use `docker restart` and Supervisor processes use
+     * `supervisorctl restart`. The unit identity is shared between
+     * backends.
+     *
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
      */
-    private function restartRuntimeUnits(App $app, array $runtimeUnits): array
+    private function restartRuntimeUnits(App $app, Process $process, array $runtimeUnits): array
     {
         if ($app->node === null) {
             return [[
@@ -105,9 +120,12 @@ final readonly class EditProcess
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $result = $this->remoteShell->run($app->node, 'sudo supervisorctl restart '.escapeshellarg($name));
+            $restarted = match ($process->runtime) {
+                ProcessRuntime::Docker => $this->dockerManager->restart($app->node, $name),
+                ProcessRuntime::Supervisor => $this->remoteShell->run($app->node, 'sudo supervisorctl restart '.escapeshellarg($name))->successful(),
+            };
 
-            if (! $result->successful()) {
+            if (! $restarted) {
                 $warnings[] = [
                     'code' => 'process.runtime_unit_restart_failed',
                     'family' => 'process',

@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\Requests\Processes\AddProcessRequest;
 use App\Models\App;
@@ -55,12 +57,16 @@ describe('process:add base contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
+        // Pin runtime to supervisor so the base contract test asserts the
+        // Supervisor render path explicitly. Default-runtime behavior is
+        // covered by the "process:add runtime selection" describe block.
         $exitCode = Artisan::call('process:add', [
             'name' => 'vite',
             'processCommand' => 'npm run dev -- --host=0.0.0.0',
             '--app' => 'docs',
             '--restart-policy' => 'always',
             '--crash-notification' => 'agent_ide',
+            '--runtime' => 'supervisor',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -113,7 +119,7 @@ describe('process:add base contract', function (): void {
             ->and($process->crash_notification)->toBe(ProcessCrashNotification::None);
     });
 
-    it('starts rendered runtime units when requested', function (): void {
+    it('starts rendered runtime units via supervisor when the process runtime is supervisor', function (): void {
         createProcessAddLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
@@ -129,13 +135,86 @@ describe('process:add base contract', function (): void {
             'name' => 'queue',
             'processCommand' => 'php artisan queue:work',
             '--app' => 'docs',
+            '--runtime' => 'supervisor',
             '--start' => true,
             '--json' => true,
         ]);
 
         expect($exitCode)->toBe(0)
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'sudo supervisorctl start')))->toBeTrue()
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'orbit_docs_main_queue')))->toBeTrue();
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo supervisorctl start 'orbit_docs_main_queue'")))->toBeTrue()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker start')))->toBeFalse();
+    });
+
+    it('reports process.runtime_unit_start_failed when --start cannot start the docker container', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs', 'php_version' => '8.5']);
+
+        // Sequence: supervisor cleanup, docker network inspect (present),
+        // docker container inspect (missing), docker create (ok), docker
+        // start (FAILS). The failure must surface as the documented
+        // process.runtime_unit_start_failed warning while the gateway-side
+        // process row remains persisted.
+        $remoteShell = new ProcessAddRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '[{}]', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'docker start refused', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:add', [
+            'name' => 'queue',
+            'processCommand' => 'php artisan queue:work',
+            '--app' => 'docs',
+            '--start' => true,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(Process::query()->where('name', 'queue')->exists())->toBeTrue()
+            ->and($payload['success']['meta']['warnings'])->not->toBeEmpty()
+            ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
+                'code' => 'process.runtime_unit_start_failed',
+                'family' => 'process',
+                'next_command' => 'doctor --fix --family=process --restore',
+            ]);
+    });
+
+    it('starts rendered runtime units via docker when the process runtime is docker', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs', 'php_version' => '8.5']);
+
+        $remoteShell = new ProcessAddRemoteShell([
+            // supervisor cleanup
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            // docker network inspect → present
+            new RemoteShellResult(exitCode: 0, stdout: '[{}]', stderr: '', durationMs: 1),
+            // docker container inspect → missing
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+            // docker create
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            // docker start
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:add', [
+            'name' => 'queue',
+            'processCommand' => 'php artisan queue:work',
+            '--app' => 'docs',
+            '--start' => true,
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker create')))->toBeTrue()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker start 'orbit_docs_main_queue'")))->toBeTrue()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'sudo supervisorctl start')))->toBeFalse()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_starts_with($script, 'docker run -d')))->toBeFalse();
     });
 
     it('returns success with warnings when runtime enactment fails after intent write', function (): void {
@@ -152,6 +231,7 @@ describe('process:add base contract', function (): void {
             'name' => 'vite',
             'processCommand' => 'npm run dev',
             '--app' => 'docs',
+            '--runtime' => 'supervisor',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -298,6 +378,102 @@ describe('process:add base contract', function (): void {
             ->toContain("\e[38;5;242m○  Validate process\e[39m")
             ->toContain("\e[32m●\e[39m")
             ->toContain('Process added');
+    });
+});
+
+describe('process:add runtime selection', function (): void {
+    it('defaults new PHP-app processes to runtime=docker', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
+
+        app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $exitCode = Artisan::call('process:add', [
+            'name' => 'queue',
+            'processCommand' => 'php artisan queue:work',
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $process = Process::query()->where('name', 'queue')->firstOrFail();
+
+        expect($exitCode)->toBe(0)
+            ->and($process->runtime)->toBe(ProcessRuntime::Docker)
+            ->and($payload['success']['data']['process']['runtime'])->toBe('docker');
+    });
+
+    it('defaults new static-app processes to runtime=supervisor unless overridden', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'marketing', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
+
+        app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        Artisan::call('process:add', [
+            'name' => 'watch',
+            'processCommand' => './watch.sh',
+            '--app' => 'marketing',
+            '--json' => true,
+        ]);
+        $process = Process::query()->where('name', 'watch')->firstOrFail();
+
+        expect($process->runtime)->toBe(ProcessRuntime::Supervisor);
+    });
+
+    it('accepts an explicit runtime=supervisor override on a PHP app', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
+
+        app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $exitCode = Artisan::call('process:add', [
+            'name' => 'legacy',
+            'processCommand' => './legacy.sh',
+            '--app' => 'docs',
+            '--runtime' => 'supervisor',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $process = Process::query()->where('name', 'legacy')->firstOrFail();
+
+        expect($exitCode)->toBe(0)
+            ->and($process->runtime)->toBe(ProcessRuntime::Supervisor)
+            ->and($payload['success']['data']['process']['runtime'])->toBe('supervisor');
+    });
+
+    it('rejects an invalid runtime value before any side effects', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        $remoteShell = new ProcessAddRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:add', [
+            'name' => 'queue',
+            'processCommand' => 'php artisan queue:work',
+            '--app' => 'docs',
+            '--runtime' => 'kubernetes',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('runtime')
+            ->and(Process::query()->where('name', 'queue')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
     });
 });
 

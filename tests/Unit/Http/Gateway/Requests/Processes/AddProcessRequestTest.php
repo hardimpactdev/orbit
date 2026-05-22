@@ -51,6 +51,28 @@ it('serializes process creation body', function (): void {
     ]);
 });
 
+it('omits the runtime field from the request body when none was supplied', function (): void {
+    $request = new AddProcessRequest(app: 'docs', name: 'vite', command: 'npm run dev');
+
+    expect($request->body()->all())->not->toHaveKey('runtime');
+});
+
+it('serializes an explicit runtime override into the request body', function (): void {
+    $request = new AddProcessRequest(
+        app: 'docs',
+        name: 'legacy',
+        command: './legacy.sh',
+        runtime: 'supervisor',
+    );
+
+    expect($request->body()->all())->toMatchArray([
+        'app' => 'docs',
+        'name' => 'legacy',
+        'command' => './legacy.sh',
+        'runtime' => 'supervisor',
+    ]);
+});
+
 it('returns a ProcessAddResponse DTO with warnings', function (): void {
     $mock = new MockClient([
         AddProcessRequest::class => MockResponse::make([

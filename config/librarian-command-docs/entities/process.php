@@ -12,6 +12,7 @@ return [
         'crash_notification' => 'string',
         'last_event' => 'object|null',
         'restart_policy' => 'string',
+        'runtime' => 'string',
         'runtime_unit' => 'string',
     ],
 ];

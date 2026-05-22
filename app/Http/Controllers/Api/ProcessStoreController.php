@@ -8,6 +8,7 @@ use App\Actions\Processes\AddProcess;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
@@ -44,6 +45,7 @@ final class ProcessStoreController implements Loggable
                 restartPolicy: $input['restart_policy'],
                 crashNotification: $input['crash_notification'],
                 start: $input['start'],
+                runtime: $input['runtime'],
             );
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorCode() === 'process.name_collision' ? 409 : 422);
@@ -62,7 +64,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{app: string, name: string, command: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, start: bool}|JsonResponse
+     * @return array{app: string, name: string, command: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -71,6 +73,7 @@ final class ProcessStoreController implements Loggable
         $command = $this->optionalString($request, 'command');
         $restartPolicyInput = $this->optionalString($request, 'restart_policy') ?? ProcessRestartPolicy::Never->value;
         $crashNotificationInput = $this->optionalString($request, 'crash_notification') ?? ProcessCrashNotification::None->value;
+        $runtimeInput = $this->optionalString($request, 'runtime');
 
         if ($app === null) {
             return $this->error('validation_failed', 'An app context is required.', ['field' => 'app'], 422);
@@ -108,12 +111,27 @@ final class ProcessStoreController implements Loggable
             ], 422);
         }
 
+        $runtime = null;
+
+        if ($runtimeInput !== null) {
+            $runtime = ProcessRuntime::tryFrom($runtimeInput);
+
+            if (! $runtime instanceof ProcessRuntime) {
+                return $this->error('validation_failed', 'Invalid process runtime.', [
+                    'field' => 'runtime',
+                    'value' => $runtimeInput,
+                    'allowed' => array_column(ProcessRuntime::cases(), 'value'),
+                ], 422);
+            }
+        }
+
         return [
             'app' => $app,
             'name' => $name,
             'command' => $command,
             'restart_policy' => $restartPolicy,
             'crash_notification' => $crashNotification,
+            'runtime' => $runtime,
             'start' => $request->boolean('start'),
         ];
     }

@@ -109,6 +109,51 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.meta.missing_permission', 'process:edit');
     });
 
+    it('persists and returns the runtime field when supplied', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode(['role' => 'app']);
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => 'docker']);
+        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('PATCH', '/api/processes/queue', [
+            'app' => 'docs',
+            'runtime' => 'supervisor',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.runtime', 'supervisor')
+            ->assertJsonPath('success.data.changed', ['runtime']);
+
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor');
+    });
+
+    it('rejects invalid runtime values with the documented validation envelope', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode(['role' => 'app']);
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => 'docker']);
+        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
+
+        $response = $this->call('PATCH', '/api/processes/queue', [
+            'app' => 'docs',
+            'runtime' => 'podman',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'podman')
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker');
+    });
+
     it('returns validation and not found errors', function (array $payload, string $processName, int $status, string $code): void {
         createProcessUpdateCallerNode(['role' => 'gateway']);
         $appNode = createTestAppHostNode(['role' => 'app']);

@@ -9,6 +9,7 @@ use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -29,6 +30,7 @@ use function Laravel\Prompts\text;
     {--app= : Parent app slug}
     {--restart-policy=never : Restart policy (never|on_failure|always)}
     {--crash-notification=none : Crash notification policy (none|agent_ide)}
+    {--runtime= : Process runtime (docker|supervisor); defaults to docker for PHP apps and supervisor for non-PHP apps}
     {--start : Start rendered runtime units after creation}
     {--json : Output JSON}')]
 #[Description('Add an app process definition')]
@@ -79,6 +81,7 @@ class ProcessAddCommand extends Command
                     restartPolicy: $input['restart_policy'],
                     crashNotification: $input['crash_notification'],
                     start: $input['start'],
+                    runtime: $input['runtime'],
                 );
 
                 return $input['start'] ? 'runtime units started' : 'runtime units rendered';
@@ -128,7 +131,7 @@ class ProcessAddCommand extends Command
     }
 
     /**
-     * @param  array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, start: bool}  $input
+     * @param  array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, start: bool}  $input
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     private function forwardAddResult(array $input): array
@@ -142,6 +145,7 @@ class ProcessAddCommand extends Command
                 restartPolicy: $input['restart_policy']->value,
                 crashNotification: $input['crash_notification']->value,
                 start: $input['start'],
+                runtime: $input['runtime']?->value,
             ))
             ->dto();
 
@@ -149,7 +153,7 @@ class ProcessAddCommand extends Command
     }
 
     /**
-     * @return array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, start: bool}|int
+     * @return array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, start: bool}|int
      */
     private function validatedInput(): array|int
     {
@@ -160,6 +164,7 @@ class ProcessAddCommand extends Command
         $command = $this->stringArgument('processCommand');
         $restartPolicyInput = $this->stringOption('restart-policy') ?? ProcessRestartPolicy::Never->value;
         $crashNotificationInput = $this->stringOption('crash-notification') ?? ProcessCrashNotification::None->value;
+        $runtimeInput = $this->stringOption('runtime');
 
         if ($app === null) {
             if (! $isInteractive) {
@@ -229,12 +234,26 @@ class ProcessAddCommand extends Command
             ]);
         }
 
+        $runtime = null;
+
+        if ($runtimeInput !== null) {
+            $runtime = ProcessRuntime::tryFrom($runtimeInput);
+
+            if (! $runtime instanceof ProcessRuntime) {
+                return $this->failValidation('runtime', 'Invalid process runtime.', [
+                    'value' => $runtimeInput,
+                    'allowed' => array_column(ProcessRuntime::cases(), 'value'),
+                ]);
+            }
+        }
+
         return [
             'app' => $app,
             'name' => $name,
             'command' => $command,
             'restart_policy' => $restartPolicy,
             'crash_notification' => $crashNotification,
+            'runtime' => $runtime,
             'start' => $this->option('start') === true,
         ];
     }

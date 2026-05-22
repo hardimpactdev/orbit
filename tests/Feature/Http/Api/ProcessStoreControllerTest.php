@@ -130,6 +130,50 @@ describe('ProcessStoreController', function (): void {
         'invalid restart' => [['app' => 'docs', 'name' => 'vite', 'command' => 'npm run dev', 'restart_policy' => 'sometimes'], 'restart_policy'],
     ]);
 
+    it('persists and returns an explicit runtime when supplied', function (): void {
+        createProcessStoreCallerNode(['role' => 'gateway']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'name' => 'legacy',
+            'command' => './legacy.sh',
+            'runtime' => 'supervisor',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.runtime', 'supervisor');
+
+        expect(Process::query()->where('name', 'legacy')->value('runtime')->value)->toBe('supervisor');
+    });
+
+    it('rejects invalid runtime values with the documented validation envelope', function (): void {
+        createProcessStoreCallerNode(['role' => 'gateway']);
+        $appNode = createTestAppHostNode(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'name' => 'queue',
+            'command' => 'php artisan queue:work',
+            'runtime' => 'podman',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'podman')
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+
+        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse();
+    });
+
     it('returns duplicate process conflicts', function (): void {
         createProcessStoreCallerNode(['role' => 'gateway']);
         $appNode = createTestAppHostNode(['role' => 'app']);

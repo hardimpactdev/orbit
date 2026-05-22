@@ -7,10 +7,12 @@ namespace App\Actions\Processes;
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Contracts\RemoteShell;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
+use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 use Illuminate\Support\Facades\DB;
 
@@ -20,14 +22,17 @@ final readonly class AddProcess
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
         private RemoteShell $remoteShell,
+        private ProcessDockerRuntimeManager $dockerManager,
     ) {}
 
     /**
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    public function handle(App $app, string $name, string $command, ProcessRestartPolicy $restartPolicy, ProcessCrashNotification $crashNotification, bool $start): array
+    public function handle(App $app, string $name, string $command, ProcessRestartPolicy $restartPolicy, ProcessCrashNotification $crashNotification, bool $start, ?ProcessRuntime $runtime = null): array
     {
         $app->loadMissing(['node', 'workspaces']);
+
+        $resolvedRuntime = $runtime ?? ProcessRuntime::defaultForApp($app);
 
         if (Process::query()->where('app_id', $app->id)->where('name', $name)->exists()) {
             throw new GatewayApiException("Process '{$name}' already exists for app '{$app->name}'.", 'process.name_collision', [
@@ -36,7 +41,7 @@ final readonly class AddProcess
             ]);
         }
 
-        $process = DB::transaction(function () use ($app, $name, $command, $restartPolicy, $crashNotification): Process {
+        $process = DB::transaction(function () use ($app, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime): Process {
             $maxOrder = Process::query()
                 ->where('app_id', $app->id)
                 ->lockForUpdate()
@@ -48,6 +53,7 @@ final readonly class AddProcess
                 'command' => $command,
                 'restart_policy' => $restartPolicy,
                 'crash_notification' => $crashNotification,
+                'runtime' => $resolvedRuntime,
                 'sort_order' => $maxOrder + 1,
             ]);
         });
@@ -59,7 +65,7 @@ final readonly class AddProcess
         if ($start) {
             $warnings = [
                 ...$warnings,
-                ...$this->startRuntimeUnits($app, $runtimeUnits),
+                ...$this->startRuntimeUnits($app, $process, $runtimeUnits),
             ];
         }
 
@@ -71,6 +77,7 @@ final readonly class AddProcess
                     'command' => $process->command,
                     'restart_policy' => $process->restart_policy->value,
                     'crash_notification' => $process->crash_notification->value,
+                    'runtime' => $process->runtime->value,
                 ],
                 'runtime_units' => $runtimeUnits,
             ],
@@ -79,10 +86,16 @@ final readonly class AddProcess
     }
 
     /**
+     * Start the rendered runtime units after a successful apply. The
+     * lifecycle backend is dispatched by `$process->runtime` so Docker
+     * processes use `docker start` and Supervisor processes use
+     * `supervisorctl start`. The unit identity is shared between backends,
+     * so the runtime_units payload addresses both.
+     *
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
      */
-    private function startRuntimeUnits(App $app, array $runtimeUnits): array
+    private function startRuntimeUnits(App $app, Process $process, array $runtimeUnits): array
     {
         if ($app->node === null) {
             return [[
@@ -97,9 +110,12 @@ final readonly class AddProcess
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $result = $this->remoteShell->run($app->node, 'sudo supervisorctl start '.escapeshellarg($name));
+            $started = match ($process->runtime) {
+                ProcessRuntime::Docker => $this->dockerManager->start($app->node, $name),
+                ProcessRuntime::Supervisor => $this->remoteShell->run($app->node, 'sudo supervisorctl start '.escapeshellarg($name))->successful(),
+            };
 
-            if (! $result->successful()) {
+            if (! $started) {
                 $warnings[] = [
                     'code' => 'process.runtime_unit_start_failed',
                     'family' => 'process',

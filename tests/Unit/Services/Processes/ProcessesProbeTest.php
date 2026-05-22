@@ -10,6 +10,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -507,6 +508,57 @@ describe('runtime context expansion', function (): void {
     });
 });
 
+describe('docker runtime probe scope', function (): void {
+    it('skips the supervisor probe pipeline for docker-runtime processes and emits no missing-supervisor drift', function (): void {
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+
+        // No supervisor SSH calls were made because the probe short-circuits
+        // on runtime=docker. Live Docker container coverage is deferred to
+        // ORBIT-RUNTIME-08B; until then the empty snapshot keeps doctor
+        // from raising false supervisor drift for Docker processes.
+        expect($shell->scripts)->toBe([])
+            ->and($snapshot->get('queue'))->toBeNull();
+    });
+
+    it('produces no supervisor-flavored diff entries for docker-runtime processes', function (): void {
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'queue',
+            'crash_notification' => ProcessCrashNotification::AgentIde,
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'process.runtime_unit_missing'))->toBeNull()
+            ->and(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull()
+            ->and(issue($drift, 'process.runtime_unit_extra'))->toBeNull()
+            ->and(issue($drift, 'process.event_notifier_missing'))->toBeNull()
+            ->and(issue($drift, 'process.runtime_backend_unavailable'))->toBeNull();
+    });
+
+    it('still detects gateway-side drift (record completeness, owner app) for docker-runtime processes', function (): void {
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $process->command = '';
+        $process->setRawAttributes($process->getAttributes());
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'process.record_incomplete')?->kind)->toBe(DriftKind::Missing);
+    });
+});
+
 function issue(array $drift, string $key): ?DriftEntry
 {
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
@@ -530,6 +582,11 @@ function processFor(App $app, array $overrides = []): Process
             'command' => 'npm run dev -- --host=0.0.0.0',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::None,
+            // The probe pipeline below targets supervisor runtime artifacts.
+            // Docker runtime probe coverage is intentionally skipped (see
+            // ProcessesProbe::introspect runtime guard) and is asserted by
+            // its own describe block.
+            'runtime' => ProcessRuntime::Supervisor,
             'sort_order' => 1,
             ...$overrides,
         ]);

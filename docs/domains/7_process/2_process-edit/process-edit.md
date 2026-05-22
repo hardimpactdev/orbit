@@ -4,14 +4,16 @@
 
 Update an app-owned process definition.
 
-`process:edit` changes a process command, restart policy, or crash notification
-policy. It re-renders every runtime unit derived from that process definition.
+`process:edit` changes a process command, restart policy, crash notification
+policy, or process runtime. It re-renders every runtime unit derived from that
+process definition.
 
 ## Usage
 
 ```bash
 orbit process:edit vite --app=docs --command="npm run dev"
 orbit process:edit queue --app=docs --restart-policy=on_failure --restart
+orbit process:edit watcher --app=docs --runtime=supervisor
 orbit process:edit vite --app=docs --command="npm run dev" --json
 ```
 

@@ -18,4 +18,13 @@ enum ProcessRestartPolicy: string
             self::Always => 'true',
         };
     }
+
+    public function toDocker(): string
+    {
+        return match ($this) {
+            self::Never => 'no',
+            self::OnFailure => 'on-failure',
+            self::Always => 'always',
+        };
+    }
 }

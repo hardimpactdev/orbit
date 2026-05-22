@@ -48,6 +48,25 @@ it('serializes only supplied editable fields', function (): void {
     ]);
 });
 
+it('omits the runtime field when none was supplied', function (): void {
+    $request = new EditProcessRequest(app: 'docs', name: 'vite', command: 'npm run dev');
+
+    expect($request->body()->all())->not->toHaveKey('runtime');
+});
+
+it('serializes a runtime change into the request body', function (): void {
+    $request = new EditProcessRequest(
+        app: 'docs',
+        name: 'queue',
+        runtime: 'supervisor',
+    );
+
+    expect($request->body()->all())->toMatchArray([
+        'app' => 'docs',
+        'runtime' => 'supervisor',
+    ]);
+});
+
 it('returns a ProcessEditResponse DTO with warnings', function (): void {
     $mock = new MockClient([
         EditProcessRequest::class => MockResponse::make([

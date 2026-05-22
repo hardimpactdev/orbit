@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Runtime;
 
 use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 
 class DockerCommandBuilder
@@ -41,10 +42,30 @@ class DockerCommandBuilder
         return 'docker start '.$this->quote($name);
     }
 
-    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer $container): string
+    public function containerRestart(string $name): string
+    {
+        return 'docker restart '.$this->quote($name);
+    }
+
+    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer $container): string
+    {
+        return $this->buildRunOrCreate('docker run -d', $container);
+    }
+
+    public function createIdle(ProcessDockerContainer $container): string
+    {
+        // `docker create` produces a container in the Created state without
+        // starting it. Process runtime units honor the --start contract from
+        // process:add by deferring the actual start to a separate lifecycle
+        // call. App/Workspace/Caddy runtime containers stay on `docker run -d`
+        // because the gateway/proxy must be running once rendered.
+        return $this->buildRunOrCreate('docker create', $container);
+    }
+
+    private function buildRunOrCreate(string $prefix, OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer $container): string
     {
         $parts = [
-            'docker run -d',
+            $prefix,
             '--pull',
             $this->quote('never'),
             '--name',
@@ -65,6 +86,13 @@ class DockerCommandBuilder
                 $parts[] = '--add-host';
                 $parts[] = $this->quote("{$host}:{$address}");
             }
+        }
+
+        if ($container instanceof ProcessDockerContainer) {
+            $parts[] = '--workdir';
+            $parts[] = $this->quote($container->workingDirectory());
+            $parts[] = '--entrypoint';
+            $parts[] = $this->quote('sh');
         }
 
         foreach ($container->networkAliases() as $alias) {
@@ -88,6 +116,16 @@ class DockerCommandBuilder
         }
 
         $parts[] = $this->quote($container->image());
+
+        if ($container instanceof ProcessDockerContainer) {
+            // Process command is stored as a single shell string (e.g. "php
+            // artisan queue:work --tries=3"). Run it through `sh -lc <cmd>`
+            // so the in-container shell parses tokens, redirections, and
+            // shell operators instead of Docker exec-ing a literal binary
+            // named after the whole string.
+            $parts[] = $this->quote('-lc');
+            $parts[] = $this->quote($container->command());
+        }
 
         return implode(' ', $parts);
     }

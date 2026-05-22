@@ -9,6 +9,7 @@ use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -28,6 +29,7 @@ use Throwable;
     {--command= : New command}
     {--restart-policy= : Restart policy (never|on_failure|always)}
     {--crash-notification= : Crash notification policy (none|agent_ide)}
+    {--runtime= : Process runtime (docker|supervisor)}
     {--restart : Restart affected runtime units after update}
     {--json : Output JSON}')]
 #[Description('Edit an app process definition')]
@@ -132,7 +134,7 @@ class ProcessEditCommand extends Command
     }
 
     /**
-     * @param  array{name: string, app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification}, restart: bool}  $input
+     * @param  array{name: string, app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}  $input
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     private function forwardEditResult(array $input): array
@@ -145,6 +147,7 @@ class ProcessEditCommand extends Command
                 command: $input['changes']['command'] ?? null,
                 restartPolicy: isset($input['changes']['restart_policy']) ? $input['changes']['restart_policy']->value : null,
                 crashNotification: isset($input['changes']['crash_notification']) ? $input['changes']['crash_notification']->value : null,
+                runtime: isset($input['changes']['runtime']) ? $input['changes']['runtime']->value : null,
                 restart: $input['restart'],
             ))
             ->dto();
@@ -153,7 +156,7 @@ class ProcessEditCommand extends Command
     }
 
     /**
-     * @return array{name: string, app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification}, restart: bool}|int
+     * @return array{name: string, app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|int
      */
     private function validatedInput(): array|int
     {
@@ -164,6 +167,7 @@ class ProcessEditCommand extends Command
         $command = $this->stringOption('command');
         $restartPolicyInput = $this->stringOption('restart-policy');
         $crashNotificationInput = $this->stringOption('crash-notification');
+        $runtimeInput = $this->stringOption('runtime');
 
         if ($app === null) {
             if (! $isInteractive) {
@@ -209,7 +213,7 @@ class ProcessEditCommand extends Command
             }
         }
 
-        if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null) {
+        if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null && $runtimeInput === null) {
             return $this->failValidation('editable_fields', 'At least one editable field is required.');
         }
 
@@ -243,6 +247,19 @@ class ProcessEditCommand extends Command
             }
 
             $changes['crash_notification'] = $crashNotification;
+        }
+
+        if ($runtimeInput !== null) {
+            $runtime = ProcessRuntime::tryFrom($runtimeInput);
+
+            if (! $runtime instanceof ProcessRuntime) {
+                return $this->failValidation('runtime', 'Invalid process runtime.', [
+                    'value' => $runtimeInput,
+                    'allowed' => array_column(ProcessRuntime::cases(), 'value'),
+                ]);
+            }
+
+            $changes['runtime'] = $runtime;
         }
 
         return [

@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
@@ -40,6 +41,18 @@ final readonly class ProcessesProbe
         $process->loadMissing('app.node');
 
         if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        // Docker process runtime units are not yet covered by the supervisor
+        // probe pipeline. Live Docker container inspection lands with the
+        // ORBIT-RUNTIME-08B lifecycle/log work (todo 338). Returning an
+        // empty snapshot here means none of the snapshot-driven diff checks
+        // (runtime_backend_unavailable, runtime_unit_missing, etc.) fire
+        // for Docker processes — the gateway-side checks
+        // (record_incomplete, owner_app_invalid, runtime context identity)
+        // still run because they do not consult the snapshot.
+        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
             return new ProbeSnapshot([]);
         }
 
@@ -623,6 +636,17 @@ PHP;
     private function requiresEventNotifier(Process $process): bool
     {
         return ProcessCrashNotification::tryFrom((string) $process->getRawOriginal('crash_notification')) === ProcessCrashNotification::AgentIde;
+    }
+
+    private function runtimeFor(Process $process): ProcessRuntime
+    {
+        $raw = $process->getRawOriginal('runtime');
+
+        if (is_string($raw)) {
+            return ProcessRuntime::tryFrom($raw) ?? ProcessRuntime::Supervisor;
+        }
+
+        return $process->runtime ?? ProcessRuntime::Supervisor;
     }
 
     private function supervisorProgramRenderer(): SupervisorProgramRenderer

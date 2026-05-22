@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\Requests\Processes\EditProcessRequest;
 use App\Models\App;
@@ -45,7 +46,10 @@ describe('process:edit base contract', function (): void {
         $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs']);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'sort_order' => 1]);
+        // Pin runtime to supervisor so the base-contract test asserts the
+        // Supervisor render path explicitly. Default-runtime behavior is
+        // covered by the "process:edit runtime selection" describe block.
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'sort_order' => 1, 'runtime' => ProcessRuntime::Supervisor]);
 
         $remoteShell = new ProcessEditRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
@@ -78,11 +82,11 @@ describe('process:edit base contract', function (): void {
             ->and($remoteShell->scripts[2])->toContain('/etc/supervisor/conf.d/orbit_docs_feature-docs_vite.conf');
     });
 
-    it('restarts runtime units when requested', function (): void {
+    it('restarts runtime units via supervisor when the process runtime is supervisor', function (): void {
         createProcessEditLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'command' => 'php artisan queue:work', 'sort_order' => 1]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'command' => 'php artisan queue:work', 'sort_order' => 1, 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessEditRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -99,15 +103,49 @@ describe('process:edit base contract', function (): void {
         ]);
 
         expect($exitCode)->toBe(0)
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'sudo supervisorctl restart')))->toBeTrue()
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'orbit_docs_main_queue')))->toBeTrue();
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo supervisorctl restart 'orbit_docs_main_queue'")))->toBeTrue()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker restart')))->toBeFalse();
+    });
+
+    it('restarts runtime units via docker when the process runtime is docker', function (): void {
+        createProcessEditLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs', 'php_version' => '8.5']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'command' => 'php artisan queue:work', 'sort_order' => 1, 'runtime' => ProcessRuntime::Docker]);
+        $remoteShell = new ProcessEditRemoteShell([
+            // supervisor cleanup
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            // docker network inspect → present
+            new RemoteShellResult(exitCode: 0, stdout: '[{}]', stderr: '', durationMs: 1),
+            // docker container inspect → missing
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+            // docker create
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            // docker restart
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:edit', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--command' => 'php artisan queue:work --tries=1',
+            '--restart' => true,
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker restart 'orbit_docs_main_queue'")))->toBeTrue()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'sudo supervisorctl restart')))->toBeFalse();
     });
 
     it('returns success with warnings when re-rendering fails after intent update', function (): void {
         createProcessEditLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
+        // Pin supervisor runtime so the install-script failure produces the
+        // documented process.runtime_unit_missing warning.
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessEditRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
@@ -235,6 +273,96 @@ describe('process:edit base contract', function (): void {
             ->expectsOutputToContain('  └  Process updated')
             ->expectsOutput("Process 'vite' updated for app 'docs'")
             ->assertSuccessful();
+    });
+});
+
+describe('process:edit runtime selection', function (): void {
+    it('switches process runtime from docker to supervisor', function (): void {
+        createProcessEditLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'queue',
+            'command' => 'php artisan queue:work',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+
+        app()->instance(RemoteShell::class, new ProcessEditRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $exitCode = Artisan::call('process:edit', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--runtime' => 'supervisor',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(Process::query()->where('name', 'queue')->value('runtime'))->toBe(ProcessRuntime::Supervisor)
+            ->and($payload['success']['data']['changed'])->toBe(['runtime'])
+            ->and($payload['success']['data']['process']['runtime'])->toBe('supervisor');
+    });
+
+    it('treats --runtime as a sufficient editable field on its own', function (): void {
+        createProcessEditLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Supervisor,
+        ]);
+
+        app()->instance(RemoteShell::class, new ProcessEditRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $exitCode = Artisan::call('process:edit', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--runtime' => 'docker',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['error'] ?? null)->toBeNull()
+            ->and(Process::query()->where('name', 'queue')->value('runtime'))->toBe(ProcessRuntime::Docker);
+    });
+
+    it('rejects invalid runtime values before changing intent', function (): void {
+        createProcessEditLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+
+        $remoteShell = new ProcessEditRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $before = Process::query()->where('name', 'queue')->value('runtime');
+
+        $exitCode = Artisan::call('process:edit', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--runtime' => 'kubernetes',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('runtime')
+            ->and(Process::query()->where('name', 'queue')->value('runtime'))->toBe($before)
+            ->and($remoteShell->scripts)->toBe([]);
     });
 });
 

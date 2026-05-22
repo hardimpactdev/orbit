@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [command] [--app=<app>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--start] [--json]
+orbit process:add [name] [command] [--app=<app>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|supervisor>] [--start] [--json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` when the owning app's runtime kind is `php`; otherwise `supervisor`. | One of `docker`, `supervisor`. Stored on the process definition and used to select the backend that renders derived runtime units. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 

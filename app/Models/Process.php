@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $command
  * @property ProcessRestartPolicy $restart_policy
  * @property ProcessCrashNotification $crash_notification
+ * @property ProcessRuntime $runtime
  * @property int $sort_order
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -36,7 +38,12 @@ class Process extends Model
         'command',
         'restart_policy',
         'crash_notification',
+        'runtime',
         'sort_order',
+    ];
+
+    protected $attributes = [
+        'runtime' => 'docker',
     ];
 
     #[\Override]
@@ -45,6 +52,7 @@ class Process extends Model
         return [
             'restart_policy' => ProcessRestartPolicy::class,
             'crash_notification' => ProcessCrashNotification::class,
+            'runtime' => ProcessRuntime::class,
         ];
     }
 

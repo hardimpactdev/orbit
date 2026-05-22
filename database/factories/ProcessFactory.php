@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Process;
@@ -25,6 +26,7 @@ class ProcessFactory extends Factory
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::None,
+            'runtime' => ProcessRuntime::Docker,
             'sort_order' => fake()->numberBetween(1, 100),
         ];
     }

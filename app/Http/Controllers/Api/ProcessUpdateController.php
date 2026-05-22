@@ -8,6 +8,7 @@ use App\Actions\Processes\EditProcess;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
@@ -60,7 +61,7 @@ final class ProcessUpdateController implements Loggable
     }
 
     /**
-     * @return array{app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification}, restart: bool}|JsonResponse
+     * @return array{app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -68,12 +69,13 @@ final class ProcessUpdateController implements Loggable
         $command = $this->optionalString($request, 'command');
         $restartPolicyInput = $this->optionalString($request, 'restart_policy');
         $crashNotificationInput = $this->optionalString($request, 'crash_notification');
+        $runtimeInput = $this->optionalString($request, 'runtime');
 
         if ($app === null) {
             return $this->error('validation_failed', 'An app context is required.', ['field' => 'app'], 422);
         }
 
-        if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null) {
+        if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null && $runtimeInput === null) {
             return $this->error('validation_failed', 'At least one editable field is required.', ['field' => 'editable_fields'], 422);
         }
 
@@ -109,6 +111,20 @@ final class ProcessUpdateController implements Loggable
             }
 
             $changes['crash_notification'] = $crashNotification;
+        }
+
+        if ($runtimeInput !== null) {
+            $runtime = ProcessRuntime::tryFrom($runtimeInput);
+
+            if (! $runtime instanceof ProcessRuntime) {
+                return $this->error('validation_failed', 'Invalid process runtime.', [
+                    'field' => 'runtime',
+                    'value' => $runtimeInput,
+                    'allowed' => array_column(ProcessRuntime::cases(), 'value'),
+                ], 422);
+            }
+
+            $changes['runtime'] = $runtime;
         }
 
         return [

@@ -31,6 +31,41 @@ return [
             'doctor --fix --family=node --restore',
         ],
     ],
+    'process.runtime_unit_missing' => [
+        'family' => 'process',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=process --restore',
+        ],
+    ],
+    'process.runtime_backend_unavailable' => [
+        'family' => 'process',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=process --restore',
+        ],
+    ],
+    'process.tls_certificate_missing' => [
+        'family' => 'process',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=process --restore',
+        ],
+    ],
+    'process.runtime_unit_start_failed' => [
+        'family' => 'process',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=process --restore',
+        ],
+    ],
+    'process.runtime_unit_restart_failed' => [
+        'family' => 'process',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --fix --family=process --restore',
+        ],
+    ],
     'workspace.remove_failed' => [
         'family' => 'workspace',
         'kind' => 'command_handoff',

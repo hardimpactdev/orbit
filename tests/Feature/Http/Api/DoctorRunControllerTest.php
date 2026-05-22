@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -250,6 +251,11 @@ describe('DoctorRunController', function (): void {
         Process::factory()->create([
             'app_id' => $app->id,
             'name' => 'queue',
+            // Pin to supervisor runtime so the probe exercises the
+            // supervisorctl availability layer. Docker-runtime processes
+            // short-circuit the live probe until ORBIT-RUNTIME-08B wires the
+            // Docker container probe path.
+            'runtime' => ProcessRuntime::Supervisor,
         ]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 

@@ -24,6 +24,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
         public readonly string $restartPolicy = 'never',
         public readonly string $crashNotification = 'none',
         public readonly bool $start = false,
+        public readonly ?string $runtime = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -36,7 +37,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return [
+        $body = [
             'app' => $this->app,
             'name' => $this->name,
             'command' => $this->command,
@@ -44,6 +45,12 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
             'crash_notification' => $this->crashNotification,
             'start' => $this->start,
         ];
+
+        if ($this->runtime !== null) {
+            $body['runtime'] = $this->runtime;
+        }
+
+        return $body;
     }
 
     public function createDtoFromResponse(Response $response): ProcessAddResponse
