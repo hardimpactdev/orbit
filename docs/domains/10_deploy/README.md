@@ -30,8 +30,10 @@ These rules define what the deploy command family owns and how it behaves.
 - Deployment commands apply only to production apps.
 - Deployment steps are arbitrary shell commands. Orbit does not assume every
   deployment is a zero-downtime release flow.
-- Deployment steps execute from the app source path tracked by the gateway, on
-  the app's owning node.
+- Deployment steps execute from the app source path tracked by the gateway,
+  inside the app's Docker runtime context on the app's owning node. PHP,
+  Composer, and Artisan deployment commands use the app runtime container; host
+  PHP and host Composer are not fallbacks.
 - Retention is optional deploy-step metadata for steps that create or prune
   versioned releases. It is not global app policy and not a standalone state
   family.

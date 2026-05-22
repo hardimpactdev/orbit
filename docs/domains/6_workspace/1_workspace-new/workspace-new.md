@@ -64,7 +64,7 @@ The following steps describe what the command does during a successful run.
   PolyScope-backed sources are provisioned through the PolyScope SDK.
 - **Setup Pipeline**: Runs the same setup behavior exposed by
   [`workspace:setup`](../2_workspace-setup/workspace-setup.md). The pipeline
-  creates workspace-owned proxy routes, renders workspace PHP-FPM artifacts,
+  creates workspace-owned proxy routes, renders workspace runtime container artifacts,
   converges inherited process artifacts, executes configured workspace setup
   steps, and performs the setup-time HTTP probe.
 

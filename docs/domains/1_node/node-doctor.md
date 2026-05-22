@@ -26,8 +26,8 @@ The node family owns these facts:
   supported update driver, starting with Ubuntu `unattended-upgrades`;
 - node-related defaults: `app-development` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
-  safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`, and PHP CLI and
-  agent IDE defaults at the node level.
+  safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`,
+  Orbit launcher/runtime readiness, and agent IDE defaults at the node level.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -99,8 +99,8 @@ The node probe reads gateway node records and checks these layers:
 
    For `agent`, assignments have a `tld` value, the gateway maps `*.{tld}` to
    the node's WireGuard address through the same DNS configuration model, and
-   the node baseline includes Caddy, Supervisor, and the shared unprivileged
-   `agent` runtime user.
+   the node baseline includes `orbit-runtime`, `orbit-caddy`, and the shared
+   unprivileged `agent` runtime user.
 
    For `vpn`, assignments have valid `public_endpoint`, `wireguard_cidr`,
    `wireguard_port`, and `dns_ip` settings. The node baseline includes the
@@ -108,19 +108,19 @@ The node probe reads gateway node records and checks these layers:
    the `vpn` role matches desired DNS mappings owned by the gateway.
 
    For `app-production`, the assignment has a valid `ingress_node_id`
-   setting. The role baseline owns private backend readiness: Caddy on HTTP
-   port `80` bound to the node's WireGuard address, plus PHP and Supervisor.
+   setting. The role baseline owns private backend readiness: `orbit-caddy`
+   bound to the node's WireGuard address, FrankenPHP app containers, and Docker
+   process runtime units.
 
    For `ingress`, assignments have no role settings in v1. The node
-   baseline includes public production HTTP ingress, public Caddy route
+   baseline includes public production HTTP ingress, public `orbit-caddy` route
    artifacts, and forwarding readiness to the active `router`. Backend-pool
    selection belongs to the `router` role.
 
    `database` and `gateway` assignments have no role settings in v1.
 14. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-development` nodes when `--self` inspects the CLI's
-   local configuration, PHP CLI defaults at the node level point at installed
-   supported PHP runtimes, and agent IDE defaults at the node level point at
+   local configuration, and agent IDE defaults at the node level point at
    supported adapters.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
@@ -202,7 +202,6 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` node. |
-| `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway configuration is absent on the selected node or the target node's default `php` binary differs from gateway configuration. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
 ## Node Fix Map
@@ -229,8 +228,6 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.security.public_ssh_deny` | Reapply the node-owned public SSH deny policy through the node family while preserving user-owned firewall rules. |
 | `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
 | `node.updates` | For exact `--key=node.updates`, repair apt auto-upgrade config through `UnattendedUpgradesInstaller`, run `sudo unattended-upgrade`, re-probe, and report any remaining drift. Orbit never reboots automatically. |
-| `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
-
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
 `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,
 `node.role_settings_invalid`,

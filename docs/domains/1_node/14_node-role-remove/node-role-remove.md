@@ -15,9 +15,9 @@ orbit node role:remove [node] [role] [--force] [--purge-data] [--json]
 This command removes one role assignment from a node and gates destructive cleanup behind explicit flags.
 
 - `gateway` cannot be removed through this command.
-- `vpn` cannot be removed through this command. In v1 the `vpn` role is a
-  gateway-coupled infrastructure role and normal `node role:*` commands cannot
-  manage it independently.
+- `vpn` and `router` cannot be removed through this command. In v1 they are
+  gateway-coupled infrastructure roles and normal `node role:*` commands cannot
+  manage them independently.
 - `--purge-data` requires `--force`.
 - Removal blocks when dependents exist.
 - `--force` removes Orbit-owned dependents while preserving user data.

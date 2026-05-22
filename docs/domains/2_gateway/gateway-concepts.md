@@ -22,6 +22,8 @@ These terms define the gateway command domain and its relationship to other fami
 - **Gateway WireGuard API address:** Orbit network address for the gateway's
   typed HTTPS API. `gateway:add` may accept it explicitly or derive it from the
   active Orbit WireGuard network when that is unambiguous.
+- **Gateway API runtime:** The gateway `orbit-runtime` container serving the
+  typed HTTPS API behind gateway `orbit-caddy` on the Orbit network.
 - **Local gateway configuration:** Caller-local settings that store the
   configured gateway endpoint, gateway WireGuard IP, trust material path or
   fingerprint, and related gateway-client metadata.

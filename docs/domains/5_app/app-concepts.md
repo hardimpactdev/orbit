@@ -43,8 +43,21 @@ record.
   `ingress`, forwards over WireGuard to `router`, and reaches the app
   through a private `app-production` backend artifact.
 - **App PHP version:** Gateway-tracked configuration for the PHP version used by the
-  app's PHP-FPM pool and CLI runtime. Workspaces inherit this value unless they
-  store an override.
+  app's FrankenPHP runtime container and app command execution. Workspaces
+  inherit this value unless they store an override.
+- **App runtime container:** Dedicated Docker container for one PHP app runtime.
+  It mounts the app source, uses the selected PHP image, receives app
+  environment, and is targeted by `orbit-caddy` over the node Docker network.
+- **FrankenPHP app runtime:** PHP app/workspace web runtime. Classic mode is
+  the default. It replaces the host PHP/PHP-FPM web runtime and must carry
+  OPcache, realpath cache, Composer autoload optimization, Laravel cache warmup,
+  and optional preload configuration.
+- **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in
+  memory. It is disabled by default and can be enabled only after readiness
+  validation succeeds.
+- **Worker config:** Gateway-tracked object for worker settings such as worker
+  count, max requests, and failure thresholds. It is stored separately from the
+  on/off decision.
 - **App agent IDE adapter:** Optional gateway-owned override of the owning
   node's default agent IDE adapter for app and workspace workflows. Set,
   cleared, and shown through `app:agent-ide`.
@@ -74,4 +87,5 @@ These boundaries define what the app family owns and what belongs to other famil
   registration, or firewall policy beyond what derives from app configuration.
   Production route exposure belongs to `ingress`; private route
   selection and backend-pool targeting belong to `router`; `app-production`
-  owns the private backend runtime.
+  owns the private backend runtime. App commands do not install host PHP,
+  Composer, Caddy, or PHP-FPM.

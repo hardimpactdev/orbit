@@ -18,9 +18,9 @@ orbit node role:add [node] [role] [--tld=] [--json]
 This command validates the role assignment, applies role-local options, and reports convergence progress.
 
 - `gateway` cannot be added through this command.
-- `vpn` cannot be added through this command. In v1 the `vpn` role is a
-  gateway-coupled infrastructure role and normal `node role:*` commands cannot
-  manage it independently.
+- `vpn` and `router` cannot be added through this command. In v1 they are
+  gateway-coupled infrastructure roles and normal `node role:*` commands cannot
+  manage them independently.
 - `agent` cannot be added through this command. The `agent` role is
   exclusive and is only selectable during `node:new`. `node role:add ...
   agent` fails with `validation_failed` and the explanation that

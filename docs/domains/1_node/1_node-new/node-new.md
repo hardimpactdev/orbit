@@ -132,20 +132,21 @@ Creates an active role assignment for database responsibilities. It may
 be combined with `app-development` on the same provisioned host.
 
 `app-development` and `app-production` are mutually exclusive. In v1,
-`gateway` is gateway-coupled with `vpn` and conflicts with
-`app-development`, `app-production`, `database`, `agent`, and
-`ingress`. The `agent`
-role conflicts with `gateway`, `vpn`, `app-development`, `app-production`,
-`database`, and `ingress`. `ingress` may combine only with
-`app-production`.
-`gateway` is not command-assignable through the public role flow.
+`gateway`, `vpn`, and `router` are gateway-coupled and conflict with
+`app-development`, `app-production`, `database`, `agent`, and `ingress`.
+The `agent` role conflicts with `gateway`, `vpn`, `router`,
+`app-development`, `app-production`, `database`, and `ingress`. `ingress`
+may combine only with `app-production`.
+`gateway`, `vpn`, and `router` are not command-assignable through the
+public role flow.
 
 **`agent`**
 
 Provisions an isolated agent host. The `agent` role assignment carries a
-`tld` setting (default `agent`) and applies a baseline of Caddy,
-Supervisor, WireGuard/node identity material, and the shared unprivileged
-`agent` runtime user.
+`tld` setting (default `agent`) and applies a baseline of `orbit-runtime`,
+`orbit-caddy`, WireGuard/node identity material, and the shared
+unprivileged `agent` runtime user. Supervisor is only used for explicit
+residual runtime units where a tool or process contract configures it.
 
 Requires `--host`. `--tld` is optional; the default is `agent`. The TLD
 must be unique across active TLD-backed role assignments.
@@ -200,9 +201,9 @@ gateway endpoint used in generated WireGuard peer configs. It is also passed to
 wg-easy as `INIT_HOST`. As a result, it must be an IP address or dotted DNS
 name reachable by the nodes that will join the fleet.
 
-Gateway bootstrap internally creates coupled `gateway` and `vpn` role
-assignments on the same node. Public role assignment does not accept
-`gateway` or `vpn`.
+Gateway bootstrap internally creates coupled `gateway`, `vpn`, and `router`
+role assignments on the same node. Public role assignment does not accept
+`gateway`, `vpn`, or `router`.
 
 If the requested gateway is already provisioned and active, and the supplied host is
 compatible with that gateway identity, Orbit converges idempotently without

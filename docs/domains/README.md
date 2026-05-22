@@ -55,8 +55,8 @@ These rules govern every command contract in this directory.
   logs, credentials, update, reload, and reconfiguration stay under `tool:*`.
   A tool-specific or capability-specific family is valid only when it owns a
   distinct Orbit workflow whose natural operator vocabulary is the tool or
-  capability name. `php:*` owns PHP runtime selection across apps, workspaces,
-  and node CLI defaults; future Redis data-plane operations may use
+  capability name. `php:*` owns PHP image selection across apps and
+  workspaces; future Redis data-plane operations may use
   `redis:*`. Database connection inventory, env convergence, schema
   inspection, audited SQL execution, and database backup/restore workflows
   belong to `database:*` instead of `mysql:*` or `postgres:*` command
@@ -167,8 +167,8 @@ Stable state families are `node`, `app`, `workspace`, `process`,
 These are the keys accepted by `doctor --family=<family>` and the values
 carried by warning or doctor `family` fields. Machine-readable issue and
 warning codes use singular product prefixes, such as `node.wireguard_peer_missing`,
-`app.fpm_config_missing`, `workspace.path_missing`, `process.runtime_unit_missing`,
-`proxy.route_extra`, `schedule.unit_extra`, and
+`app.runtime_container_missing`, `workspace.path_missing`,
+`process.runtime_unit_missing`, `proxy.route_extra`, `schedule.unit_extra`, and
 `database_connection.env_missing`.
 
 Security is a cross-family section pattern, not a command domain or state

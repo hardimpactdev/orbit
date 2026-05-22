@@ -41,7 +41,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`schedule-logs` must not create, update, remove, run, fix, adopt, or apply schedules. It must not stream live process manager (Supervisor) logs directly. Live scheduler state and run-history hook drift belong to [`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-logs` must not create, update, remove, run, fix, adopt, or apply
+schedules. It must not stream live scheduler container logs directly. Live
+scheduler state and run-history hook drift belong to
+[`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 

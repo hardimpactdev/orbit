@@ -19,7 +19,12 @@ These rules govern all workspace family commands.
   characters.
 - Workspace PHP version is gateway-tracked configuration. A workspace inherits
   the parent app PHP version unless a workspace override is stored on the
-  workspace row.
+  workspace row. The effective PHP version selects the workspace FrankenPHP
+  runtime container image; it does not install host PHP or render a host
+  PHP-FPM pool.
+- Each workspace owns a Docker runtime container derived from workspace,
+  app, and PHP image configuration. Workspace setup, teardown, PHP, Composer,
+  and Artisan execution run through that runtime container.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
 - During `doctor --fix --family=workspace --adopt`, project files are adoption hints
@@ -33,9 +38,10 @@ These rules govern all workspace family commands.
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
 - Workspaces inherit app process definitions as runtime units. Each inherited
-  runtime unit becomes a separate Supervisor program owned by the workspace.
-  It has its own program name, working directory, environment block, and log
-  paths — distinct from the main app instance and from sibling workspaces.
+  runtime unit becomes a separate Docker process runtime unit owned by the
+  workspace. It has its own unit name, working directory, environment block,
+  and log stream — distinct from the main app instance and from sibling
+  workspaces.
   The parent app's process definition supplies the shared fields (command,
   restart policy, crash notification policy). The workspace context supplies
   the per-instance fields (working directory, workspace-specific URL,
@@ -79,7 +85,7 @@ the workspace row.
 Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
-Implementation-shape details for the process manager, Supervisor programs, and
+Implementation-shape details for the process manager, Docker process units, and
 gateway-to-node application live in
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager),
 [tech-stack.md#scheduler](../../tech-stack.md#scheduler), and
@@ -90,6 +96,8 @@ Workspace registry-only reads — `workspace:show`, `workspace:history`,
 live process manager. `workspace:new`, `workspace:setup`, and
 `workspace:remove` require a live process manager on the owning node
 when they create, update, remove, or verify inherited runtime units.
+The live process manager is Docker for workspace PHP workloads; Supervisor is
+only an explicit residual runtime for supported non-PHP host-side cases.
 
 ## Workspace JSON Entity
 

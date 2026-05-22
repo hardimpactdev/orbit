@@ -5,58 +5,50 @@ This document describes the implementation behind the [Architecture](architectur
 The pieces fit together like this:
 
 ```text
-              ┌─────────────────────┐
-              │    Client    │
-              │  Orbit CLI client   │
-              └──────────┬──────────┘
-                         │
-                HTTPS over WireGuard
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │    Gateway Node     │
-              │  Laravel · SQLite   │
-              │  Caddy · WireGuard  │
-              └──────────┬──────────┘
-                         │
-                 SSH over WireGuard
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │    Node      │
-              │   Caddy · PHP-FPM   │
-              │ Supervisor · Docker │
-              └──────────┬──────────┘
-                         │
-                  public 80 / 443
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │      Internet       │
-              └─────────────────────┘
+Control plane:
+
+Client
+  -> host orbit launcher
+  -> local orbit-runtime
+  -> HTTPS over WireGuard
+  -> gateway orbit-caddy
+  -> gateway orbit-runtime
+  -> RemoteShell over WireGuard
+  -> node Docker runtime containers
+
+Public production HTTP:
+
+Internet
+  -> public 80/443
+  -> ingress edge orbit-caddy
+  -> private WireGuard route to router
+  -> router orbit-caddy for private HTTP/WebSocket/S3 routes, .orbit DNS, and backend pools
+  -> private app-production backend orbit-caddy
+  -> FrankenPHP app container
 ```
 
 The sections below walk through each layer of the stack in the same order as the table.
 
 ## Runtime
 
-| Layer | Current implementation |
+| Layer | Docker-first implementation |
 |---|---|
-| Application | Laravel 13 application |
-| Runtime language | PHP 8.5 default, PHP 8.4 supported |
-| Persistent state | SQLite at `~/orbit/database/database.sqlite` |
-| Gateway API | HTTPS over WireGuard |
+| Application | Laravel 13 application mounted into `orbit-runtime` |
+| Runtime language | PHP 8.5 inside Orbit-managed containers |
+| Persistent state | SQLite at `~/orbit/database/database.sqlite`, mounted into `orbit-runtime` on the gateway |
+| Gateway API | `orbit-caddy` to `orbit-runtime` over the node Docker network; exposed only over WireGuard |
 | Gateway to node | SSH through `RemoteShell` |
-| Proxy | Caddy |
-| PHP runtime | Native PHP-FPM pools |
-| Host init | systemd on Ubuntu hosts; Docker daemon restart policy in Docker E2E containers (`supervisord` as PID 1, typically under `tini`) |
-| Process manager | Supervisor (`supervisord`) on every node that runs processes |
-| Scheduler | `orbit-scheduler` Artisan-command daemon on the gateway only; dispatches to other nodes through `RemoteShell` |
-| Process logs | Supervisor-managed stdout/stderr log files |
-| Service containers | Docker Compose for databases, caches, mail, and utilities on nodes that need them |
-| Production HTTP ingress | Caddy on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
-| Private production routing | Caddy on the gateway-coupled `router` role selecting private app backend pools |
-| Production app backend | Private Caddy HTTP listener on `app-production` nodes bound to the node's WireGuard address on port `80` |
+| Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
+| PHP runtime | FrankenPHP app/workspace containers |
+| Host init | Docker daemon restart policy for Orbit runtime containers |
+| Process manager | `process.runtime=docker` for PHP app processes; `supervisor` only where explicitly configured |
+| Scheduler | Gateway scheduler loop inside `orbit-runtime` |
+| Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
+| Service containers | Docker for Orbit runtime containers and backing services |
+| Host prerequisites | Git, Docker, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
+| Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
+| Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
+| Production app backend | `orbit-caddy` on `app-production` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -69,9 +61,9 @@ Laravel is Orbit's application framework, while command behavior remains documen
 
 ### Application
 
-Orbit is a single Laravel 13 codebase that runs in two execution contexts. On the gateway, the full Laravel app serves the typed HTTPS API and runs the gateway-local Orbit Scheduler. On clients and on every other node, the same code is invoked as a CLI client that gathers local input, calls the gateway over the VPN, and renders the result.
+Orbit is a single Laravel 13 codebase that runs inside `orbit-runtime`. On the gateway, `orbit-runtime` serves the typed HTTPS API behind `orbit-caddy` and runs the gateway-local Orbit Scheduler. On clients and on every other node, the host `orbit` executable is a launcher that executes the same code inside the local `orbit-runtime` container, gathers local input, calls the gateway over the VPN, and renders the result.
 
-Orbit runs from source. There is no PHAR or container image to install — the installer checks out the repo, installs dependencies through Composer, and links `orbit` into the local executable path.
+Orbit runs from source mounted into the runtime container. There is no PHAR. The installer checks out the repo, prepares the Docker runtime, and links the host `orbit` launcher into the local executable path. Host PHP and host Composer are not supported fallbacks for running Orbit commands.
 
 ## Storage
 
@@ -85,19 +77,19 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 - Process lifecycle events are stored as durable history, not as a separate process-state table.
 - Agent IDE defaults are gateway configuration owned by nodes and apps — not a separate state family.
 - Renderers turn gateway-tracked configuration into the artifacts a node should hold. They must take target-specific inputs from gateway data or explicit probe results, never from gateway-local host state, when rendering for another node.
-- Implementation-specific names (Caddy sites, UFW rules, Supervisor programs, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
+- Implementation-specific names (`orbit-caddy` sites, UFW rules, Docker container names, explicit Supervisor programs, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
 
 ## Infrastructure
 
 ### Gateway API
 
-Caddy serves the gateway's HTTPS API only on the gateway's WireGuard address. It is not a public internet vhost.
+`orbit-caddy` serves the gateway's HTTPS API only on the gateway's WireGuard address. It is not a public internet vhost.
 
 The gateway API ingress is an internal `proxy` entry the gateway owns — managed by the same proxy family that handles every other route. Its proxy and TLS artifact is repaired by `doctor --fix --family=proxy --restore`, not by a backend-named provisioning command.
 
-The gateway API listener must not trust client-supplied forwarding identity. Caddy strips `X-Forwarded-For`, `X-Real-IP`, and `Forwarded` before requests reach Laravel. Caller identity comes from the Orbit network identity model, not from forwarded headers.
+The gateway API listener must not trust client-supplied forwarding identity. `orbit-caddy` strips `X-Forwarded-For`, `X-Real-IP`, and `Forwarded` before requests reach Laravel in `orbit-runtime`. Caller identity comes from the Orbit network identity model, not from forwarded headers.
 
-Streaming and non-streaming gateway API traffic use separate PHP-FPM sockets. Stream and log endpoints route to the stream socket; ordinary command/API execution routes to the exec socket. This prevents long-lived streams from consuming the same execution lane as short command requests.
+Long-lived stream and log endpoints must not starve short command/API requests. The Docker-first API runtime owns this concurrency contract inside `orbit-runtime`; it does not use host PHP-FPM sockets and must be validated through gateway API tests.
 
 #### Remote command progress
 
@@ -142,44 +134,44 @@ The current sudo model intentionally grants the `orbit` maintenance user broad p
 
 ### Proxy
 
-Caddy is the proxy on every node. It terminates TLS, serves the gateway API on the gateway, and serves app and workspace routes on nodes with application roles. App-route certificates are issued by the Orbit root CA, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
+`orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS, serves the gateway API on the gateway, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. App-route certificates are issued by the Orbit root CA, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
 
 #### Caddy include boundaries
 
-Caddy configuration is split by exposure boundary, not by who happens to write the file. The global `/etc/caddy/Caddyfile` imports both managed include trees:
+Caddy configuration is split by exposure boundary, not by who happens to write the file. The managed config mounted into `orbit-caddy` imports both managed include trees:
 
 - `/etc/caddy/orbit/*.caddy` for Orbit platform surfaces that are internal to the Orbit network
 - `/etc/caddy/sites/*.caddy` for app, workspace, and custom proxy site routes
 
 Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. The gateway API belongs here. Its site block must match the gateway WireGuard address, for example `https://10.6.0.2:443`, and must not create a broad public virtual host.
 
-Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, workspace routes, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the global Caddyfile, but they must not define Orbit control-plane endpoints.
+Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, workspace routes, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
-Installer and doctor repair code must be additive: ensure required imports and managed include files exist, but never replace unrelated site blocks or remove existing imports.
+Installer and doctor repair code must be additive: ensure required imports and managed include files exist in the `orbit-caddy` mount or managed volume, but never replace unrelated site blocks or remove existing imports.
 
 ### PHP runtime
 
-PHP-FPM runs natively on the gateway and on nodes with application roles — not in a container. Native execution keeps request latency predictable and avoids container overhead in the request path.
+PHP app execution runs in FrankenPHP containers. The gateway and CLI runtime run in `orbit-runtime`; apps and workspaces run in dedicated long-lived app/workspace containers when their runtime kind is PHP. Static or non-PHP apps do not get a FrankenPHP container.
 
-Each workspace gets its own PHP-FPM pool so workspaces are isolated from one another. Production apps get a dedicated pool as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it re-renders the affected PHP-FPM pool on the owning node through `RemoteShell`.
+Each PHP workspace gets its own FrankenPHP container so workspaces are isolated from one another. Production PHP apps get a dedicated container as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it recreates the affected runtime container from the selected PHP image on the owning node through `RemoteShell`. Host PHP and PHP-FPM are not supported fallbacks.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-production` nodes are production runtime backends:
-they own app files, PHP-FPM, Supervisor, and a private Caddy HTTP listener, but
-they do not own public route exposure unless the same node also carries
-`ingress`.
+they own app files, FrankenPHP runtime containers, Docker process containers,
+and a private `orbit-caddy` listener, but they do not own public route exposure
+unless the same node also carries `ingress`.
 
 ### Process manager
 
-Supervisor (`supervisord`) supervises Orbit-managed long-running processes on every node that runs processes. Each process Orbit tracks becomes one Supervisor program. Supervisor restarts crashed processes and captures stdout/stderr into log files surfaced by `process:logs`.
+PHP app and workspace processes use Docker process runtime units by default. Each Docker-backed process becomes an Orbit-managed sidecar container that uses the same app/workspace runtime boundary, PHP version, mounted source, and environment as the web runtime. Docker restart policy and Orbit lifecycle hooks restart crashed processes and capture stdout/stderr surfaced by `process:logs`.
 
-Host init keeps Supervisor itself alive. On Ubuntu, the distro `supervisor.service` unit does that. In Docker E2E topologies, the Docker daemon's container restart policy does — `supervisord` runs as PID 1 inside the container, typically under `tini`.
+`process.runtime=supervisor` remains an explicit residual runtime for supported non-PHP host-side cases. Those units are documented per process definition; they are not the default PHP app process path and must not be used as a host PHP fallback.
 
-Other host services — Caddy, PHP-FPM, Docker, and Supervisor itself — run directly under host init, not under Supervisor. Supervisor manages Orbit-defined processes only, not the host service stack.
+Host init is reduced to keeping Docker alive. Orbit runtime containers are kept alive by the Docker daemon restart policy. `orbit-caddy`, `orbit-runtime`, app/workspace runtime containers, and Docker process runtime units are Docker-managed containers, not host services.
 
 ### Scheduler
 
-The Orbit Scheduler is a long-running PHP process invoked as `php artisan orbit:scheduler:run`. It is supervised by Supervisor as the `orbit_scheduler` program **on the gateway only**. There is no scheduler daemon on non-gateway nodes; the gateway dispatches schedule execution to other nodes over `RemoteShell` when a schedule's target is not the gateway itself.
+The Orbit Scheduler is a long-running PHP loop inside the gateway's `orbit-runtime` container. There is no scheduler daemon on non-gateway nodes; the gateway dispatches schedule execution to other nodes over `RemoteShell` when a schedule's target is not the gateway itself.
 
 The daemon runs an internal loop that aligns to wall-clock minute boundaries, performs one evaluation tick, and sleeps until the next boundary:
 
@@ -198,9 +190,9 @@ Each tick:
 4. Records the run result — success, failure, exit code, captured output, dispatch failure — in `schedule_runs` immediately as durable gateway history.
 5. Releases the lock.
 
-The tick interval is an implementation detail. It may be tightened (for example to evaluate every ten seconds) without changing the schedule expression contract, which remains minute-resolution. Sub-minute work is not a schedule — it belongs in a Supervisor program.
+The tick interval is an implementation detail. It may be tightened (for example to evaluate every ten seconds) without changing the schedule expression contract, which remains minute-resolution. Sub-minute work is not a schedule — it belongs in a process runtime unit.
 
-Periodic execution comes from the daemon's internal sleep loop, not from Supervisor — Supervisor itself does not provide cron-style scheduling. Its contribution is to keep the PHP process alive, restart it on crash, and capture stdout/stderr.
+Periodic execution comes from the daemon's internal sleep loop. Docker keeps the gateway `orbit-runtime` container alive; Supervisor is not the scheduler's steady-state runtime.
 
 The daemon's per-tick logic is shared with the `orbit schedule:run` command. The daemon is the steady-state path; `schedule:run` is the on-demand path used for testing, troubleshooting, and recovery.
 
@@ -208,13 +200,13 @@ This centralizes observability: every scheduled run's result lands in the gatewa
 
 ### Service containers
 
-Docker Compose runs supporting services on nodes that need them — databases, caches, mail servers, websocket utilities, and similar backing infrastructure. Compose files are rendered from gateway-tracked tool configuration and applied through `RemoteShell`. Docker is reserved for services that aren't part of the PHP request path; PHP-FPM and Caddy run on the host directly.
+Docker is the baseline substrate for Orbit runtime containers and backing services. Orbit uses Docker for `orbit-runtime`, `orbit-caddy`, FrankenPHP app/workspace containers, Docker process runtime units, databases, caches, mail servers, websocket utilities, S3-compatible services, and similar backing infrastructure. Docker E2E topologies use sibling containers through the host Docker socket, not Docker-in-Docker.
 
 ### Agent runtime
 
-Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges Caddy, Supervisor, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The `agent` role requires a node-level `tld` setting (default `agent` when chosen during interactive `node:new`); `tld` is a shared node-level field that the `app-development` role also requires, so a node holds at most one `tld` value at a time. The gateway maps `*.{tld}` to the node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-development` uses. Stable private `.orbit` service names are router-owned and distinct from these development/agent TLD mappings.
+Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges `orbit-runtime`, `orbit-caddy`, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The `agent` role requires a node-level `tld` setting (default `agent` when chosen during interactive `node:new`); `tld` is a shared node-level field that the `app-development` role also requires, so a node holds at most one `tld` value at a time. The gateway maps `*.{tld}` to the node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-development` uses. Stable private `.orbit` service names are router-owned and distinct from these development/agent TLD mappings.
 
-Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, supervised by Supervisor like any other long-running process, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
+Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, run through the runtime backend declared by the tool definition, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
 
 ### Network
 
@@ -243,7 +235,7 @@ Client setup is local:
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
-The installer prepares the host before Orbit can run. It installs PHP, Composer, Git, and the required PHP extensions, checks out the Orbit source, creates the local SQLite database, runs migrations, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
+The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, the Orbit checkout, the `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside `orbit-runtime`, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
 
 The installer does not create a client identity for the gateway to trust. That identity is minted later — by `node:new --role=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 
@@ -255,7 +247,7 @@ When the client already has a WireGuard identity issued by an existing gateway, 
 
 ### Platform and roles
 
-The Orbit CLI runs on macOS and Ubuntu. The `gateway`, `vpn`, `app-development`, `app-production`, `database`, `agent`, and `ingress` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
+The Orbit CLI runs on macOS and Ubuntu. The `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, and `ingress` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
 
 The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same node.
 

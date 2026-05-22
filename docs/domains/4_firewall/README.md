@@ -36,6 +36,9 @@ Authorization failures use `authorization_failed` with standard
 - Only nodes with active `ingress` expose public production HTTP/HTTPS.
 - `app-production` backend port `80` is private backend traffic and must be
   reachable only through the Orbit/WireGuard network.
+- App and workspace runtime containers are Docker-network backends behind
+  `orbit-caddy`; firewall rules target node listeners, not individual
+  FrankenPHP containers.
 - Firewall commands do not create public SSH policy exceptions for nodes.
 - Firewall reads use gateway configuration by default. Live firewall reality belongs to `doctor --family=firewall_rule`.
 - Node reality import is not part of the firewall command surface. Adoption of observed firewall reality must use explicit `doctor --fix --family=firewall_rule --adopt` semantics.

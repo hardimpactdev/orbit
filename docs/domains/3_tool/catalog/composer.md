@@ -10,14 +10,15 @@ These fields describe the Composer tool's identity, backend, and support model i
 | --- | --- |
 | Slug | `composer` |
 | Label | Composer |
-| Backend | system binary |
-| Support model | Required baseline, adopted and kept converged |
-| Category | `always` |
+| Backend | runtime container capability |
+| Support model | Provided inside `orbit-runtime` and app/workspace PHP images |
+| Category | `runtime` |
 
 ## Capabilities
 
-`composer` supports `tool:update` and safe doctor adopt. It does not support
-lifecycle commands, reload, logs, credentials, or removal.
+`composer` supports `tool:update` for container image capability metadata. It
+does not support host lifecycle commands, reload, logs, credentials, or
+removal.
 
 ## Credentials
 
@@ -25,11 +26,12 @@ lifecycle commands, reload, logs, credentials, or removal.
 
 ## Orbit Notes
 
-Composer is a baseline dependency for PHP project setup and Orbit installation.
-Project dependency commands remain app or deployment concerns, not tool-family
-state.
+Composer is a runtime-container dependency for PHP project setup, app
+execution, workspace execution, and Orbit dependency installation inside
+`orbit-runtime`. Project dependency commands remain app, workspace, or
+deployment concerns, not tool-family state.
 
 ## Doctor Relationship
 
-`doctor --family=tool` may adopt an existing Composer binary and report missing
-baseline drift.
+`doctor --family=tool` may report missing Composer capability in managed
+runtime images. It must not adopt host Composer as an Orbit command fallback.

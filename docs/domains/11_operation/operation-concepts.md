@@ -17,10 +17,10 @@ Product families remain the owners of configuration, reality, issue codes, and r
 
 These terms describe the update workflow and its components.
 
-- **Local update:** `update` sequence that changes only the current Orbit checkout: source pull, dependency installation, and local Orbit migrations.
+- **Local update:** `update` sequence that changes only the current Orbit checkout: source pull, dependency installation inside `orbit-runtime`, and local Orbit migrations inside `orbit-runtime`.
 - **Fleet update:** `update:all` sequence that updates the caller-local checkout and selected active non-local managed Orbit installations.
 - **Update target:** One selected Orbit installation in an update workflow.
-- **Update step:** Ordered local checkout update action: source pull, dependency installation, or migration execution.
+- **Update step:** Ordered local checkout update action: source pull, containerized dependency installation, or migration execution.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
 Fleet update runs through gateway-owned authority, with remote execution via `RemoteShell` — see [tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node). Clients are never remote update targets. A target succeeds only when all required update steps succeed; target results include both successful and failed targets when a fleet update partially fails.

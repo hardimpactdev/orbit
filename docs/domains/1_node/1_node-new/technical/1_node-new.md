@@ -132,8 +132,9 @@ Caller-path behavior is split out into:
   identity using `node_new.control_name`. This is a separate node identity from
   the gateway node named by `node_new.name`.
 - First-gateway bootstrap also creates or materializes exactly one internal
-  `gateway` assignment and one internal `vpn` assignment on the same node. It
-  must not duplicate either assignment during later convergence.
+  `gateway` assignment, one internal `vpn` assignment, and one internal
+  `router` assignment on the same node. It must not duplicate any of those
+  assignments during later convergence.
 - Gateway `--host` is required during first bootstrap and later convergence
   checks. If the requested gateway is already provisioned and active, and the
   supplied host is compatible with that gateway identity, converge idempotently

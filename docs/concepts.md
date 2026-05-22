@@ -25,17 +25,27 @@ owning family concept document.
 - **Node TLD** — node-level setting required by the `app-development` and `agent` roles. A node holds at most one `tld` value at a time, shared by every role that depends on it; drives the gateway-owned DNS mapping for that TLD. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent role** — exclusive workload role for autonomous agent runtimes; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN role** — gateway-coupled infrastructure role that owns the WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Router role** — gateway-coupled infrastructure role that owns private `.orbit` DNS/service hostnames, private HTTP route selection, and backend pools for production routes. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Ingress role** — workload role that owns public production HTTP ingress, public Caddy route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Router role** — gateway-coupled infrastructure role that owns private `.orbit` DNS/service hostnames, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Ingress role** — workload role that owns public production HTTP ingress, public `orbit-caddy` route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-production` nodes are production runtime backends: they own app files, PHP-FPM, Supervisor, and a private Caddy HTTP listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-production` nodes are production runtime backends: they own app files, FrankenPHP app containers, Docker process runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Orbit launcher** — host `orbit` executable that runs commands inside the local `orbit-runtime` container and passes `ORBIT_HOST_CWD`. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Orbit runtime container** — one `orbit-runtime` container per node; it is the CLI execution target and, on the gateway, the API and scheduler runtime. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
+- **App runtime container** — dedicated Docker container for one PHP app or workspace runtime. See [App Concepts](domains/5_app/app-concepts.md).
+- **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
+- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_app/app-concepts.md).
+- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_app/app-concepts.md).
+- **Process runtime** — explicit process backend selection, currently `docker` or `supervisor`. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Docker process runtime** — default runtime for PHP app and workspace processes; runs as a Docker sidecar container. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Supervisor process runtime** — residual runtime for explicitly supported non-PHP host-side processes. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Host cwd context** — launcher-supplied `ORBIT_HOST_CWD` value used to preserve local app/workspace context across the container boundary. See [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
-- **Process manager** — host-level supervisor for Orbit's long-running processes. Supervisor (`supervisord`) on every node that runs processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
-- **Runtime unit** — one Supervisor program rendered from a process definition for a specific (app, workspace) pair. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Supervisor program** — backend-specific name for the rendered runtime unit. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Orbit Scheduler** — the resident schedule executor daemon (`php artisan orbit:scheduler:run`) that runs on the gateway under the `orbit_scheduler` Supervisor program. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
-- **Host init** — the host's own service manager that keeps Supervisor alive. systemd on Ubuntu. Not Orbit's process manager.
+- **Process manager** — the runtime backend that runs Orbit process units. PHP app processes use Docker process runtime units by default; Supervisor is explicit residual scope. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
+- **Runtime unit** — derived runnable unit for a process definition in a specific app/workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Orbit Scheduler** — the resident schedule executor loop that runs inside gateway `orbit-runtime`. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
+- **Host init** — the host's own service manager. In the Docker-first runtime, its steady-state Orbit responsibility is keeping Docker alive.
 - **RemoteShell** — gateway-to-node execution primitive. See [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
@@ -74,9 +84,13 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Node role**
 - **Gateway role**
 - **VPN role**
+- **Router role**
 - **Agent role**
 - **Ingress role**
 - **Gateway-coupled infrastructure role**
+- **Orbit launcher**
+- **Orbit runtime container**
+- **Orbit Caddy container**
 - **Role assignability**
 - **Role assignment**
 - **Role settings**
@@ -158,6 +172,10 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **Development app**
 - **Production app**
 - **App PHP version**
+- **App runtime container**
+- **FrankenPHP app runtime**
+- **Worker mode**
+- **Worker config**
 - **App agent IDE adapter**
 - **App registration**
 - **App adoption**
@@ -177,6 +195,8 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Workspace path**
 - **Workspace lifecycle status**
 - **Workspace PHP override**
+- **Workspace runtime container**
+- **Host cwd context**
 - **Setup step definition**
 - **Setup steps phase**
 - **Teardown step definition**
@@ -195,11 +215,13 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process definition**
 - **Process identity slug**
 - **Process order**
+- **Process runtime**
+- **Docker process runtime**
+- **Supervisor process runtime**
 - **Runtime unit**
 - **Runtime unit expansion**
 - **Runtime unit filename**
 - **Runtime unit environment**
-- **Supervisor program**
 - **Restart policy**
 - **Crash notification policy**
 - **Process event**
@@ -223,7 +245,9 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Tool-owned route**
 - **Public route artifact**
 - **Private backend artifact**
-- **Backend pool**
+- **Private router artifact**
+- **Private backend artifact**
+- **Router backend pool**
 - **Orbit-managed TLS**
 - **Route leaf certificate**
 - **Intermediate CA certificate**
@@ -394,19 +418,20 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 <!-- concept-index:domains/14_php/php-concepts.md -->
 - **PHP runtime command domain**
 - **PHP runtime selection**
+- **PHP image selection**
 - **Supported PHP version set**
-- **Installed PHP runtime**
+- **Available PHP image**
 - **PHP runtime catalog**
-- **Gateway-tracked installed-version facts**
-- **Live installed-version inspection**
+- **Gateway-tracked image facts**
+- **Live image inspection**
 - **PHP runtime view**
 - **App PHP runtime selection**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**
-- **Node CLI PHP default**
-- **PHP-FPM artifact**
+- **Runtime PHP binary**
 - **PHP runtime target**
+- **PHP runtime container artifact**
 - **Partial PHP application warning**
 - **PHP-domain boundaries**
 <!-- /concept-index -->

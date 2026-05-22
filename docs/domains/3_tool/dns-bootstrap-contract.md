@@ -35,7 +35,7 @@ The gateway bootstrap runs in this order:
 
 1. WireGuard kernel + interface install.
 2. Root CA materialized.
-3. Gateway API runtime (PHP-FPM pool + Caddy site).
+3. Gateway runtime containers (`orbit-runtime` + `orbit-caddy`).
 4. **`wg-easy` container started.**
 5. **`orbit-dns` container started inside wg-easy's network namespace,
    with the initial `dnsmasq.conf` rendered from current fleet state.**

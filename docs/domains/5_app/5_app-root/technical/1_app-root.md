@@ -90,15 +90,15 @@ is unchanged.
     gateway record. If the requested root equals the current configuration, the
     configuration write is a no-op and `success.data.result.changed=false`; the command
     still proceeds to artifact re-application.
-2.  **Identify Artifacts:** Determine which PHP-FPM and proxy route artifacts
+2.  **Identify Artifacts:** Determine which runtime container and proxy route artifacts
     are affected by the document root change.
 3.  **Re-apply Artifacts:**
     - Re-render the affected artifacts using the current configuration.
     - Upload and apply the artifacts to the node over SSH via
       `RemoteShell::upload` / `run`.
-    - The PHP-FPM pool reload required to pick up the new document root is
+    - The runtime container reload required to pick up the new document root is
       part of this step. It is not a separate user-facing surface; it is the
-      apply plumbing for the FPM artifact, in line with ARCHITECTURE
+      apply plumbing for the runtime container artifact, in line with ARCHITECTURE
       Product Principle 5 ("Backend names are not product names"). When an
       app-owned proxy route references the document root, `app:root` updates
       the app configuration and leaves proxy backend artifact convergence to the
@@ -139,15 +139,15 @@ reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.
 
 | Code | Family | Meaning |
 | --- | --- | --- |
-| `app.fpm_config_mismatch` | `app` | The app's PHP-FPM configuration could not be re-applied to match gateway configuration on the owning node. |
-| `app.fpm_config_missing` | `app` | The app's PHP-FPM configuration could not be installed while applying. |
+| `app.runtime_container_mismatch` | `app` | The app's runtime container configuration could not be re-applied to match gateway configuration on the owning node. |
+| `app.runtime_container_missing` | `app` | The app's runtime container configuration could not be installed while applying. |
 | `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway configuration. |
 | `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed while applying. |
 
 `next_command` for each warning is `doctor --fix --family=app --app=<app> --restore`.
 
 `app.enactment_failed` and other drift codes specific to this command are
-not used; the app family already owns the precise vocabulary for FPM and
+not used; the app family already owns the precise vocabulary for runtime container and
 runtime configuration drift.
 
 ## Doctor Relationship
@@ -156,7 +156,7 @@ runtime configuration drift.
   See [`app-doctor.md`](../../app-doctor.md) for the app-family probe and
   issue-code contract.
 - If re-application fails, `doctor --family=app` reports the same
-  `app.fpm_config_*` / `app.runtime_config_*` drift surfaced as warnings
+  `app.runtime_container_*` / `app.runtime_config_*` drift surfaced as warnings
   here.
 - Repairing drift caused by a partial success of `app:root` belongs to
   `doctor --fix --family=app --restore`.
@@ -183,4 +183,4 @@ document-root updates.
 | --- | --- |
 | `tests/Feature/Commands/Apps/AppRootCommandTest.php` | Input resolution, gateway-side `app.invalid_root` validation (empty, absolute, lexical escape via `..`), no-op idempotent re-application with `changed=false`, configuration write with `changed=true`, authorization, and exhaustive error codes. |
 | `tests/Unit/Actions/Apps/UpdateAppRootActionTest.php` | Core logic for resolving `root` lexically against `app_path`, deciding `changed`, and selecting affected re-application artifacts. |
-| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-application of PHP-FPM (including pool reload) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.fpm_config_mismatch` warning payload shape in `success.meta.warnings[]`. |
+| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-application of runtime container (including container restart) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.runtime_container_mismatch` warning payload shape in `success.meta.warnings[]`. |

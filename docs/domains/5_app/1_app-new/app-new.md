@@ -38,7 +38,7 @@ The steps below describe what the command does during a successful run.
   App names are identity slugs and must be globally unique in the gateway app
   registry.
 - **Registration Pipeline:** Executes the same convergence logic as
-  [`app:register`](../2_app-register/app-register.md) to set up PHP-FPM, proxy
+  [`app:register`](../2_app-register/app-register.md) to set up runtime container, proxy
   routes, and runtime configuration.
 - **Production Activation:** When `--domain` is provided, production configuration is
   recorded. If DNS or TLS prerequisites are not yet met, the command still

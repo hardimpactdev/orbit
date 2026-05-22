@@ -30,6 +30,16 @@ These rules govern all app family commands.
   `process` family. App commands record the app URL, document root, and runtime
   policy; they do not create Vite-specific proxy routes or rewrite app-side
   frontend configuration.
+- PHP app runtime uses a FrankenPHP app runtime container selected by gateway
+  app configuration. Changing `php_version` recreates the app runtime container
+  from the selected PHP image; it does not install host PHP or render host
+  PHP-FPM pools.
+- App command execution that needs PHP, Composer, or Artisan runs inside the
+  app runtime container through explicit app execution surfaces such as
+  `app:exec`. Host PHP and host Composer are not fallbacks.
+- Worker mode is an opt-in app runtime setting. It is disabled by default and
+  `app:worker enable` must validate app readiness before changing gateway
+  configuration.
 - Production deployment pipeline definitions belong to apps. Deployments and
   releases are not standalone state families.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks
@@ -47,6 +57,8 @@ Production app routes enter through `ingress`, are forwarded over
 WireGuard to the gateway-coupled `router`, and only then fan out to private
 `app-production` backend artifacts. App commands choose the ingress
 placement; the router owns private route selection and backend-pool targeting.
+The backend artifact terminates at `orbit-caddy` on the app-production node and
+then reaches the app's FrankenPHP container over the node Docker network.
 
 ## App Identity Arguments
 
@@ -80,7 +92,10 @@ canonical app entity.
   "path": "/home/docs/app",
   "root": "public",
   "repository": "git@github.com:my/repo.git",
+  "runtime_kind": "php",
   "php_version": "8.5",
+  "worker_enabled": false,
+  "worker_config": null,
   "adopted": false
 }
 ```
@@ -93,7 +108,10 @@ canonical app entity.
 | `path` | string | Absolute app path on the owning node. |
 | `root` | string | Document root relative to `path`. |
 | `repository` | string \| null | Source repository URL recorded for the app, or `null` when none is configured. |
+| `runtime_kind` | string | Runtime kind for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
 | `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
+| `worker_enabled` | boolean | Whether FrankenPHP worker mode is enabled for this app. Defaults to `false`. |
+| `worker_config` | object \| null | Worker settings used only when worker mode is enabled. |
 | `adopted` | boolean | `true` once the app path was adopted through `app:register`; `false` for app records created by `app:new` or first registered without adoption. |
 
 Structural fields are always present. Use `null` only for structural fields
@@ -130,6 +148,8 @@ The following commands are available in the `app` family.
 8. Reserved for a future app metadata update command. No `app:update` command
    contract exists in the current converted surface.
 9. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
+10. Planned Docker-first runtime command: `orbit app:exec [app] -- <command>`.
+11. Planned Docker-first worker commands: `orbit app:worker show|enable|disable`.
 
 ## Related
 

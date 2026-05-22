@@ -44,7 +44,7 @@ These terms describe how Orbit relates to each tool in the catalog.
   provisioning so doctor has one gateway-owned source of truth per node.
 - **Agent tool:** Installable tool in the `agent` category. Requires the
   `agent` role on the node, runs as the shared unprivileged
-  `agent` user, and is supervised by Supervisor.
+  `agent` user, and uses the backend declared by its catalog entry.
 - **Agent tool internal route:** Tool-owned proxy route under the agent
   role TLD, such as `https://openclaw.agent`. Reachable only over the
   Orbit/WireGuard network.

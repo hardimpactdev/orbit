@@ -35,7 +35,7 @@ This command follows the shared
 | `--path` | `text` | Adopting an unmanaged path. | n/a | Absolute path on the target node. Must not be owned by a different registered app on the same node. |
 | `--node` | `text` | No default can be resolved. | Existing owner / gateway-resolved default node | Valid node name. |
 | `--root` | `text` | Optional | `public` | Path relative to app path. |
-| `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app PHP-FPM version. This is app runtime configuration, not the owning node's CLI PHP default. |
+| `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app runtime container version. This is app runtime configuration, not a host PHP default. |
 | `--domain`| `text` | Optional | n/a | Valid hostname. |
 | `--json` | `flag` | Optional | `false` | n/a |
 
@@ -56,8 +56,8 @@ This command follows the shared
    - Existing app PHP version when `name` is already registered.
    - Orbit's app runtime default (`8.5`) for first-time registration or
      adoption.
-   - Do not read or inherit the owning node's CLI PHP default; node CLI PHP and
-     app PHP-FPM configuration are separate architecture concepts.
+   - Do not read or inherit any host PHP default; app runtime container
+     configuration is the architecture concept.
 5. **Validate Eligibility**:
    - Target node must have the active app role required by the requested
      registration mode: `app-development` when `--domain` is absent,
@@ -82,7 +82,7 @@ This command follows the shared
 
 - **Registry Convergence**: Ensures a gateway app record exists with the resolved name, node, path, root, and PHP version.
 - **Artifact Apply**: Connects to the node over SSH to:
-  - Configure and restart the PHP-FPM pool for the app.
+  - Configure and restart the runtime container for the app.
   - Install managed app runtime configuration (e.g., environment files).
   - Ensure app-owned route configuration exists in `proxy`.
   - Hand proxy backend artifact convergence to the `proxy` family.
@@ -137,7 +137,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   denied that prevents Orbit from determining whether configuration was applied, or
   an app-role execution failure that is not convergent
   (`error.code=app.enactment_failed`).
-- **Retryable Artifact Drift**: After configuration is durable, PHP-FPM or runtime
+- **Retryable Artifact Drift**: After configuration is durable, runtime container or runtime
   configuration drift is reported as `success.meta.warnings[]` with singular
   `app.*` product codes and `family: "app"`.
 - **Activation Failures**:
@@ -174,7 +174,7 @@ registration attempts.
 | --- | --- |
 | `tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Configuration convergence, adoption logic, path-collision rejection, and apply dispatch. |
 | `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Input resolution, authorization failure forwarding, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy route handoff behavior using mocked node execution. |
+| `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for runtime container, runtime configuration, and proxy route handoff behavior using mocked node execution. |
 | `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-apply refresh. |
 | `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |
 

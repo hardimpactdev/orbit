@@ -26,6 +26,11 @@ gateway node identity, WireGuard identity, gateway CA mismatch checks, and node
 drift repair. Gateway commands may repair caller-local gateway trust, but they
 do not create a gateway doctor family.
 
+The gateway API runtime is the gateway `orbit-runtime` container, exposed on
+the Orbit network through the gateway `orbit-caddy` container. Gateway commands
+verify and trust that API; they do not install host PHP, host Caddy, or
+PHP-FPM gateway fallbacks.
+
 ## Domain Rules
 
 These rules apply to all gateway commands and define the invariants the family enforces.

@@ -1,7 +1,7 @@
 # `orbit php:list`
 
-List PHP versions Orbit supports, versions installed on a target node, and the
-current app, workspace, or node CLI PHP selection.
+List PHP image versions Orbit supports, images available on a target node, and
+the current app or workspace PHP selection.
 
 ## Usage
 
@@ -21,35 +21,34 @@ orbit php:list --node=app-1 --json
 
 ## Arguments and options
 
-- `--node=<node>`: Target node for installed-version and CLI-default
-  inspection.
+- `--node=<node>`: Target node for available-image inspection.
 - `--app=<app>`: App context for app PHP version reporting.
 - `--workspace=<workspace>`: Workspace context for effective PHP version
   reporting. Requires `--app` unless the current directory resolves the parent
   app.
-- `--live`: Inspect the target node for installed PHP versions during this
-  command instead of using gateway-tracked tool facts.
+- `--live`: Inspect the target node for available PHP images during this
+  command instead of using gateway-tracked runtime facts.
 - `--json`: Return the PHP runtime view in the JSON output.
 
 ## What Happens
 
-Run this command to inspect PHP version support and selection for a node, app, or workspace.
+Run this command to inspect PHP image support and selection for a node, app, or workspace.
 
 `php:list` resolves a node, app, or workspace context from explicit options,
 caller context, app ownership, workspace ownership, or local `node:default`.
-It reads gateway configuration and the PHP runtime facts tracked by the gateway
+It reads gateway configuration and the PHP image facts tracked by the gateway
 for the resolved node. With `--live`, it also asks the gateway to inspect the target node for
-installed PHP versions.
+available PHP images.
 
 The command does not install PHP, remove PHP, change app configuration, change
-workspace overrides, change node CLI defaults, or edit project files.
+workspace overrides, or edit project files.
 
 ## Output
 
 Your output shows the resolved PHP versions and selections for each available scope.
 
-Human output renders supported versions, installed versions, node CLI default,
-app selection, and workspace effective selection when those contexts are
+Human output renders supported versions, available images, app selection, and
+workspace effective selection when those contexts are
 available. Use `--json` for machine-readable output.
 
 ## Requirements
@@ -58,7 +57,7 @@ available. Use `--json` for machine-readable output.
   gateway.
 - The current node identity is authorized to inspect the resolved app,
   workspace, or node.
-- `--live` installed-version inspection requires the gateway to reach the
+- `--live` image inspection requires the gateway to reach the
   target node over SSH.
 
 ## Related Commands

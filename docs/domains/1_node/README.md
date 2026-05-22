@@ -33,9 +33,9 @@ Orbit distinguishes three concepts:
   the VPN-facing DNS runtime. In v1, first gateway bootstrap assigns `gateway`,
   `vpn`, and `router` together, and normal role commands cannot add, update, or
   remove those roles independently.
-- **Router role:** the gateway-coupled private routing role. It owns stable
-  private `.orbit` service hostnames, private HTTP/WebSocket routing, and
-  backend-pool selection for production routes.
+- **Router role:** the gateway-coupled private routing role. It owns private
+  `.orbit` DNS/service names, private route artifacts, backend pools, and
+  private HTTP/WebSocket/S3 routing.
 - **Node roles:** composable roles that prepare a node to serve a kind of
   workload. The initial workload roles are `app-development`,
   `app-production`, `database`, `agent`, and `ingress`. `agent` is
@@ -50,10 +50,11 @@ assignments only; capabilities are derived internally from the active
 assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
-Nodes may run the Orbit CLI as a stateless gateway client, but they do
-not own fleet state or run a local Orbit capability layer. They run workload
-services, call the gateway when a local command is invoked, and receive
-gateway-applied changes over SSH.
+Nodes may run the Orbit CLI as a stateless gateway client through the host
+`orbit` launcher and local `orbit-runtime` container, but they do not own fleet
+state or run a local Orbit capability layer. They run workload services, call
+the gateway when a local command is invoked, and receive gateway-applied changes
+over SSH.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
@@ -91,12 +92,12 @@ Roles materialize baseline tool intent when a role assignment converges.
 | Role | Baseline intent |
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
-| `router` | Private Caddy router for `.orbit` DNS/service hostnames and private app/backend pool routing |
-| `app-development` | Development DNS mapping |
-| `app-production` | Private Caddy backend, PHP, and Supervisor running |
+| `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
+| `app-development` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
+| `app-production` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
-| `ingress` | Caddy running as the public production HTTP ingress boundary, forwarding public routes to `router` |
+| `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -234,11 +235,18 @@ These rules apply to all node commands and define the invariants the family enfo
 - Local node defaults do not grant access. The gateway still authenticates the
   caller and authorizes the requested operation through node access policy.
 - For gateway nodes, node readiness includes the gateway runtime service needed
-  to serve the Orbit API. FPM provisioning commands specific to the process manager are
-  not a public node command surface.
+  to serve the Orbit API through `orbit-caddy` and `orbit-runtime`. Runtime
+  container provisioning commands specific to the process manager are not a
+  public node command surface.
 - `orbit doctor --family=node` verifies role, platform, WireGuard, SSH, and
   reachability expectations, including gateway runtime readiness for gateway
   nodes.
+
+The node host contract is Docker-first. Managed nodes require Git, Docker
+Engine and CLI, the Orbit checkout, the host `orbit` launcher, `orbit-runtime`,
+WireGuard/SSH identity material, and role-specific non-PHP host tools such as
+VitePlus on app nodes. Host PHP, host Composer, host Caddy, and host PHP-FPM
+are not prerequisites or fallbacks.
 
 ## Transport Model
 

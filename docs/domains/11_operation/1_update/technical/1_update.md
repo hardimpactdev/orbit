@@ -9,8 +9,9 @@
 **Prerequisites:**
 - The local Orbit checkout is writable.
 - The checkout has a configured Git remote.
-- Composer is available on the caller machine.
-- The local PHP runtime can run Orbit migrations.
+- The host Orbit launcher can start the current checkout.
+- Docker and the `orbit-runtime` runtime are available for dependency
+  installation and migrations.
 
 ## Signature
 
@@ -46,13 +47,15 @@ fields and does not prompt.
 - Run the update against the current Orbit checkout only.
 - Pull the configured Git remote using fast-forward-only semantics. A divergent
   local branch fails rather than creating a merge commit.
-- Install Composer dependencies after the source update succeeds.
-- Run Orbit migrations after dependencies are installed.
+- Install Composer dependencies inside `orbit-runtime` after the source update
+  succeeds.
+- Run Orbit migrations inside `orbit-runtime` after dependencies are installed.
 - Return success only when every local update step succeeds.
 
 ### Local Migration Rules
 
-- Apply migrations with non-interactive production-safe semantics.
+- Apply migrations inside `orbit-runtime` with non-interactive production-safe
+  semantics.
 - When the local checkout is a gateway installation, migrations may update the gateway database schema.
 - Migrations must not create or mutate fleet configuration beyond normal schema/data migrations owned by the application version.
 
@@ -77,9 +80,9 @@ fields and does not prompt.
 | --- | --- | --- |
 | Local checkout unavailable | The command cannot access or update the local Orbit checkout. | Failure |
 | Git update failed | The source pull fails, including non-fast-forward divergence. | Failure |
-| Composer unavailable | Composer cannot be found or executed. | Failure |
-| Dependency install failed | Composer dependency installation fails. | Failure |
-| Migration failed | Local Orbit migrations fail. | Failure |
+| Runtime unavailable | Docker or `orbit-runtime` cannot be found or executed. | Failure |
+| Dependency install failed | Composer dependency installation inside `orbit-runtime` fails. | Failure |
+| Migration failed | Local Orbit migrations inside `orbit-runtime` fail. | Failure |
 
 ## Doctor Relationship
 
@@ -99,7 +102,7 @@ the documented command result.
 | Type | `update` |
 | Effect | `write` |
 | Subject | `none`; the command updates the caller-local Orbit checkout, not a gateway-owned registry entity. |
-| Properties | `scope=local`, `target=local`, `status` (`completed` or `failed`), and `failed_step` when a step fails. No process output, Git output, Composer output, migration output, environment values, or secrets. |
+| Properties | `scope=local`, `target=local`, `status` (`completed` or `failed`), and `failed_step` when a step fails. No process output, Git output, `orbit-runtime` Composer output, migration output, environment values, or secrets. |
 | Description | derived |
 
 ## Test Mapping
@@ -108,7 +111,7 @@ Primary existing test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/UpdateCommandTest.php` | Bootstrap implementation coverage for local update command execution. Must be expanded to cover renderer selection, JSON output, fast-forward pull failure, Composer failure, migration failure, and no remote side effects. |
+| `tests/Feature/Commands/UpdateCommandTest.php` | Bootstrap implementation coverage for local update command execution. Must be expanded to cover renderer selection, JSON output, fast-forward pull failure, `orbit-runtime` dependency failure, migration failure, and no remote side effects. |
 
 Required split contract tests:
 

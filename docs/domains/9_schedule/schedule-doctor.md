@@ -7,12 +7,12 @@
 The schedule family owns these facts:
 
 - gateway-owned schedule rows: scope, target, interval, timezone, execution source, enabled state, and scheduler metadata;
-- the `orbit_scheduler` Supervisor program on the gateway;
+- the gateway scheduler daemon inside the gateway `orbit-runtime` container;
 - Orbit Scheduler liveness, heartbeat freshness, and schedule lock health (all gateway-side);
 - SSH reachability from the gateway to each schedule's target node so dispatches can succeed;
 - drift between gateway schedule configuration and observed run history.
 
-App source, app PHP-FPM, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the gateway-resident scheduler and per-target dispatch reachability, not application health.
+App source, app runtime containers, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the gateway-resident scheduler and per-target dispatch reachability, not application health.
 
 ## Probe Layers
 
@@ -23,9 +23,11 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 
 **Gateway scheduler layers** (verified once per doctor run, not per schedule):
 
-3. **Scheduler process manager availability:** the gateway has Supervisor installed and reachable.
-4. **Orbit Scheduler presence:** the `orbit_scheduler` Supervisor program exists on the gateway.
-5. **Orbit Scheduler liveness:** the `orbit_scheduler` program is in a running state.
+3. **Scheduler runtime availability:** the gateway `orbit-runtime` container is
+   available and can run the scheduler daemon.
+4. **Orbit Scheduler presence:** the scheduler daemon configuration exists in
+   the gateway runtime container.
+5. **Orbit Scheduler liveness:** the scheduler daemon is in a running state.
 6. **Heartbeat freshness:** the most recent scheduler heartbeat is within the configured threshold.
 7. **Schedule lock health:** no schedule lock in `schedule_locks` exceeds the configured stale-lock threshold.
 
@@ -44,9 +46,9 @@ The table below lists every issue code the schedule probe may emit and the condi
 | --- | --- |
 | `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, or enabled state. |
 | `schedule.target_invalid` | The schedule points at a missing, unauthorized, inactive, unsupported, or role-incompatible target. |
-| `schedule.runtime_backend_unavailable` | The gateway's process manager (Supervisor) is not reachable. |
-| `schedule.scheduler_missing` | The gateway has no `orbit_scheduler` Supervisor program. |
-| `schedule.scheduler_stopped` | The `orbit_scheduler` Supervisor program on the gateway is registered but not running. |
+| `schedule.runtime_backend_unavailable` | The gateway `orbit-runtime` container cannot run the scheduler daemon. |
+| `schedule.scheduler_missing` | The gateway runtime has no scheduler daemon configuration. |
+| `schedule.scheduler_stopped` | The scheduler daemon is configured but not running. |
 | `schedule.heartbeat_stale` | The most recent scheduler heartbeat is older than the configured threshold. |
 | `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
 | `schedule.target_unreachable` | The gateway cannot open a `RemoteShell` connection to the schedule's target node. Dispatch will fail until reachability is restored. |
@@ -58,10 +60,10 @@ The table below lists what `doctor --restore` does for each issue code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Process manager recovery belongs to `tool` family doctor and node operations. |
-| `schedule.scheduler_missing` | Re-render and load the `orbit_scheduler` Supervisor program on the gateway. |
-| `schedule.scheduler_stopped` | Start the `orbit_scheduler` Supervisor program on the gateway. |
-| `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler explicitly with `process:restart orbit_scheduler` or investigate the daemon. |
+| `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Gateway runtime recovery belongs to node operations. |
+| `schedule.scheduler_missing` | Re-render and load the scheduler daemon configuration in the gateway runtime. |
+| `schedule.scheduler_stopped` | Start the scheduler daemon in the gateway runtime. |
+| `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler daemon or investigate the gateway runtime. |
 | `schedule.lock_stuck` | Release the stale lock row in `schedule_locks` and record the affected run as `failed`. |
 
 `doctor --restore` does not handle `schedule.record_incomplete`,

@@ -64,7 +64,7 @@ This command follows the shared
     - Stop and delete app-owned `process`.
 - **Step 3: Node Artifact Cleanup:**
     - Connect to the node over SSH.
-    - Remove app PHP-FPM configuration.
+    - Remove app runtime container configuration.
     - Remove managed runtime configuration.
     - Remove the app path if it is eligible for deletion (see below).
 

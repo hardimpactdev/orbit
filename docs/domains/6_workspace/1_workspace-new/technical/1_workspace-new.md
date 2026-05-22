@@ -70,8 +70,9 @@ for this default.
      hostname shape uses the workspace slug as its own DNS label
      (`{workspace}.{app}.{tld}`), so the workspace identity limit is
      independent of the parent app slug. Backend artifact renderers must
-     still validate final generated names such as PHP-FPM pools, sockets,
-     Supervisor programs, and certificate paths before writing them.
+     still validate final generated names such as runtime containers, Docker
+     process units, explicit Supervisor process units, and certificate paths
+     before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
      resolved parent app. Workspace identity is unique within an app, not
      globally — unlike the `app` slug, which is globally unique.
@@ -128,13 +129,14 @@ register an existing path use
    - **Workspace-owned proxy route:** create or update the workspace
      proxy route record; backend artifact convergence is owned by the
      `proxy` family.
-   - **PHP-FPM:** render and install the FPM pool config specific to this workspace
+   - **Runtime container:** render and install the runtime container
+     configuration specific to this workspace
      on the node.
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
-   - **Inherited runtime units:** render and (re)install Supervisor
-     programs derived from the parent app's process definitions.
+   - **Inherited runtime units:** render and (re)install Docker process runtime
+     units derived from the parent app's process definitions.
    - **HTTP probe:** perform the same HTTP probe that `workspace:setup`
      performs at setup time. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
@@ -143,7 +145,7 @@ register an existing path use
    non-fatal entries in `success.meta.warnings[]` with the canonical
    `{code, family, message, next_command}` shape (codes drawn from the
    `workspace` family, primarily `workspace.path_missing`,
-   `workspace.fpm_config_missing`, `workspace.fpm_config_mismatch`,
+   `workspace.runtime_container_missing`, `workspace.runtime_container_mismatch`,
    `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`, plus
    `proxy` handoffs for workspace route drift). The operator repairs drift via
    `doctor --fix --family=workspace --restore`. This matches the
@@ -189,7 +191,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Probe:** `doctor --family=workspace --workspace=<name> --app=<app>`
   verifies registry configuration and runtime artifacts.
 - **Convergence:** `doctor --fix --family=workspace --restore` repairs missing or
-  divergent FPM, runtime configuration, and source path drift surfaced by
+  divergent runtime container, runtime configuration, and source path drift surfaced by
   `workspace:new` warnings.
 - **Adoption:** `doctor --fix --family=workspace --adopt` is the only path for
   registering an existing workspace path under a parent app;
@@ -200,7 +202,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
-| `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |
+| `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Docker process runtime units. |
 
 Role-specific behavior and test mapping live in:
 

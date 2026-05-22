@@ -4,20 +4,21 @@
 
 ## Catalog
 
-These fields describe the PHP CLI tool's identity, backend, and support model in Orbit.
+These fields describe the PHP CLI capability's identity, backend, and support model in Orbit.
 
 | Field | Value |
 | --- | --- |
 | Slug | `php-cli` |
 | Label | PHP CLI |
-| Backend | system binary |
-| Support model | Required baseline, adopted and kept converged |
-| Category | `always` |
+| Backend | runtime container capability |
+| Support model | Provided by `orbit-runtime` and app/workspace PHP images |
+| Category | `runtime` |
 
 ## Capabilities
 
-`php-cli` is probed and adopted as the PHP binary Orbit itself needs to run.
-It does not support lifecycle commands, reload, logs, credentials, or removal.
+`php-cli` is probed as the PHP binary available inside Orbit-managed runtime
+containers. It does not support host lifecycle commands, reload, logs,
+credentials, or removal.
 
 ## Credentials
 
@@ -25,10 +26,11 @@ It does not support lifecycle commands, reload, logs, credentials, or removal.
 
 ## Orbit Notes
 
-`php-cli` is separate from `php`. `php-cli` is the baseline CLI binary; `php`
-owns installable PHP-FPM runtime versions for app and workspace execution.
+`php-cli` is separate from `php`. `php-cli` describes the executable available
+inside runtime containers; `php` owns PHP image capability evidence for app and
+workspace execution.
 
 ## Doctor Relationship
 
-`doctor --family=tool` may adopt an existing PHP CLI binary and report missing
-baseline drift.
+`doctor --family=tool` may report PHP capability drift inside runtime
+containers. It must not adopt host PHP as an Orbit command fallback.

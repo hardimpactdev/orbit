@@ -85,7 +85,7 @@ If `dry_run` is `false`:
   - Phase A deletes workspace-owned proxy route rows and the `workspace`
     row in one gateway transaction.
   - Phase B runs the workspace removal cleanup order: stop traffic, stop
-    inherited processes, run teardown steps, remove the workspace FPM pool, and
+    inherited processes, run teardown steps, remove the workspace runtime container, and
     remove the worktree.
   - SSH reachability of the node for cleanup is not a pre-prune prerequisite.
   - A Phase B step that cannot finish after workspace configuration removal still completes the workspace removal with warnings.

@@ -2,7 +2,10 @@
 
 Schedule commands manage recurring Orbit-owned work. The command family and durable state family are both `schedule`.
 
-The Orbit Scheduler is the schedule executor. It is a resident `orbit-scheduler` Artisan-command daemon supervised by Supervisor **on the gateway only**. Schedule definitions, locks, heartbeat, and durable run history all live in the gateway database.
+The Orbit Scheduler is the schedule executor. It is a resident
+`orbit-scheduler` Artisan-command daemon inside the gateway `orbit-runtime`
+container. Schedule definitions, locks, heartbeat, and durable run history all
+live in the gateway database.
 
 The scheduler evaluates due schedules at least once per minute, aligned to wall-clock minute boundaries. Each tick reads every enabled schedule from the gateway database, claims a per-schedule lock, then dispatches each due schedule in parallel. Schedules whose target resolves to the gateway run locally; schedules targeting any other node execute on that node through `RemoteShell` (SSH). The result of every run — success, failure, exit code, captured output, dispatch failure — is recorded centrally in `schedule_runs`. Schedule expressions remain minute-resolution; the tick interval is an implementation detail. `orbit schedule:run` performs one such tick on demand and shares its evaluation logic with the daemon.
 
@@ -23,9 +26,12 @@ These rules describe what the schedule command family owns and where each kind o
 
 Schedules may target an app, a node, or Orbit-owned maintenance work. The scope determines which node physically runs the command; the gateway always dispatches.
 
-- App-scoped schedules execute in the app context on the app's owning node.
+- App-scoped schedules execute inside the app's Docker runtime context on the
+  app's owning node.
 - Node-scoped schedules execute on the selected node.
-- Orbit-scoped maintenance schedules execute on the gateway by default. A command may override that default by documenting another serving node explicitly.
+- Orbit-scoped maintenance schedules execute inside the gateway `orbit-runtime`
+  container by default. A command may override that default by documenting
+  another serving node explicitly.
 - A Laravel scheduler is a normal app-scoped schedule that runs `php artisan schedule:run` every minute.
 
 When the target is not the gateway itself, the gateway dispatches the run through `RemoteShell` (SSH). The scheduled command executes on the target node, but the gateway records every result centrally.
@@ -46,8 +52,8 @@ These rules describe how schedule writes propagate to the Orbit Scheduler and ho
   gateway database directly.
 - The Orbit Scheduler claims due-run locks in the gateway database and
   dispatches each due schedule to its target on the next tick.
-- The only applied artifact is the `orbit_scheduler` Supervisor program, which
-  is applied once on the gateway by gateway provisioning. Non-gateway nodes do
+- The only applied artifact is the gateway scheduler daemon inside
+  `orbit-runtime`, prepared once by gateway provisioning. Non-gateway nodes do
   not run an Orbit Scheduler instance.
 
 #### Reads and adoption

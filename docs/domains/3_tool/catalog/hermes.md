@@ -11,7 +11,7 @@ model in Orbit.
 | --- | --- |
 | Slug | `hermes` |
 | Label | Hermes |
-| Backend | Supervisor-managed runtime as `agent` |
+| Backend | Docker-managed runtime as `agent` |
 | Support model | Installable and removable by Orbit |
 | Category | `agent` |
 | Required node role | `agent` |
@@ -64,7 +64,7 @@ has no ingress baseline.
 Hermes is a first-party autonomous agent tool. Orbit installs and runs it
 as the shared unprivileged `agent` user. `tool:update hermes` runs
 Hermes's native update path through the Orbit-managed binary and then
-restarts the Supervisor program that wraps it.
+restarts the runtime container that wraps it.
 
 `tool:update hermes` from the node itself requires
 `tool:update:agent-tools` on the self-grant. `tool:install hermes`,
@@ -109,7 +109,7 @@ sudo -u agent -H bash -lc 'hermes doctor'
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies that the Supervisor program exists, that
+`doctor --family=tool` verifies that the runtime container exists, that
 the lifecycle state matches gateway expectations, and that managed
 credential metadata is present. It also checks that the Hermes binary
 version matches the gateway expected version when version tracking is

@@ -2,7 +2,7 @@
 
 Proxy commands expose Orbit's HTTP ingress registry. The command family is `proxy:*`; the durable state family and doctor key is `proxy`.
 
-Caddy is the current proxy backend. It is not the product model.
+The `orbit-caddy` container is the current proxy backend. It is not the product model.
 
 ## Domain Rules
 
@@ -73,7 +73,8 @@ Authorization failures use `authorization_failed` with standard
 App and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed apps and workspaces:
 
 - terminate Orbit-managed TLS for the app or workspace host;
-- route PHP requests to the resolved app/workspace PHP runtime;
+- route dynamic requests to the resolved app/workspace FrankenPHP runtime
+  container;
 - serve static files from the configured document root;
 - for workspace routes, apply the parent app document root relative to the
   workspace path;
@@ -87,21 +88,22 @@ Document-root policy is part of the route contract. Apps or workspaces that serv
 
 Custom, redirect, and tool routes are separate route kinds. They may share TLS, DNS, and inventory behavior with app/workspace routes, but they do not inherit the PHP document-root contract unless their own command docs say so.
 
-- **Public route artifact:** Caddy site rendered on a `ingress` node.
+- **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
   It terminates public HTTPS and reverse proxies to the active `router` over
   WireGuard.
-- **Private router artifact:** Caddy site rendered on the gateway-coupled
-  `router` node. It owns private HTTP route selection and reverse proxies to
-  the backend pool.
-- **Private backend artifact:** Caddy site rendered on an `app-production`
+- **Private router artifact:** `orbit-caddy` site rendered on the gateway-coupled
+  `router` node. It owns private route artifacts, private `.orbit` service
+  hostnames, backend pools, and private HTTP/WebSocket/S3 routing before
+  reverse proxying to the backend pool.
+- **Private backend artifact:** `orbit-caddy` site rendered on an `app-production`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
-  serves the app/workspace PHP ingress contract.
+  serves the app/workspace ingress contract to a backend FrankenPHP container.
 - **Router backend pool:** Ordered list of URLs for app-production backends.
   The router owns this pool. V1 creates one target but stores a list.
 
 ## TLS Authority Model
 
-The gateway is the only Orbit certificate authority. For each managed route, it issues a leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures Caddy with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.
+The gateway is the only Orbit certificate authority. For each managed route, it issues a leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures `orbit-caddy` with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.
 
 Orbit does not delegate intermediate CA authority to nodes. That delegation would make disconnected node-local certificate minting easier, but it would also expand the blast radius of a compromised node: the node could sign trusted certificates for hosts it should not control. Leaf certificates issued by the gateway for each route keep signing authority centralized on the gateway while still letting every node terminate HTTPS locally.
 
@@ -109,7 +111,11 @@ Orbit does not delegate intermediate CA authority to nodes. That delegation woul
 
 Gateway-owned internal routes are proxy inventory, but their product purpose is the gateway API. Internal gateway ingress must bind to the gateway's Orbit network address, not become a public application route. It must preserve the WireGuard identity model by removing forwarded-client identity headers before the request reaches the gateway API.
 
-Long-lived gateway streams, such as progress or log streams, must not consume the same execution lane as short command/API requests. The current backend may implement that with separate runtime sockets, but the product contract is that streaming traffic cannot starve ordinary gateway API execution.
+Long-lived gateway streams, such as progress or log streams, must not consume
+the same execution lane as short command/API requests. The gateway
+`orbit-caddy` container forwards API traffic to the gateway `orbit-runtime`
+container, and the product contract is that streaming traffic cannot starve
+ordinary gateway API execution.
 
 ## Proxy Route JSON Entity
 

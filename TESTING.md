@@ -159,7 +159,8 @@ ORBIT_E2E_KEEP=1
 | --- | --- | --- |
 | Gateway API and CA trust | yes | yes |
 | Registry-backed command behavior | yes | yes |
-| Supervisor runtime backend | yes | yes |
+| Docker process runtime backend | yes | yes |
+| Explicit Supervisor residual runtime | conditional | yes |
 | Orbit Scheduler daemon | yes | yes |
 | Real WireGuard interfaces and peer routing | no | yes |
 | VM boot, cloud-init, package install mutation | no | yes |
@@ -171,8 +172,9 @@ ORBIT_E2E_KEEP=1
 
 Use Docker for feature tests whose correctness depends on gateway API, CA
 trust, registry state, command forwarding, current-checkout command behavior,
-the runtime backend, the Orbit Scheduler, or Orbit-managed process and schedule
-lifecycle. This is the default for prepared-topology `e2e-feature` tests.
+the Docker process runtime backend, the Orbit Scheduler in `orbit-runtime`, or
+Orbit-managed process and schedule lifecycle. This is the default for
+prepared-topology `e2e-feature` tests.
 
 Use Incus for tests whose correctness depends on real VM behavior:
 WireGuard kernel networking, cloud-init, package installation, OS
@@ -190,7 +192,7 @@ Provisioning, installer, and host-mutation tests stay in the
 | CLI validation, JSON envelopes, renderers, DTOs, authorization branches | In-memory Pest | Deterministic contract behavior; fake external boundaries. |
 | Gateway API forwarding, CA trust, registry reads/writes, Saloon request/response paths | Docker feature | Prepared topology is enough; fast and parallelizable. |
 | Docker-backed tool intent and compose command generation (`redis`, `postgres`, `mailpit`, etc.) | Docker feature | The command contract is gateway intent plus generated Docker command; fake or controlled Docker CLI is acceptable unless real Docker daemon behavior is the subject. |
-| Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run Supervisor and the Orbit Scheduler under `tini`. |
+| Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-runtime`, Docker process runtime containers, and the Orbit Scheduler without host PHP/PHP-FPM fallback. |
 | Host-init service control (`systemctl`, journalctl for systemd units, OS service reloads) | Incus VM-feature | Requires real systemd/host init semantics. |
 | OS package installs/upgrades, trust-store mutation, sudo behavior, real SSH daemon behavior | Incus VM-feature | Depends on VM/OS behavior Docker does not model. |
 | Blank image, installer, topology preparation, `node:new`, WireGuard peer routing | Incus provision | Mutates disposable VMs and proves production-style provisioning. |
@@ -285,16 +287,20 @@ topology kinds use the canonical `operator-*` spelling.
 ## Feature Checkout Overlay
 
 Prepared topology images and templates are branch-agnostic topology baselines.
-They prove OS, users, SSH, PHP, Composer, services, trust, routes, and baseline
-Orbit installation state. They must not be rebuilt just to carry feature-branch
-code for a command port.
+They prove OS, users, SSH, Docker, `orbit-runtime`, `orbit-caddy`, service
+containers, trust, routes, and baseline Orbit installation state. Docker-first
+topology images intentionally omit host PHP, host Composer, host Caddy,
+PHP-FPM, and host Supervisor for PHP app processes. They must not be rebuilt
+just to carry feature-branch code for a command port.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, this means the worker's current worktree is the
 source of truth. The test installs or overlays that checkout into a disposable
-path on the clone and invokes commands with `php artisan <command>` from that
-checkout. The clone's installed `orbit` CLI remains a topology/bootstrap smoke
-target unless the test is explicitly about installed CLI behavior.
+path on the clone and invokes commands through the host `orbit` launcher, which
+executes inside the clone's local `orbit-runtime` container and passes
+`ORBIT_HOST_CWD`. The clone's installed `orbit` CLI remains a
+topology/bootstrap smoke target unless the test is explicitly about installed
+CLI behavior.
 
 Use the shared E2E checkout helper when a feature test needs the current
 checkout on a clone. Do not mutate template instances, reusable images, or the
@@ -310,7 +316,7 @@ $topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd)
 try {
     $topology->ssh(
         'control',
-        "cd {$topology->checkout('control')} && php artisan node:list --json",
+        "cd {$topology->checkout('control')} && orbit node:list --json",
     );
 } finally {
     $topology->cleanup();
@@ -352,6 +358,11 @@ Common requirements for every prepared topology:
   that topology;
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
+- Docker Engine/CLI is available to the host launcher and runtime managers;
+- host PHP, host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app
+  processes are absent from Docker-first topology images;
+- Orbit runtime containers use sibling containers through the host Docker
+  socket. Docker E2E must not use Docker-in-Docker.
 - tests may mutate clones, but must never mutate template instances;
 - cleanup deletes clones unless `ORBIT_E2E_KEEP=1`;
 - reset returns clones to the clean prepared state for the selected reset
@@ -380,6 +391,8 @@ Common requirements for every prepared topology:
 - `gateway:add 10.6.0.2 --json` has converged on the control node;
 - the control node stores gateway settings and trusts the gateway CA;
 - the gateway API exposes `/api/ca/root` over HTTP and `/api/me` over HTTPS.
+- the gateway API is served by gateway `orbit-caddy` forwarding to gateway
+  `orbit-runtime` on the node Docker network.
 
 `control-gateway-dev`:
 
@@ -402,6 +415,8 @@ Common requirements for every prepared topology:
   development TLD, user `orbit`, and gateway endpoint `10.6.0.2`;
 - production-app assertions can run without re-provisioning the control,
   gateway, or development app nodes.
+- production app runtime assertions use FrankenPHP app containers and Docker
+  process runtime units behind the private `orbit-caddy` backend listener.
 
 `operator_gateway_app-prod_ingress`:
 
@@ -415,6 +430,26 @@ Common requirements for every prepared topology:
   `ingress_node_id` pointing at `edge-1`;
 - WireGuard test addresses are stable: production app `10.6.0.5`, public
   ingress `10.6.0.7`.
+- public production HTTP assertions preserve the path
+  `ingress -> router -> backend`; the backend is the private `orbit-caddy`
+  listener that forwards to the app FrankenPHP container.
+
+### Downstream Service Topology Expectations
+
+Small Docker E2E topologies must support downstream service assertions without
+changing the runtime contract:
+
+- WebSocket-capable HTTP services, such as Reverb, run as Docker sibling
+  containers and are exposed through tool-owned proxy routes. Public production
+  traffic still enters through `ingress`, flows to `router`, then reaches the
+  service/backend target.
+- S3-compatible services, such as MinIO, run as Docker sibling containers on
+  the owning node and expose private WireGuard service endpoints unless a
+  product doc explicitly gives them an HTTP proxy route.
+- Database, cache, mail, WebSocket, and S3 containers share the same Docker
+  substrate as app/workspace runtime containers; tests must not add host PHP,
+  host Composer, host Caddy, PHP-FPM, or host Supervisor to make those services
+  pass.
 
 ## Commands
 
@@ -579,14 +614,15 @@ those capabilities must call
 so the provider pool refuses Docker for them.
 
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*`
-runtime assertions because the runtime backend (Supervisor) and the Orbit
-Scheduler run inside Docker containers. Docker topology containers boot through
-`tini` into `supervisord -n`; Supervisor manages `sshd` and the
-`orbit_scheduler` program for runtime-backend feature tests. Incus remains required
-for tests that depend on real VM behavior: cloud-init, package
-installation, real SSH daemon behavior, sudo prompts, OS trust-store
-mutation, real WireGuard interfaces and peer routing, and host init
-itself.
+runtime assertions because Docker topologies provide `orbit-runtime`,
+`orbit-caddy`, FrankenPHP app/workspace containers, Docker process runtime
+containers, and the gateway scheduler inside `orbit-runtime`. Docker topology
+nodes may use `tini` for container entrypoint supervision, but host Supervisor
+is not the PHP process runtime and the scheduler is not a host Supervisor
+program. Incus remains required for tests that depend on real VM behavior:
+cloud-init, package installation, real SSH daemon behavior, sudo prompts,
+OS trust-store mutation, real WireGuard interfaces and peer routing, and host
+init itself.
 
 `composer test:e2e:docker` runs with Pest parallel mode. The script fallback
 process count is `8`; the shared local `.env.e2e` uses

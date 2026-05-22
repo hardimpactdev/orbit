@@ -67,7 +67,7 @@ coordinate of the `(app, workspace)` identity rather than a redundant flag.
      URL;
    - owning node: name and host (from the parent app's node record);
    - runtime expectations: effective PHP version and inheritance source,
-     PHP-FPM pool, derived hostname;
+     runtime container, derived hostname;
    - agent IDE configuration: effective adapter, resolution source, and
      workspace discovery capability;
    - inherited process: app-owned process definitions inherited by this
@@ -81,13 +81,13 @@ coordinate of the `(app, workspace)` identity rather than a redundant flag.
 - Mutate gateway configuration or node state.
 - Fix drift or trigger setup.
 - SSH into the owning node directly from the caller.
-- Run live PHP-FPM, document-root, route, or process probes.
+- Run live runtime container, document-root, route, or process probes.
 - Block on slow or unreachable node runtime checks.
 
 ### Constraints & Invariants
 
 - **Registry-only**: The command **must not** SSH to nodes, probe
-  filesystems, check FPM pools, or verify live proxy routes.
+  filesystems, check runtime containers, or verify live proxy routes.
 - **No repair**: Does not fix drift or trigger setup.
 - **Read-only**: Does not mutate gateway state.
 

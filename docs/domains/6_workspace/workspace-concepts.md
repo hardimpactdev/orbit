@@ -23,6 +23,13 @@ The terms below define the core identity vocabulary for the workspace family.
 - **Workspace lifecycle status:** Registry configuration lifecycle field,
   currently `expected` or `setup-pending`. It is not setup-run status and not a
   live readiness result.
+- **Workspace runtime container:** Docker container derived from workspace
+  configuration, parent app configuration, and the selected PHP image. It
+  serves the workspace route through FrankenPHP and runs workspace-scoped PHP
+  and Composer commands.
+- **Host cwd context:** Caller-side working-directory hint used only to resolve
+  defaults such as app and workspace identity. It is not an authorization
+  source and does not make the CLI operate on local artifacts directly.
 
 ## PHP Version
 
@@ -30,7 +37,9 @@ These terms describe how PHP version is resolved for workspaces.
 
 - **Workspace PHP override:** Optional gateway-tracked PHP version stored on the
   workspace row. When absent, the workspace inherits the parent app PHP version
-  and JSON renderers report `php_inherited=true`.
+  and JSON renderers report `php_inherited=true`. The selected version chooses
+  the workspace runtime container image; it does not install host PHP or render
+  host PHP-FPM pools.
 
 ## Setup and teardown
 
@@ -69,4 +78,5 @@ These boundaries define what the workspace family owns and what belongs to other
   setup and teardown policy, workspace PHP override, workspace history, and
   workspace-derived hostname configuration. They do not own proxy route
   convergence, inherited process-unit convergence, app configuration, or
-  node-level firewall policy.
+  node-level firewall policy. Workspace commands do not install host PHP,
+  Composer, Caddy, or PHP-FPM.

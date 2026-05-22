@@ -17,11 +17,11 @@ The app family owns these facts:
   separately on the app record);
 - app source location: the managed app path exists on the owning node and
   the configured document root exists inside that path;
-- app runtime artifacts: app PHP-FPM configuration, production app user and
-  ownership policy for production apps, managed app runtime configuration,
-  and runtime readiness for the configured PHP version;
+- app runtime artifacts: app FrankenPHP container configuration, production app
+  user and ownership policy for production apps, managed app runtime
+  configuration, and runtime readiness for the configured PHP image;
 - production app runtime security: app user isolation that applies only in
-  production, filesystem permissions, PHP-FPM pool isolation, and systemd hardening,
+  production, filesystem permissions, and runtime container isolation,
   reported as `app.security.*` issue keys inside the app family;
 - production app health: production app health checks, deployment pipeline
   validity, and latest deployment status recorded as app-owned gateway history;
@@ -31,8 +31,8 @@ The app family owns these facts:
   hints, and only when the app path is a PHP project. Orbit must not read
   `.php-version`, `package.json`, or other project files for app adoption
   hints.
-- stale Orbit-owned app PHP-FPM and runtime artifacts whose identity no longer
-  maps to an active gateway app record.
+- stale runtime containers and runtime artifacts owned by Orbit whose identity
+  no longer maps to an active gateway app record.
 
 Node reachability belongs to the node family. App-owned proxy routes belong to
 `proxy`. Workspace artifacts belong to `workspace`. App process units
@@ -53,8 +53,9 @@ The apps probe reads gateway app records and checks these layers:
    the app source directory.
 4. **Document root:** the configured document root exists inside the app path
    and is not outside the app path.
-5. **PHP runtime:** the configured PHP version can serve the app runtime on the
-   owning node, and the app PHP-FPM endpoint matches gateway app configuration.
+5. **PHP runtime:** the configured PHP image can serve the app runtime on the
+   owning node, and the app FrankenPHP container endpoint matches gateway app
+   configuration.
 6. **Runtime artifacts:** managed app runtime configuration and filesystem
    ownership match gateway app configuration and the production policy that
    applies when the owning node carries `app-production`.
@@ -66,7 +67,7 @@ The apps probe reads gateway app records and checks these layers:
    role satisfy the app-owned security posture. These findings use
    `app.security.*` keys and do not depend on workspaces.
 9. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
-10. **Stale app artifacts:** App PHP-FPM or runtime artifacts owned by Orbit whose
+10. **Stale app artifacts:** App runtime containers or runtime artifacts owned by Orbit whose
    encoded app identity no longer maps to an active app record are reported as
    orphaned app drift.
 
@@ -87,18 +88,17 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.root_missing` | The configured document root does not exist inside the app path. |
 | `app.root_outside_path` | The configured document root resolves outside the app path. |
 | `app.php_version_unavailable` | The app's configured PHP version cannot serve the app runtime on the owning node. |
-| `app.fpm_config_missing` | The app's PHP-FPM configuration or endpoint is absent. |
-| `app.fpm_config_mismatch` | The app's PHP-FPM configuration or endpoint differs from gateway app configuration. |
+| `app.runtime_container_missing` | The app's FrankenPHP runtime container or endpoint is absent. |
+| `app.runtime_container_mismatch` | The app's FrankenPHP runtime container or endpoint differs from gateway app configuration. |
 | `app.runtime_config_missing` | Managed app runtime configuration required by Orbit is absent. |
 | `app.runtime_config_mismatch` | Managed app runtime configuration exists but differs from gateway app configuration. |
-| `app.fpm_config_extra` | An Orbit-owned app PHP-FPM artifact exists on a node with an app role without matching active app configuration. |
+| `app.runtime_container_extra` | An Orbit-owned app runtime container exists on a node with an app role without matching active app configuration. |
 | `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
 | `app.production_user_missing` | A production app that requires app-user isolation has no matching app user or ownership policy. |
-| `app.production_user_mismatch` | Production app user, ownership, or PHP-FPM pool identity differs from gateway app configuration. |
+| `app.production_user_mismatch` | Production app user, ownership, or runtime container identity differs from gateway app configuration. |
 | `app.security.system_user` | A production app is missing its expected runtime user or group. |
 | `app.security.fs_permissions` | Production app filesystem ownership or permissions are weaker than app runtime policy. |
-| `app.security.fpm_pool_isolation` | The production app PHP-FPM pool lacks required isolation settings. |
-| `app.security.fpm_systemd_hardening` | The PHP-FPM service hardening expected for production app workloads is missing or divergent. |
+| `app.security.runtime_container_isolation` | The production app runtime container lacks required isolation settings. |
 | `app.production_health_unhealthy` | A configured production app health check fails after app runtime is reachable. |
 | `app.deployment_pipeline_invalid` | Production deployment pipeline configuration is incomplete or references unsupported deployment behavior. |
 | `app.latest_deployment_failed` | The latest deployment run for a production app finished as `failed` or `cancelled` and no newer successful deployment exists. |
@@ -112,18 +112,17 @@ The table below shows what `doctor --restore` does for each fixable code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `app.fpm_config_missing` | Re-render and install the app PHP-FPM configuration from gateway app configuration. |
-| `app.fpm_config_mismatch` | Rewrite the app PHP-FPM configuration to match gateway app configuration. |
+| `app.runtime_container_missing` | Recreate or restart the app runtime container from gateway app configuration and the selected PHP image. |
+| `app.runtime_container_mismatch` | Recreate the app runtime container to match gateway app configuration. |
 | `app.runtime_config_missing` | Reinstall managed app runtime configuration from gateway app configuration. |
 | `app.runtime_config_mismatch` | Rewrite managed app runtime configuration to match gateway app configuration. |
-| `app.fpm_config_extra` | Remove the stale Orbit-owned app PHP-FPM artifact when its encoded identity no longer maps to active app configuration. |
+| `app.runtime_container_extra` | Remove the stale Orbit-owned app runtime container when its encoded identity no longer maps to active app configuration. |
 | `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity no longer maps to active app configuration. |
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |
-| `app.production_user_mismatch` | Re-apply production app user, ownership, and PHP-FPM pool identity from gateway app configuration. |
+| `app.production_user_mismatch` | Re-apply production app user, ownership, and runtime container identity from gateway app configuration. |
 | `app.security.system_user` | Restore the production app runtime user and group when the app configuration is complete. |
 | `app.security.fs_permissions` | Reapply production app ownership and permission policy. |
-| `app.security.fpm_pool_isolation` | Re-render and reload the production app PHP-FPM pool with required isolation settings. |
-| `app.security.fpm_systemd_hardening` | Reapply supported PHP-FPM service hardening for production app workloads. |
+| `app.security.runtime_container_isolation` | Recreate the production app runtime container with required isolation settings. |
 
 `doctor --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
 `app.path_missing`, `app.path_unusable`, `app.root_missing`,
@@ -147,7 +146,7 @@ The table below shows what `doctor --adopt` does for each adoptable code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `app.unregistered_path` | Create app configuration only when the selected scope provides an explicit app name, node, and path, and the observed path is compatible with `app:register` adoption rules. |
-| `app.fpm_config_mismatch` | Update app runtime configuration only when the observed PHP-FPM configuration proves the same app identity and the observed values are supported. |
+| `app.runtime_container_mismatch` | Update app runtime configuration only when the observed runtime container metadata proves the same app identity and the observed values are supported. |
 | `app.runtime_config_mismatch` | Update app runtime configuration only when the observed runtime configuration proves the same app identity and the observed values are supported. |
 
 `doctor --adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
@@ -181,7 +180,7 @@ Required test files:
 | `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |
 
 `AppsProbeTest` covers registry configuration, owning node eligibility, source
-path, document root, PHP runtime, PHP-FPM configuration, runtime
+path, document root, PHP runtime, runtime container configuration, runtime
 configuration, production user policy, and production health. It also covers
 deployment pipeline configuration, latest deployment status, agent IDE
 defaults, stale artifacts, and exclusion of

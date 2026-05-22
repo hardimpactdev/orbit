@@ -63,7 +63,7 @@ orbit workspace:remove feature-api --force
 - `--app=<app>`: the parent app slug. Required only when the workspace name
   is ambiguous across multiple apps.
 - `--keep-files`: remove Orbit configuration and runtime artifacts (proxy
-  routes, inherited processes, FPM pool) but leave the workspace worktree on
+  routes, inherited processes, runtime container) but leave the workspace worktree on
   the node.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt. Required in non-interactive input mode. `--json` never implies
@@ -87,7 +87,7 @@ node over SSH. The execution sequence has two phases.
    workspace-owned proxy route rows and the `workspace` row in one
    transaction.
 4. **Phase B — Node-side application (over SSH):** Stop traffic, stop
-   inherited processes, run teardown steps, remove the FPM pool, and remove
+   inherited processes, run teardown steps, remove the runtime container, and remove
    the worktree (skipped with `--keep-files`). Each step reports `removed`,
    `already_absent`, or `failed`; failures become structured warnings.
 5. **Drift Monitoring:** Removed workspaces disappear from registry-backed

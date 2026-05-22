@@ -20,19 +20,29 @@ These terms describe the runtime objects that Orbit derives from process definit
 
 - **Runtime unit:** Abstract product noun for an Orbit-managed long-running
   process derived from app, optional workspace, and process configuration.
+- **Process runtime:** Backend that runs an Orbit runtime unit. Docker process
+  runtime is the default for PHP app and workspace processes.
+- **Docker process runtime:** Runtime backend that runs a process unit in
+  Docker as an app/workspace sidecar container with Docker logs and lifecycle
+  controls.
+- **Supervisor process runtime:** Explicit residual runtime for supported
+  non-PHP host-side process units. It is not the default app/workspace process
+  runtime and must not be used as a host PHP fallback.
 - **Runtime unit expansion:** One runtime unit is rendered for the main app
   instance and one for each workspace of that app per process definition. Each
-  runtime unit is applied by the process manager as a Supervisor program.
+  runtime unit is applied by the selected process runtime backend.
 - **Runtime unit filename:** `orbit_<app>_<workspace|main>_<process>`. The
   `orbit_` prefix marks Orbit ownership; underscores are reserved as backend
-  segment delimiters. The rendered Supervisor program uses the same name.
+  segment delimiters. Docker container names and explicit Supervisor program
+  names derive from the same product identity.
 - **Runtime unit environment:** Predictable runtime environment exposed to
   derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
   and TLS path variables that Orbit manages. Separate from workspace lifecycle
   step environment.
-- **Supervisor program:** Backend-specific rendering of a runtime unit. The
-  program is supervised by the node's process manager and starts the process
-  command in the resolved app or workspace context.
+- **Runtime backend artifact:** Backend-specific rendering of a runtime unit.
+  Docker runtime units are containers. Explicit `supervisor` runtime units are
+  Supervisor programs. The artifact starts the process command in the resolved
+  app or workspace context.
 
 ## Policy
 

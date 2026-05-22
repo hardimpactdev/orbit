@@ -31,8 +31,8 @@ orbit update --json
 
 1. Verify the local checkout can be updated.
 2. Pull the configured Git remote with fast-forward-only semantics.
-3. Install Composer dependencies.
-4. Run Orbit database migrations for the local checkout.
+3. Install Composer dependencies inside `orbit-runtime`.
+4. Run Orbit database migrations for the local checkout inside `orbit-runtime`.
 5. Report the local update result.
 
 The command affects only the current Orbit installation. On a gateway host, local migrations may change the gateway database schema as part of the normal Laravel migration path, but `update` does not create or modify fleet configuration.
@@ -45,7 +45,8 @@ roll out the same Orbit code update across the fleet.
 Run `orbit update` to see live progress and a final success or failure result.
 
 Human output reports whether the local checkout updated successfully. A failed
-step remains visible with captured Git, Composer, or migration output.
+step remains visible with captured Git, `orbit-runtime` Composer, or migration
+output.
 
 Use `--json` for the machine-readable local update result and any failure
 metadata.
@@ -54,8 +55,9 @@ metadata.
 
 - The local Orbit checkout is writable.
 - The checkout has a configured Git remote.
-- Composer is available on the local machine.
-- The local PHP runtime can run Orbit migrations.
+- The host Orbit launcher can start the current checkout.
+- Docker and the `orbit-runtime` runtime are available for dependency
+  installation and migrations.
 
 ## Related Commands
 

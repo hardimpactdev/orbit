@@ -52,10 +52,10 @@ Adding a step does not execute it immediately. Steps run during
 
 ### Execution Timing
 
-Teardown steps run **before** destructive workspace cleanup (FPM removal and
+Teardown steps run **before** destructive workspace cleanup (runtime container removal and
 worktree removal). Public traffic to the workspace URL has already been cut
 earlier in the removal flow, so teardown scripts that need the workspace's
-HTTP surface must target `127.0.0.1` or PHP-FPM directly.
+HTTP surface must target `127.0.0.1` or runtime container directly.
 
 ### Positional Insertion
 
@@ -89,7 +89,7 @@ identified by the numeric `id` used by
 A teardown step that fails during `workspace:remove` or `app:prune` is
 reported as a non-fatal structured warning on the consumer command.
 Subsequent teardown steps still run, and the workspace removal continues
-with FPM removal and worktree removal.
+with runtime container removal and worktree removal.
 
 ### No Runtime Lock
 

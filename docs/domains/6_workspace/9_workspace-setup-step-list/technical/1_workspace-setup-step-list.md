@@ -123,7 +123,7 @@ numeric exit codes specific to it.
   It does not verify whether previous setup runs succeeded on nodes.
 - [`doctor --family=workspace`](../../workspace-doctor.md) owns the
   workspace-family probe, drift, fix, and adopt contract. Workspace
-  setup-run reality (worktrees, FPM pools, lifecycle artifacts) is reported
+  setup-run reality (worktrees, runtime containers, lifecycle artifacts) is reported
   by `workspace-doctor.md`, not by this command.
 - Drift between setup-step policy and workspace runtime reality is the
   doctor's job, not this command's.

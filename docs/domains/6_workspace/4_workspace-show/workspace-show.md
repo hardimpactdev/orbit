@@ -9,7 +9,7 @@ configuration. It reports the parent app and owning node, branch, path, and
 canonical URL.
 
 It also returns runtime expectations (effective PHP version and inheritance
-source, FPM pool, derived hostname), effective agent IDE resolution, inherited
+source, runtime container, derived hostname), effective agent IDE resolution, inherited
 process definitions, the workspace-owned proxy route, and a summary of the most
 recent setup run.
 

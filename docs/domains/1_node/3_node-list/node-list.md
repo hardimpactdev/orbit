@@ -11,7 +11,7 @@ availability.
 ## Usage
 
 ```bash
-orbit node:list [--role=<gateway|vpn|app|app-development|app-production|database|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|app|control>] [--environment=<development|production>] [--doctor] [--json]
 ```
 
 Run from any node with gateway visibility. No arguments are required.
@@ -21,7 +21,8 @@ Run from any node with gateway visibility. No arguments are required.
 ```bash
 orbit node:list
 orbit node:list --role=vpn
-orbit node:list --role=app
+orbit node:list --role=router
+orbit node:list --role=app-production
 orbit node:list --environment=development
 orbit node:list --doctor
 orbit node:list --role=app --environment=development --json
@@ -33,7 +34,7 @@ This section defines each accepted filter and output flag for `node:list`.
 
 ### `--role`
 
-Filters by effective role assignment. Accepts a single value, one of `gateway`, `vpn`, `app`, `app-development`, `app-production`, `database`, or `control`. `app` matches both app host roles. `control` matches nodes without an active role assignment. Comma-separated input is rejected.
+Filters by effective role assignment. Accepts a single current role value: `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, or `ingress`. Legacy aliases still supported by the command are `app`, which matches both app host roles, and `control`, which matches nodes without an active role assignment. Comma-separated input is rejected.
 
 ### `--environment`
 

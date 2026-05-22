@@ -29,13 +29,24 @@ Each term below has a precise meaning in the node command family.
   `gateway` during first gateway bootstrap, and not independently mutable
   through normal role commands.
 - **Router role:** Gateway-coupled infrastructure role. The `router` role owns
-  private `.orbit` DNS/service hostnames, private HTTP route selection, and
-  backend pools for production routes. In v1 it is assigned together with
+  private `.orbit` DNS/service names, private route artifacts, backend pools,
+  and private HTTP/WebSocket/S3 routing. In v1 it is assigned together with
   `gateway` and `vpn` during first gateway bootstrap and is not independently
   mutable through normal role commands.
 - **Gateway-coupled infrastructure role:** Separate role assignment that is
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
+- **Orbit launcher:** Host `orbit` executable installed in the user's path. It
+  validates the local Docker runtime, passes host context such as
+  `ORBIT_HOST_CWD`, and executes the Orbit CLI inside `orbit-runtime`. It is not
+  a host PHP fallback.
+- **Orbit runtime container:** One `orbit-runtime` container per node. It is the
+  CLI execution target for the launcher and, on the gateway, the resident
+  gateway API and scheduler runtime.
+- **Orbit Caddy container:** Standalone `orbit-caddy` fleet proxy container.
+  Nodes have at most one. It owns Orbit HTTP routing on that node, including
+  gateway API, app/workspace, tool, ingress, router, and private backend routes
+  when those capabilities apply.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-development`,
   `app-production`, `database`, and `ingress`. Selectable only during
@@ -61,8 +72,8 @@ Each term below has a precise meaning in the node command family.
   the gateway owns for that TLD and the agent tool internal HTTPS hostnames
   such as `openclaw.agent` and `hermes.agent`.
 - **Agent role baseline:** Code-defined desired state for a node with the
-  `agent` role: Caddy, Supervisor, WireGuard/node identity and trust material,
-  and the shared unprivileged `agent` runtime user.
+  `agent` role: `orbit-runtime`, `orbit-caddy`, WireGuard/node identity and
+  trust material, and the shared unprivileged `agent` runtime user.
 - **Agent runtime user:** Shared unprivileged Linux user that owns agent
   tool runtimes on a node with the `agent` role. Agent tools never run as the
   privileged `orbit` maintenance user.
@@ -152,12 +163,12 @@ Role baselines are code-defined desired state, not editable package lists.
 | Role | Baseline intent |
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
-| `router` | Private Caddy router for `.orbit` DNS/service hostnames and private app/backend pool routing |
-| `app-development` | Development DNS mapping |
-| `app-production` | Private Caddy backend, PHP, and Supervisor running |
+| `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
+| `app-development` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
+| `app-production` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `caddy` and `supervisor` running, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
-| `ingress` | Caddy running as the public production HTTP ingress boundary, forwarding public routes to `router` |
+| `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -201,6 +212,13 @@ active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
+All managed Ubuntu nodes have the same Docker-first host prerequisite baseline:
+Git, Docker Engine and CLI, the Orbit checkout, the host `orbit` launcher,
+`orbit-runtime`, WireGuard/SSH identity material, and any role-specific
+non-PHP host tools such as VitePlus on app nodes. Host PHP, host Composer,
+host Caddy, and host PHP-FPM are not role prerequisites and are not runtime
+fallbacks.
+
 ## Identity and onboarding
 
 These terms describe how nodes join the fleet and prove their identity to the gateway.
@@ -224,7 +242,9 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
-  gateway-local, or a node with workload roles — to the gateway API.
+  gateway-local, or a node with workload roles — to the gateway API. The CLI
+  runs inside the caller's local `orbit-runtime` container via the host
+  launcher.
 - **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
   from the gateway.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
@@ -326,10 +346,10 @@ These terms describe how grants are created and what shape they take.
 These terms describe how the gateway maintains DNS resolution for nodes with
 the `app-development` role.
 
-The `router` role is gateway-coupled in v1. It owns stable private `.orbit`
-service hostnames and private service routing. The development and agent TLD
-mappings below remain node-family desired state, but they are not the public
-`dns:*` command surface.
+The `router` role is gateway-coupled in v1. It owns private `.orbit`
+DNS/service names, private route artifacts, backend pools, and private
+HTTP/WebSocket/S3 routing. The development and agent TLD mappings below remain
+node-family desired state, but they are not the public `dns:*` command surface.
 
 - **Development DNS mapping owned by the gateway:** Node-family gateway configuration
   and desired DNS mappings and policy owned by the gateway. They map `*.{tld}`

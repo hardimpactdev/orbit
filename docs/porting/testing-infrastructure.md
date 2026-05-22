@@ -13,7 +13,7 @@ composer test
 ```
 
 Use prepared-topology E2E for gateway/API/runtime behavior that needs a cloned
-topology but not fresh host provisioning:
+Docker-first topology but not fresh host provisioning:
 
 ```bash
 composer test:e2e
@@ -54,3 +54,22 @@ When porting an old behavior, start with in-memory Pest coverage. Move the test
 to Docker-backed feature E2E only when the prepared topology is part of the
 contract. Move it to Incus/provisioning E2E only when the behavior depends on
 real VM, network, OS, or installer semantics.
+
+## Docker-First Runtime Expectations
+
+Prepared Docker topologies model the target runtime contract:
+
+- host launcher -> local `orbit-runtime` container -> gateway `orbit-caddy` ->
+  gateway `orbit-runtime`;
+- app and workspace PHP runtimes are FrankenPHP containers;
+- PHP app and workspace process units use Docker process runtime containers by
+  default;
+- service dependencies, including WebSocket and S3-compatible services, run as
+  Docker sibling containers via the host Docker socket;
+- host PHP, host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app
+  processes are intentionally absent.
+
+Public production HTTP tests must preserve the landed ingress contract:
+`ingress -> router -> backend`. Downstream WebSocket and S3 topology support
+must use the same Docker sibling-container substrate rather than adding
+host-native runtime fallbacks.

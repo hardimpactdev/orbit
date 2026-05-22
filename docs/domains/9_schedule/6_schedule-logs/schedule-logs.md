@@ -34,7 +34,7 @@ orbit schedule:logs backups --node=app-1 --lines=200
 
 ## What Happens
 
-Run `schedule:logs` when you need to inspect the output of a past schedule run. `schedule:logs` reads the selected schedule and stored run output from gateway history. It does not SSH to nodes, inspect process manager (Supervisor) logs directly, repair drift, or mutate schedule configuration.
+Run `schedule:logs` when you need to inspect the output of a past schedule run. `schedule:logs` reads the selected schedule and stored run output from gateway history. It does not SSH to nodes, inspect scheduler container logs directly, repair drift, or mutate schedule configuration.
 
 ## Output
 

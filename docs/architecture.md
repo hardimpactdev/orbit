@@ -7,42 +7,38 @@ This document describes Orbit's architecture at a high level.
 Orbit uses a hub-and-spoke architecture. The gateway is the hub: it is the singleton authority role, owns fleet configuration, serves a typed API, and applies changes on other nodes. Clients and nodes carrying workload roles are spokes. They join the gateway-managed private network for secure communication.
 
 ```text
-              ┌─────────────────────┐
-              │       Client        │
-              │     CLI caller      │
-              └──────────┬──────────┘
-                         │
-                  API · over VPN
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │    Gateway Node     │
-              │  Config · API · CA  │
-              │      VPN hub        │
-              └──────────┬──────────┘
-                         │
-                  SSH · over VPN
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │   Workload Node     │
-              │   one or more       │
-              │   workload roles    │
-              └──────────┬──────────┘
-                         │
-                public 80 / 443 only
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │      Internet       │
-              └─────────────────────┘
+Control plane:
+
+Client
+  -> host orbit launcher
+  -> local orbit-runtime
+  -> HTTPS over WireGuard
+  -> gateway orbit-caddy
+  -> gateway orbit-runtime
+  -> RemoteShell over WireGuard
+  -> node Docker runtime containers
+
+Public production HTTP:
+
+Internet
+  -> public 80/443
+  -> ingress edge orbit-caddy
+  -> private WireGuard route to router
+  -> router private HTTP/WebSocket/S3 routing, .orbit DNS, and backend pools
+  -> private app-production backend orbit-caddy
+  -> FrankenPHP app container
 ```
 
 One hub, one path: there is exactly one place to answer "what should exist?", and exactly one place changes are written. Spokes initiate commands and serve workloads, but durable configuration always lives on the gateway.
 
 ### Client
 
-A client is where you drive Orbit from, usually your Mac or Ubuntu workstation. It runs the Orbit CLI, presents a WireGuard identity, and communicates with the gateway to handle operations. Clients do not write fleet state directly; they call the gateway and let the gateway do the work.
+A client is where you drive Orbit from, usually your Mac or Ubuntu workstation.
+It runs the host `orbit` launcher, presents a WireGuard identity, and
+communicates with the gateway to handle operations. The launcher executes the
+CLI inside the local `orbit-runtime` container and passes local context such as
+`ORBIT_HOST_CWD`. Clients do not write fleet state directly; they call the
+gateway and let the gateway do the work.
 
 ### Gateway node
 
@@ -54,27 +50,37 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 The gateway exposes the typed API that the CLI talks to. It holds SSH access to other nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new node can be provisioned from the same configuration that built the previous one.
 
+The gateway API runs in the gateway's `orbit-runtime` container and is exposed
+inside the Orbit network by the gateway's `orbit-caddy` container. Moving the
+API into Docker does not make the launcher or a local runtime container a
+state writer: durable writes still happen only on the gateway.
+
 ### Node roles
 
-A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `app-development`, `app-production`, `database`, and `agent`. The `gateway` role is the singleton authority role described above.
+A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, and `ingress`. The `gateway` role is the singleton authority role described above.
 
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
 peer defaults, and the VPN-facing DNS runtime. First gateway bootstrap assigns
-`gateway` and `vpn` to the same node, and normal role commands cannot manage
-either role independently.
+`gateway`, `vpn`, and `router` to the same node, and normal role commands
+cannot manage those roles independently.
 
-The other four are workload roles applied to nodes in the fleet.
+The other five are workload roles applied to nodes in the fleet.
 
 `app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate role.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `app-development`, `app-production`, or `database`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+Application roles use the Docker-first runtime baseline. PHP apps and PHP
+workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
+run as Docker process runtime units by default. Host PHP and PHP-FPM are not
+fallbacks.
 
-Roles compose when compatible. In v1, `gateway` and `vpn` appear together and
-combine only with each other. `app-development` and `app-production` may each
-combine with `database` on the same node, so a single node can serve apps and
-host their database tools together. The `agent` role remains exclusive. The
-full compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, or `ingress`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+
+Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
+and `router` are coupled and combine only with each other. `app-development`
+may combine with `database`. `app-production` may combine with `ingress`, but
+conflicts with `database`. The `agent` role remains exclusive. The full
+compatibility matrix lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
 Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
 
@@ -88,10 +94,11 @@ nodes, and events those nodes send back. The `vpn` role owns the WireGuard
 server runtime, the public endpoint settings peers use to reach it, peer
 defaults, and the VPN-facing DNS runtime. In v1 that role is gateway-coupled,
 so the active `vpn` role runs on the same node as the active `gateway` role.
-Nodes with only `app-development` or `database` roles do not need a public
-face. Nodes with the `app-production` role expose only ports 80 and 443 to the
-open internet; SSH and the Orbit API stay reachable only over the VPN. The
-current VPN implementation is WireGuard; see [tech-stack.md](tech-stack.md).
+Nodes with only `app-development`, `database`, or private `app-production`
+roles do not need a public face. Only nodes with an active `ingress` role
+expose public production HTTP/HTTPS. SSH and the Orbit API stay reachable only
+over the VPN. The current VPN implementation is WireGuard; see
+[tech-stack.md](tech-stack.md).
 
 ### DNS responsibilities
 
@@ -112,7 +119,13 @@ records.
 
 ### CLI
 
-The CLI is the product surface for humans, AI agents, and CI. It runs on clients, on the gateway itself, and on any node carrying workload roles as a gateway client. Every command takes the same path: gather local input, call the gateway typed API over the VPN, and render output. Commands that return structured data expose `--json`.
+The CLI is the product surface for humans, AI agents, and CI. The host
+`orbit` executable is a launcher that runs the CLI inside the local
+`orbit-runtime` container; it is not a host PHP entrypoint. The CLI runs on
+clients, on the gateway itself, and on any node carrying workload roles as a
+gateway client. Every command takes the same authority path: gather local input,
+call the gateway typed API over the VPN, and render output. Commands that
+return structured data expose `--json`.
 
 ## Relationships
 
@@ -129,7 +142,7 @@ The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talk
 
 The blast radius of any single caller, including an AI agent driving Orbit, is bounded by the API surface. If a caller needs to be cut off — a runaway agent, a compromised laptop, a former contributor — revoking its VPN access shuts down everything it could do, immediately.
 
-CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved, but it never changes who writes state — that is always the gateway.
+CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved. The launcher passes `ORBIT_HOST_CWD` so the runtime container can preserve current-directory ergonomics without broad host access. Caller location never changes who writes state — that is always the gateway.
 
 Nodes other than the gateway do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on such a node, the gateway opens the SSH connection and runs the work there. They do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
 
@@ -183,7 +196,7 @@ The one shape that cannot self-serve is a bare client (no role assignments). The
 
 Orbit commands are the stable contract. Each one has documented inputs, outputs, JSON shape, and failure modes — the same surface humans, AI agents, and CI all depend on.
 
-The CLI is what you call. The typed HTTPS API is just the transport: the CLI gathers input, calls the gateway, and renders the result. The gateway does the real work directly.
+The CLI is what you call through the host launcher. The typed HTTPS API is the transport from CLI runtime to gateway: the CLI gathers input, calls the gateway, and renders the result. The gateway does the real work directly.
 
 Command contracts live under [docs/domains/](domains/), one folder per family.
 
@@ -198,7 +211,7 @@ The gateway database is Orbit's source of truth. It stores four kinds of records
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
 
-For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a PHP-FPM pool that should exist, a proxy route that should resolve, a process that should be running. The node-side artifact is the *applied* representation of that row.
+For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app container that should exist, a proxy route that should resolve, a Docker process runtime unit that should be running. The node-side artifact is the *applied* representation of that row.
 
 The core invariant:
 
@@ -216,7 +229,7 @@ Orbit has nine state families:
 |---|---|---|
 | `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
 | `app` | App config, process config, deploy steps, app health | [App Concepts](domains/5_app/app-concepts.md) |
-| `workspace` | Workspace config, URL, PHP pool, inherited process config | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
+| `workspace` | Workspace config, URL, runtime container, inherited process config | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
 | `process` | Long-running processes for apps and workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
 | `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
 | `schedule` | Recurring tasks for apps, nodes, and Orbit | [Schedule Concepts](domains/9_schedule/schedule-concepts.md) |
@@ -231,7 +244,7 @@ isolation under `workspace.security.*`, and firewall-owned representation drift
 under `firewall_rule.security.*` when needed. `doctor --family=security` is not
 accepted.
 
-These names are how Orbit thinks about each thing. The tools behind them — Caddy for proxy routes, UFW for firewall rules, Supervisor for processes — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
+These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for PHP process runtime units, and Supervisor only for explicitly configured residual process runtime — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
 ### Keeping nodes in sync
 
@@ -304,4 +317,4 @@ orbit_docs_feature-docs_vite
 
 ### Next
 
-For backend implementations — WireGuard, Caddy, Supervisor, the SQLite schema, and the gateway-to-node `RemoteShell` primitive — see [tech-stack.md](tech-stack.md). Command contracts live under [docs/domains/](domains/).
+For backend implementations — WireGuard, `orbit-caddy`, Docker runtime containers, the SQLite schema, and the gateway-to-node `RemoteShell` primitive — see [tech-stack.md](tech-stack.md). Command contracts live under [docs/domains/](domains/).

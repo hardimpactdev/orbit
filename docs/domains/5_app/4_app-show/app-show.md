@@ -63,7 +63,7 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 - Fix drift or adopt node reality (use [`doctor --family=app`](../app-doctor.md)).
 - Create new release or deployment artifacts.
 - SSH into the owning node directly from the caller.
-- Run live readiness, PHP-FPM, document-root, route, or process probes.
+- Run live readiness, runtime container, document-root, route, or process probes.
 - Block on slow or unreachable node runtime checks.
 
 ## Output

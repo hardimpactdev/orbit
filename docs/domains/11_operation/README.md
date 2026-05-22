@@ -22,7 +22,9 @@ These rules constrain all commands in the operation domain.
 
 **Behavior contracts:**
 
-- Updates change Orbit installations.
+- Updates change Orbit installations through the host launcher and
+  `orbit-runtime`; host PHP and host Composer are not supported update
+  fallbacks.
 - Updates do not replace doctor.
 - For drift or runtime readiness questions after an update, run the doctor family that owns the changed artifact.
 - `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.

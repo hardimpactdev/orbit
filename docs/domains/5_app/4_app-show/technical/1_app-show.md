@@ -82,7 +82,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
 - Mutate gateway configuration or node state.
 - Fix drift or adopt node reality.
 - SSH into the owning node directly from the caller.
-- Run live PHP-FPM, document-root, route, or process probes.
+- Run live runtime container, document-root, route, or process probes.
 - Block on slow or unreachable node runtime checks.
 
 ## Renderer Contracts

@@ -64,7 +64,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`process:logs` reads Supervisor logs. [`process-doctor.md`](../../process-doctor.md) owns verification and repair of the runtime-unit artifacts and event notifier material that help produce process observability.
+`process:logs` reads Docker stdout/stderr logs for Docker process runtime
+units, and Supervisor logs only for explicit `process.runtime=supervisor`
+units. [`process-doctor.md`](../../process-doctor.md) owns verification and
+repair of the runtime-unit artifacts and event notifier material that help
+produce process observability.
 
 ## Activity Logging
 
@@ -90,6 +94,6 @@ Primary test owners:
 `ProcessLogsCommandTest.php` covers context resolution, grant authorization,
 missing-grant denial, bounded log reads, follow-mode streaming, line
 count validation, `--json` with `--follow` rejection, no configuration mutation,
-no direct Supervisor log read, log read failure, and authorization failure.
+no direct backend log read, log read failure, and authorization failure.
 
 Renderer and input-mode test mapping lives in the split companion files.

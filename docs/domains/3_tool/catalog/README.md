@@ -46,8 +46,8 @@ when it owns a distinct Orbit workflow.
 
 Admitted examples:
 
-- `php:*` owns PHP runtime selection across app configuration, workspace overrides,
-  and node CLI defaults.
+- `php:*` owns PHP image selection across app configuration and workspace
+  overrides.
 - Future Redis data-plane operations may use `redis:*`, such as a
   Redis-specific flush command.
 - Database connection inventory, env convergence, schema inspection, audited
@@ -62,14 +62,15 @@ create them from scratch unless the tool file says otherwise.
 
 | Tool | Notes |
 | --- | --- |
-| [`caddy`](caddy.md) | HTTP server and proxy runtime |
-| [`supervisor`](supervisor.md) | Process supervisor runtime |
+| [`caddy`](caddy.md) | `orbit-caddy` container for HTTP server and proxy runtime |
 | [`docker`](docker.md) | Container runtime substrate |
 | [`viteplus`](viteplus.md) | Development frontend runtime helper |
-| [`php-cli`](php-cli.md) | PHP command-line runtime |
 | [`gh`](gh.md) | GitHub CLI utility |
-| [`composer`](composer.md) | PHP dependency manager |
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
+
+PHP, Composer, and Caddy runtime capabilities live in Orbit-managed
+containers. Supervisor is available only as an explicit residual process
+runtime where configured, not as a required baseline tool.
 
 ## Installable Tools
 

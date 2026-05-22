@@ -83,7 +83,7 @@ residue afterwards is non-fatal drift.
 
 - Prompt for confirmation unless `--force` is supplied.
 - The interactive prompt must list the major dependent artifacts that will be
-  removed (proxy routes, inherited processes, FPM pool, teardown steps,
+  removed (proxy routes, inherited processes, runtime container, teardown steps,
   worktree).
 - When `--keep-files` is present, the prompt body must explicitly state that
   the worktree will be preserved on the node.
@@ -110,13 +110,13 @@ definition.
 - **Step 3: Stop traffic.** Re-render the proxy backend so the workspace
   hostname stops serving requests.
 - **Step 4: Stop processes.** Stop and remove inherited runtime units
-  (Supervisor programs) for this workspace. Parent app process definitions
+  (Docker process runtime units by default) for this workspace. Parent app process definitions
   are not modified.
 - **Step 5: Run teardown steps.** Execute configured workspace teardown steps
   on the node. The worktree is still present and processes are stopped at
   this point so teardown scripts see a stable workspace lifecycle environment.
-- **Step 6: Remove FPM pool.** Remove the workspace PHP-FPM pool config and
-  reload PHP-FPM.
+- **Step 6: Remove runtime container.** Stop and remove the workspace runtime
+  container and its managed configuration.
 - **Step 7: Remove worktree.** Remove the workspace worktree directory on the
   node. Skipped when `--keep-files` is set.
 
@@ -132,7 +132,7 @@ runs.
   workspace command output.
 - Remaining Orbit-owned artifacts that failed to clean up are reported as
   orphaned drift by the affected family doctor:
-  - Orphaned worktree or FPM pool: `workspace.artifact_extra` (handled by
+  - Orphaned worktree or runtime container: `workspace.artifact_extra` (handled by
     [`workspace-doctor.md`](../../workspace-doctor.md)).
   - Orphaned proxy routes: `proxy.route_extra` (handled by the
     `proxy` family doctor).
@@ -147,14 +147,14 @@ runs.
    workspace-owned proxy route rows and the `workspace` row) commits before
    any Phase B node-side cleanup begins.
 2. **Parent App Integrity:** Removing a workspace must not remove or modify
-   process definitions, FPM configuration, or proxy routes owned by the
+   process definitions, runtime container configuration, or proxy routes owned by the
    parent app.
 3. **Worktree Cleanup:**
    - If `--keep-files` is `false`, Step 7 deletes the workspace directory on
      the node.
    - If `--keep-files` is `true`, Step 7 is skipped and the worktree is left
      untouched.
-4. **Teardown Steps:** Configured teardown steps run before FPM and worktree
+4. **Teardown Steps:** Configured teardown steps run before runtime container and worktree
    removal so they observe a stable workspace lifecycle environment.
 5. **Authorization:**
    - Control and gateway peers must be authorized by the gateway to manage
@@ -214,7 +214,7 @@ family doctor — not a removal failure.
 - Workspace-owned artifacts remaining after a failed cleanup are detected as
   orphaned workspace drift by [`workspace-doctor.md`](../../workspace-doctor.md)
   and the affected family doctors:
-  - `workspace.artifact_extra` — orphaned worktree or FPM pool
+  - `workspace.artifact_extra` — orphaned worktree or runtime container
     (`doctor --fix --family=workspace --restore`).
   - `proxy.route_extra` — orphaned workspace-owned proxy route
     (`doctor --fix --family=proxy --restore`).

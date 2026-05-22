@@ -101,10 +101,11 @@ Write authoritative app configuration to the gateway SQLite database:
 
 ### 3. Registration Pipeline
 Execute the convergent behavior shared with `app:register`:
-- **PHP-FPM:** Render and install PHP-FPM pool configuration on the target node.
+- **Runtime container:** Render and install runtime container configuration on
+  the target node.
 - **Proxy Routes:** Create a gateway-owned proxy route for the app.
-- **Process Artifacts:** Render and install runtime units (Supervisor programs)
-  for any app-owned process definitions already present in gateway configuration.
+- **Process Artifacts:** Render and install Docker process runtime units for
+  any app-owned process definitions already present in gateway configuration.
   `app:new` does not invent undocumented default process definitions.
 - **Apply Verification:** Verify that command-owned setup and artifact
   writes completed. This does not assert application HTTP readiness; a new app
@@ -153,13 +154,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `error.code=app.source_creation_failed` with `error.meta.reason` and
   `error.meta.transport=github|ssh|https` for clone failures so operators can address
   node-side credentials directly. No app row is preserved for this failure.
-- **Apply Drift:** If configuration is written but registration (FPM,
-  runtime configuration, or proxy handoff) encounters retryable conditions, the
+- **Apply Drift:** If configuration is written but registration (runtime
+  container, runtime configuration, or proxy handoff) encounters retryable conditions, the
   command reports success and surfaces the drift in `success.meta.warnings[]`
   with a `next_command` handoff (e.g. `doctor --fix --family=app --restore` or
-  `app:register [name] --domain=<host>`). Examples include node-side PHP
-  When the PHP version is unavailable on the node (`app.php_version_unavailable`) or domain
-  activation (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
+  `app:register [name] --domain=<host>`). Examples include unavailable PHP
+  images on the node (`app.php_version_unavailable`) or domain activation
+  (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
   as process-family warnings such as `process.runtime_backend_unavailable` or
   `process.runtime_unit_missing`.
 
@@ -169,7 +170,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Probe:** `doctor --family=app --app=<name>` verifies registry configuration and
   runtime artifacts.
 - **Convergence:** `doctor --fix --family=app --restore` repairs missing or divergent
-  FPM/runtime configuration.
+  runtime container/runtime configuration.
 
 ## Activity Logging
 

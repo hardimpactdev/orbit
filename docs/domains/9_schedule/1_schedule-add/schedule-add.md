@@ -51,7 +51,8 @@ JSON output returns the created schedule entity.
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the gateway.
 - The caller is authorized to manage schedules for the resolved app or node.
-- The target node's Orbit Scheduler is registered and the process manager (Supervisor) is reachable.
+- The gateway Orbit Scheduler is registered in `orbit-runtime`, and the target
+  node is reachable for dispatch when the schedule does not run on the gateway.
 - Script sources must resolve to readable script files according to the gateway-owned schedule policy.
 
 ## Related

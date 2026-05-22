@@ -35,7 +35,7 @@ and then re-applies the necessary runtime artifacts on the application node.
     application. If the supplied root equals the current configuration, the configuration
     write is a no-op (`changed: false`); application still runs.
 2.  **Artifact Re-application:** Triggers the gateway to re-render and upload the
-    PHP-FPM configuration to the node over SSH. The PHP-FPM pool reload
+    runtime container configuration to the node over SSH. The runtime container restart
     required to pick up the new document root is part of this step. App-owned
     proxy route configuration continues to belong to the app, but backend proxy
     artifact convergence belongs to the `proxy` family.

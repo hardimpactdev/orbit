@@ -27,15 +27,16 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Tool-owned route:** Proxy route whose owner is `tool` and kind is `proxy`.
   Represents an HTTP or WebSocket tool ingress; TCP tool service endpoints are
   not HTTP proxy routes.
-- **Public route artifact:** Caddy site rendered on a `ingress` node.
+- **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
   It terminates public HTTPS and reverse proxies to the active `router` over
   WireGuard.
-- **Private router artifact:** Caddy site rendered on the gateway-coupled
-  `router` node. It owns private HTTP route selection and reverse proxies to
-  the backend pool.
-- **Private backend artifact:** Caddy site rendered on an `app-production`
+- **Private router artifact:** `orbit-caddy` site rendered on the gateway-coupled
+  `router` node. It owns private route artifacts, private `.orbit` service
+  hostnames, backend pools, and private HTTP/WebSocket/S3 routing before
+  reverse proxying to the backend pool.
+- **Private backend artifact:** `orbit-caddy` site rendered on an `app-production`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
-  serves the app/workspace PHP ingress contract.
+  serves the app/workspace ingress contract to a backend FrankenPHP container.
 - **Router backend pool:** Ordered list of URLs for app-production backends.
   The router owns this pool. V1 creates one target but stores a list.
 
@@ -65,7 +66,8 @@ These terms define certificate authority, leaf certificate scope, and hostname c
 These terms define the ingress behavior applied to app and workspace routes.
 
 - **App ingress baseline:** Standard browser ingress contract applied to app
-  and workspace routes: TLS termination, PHP routing to the resolved runtime,
+  and workspace routes: TLS termination, dynamic routing to the resolved
+  FrankenPHP runtime container,
   static file serving from the configured document root, baseline security
   headers, sensitive-file blocking, profiling timing markers, and immutable
   caching for `/build/*`.

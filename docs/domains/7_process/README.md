@@ -25,12 +25,17 @@ These rules describe how runtime units are derived from process definitions.
 - Runtime units are the process-family product noun: units derived from app, optional workspace, and process configuration. They are not gateway state rows.
 - Each process definition renders one runtime unit for the main app instance
   and one runtime unit for each workspace of that app.
-- Each rendered runtime unit is a separate Supervisor program with its own
-  program name, working directory, environment, and log paths.
+- Each rendered runtime unit is a separate Docker process runtime unit by
+  default, with its own unit name, working directory, environment, and Docker
+  log stream.
 - The process definition supplies shared fields such as command, restart policy,
   and crash notification policy. The rendering context supplies per-instance
   fields such as main vs. workspace, path, and URL.
-- Runtime unit names use `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks Orbit ownership; underscores are reserved as backend segment delimiters and are not allowed in identity slugs. The rendered Supervisor program uses the same name.
+- Runtime unit names use `orbit_<app>_<workspace|main>_<process>`.
+- The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
+  backend segment delimiters.
+- Docker container names and explicit Supervisor program names derive from the
+  same product identity.
 
 ### Restart policy
 
@@ -75,13 +80,17 @@ These rules describe how lifecycle commands address runtime units.
 
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
 - Omitting `[name]` for `process:start`, `process:stop`, and `process:restart` targets every process definition in process order for the resolved context.
-- Logs come from Supervisor's stdout/stderr capture for the rendered Supervisor program.
+- Logs come from Docker stdout/stderr for Docker process runtime units. Explicit
+  `process.runtime=supervisor` units read Supervisor stdout/stderr capture.
 
 ### Command argument conventions
 
 Create commands use positional arguments for required fields. Edit commands use named options so omitted fields preserve their current value. This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
 
-Implementation-shape details for Supervisor and the Orbit Scheduler live in [tech-stack.md#process-manager](../../tech-stack.md#process-manager) and [tech-stack.md#scheduler](../../tech-stack.md#scheduler).
+Implementation-shape details for Docker process runtime, explicit Supervisor
+residual runtime, and the Orbit Scheduler live in
+[tech-stack.md#process-manager](../../tech-stack.md#process-manager) and
+[tech-stack.md#scheduler](../../tech-stack.md#scheduler).
 
 ## Authorization
 
@@ -104,7 +113,9 @@ does not detect or branch on the legacy node-role column locally.
   `process:remove` permission and are typically reserved for admin-class
   presets.
 
-Every process command is a request to the gateway typed API. The CLI never writes process configuration, reads Supervisor logs directly, or operates the process manager directly.
+Every process command is a request to the gateway typed API. The CLI never
+writes process configuration, reads Docker or Supervisor logs directly, or
+operates the process manager directly.
 
 ## Runtime Unit Environment
 
@@ -112,7 +123,7 @@ Derived process runtime units expose a runtime environment that is separate from
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
-| `PATH` | Predictable command lookup path including user-local tool directories | Lets commands resolve tools such as `vp`, `bun`, and project-local binaries under Supervisor. |
+| `PATH` | Predictable command lookup path including runtime image and project-local tool directories | Lets commands resolve tools such as `php`, `composer`, `vp`, `bun`, and project-local binaries in the selected process runtime. |
 | `HOME` | Runtime user's home directory | Lets tools find home-relative config and caches. |
 | `APP_URL` | Resolved app or workspace HTTPS URL | Gives Laravel/runtime code the canonical public URL. |
 | `VITE_APP_URL` | Resolved app or workspace HTTPS URL | Keeps Vite-aware processes aligned with the runtime URL. |

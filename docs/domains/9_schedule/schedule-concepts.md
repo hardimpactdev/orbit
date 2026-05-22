@@ -32,7 +32,8 @@ These terms describe how schedules run and how their history is captured.
 - **Portable interval expression:** Orbit's interval language used by all
   schedules, such as `every 5 minutes`, `daily at 09:00`,
   `weekdays at 09:00`, or `weekly on monday at 09:00`.
-- **Orbit Scheduler:** Resident `orbit-scheduler` Artisan-command daemon supervised by Supervisor **on the gateway only**.
+- **Orbit Scheduler:** Resident `orbit-scheduler` Artisan-command daemon inside
+  the gateway `orbit-runtime` container.
   - Owns schedule evaluation, due-run dispatch, lock claim, and overlap policy for every schedule across the fleet.
   - Dispatches to non-gateway targets through `RemoteShell` (SSH). The scheduled command runs on the target, but the gateway orchestrates and tracks every result.
   - Records run history and writes its own heartbeat directly to the gateway database.

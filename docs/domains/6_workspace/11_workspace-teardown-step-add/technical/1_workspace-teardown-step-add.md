@@ -115,17 +115,17 @@ teardown phase, before destructive workspace cleanup.
    `workspace:remove` or `app:prune`, the failure is reported as a
    structured non-fatal warning under `success.meta.warnings[]` of the
    consumer command (code `workspace.teardown_step_failed`). Subsequent
-   teardown steps still run, and Phase B continues with FPM and worktree
+   teardown steps still run, and Phase B continues with runtime container and worktree
    removal. This contract is owned by `workspace:remove` and `app:prune`;
    `workspace-teardown-step:add` itself never observes the warning.
-9. **Lifecycle Ordering Guarantees**: Teardown steps run before FPM removal
+9. **Lifecycle Ordering Guarantees**: Teardown steps run before runtime container removal
    and worktree removal during `workspace:remove` Phase B, so they observe
    `ORBIT_WORKSPACE_PATH`, `ORBIT_APP_PATH`, and any workspace database
    intact. Workspace databases are explicitly left untouched by Orbit
    itself; teardown steps are the designated place for database cleanup.
    Public traffic to the workspace URL has already been cut earlier in
    Phase B; teardown scripts that need the workspace's HTTP surface must
-   target `127.0.0.1` or PHP-FPM directly.
+   target `127.0.0.1` or runtime container directly.
 
 ## Renderer Contracts
 

@@ -52,7 +52,7 @@ requested filters:
 
 `workspace:list` does not:
 - SSH into nodes.
-- Probe workspace artifact health, FPM pools, or filesystem convergence (use
+- Probe workspace artifact health, runtime containers, or filesystem convergence (use
   [`doctor --family=workspace`](../workspace-doctor.md)).
 - Mutate gateway configuration or node artifacts.
 

@@ -62,15 +62,15 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
-| [`caddy`](catalog/caddy.md) | Caddy | system service | Required baseline, adopted and kept converged | `always` | lifecycle, reload, reconfigure, update, logs, fix, adopt |
-| [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Required baseline, adopted and kept converged | `always` | lifecycle, reload, logs, fix, adopt |
+| [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | lifecycle, reload, reconfigure, update, logs, fix, adopt |
+| [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Explicit residual runtime only where configured | `runtime` | lifecycle, reload, logs, fix, adopt |
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed tools |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |
-| [`php-cli`](catalog/php-cli.md) | PHP CLI | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |
+| [`php-cli`](catalog/php-cli.md) | PHP CLI | runtime container capability | Provided by `orbit-runtime` and app/workspace PHP images | `runtime` | probe |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Required baseline, adopted and kept converged | `always` | update, adopt |
-| [`composer`](catalog/composer.md) | Composer | system binary | Required baseline, adopted and kept converged | `always` | update, adopt |
+| [`composer`](catalog/composer.md) | Composer | runtime container capability | Provided inside `orbit-runtime` and app/workspace PHP images | `runtime` | update |
 | [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | lifecycle, update, logs, fix, adopt |
-| [`php`](catalog/php.md) | PHP-FPM | system service | Installable and removable by Orbit | `runtime` | install, remove, lifecycle, reload, update, logs, fix, adopt |
+| [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
 | [`postgres`](catalog/postgres.md) | PostgreSQL | Docker service | Installable and removable by Orbit | `database` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`mysql`](catalog/mysql.md) | MySQL | Docker service | Installable and removable by Orbit | `database` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`redis`](catalog/redis.md) | Redis | Docker service | Installable and removable by Orbit | `cache` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
@@ -78,8 +78,8 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Installable and removable by Orbit | `communication` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
 | [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
-| [`openclaw`](catalog/openclaw.md) | OpenClaw | Supervisor-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`hermes`](catalog/hermes.md) | Hermes | Supervisor-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless

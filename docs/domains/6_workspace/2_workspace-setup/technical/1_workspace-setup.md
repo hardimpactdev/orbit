@@ -149,7 +149,7 @@ authorization decision.
    - Updates the record if configuration has changed.
 3. **Artifact Apply** (`phase=artifacts`):
    - Connects to the node via SSH.
-   - Applies workspace-specific runtime artifacts (PHP-FPM pool, environment).
+   - Applies workspace-specific runtime artifacts (runtime container, environment).
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
    - Reads configured setup step definitions for the parent app.
@@ -215,7 +215,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Remote Failures**: SSH timeout, permission denied, or remote command
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
-  `error.meta.node`). Retryable PHP-FPM or runtime artifact drift is
+  `error.meta.node`). Retryable runtime container or runtime artifact drift is
   reported as `success.meta.warnings[]` with the owning family code.
 - **Setup Step Failure**: A sequential setup step returned non-zero. Reported
   as `error.code=workspace.setup_step_failed` with

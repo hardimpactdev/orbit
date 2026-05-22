@@ -33,7 +33,7 @@ The following arguments and options shape an `app:register` invocation.
 - `--path=<path>`: The absolute path to the app on the target node.
 - `--node=<name>`: The target node.
 - `--root=<path>`: The document root relative to the app path. Default: `public`.
-- `--php-version=<version>`: The app PHP-FPM version to store in gateway app configuration.
+- `--php-version=<version>`: The app runtime container version to store in gateway app configuration.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
 - `--json`: Output JSON.
 
@@ -47,7 +47,7 @@ The following arguments and options shape an `app:register` invocation.
 
 ### `--php-version` defaults
 
-When `--php-version` is omitted, existing apps keep their stored value. Newly adopted apps use Orbit's app runtime default (`8.5`), not the owning node's CLI PHP default.
+When `--php-version` is omitted, existing apps keep their stored value. Newly adopted apps use Orbit's app runtime default (`8.5`), not any host PHP default.
 
 `--repo` is not accepted. In the current converted app command surface,
 repository URL is metadata that is captured only at creation time by
@@ -67,7 +67,7 @@ node.
 
 1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development node.
 2. **Registration/Adoption**: Writes the app's configuration to the gateway database. An existing path not yet managed by Orbit is adopted at this step.
-3. **Apply**: Connects to the node over SSH to configure PHP-FPM and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
+3. **Apply**: Connects to the node over SSH to configure runtime container and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
 4. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
 Step 4 only runs when a domain is supplied.

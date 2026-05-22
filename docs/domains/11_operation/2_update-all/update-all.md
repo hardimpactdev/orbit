@@ -65,8 +65,9 @@ the exact shape.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
 - The gateway can reach every selected node through its node execution path (SSH via `RemoteShell`).
-- Each selected installation has a writable Orbit checkout, Git remote,
-  Composer, and PHP runtime capable of running migrations.
+- Each selected installation has a writable Orbit checkout, a Git remote, a host
+  Orbit launcher, and Docker/`orbit-runtime` availability for dependency
+  installation and migrations.
 
 ## Related Commands
 

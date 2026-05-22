@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
-| `role` | `[role]` | Always. | Never. | None. | `gateway` and `vpn` are rejected. |
+| `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, and `router` are rejected. |
 | `force` | `--force` | Required for destructive consent in non-interactive destructive cleanup paths. | Never. | `false`. | Enables dependent cleanup. |
 | `purge-data` | `--purge-data` | Optional. | Never. | `false`. | Requires `--force`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
@@ -35,9 +35,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Consent Rules
 
 - `gateway` role is rejected before side effects.
-- `vpn` role is rejected before side effects with `validation_failed`. The
-  failure message explains that `vpn` is a gateway-coupled infrastructure role
-  in v1 and cannot be removed independently through `node role:remove`.
+- `vpn` and `router` roles are rejected before side effects with
+  `validation_failed`. The failure message explains that they are
+  gateway-coupled infrastructure roles in v1 and cannot be removed
+  independently through `node role:remove`.
 - `--purge-data` without `--force` fails with `validation_failed`.
 
 ### Dependency Rules

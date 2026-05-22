@@ -11,7 +11,7 @@ model in Orbit.
 | --- | --- |
 | Slug | `openclaw` |
 | Label | OpenClaw |
-| Backend | Supervisor-managed runtime as `agent` |
+| Backend | Docker-managed runtime as `agent` |
 | Support model | Installable and removable by Orbit |
 | Category | `agent` |
 | Required node role | `agent` |
@@ -65,13 +65,13 @@ and has no ingress baseline.
 OpenClaw is a first-party autonomous agent tool. Orbit installs and runs
 it as the shared unprivileged `agent` user, never as the privileged
 `orbit` maintenance user. `tool:update openclaw` runs OpenClaw's native
-update path through the Orbit-managed binary and then restarts the
-Supervisor program that wraps it.
+update path through the Orbit-managed binary and then restarts the runtime
+container that wraps it.
 
 `tool:update openclaw` from the node itself requires
 `tool:update:agent-tools` on the self-grant. `tool:install openclaw`,
 `tool:remove openclaw`, `tool:stop openclaw`, `tool:reconfigure openclaw`,
-and updates to baseline tools (Caddy, Supervisor, WireGuard) are not part
+and updates to baseline tools (Docker, WireGuard) are not part
 of the default agent self-grant; they require explicit permissions from a
 gateway-admin.
 
@@ -118,7 +118,7 @@ sudo -u agent -H bash -lc 'openclaw gateway status'
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies that the Supervisor program exists, that
+`doctor --family=tool` verifies that the runtime container exists, that
 the lifecycle state matches gateway expectations, and that managed
 credential metadata is present. It also checks that the OpenClaw binary
 version matches the gateway expected version when version tracking is
