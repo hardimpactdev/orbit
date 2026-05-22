@@ -379,15 +379,18 @@ link_orbit() {
         fail validation_failed "$LINK_PATH exists and is not a symlink"
     fi
 
-    sudo_run ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"
+    if [ ! -f "$TARGET_DIR/bin/orbit" ]; then
+        fail validation_failed "Orbit launcher missing: $TARGET_DIR/bin/orbit"
+    fi
+
+    run chmod 0755 "$TARGET_DIR/bin/orbit"
+    sudo_run ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"
 }
 
 verify_install() {
-    local target
-
-    target="$(quote "$TARGET_DIR")"
-
-    run bash -lc "cd $target && php artisan --version"
+    if [ ! -x "$TARGET_DIR/bin/orbit" ]; then
+        fail validation_failed "Orbit launcher is not executable: $TARGET_DIR/bin/orbit"
+    fi
 }
 
 finalize_target_ownership() {

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+if ! command -v docker >/dev/null 2>&1; then
+    printf 'orbit: Docker is required to run Orbit.\n' >&2
+    printf 'orbit: install Docker and bootstrap orbit-runtime before retrying.\n' >&2
+    exit 127
+fi
+
+if ! runtime_status="$(docker container inspect --format '{{.State.Running}}' orbit-runtime 2>/dev/null)" || [ "$runtime_status" != "true" ]; then
+    printf 'orbit: orbit-runtime is not running.\n' >&2
+    printf 'orbit: bootstrap the Orbit runtime container before running Orbit commands.\n' >&2
+    exit 69
+fi
+
+exec docker exec \
+    --env "ORBIT_HOST_CWD=${PWD}" \
+    --env "ORBIT_HOST_UID=$(id -u)" \
+    --env "ORBIT_HOST_GID=$(id -g)" \
+    orbit-runtime \
+    orbit "$@"

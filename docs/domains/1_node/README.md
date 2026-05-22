@@ -393,8 +393,9 @@ being requested.
 
 Gateway, node, and client identities are minted or adopted during
 [`orbit node:new [name]`](1_node-new/node-new.md). Preparing a client
-starts with local CLI installation: clone Orbit, install dependencies, and
-symlink `artisan` as `orbit`; the project README owns those installation steps.
+starts with local CLI installation: clone Orbit, ensure Docker and the local
+`orbit-runtime` container are available, and link the host `bin/orbit` launcher
+as `orbit`; the project README owns those installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs

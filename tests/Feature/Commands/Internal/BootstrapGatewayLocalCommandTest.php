@@ -165,6 +165,14 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and($this->orbitDnsServiceInstaller->installs)->toBe(0);
     });
 
+    it('keeps gateway bootstrap aligned with the host launcher install contract', function (): void {
+        $installer = File::get(base_path('bin/install-orbit'));
+
+        expect(File::exists(base_path('bin/orbit')))->toBeTrue()
+            ->and($installer)->toContain('ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"')
+            ->and($installer)->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
+    });
+
     it('installs wg-easy before orbit-dns after the gateway API runtime', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
