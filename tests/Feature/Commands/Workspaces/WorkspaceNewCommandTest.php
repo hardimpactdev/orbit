@@ -399,7 +399,6 @@ it('renders the documented progress tree and final tree state for human output',
         ->expectsOutputToContain('○  Provision worktree on app-1')
         ->expectsOutputToContain('●  Provisioned worktree on app-1')
         ->expectsOutputToContain('●  Registered proxy routes')
-        ->expectsOutputToContain('●  Installed PHP-FPM artifacts')
         ->expectsOutputToContain('●  Installed workspace runtime container')
         ->expectsOutputToContain('●  Rendered inherited runtime units')
         ->expectsOutputToContain("└  Workspace 'feature-tree' created")

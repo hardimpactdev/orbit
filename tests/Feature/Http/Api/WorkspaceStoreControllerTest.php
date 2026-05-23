@@ -186,13 +186,12 @@ it('converges both FPM pool and FrankenPHP runtime container when creating a php
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
     $combined = implode("\n", $scripts);
 
-    // Runtime container must converge AND legacy FPM pool must remain
-    // installed until ORBIT-RUNTIME-06C (todo 336) cuts the workspace proxy
-    // over from `php_fastcgi unix/<socket>` to the FrankenPHP container.
+    // FrankenPHP runtime container converges; FPM pool is not rendered in
+    // the steady-state path after ORBIT-RUNTIME-06C (todo 336).
     expect($combined)->toContain("'orbit-ws-demo-feature-runtime'")
         ->and($combined)->toContain('docker run -d')
         ->and($combined)->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
-        ->and($combined)->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
+        ->and($combined)->not->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
 });
 
 it('skips runtime container convergence for static workspaces during create (runtime)', function (): void {

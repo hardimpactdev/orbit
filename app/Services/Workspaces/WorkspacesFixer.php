@@ -6,6 +6,7 @@ namespace App\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Php\PhpFpmServiceReloader;
@@ -41,6 +42,18 @@ final readonly class WorkspacesFixer
         $node = $workspace->app?->node;
 
         if (! $node instanceof Node) {
+            return null;
+        }
+
+        // FPM artifacts are not part of the steady-state path for PHP
+        // workspaces after the Docker-first cutover (ORBIT-RUNTIME-06C).
+        if ($workspace->app?->runtime_kind === AppRuntimeKind::Php
+            && in_array($entry->key, [
+                'workspace.fpm_config_missing',
+                'workspace.fpm_config_mismatch',
+                'workspace.security.fpm_pool_isolation',
+                'workspace.security.fpm_systemd_hardening',
+            ], true)) {
             return null;
         }
 

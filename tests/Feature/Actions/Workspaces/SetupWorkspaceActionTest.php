@@ -17,7 +17,6 @@ use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
-use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -77,7 +76,7 @@ it('sets up a workspace and marks it active', function (): void {
     expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Active);
 });
 
-it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restart', function (): void {
+it('does not render PHP-FPM pool config for PHP workspaces in the steady-state path', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -94,23 +93,12 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    $fpmScript = collect($shell->scripts)
-        ->first(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf'));
-    $fpmPool = base64_decode((string) str((string) $fpmScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
-    $runtimeUser = app(WorkspaceFpmPoolRenderer::class)->runtimeUser($workspace);
-
-    expect($fpmScript)->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')
-        ->and($fpmScript)->toContain("/home/{$runtimeUser}/.config/orbit/php")
-        ->and($fpmScript)->toContain("/home/{$runtimeUser}/.config/orbit/logs")
-        ->and($fpmPool)->toBe(app(WorkspaceFpmPoolRenderer::class)->content($workspace))
-        ->and($fpmPool)->toContain('clear_env = yes')
-        ->and($fpmPool)->toContain('php_admin_value[open_basedir]')
-        ->and($fpmScript)->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
-        ->and($fpmScript)->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
-        ->and($fpmScript)->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
+    expect(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeFalse()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "PHP_FPM_SERVICE='php8.5-fpm'")))->toBeFalse()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'sudo systemctl restart')))->toBeFalse();
 });
 
-it('enacts the FrankenPHP runtime container alongside FPM during php workspace setup', function (): void {
+it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -131,20 +119,16 @@ it('enacts the FrankenPHP runtime container alongside FPM during php workspace s
         ->first(fn (string $script): bool => str_contains($script, 'docker run -d')
             && str_contains($script, "'orbit-ws-demo-feature-a'"));
 
-    // Both the legacy FPM pool (still consumed by the proxy route until the
-    // ORBIT-RUNTIME-06C cutover) and the new FrankenPHP runtime container
-    // must converge for PHP workspaces. Until the proxy renderer points at
-    // the runtime container, removing FPM would orphan the proxy socket.
     expect($runScript)
         ->toContain('docker run -d')
         ->and($runScript)->toContain("'orbit-ws-demo-feature-a'")
         ->and($runScript)->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($runScript)->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")))->toBeTrue()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeTrue();
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeFalse();
 });
 
-it('registers workspace proxy routes against the rendered workspace PHP-FPM socket', function (): void {
+it('registers workspace proxy routes against the FrankenPHP runtime container', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -165,14 +149,15 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
         ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.caddy'));
     $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
     $route = $workspace->proxyRoutes()->first();
-    $socket = app(WorkspaceFpmPoolRenderer::class)->socketPath($workspace);
 
     expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
-        ->and($caddySite)->toContain("php_fastcgi unix/{$socket}")
+        ->and($caddySite)->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
+        ->and($caddySite)->not->toContain('php_fastcgi')
         ->and((string) $siteScript)->toContain("docker restart 'orbit-caddy'")
         ->and((string) $siteScript)->not->toContain('caddy reload')
         ->and((string) $siteScript)->not->toContain('sudo systemctl reload caddy')
-        ->and($route?->config['php_socket'])->toBe($socket)
+        ->and($route?->config['runtime_upstream'])->toBe('http://orbit-ws-demo-feature-a')
+        ->and($route?->config['php_socket'])->toBeNull()
         ->and($route?->config['tls'])->toBe([
             'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
             'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',
@@ -272,6 +257,23 @@ it('registers production workspace routes on ingress with a private backend site
         ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.caddy')))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy')))->toBeTrue()
+        ->and((function () use ($shell): bool {
+            foreach ($shell->scripts as $script) {
+                if (! str_contains($script, 'feature-a.demo.example.com.backend.caddy')) {
+                    continue;
+                }
+
+                if (preg_match("/printf %s '([^']+)' | base64 -d/", $script, $matches) === 1) {
+                    $decoded = base64_decode($matches[1]);
+
+                    if (str_contains($decoded, 'reverse_proxy http://orbit-ws-demo-feature-a')) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        })())->toBeTrue()
         ->and($certificates->hosts)->toBe(['feature-a.demo.example.com']);
 });
 

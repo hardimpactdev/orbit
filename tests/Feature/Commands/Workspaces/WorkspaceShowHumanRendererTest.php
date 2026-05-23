@@ -28,6 +28,7 @@ describe('workspace:show human renderer contract', function (): void {
             ->and($output)->toContain('App')
             ->and($output)->toContain('docs')
             ->and($output)->toContain('Agent IDE')
+            ->and($output)->toContain('Runtime container')
             ->and($output)->toContain('Processes')
             ->and($output)->toContain('Latest setup')
             ->and($output)->not->toContain('"success"')

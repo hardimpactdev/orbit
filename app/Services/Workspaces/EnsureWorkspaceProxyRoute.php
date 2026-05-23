@@ -6,6 +6,7 @@ namespace App\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -21,7 +22,7 @@ final readonly class EnsureWorkspaceProxyRoute
 {
     public function __construct(
         private RemoteShell $remoteShell,
-        private WorkspaceFpmPoolRenderer $fpmPoolRenderer,
+        private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private CaddyGlobalConfig $caddyGlobalConfig,
         private IngressResolver $ingressResolver,
@@ -183,7 +184,8 @@ final readonly class EnsureWorkspaceProxyRoute
     /**
      * @param  array{
      *     document_root: string,
-     *     php_socket: string,
+     *     runtime_upstream?: string|null,
+     *     php_socket?: string|null,
      *     tls: array{cert_path: string, key_path: string},
      * }  $config
      */
@@ -192,6 +194,34 @@ final readonly class EnsureWorkspaceProxyRoute
         $pathBlocking = $app->document_root === '.'
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
+
+        if ($app->runtime_kind === AppRuntimeKind::Php) {
+            $upstream = $config['runtime_upstream'] ?? null;
+
+            if (! is_string($upstream) || $upstream === '') {
+                throw new RuntimeException("Workspace '{$workspace->name}' route is missing a runtime container upstream.");
+            }
+
+            return <<<CADDY
+{$domain} {
+    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+
+    reverse_proxy {$upstream} {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY;
+        }
 
         return <<<CADDY
 {$domain} {
@@ -204,7 +234,6 @@ final readonly class EnsureWorkspaceProxyRoute
     {$pathBlocking}
     import security_txt
     import cache_headers
-    php_fastcgi unix/{$config['php_socket']}
     file_server
 }
 
@@ -254,21 +283,20 @@ SH,
         return rtrim((string) $workspace->path, '/').'/'.$root;
     }
 
-    private function socketPath(Workspace $workspace): string
-    {
-        return $this->fpmPoolRenderer->socketPath($workspace);
-    }
-
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
     private function routeArtifact(Workspace $workspace, App $app, Node $node, string $domain): array
     {
+        $isPhp = $app->runtime_kind === AppRuntimeKind::Php;
+        $runtimeUpstream = $isPhp ? $this->runtimeContainerRenderer->upstreamUrl($workspace) : null;
+
         if ($app->environment !== 'production') {
             $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($node, $domain);
             $config = [
                 'document_root' => $this->documentRoot($workspace, $app),
-                'php_socket' => $this->socketPath($workspace),
+                'runtime_upstream' => $runtimeUpstream,
+                'php_socket' => null,
                 'tls' => [
                     'cert_path' => $certificatePaths['cert'],
                     'key_path' => $certificatePaths['key'],
@@ -286,7 +314,8 @@ SH,
             'domain' => $domain,
             'bind' => $node->wireguard_address,
             'document_root' => $this->documentRoot($workspace, $app),
-            'php_socket' => $this->socketPath($workspace),
+            'runtime_upstream' => $runtimeUpstream,
+            'php_socket' => null,
         ];
         $config = [
             'placement' => 'ingress',

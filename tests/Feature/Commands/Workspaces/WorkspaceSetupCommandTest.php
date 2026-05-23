@@ -275,7 +275,6 @@ it('renders the documented progress tree and final tree state for human output',
         ->expectsOutputToContain('○  Apply and verify workspace registration')
         ->expectsOutputToContain('●  Applied and verified workspace registration')
         ->expectsOutputToContain('●  Registered proxy routes')
-        ->expectsOutputToContain('●  Installed PHP-FPM artifacts')
         ->expectsOutputToContain('●  Installed workspace runtime container')
         ->expectsOutputToContain('●  Checked workspace readiness')
         ->expectsOutputToContain('└  Workspace ready and available at: https://feature-tree.demo.beast')
@@ -319,7 +318,7 @@ it('renders the active workspace setup step in the human progress tree', functio
         ->assertSuccessful();
 });
 
-it('converges both FPM pool and FrankenPHP runtime container for php workspaces during setup (runtime)', function (): void {
+it('converges FrankenPHP runtime container for php workspaces without FPM (runtime)', function (): void {
     Workspace::create([
         'app_id' => 1,
         'name' => 'feature-runtime',
@@ -344,13 +343,12 @@ it('converges both FPM pool and FrankenPHP runtime container for php workspaces 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
     $combined = implode("\n", $scripts);
 
-    // Runtime container must converge AND legacy FPM pool must remain
-    // installed because workspace proxy routes still target the FPM socket
-    // until the ORBIT-RUNTIME-06C proxy cutover (todo 336).
+    // FrankenPHP runtime container converges; FPM pool is not rendered in
+    // the steady-state path after ORBIT-RUNTIME-06C (todo 336).
     expect($combined)->toContain("'orbit-ws-demo-feature-runtime'")
         ->and($combined)->toContain('docker run -d')
         ->and($combined)->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
-        ->and($combined)->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
+        ->and($combined)->not->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
 });
 
 it('skips runtime container convergence for static workspaces (runtime)', function (): void {

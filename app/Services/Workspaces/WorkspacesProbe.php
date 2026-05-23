@@ -7,12 +7,14 @@ namespace App\Services\Workspaces;
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpFpmSystemdHardening;
+use App\Services\Php\PhpRuntimeCatalog;
 
 final readonly class WorkspacesProbe
 {
@@ -21,6 +23,7 @@ final readonly class WorkspacesProbe
         private ?WorkspaceFpmPoolRenderer $fpmPoolRenderer = null,
         private ?PhpFpmSystemdHardening $fpmSystemdHardening = null,
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
+        private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
     ) {}
 
     public function key(): string
@@ -226,6 +229,12 @@ PHP;
      */
     private function checkFpmConfig(Workspace $workspace, ProbeSnapshot $snapshot): array
     {
+        $workspace->loadMissing('app');
+
+        if ($workspace->app?->runtime_kind === AppRuntimeKind::Php) {
+            return [];
+        }
+
         $observed = $snapshot->get($workspace->name);
 
         if (
@@ -272,19 +281,57 @@ PHP;
      */
     private function checkPhpRuntime(Workspace $workspace, ProbeSnapshot $snapshot): array
     {
+        $workspace->loadMissing('app');
+
+        if (! $workspace->app instanceof App || $workspace->app->runtime_kind !== AppRuntimeKind::Php) {
+            return [];
+        }
+
+        if (! $this->phpRuntimeCatalog()->supports($workspace->effectivePhpVersion())) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.php_version_unavailable',
+                    kind: DriftKind::Missing,
+                    summary: "PHP {$workspace->effectivePhpVersion()} is not a supported FrankenPHP runtime image for workspace {$workspace->name}.",
+                    detail: [
+                        'php_version' => $workspace->effectivePhpVersion(),
+                    ],
+                ),
+            ];
+        }
+
         $observed = $snapshot->get($workspace->name);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {
             return [];
         }
 
-        if (($observed['php_fpm_available'] ?? null) === false) {
+        if (($observed['docker_available'] ?? null) === false) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'workspace.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "PHP {$workspace->effectivePhpVersion()} FPM is not available for workspace {$workspace->name} on the parent app node.",
+                    summary: "Docker is not available to serve PHP {$workspace->effectivePhpVersion()} for workspace {$workspace->name} on the parent app node.",
+                    detail: [
+                        'php_version' => $workspace->effectivePhpVersion(),
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['runtime_image_probe_failed'] ?? null) === true) {
+            return [];
+        }
+
+        if (($observed['runtime_image_available'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.php_version_unavailable',
+                    kind: DriftKind::Missing,
+                    summary: "FrankenPHP runtime image for PHP {$workspace->effectivePhpVersion()} is not available on the parent app node for workspace {$workspace->name}.",
                     detail: [
                         'php_version' => $workspace->effectivePhpVersion(),
                     ],
@@ -365,42 +412,44 @@ PHP;
             );
         }
 
-        if (
-            ($observed['php_fpm_available'] ?? null) === true
-            && (
-                ($observed['fpm_config_exists'] ?? null) === false
-                || ($observed['fpm_config_matches'] ?? null) === false
-            )
-        ) {
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'workspace.security.fpm_pool_isolation',
-                kind: $observed['fpm_config_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
-                summary: "Workspace {$workspace->name} PHP-FPM pool isolation does not match security policy.",
-                detail: [
-                    'workspace' => $workspace->name,
-                    'expected' => $this->fpmPoolRenderer()->path($workspace),
-                ],
-            );
-        }
+        if ($workspace->app?->runtime_kind !== AppRuntimeKind::Php) {
+            if (
+                ($observed['php_fpm_available'] ?? null) === true
+                && (
+                    ($observed['fpm_config_exists'] ?? null) === false
+                    || ($observed['fpm_config_matches'] ?? null) === false
+                )
+            ) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.security.fpm_pool_isolation',
+                    kind: $observed['fpm_config_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} PHP-FPM pool isolation does not match security policy.",
+                    detail: [
+                        'workspace' => $workspace->name,
+                        'expected' => $this->fpmPoolRenderer()->path($workspace),
+                    ],
+                );
+            }
 
-        if (
-            ($observed['php_fpm_available'] ?? null) === true
-            && (
-                ($observed['fpm_hardening_exists'] ?? null) === false
-                || ($observed['fpm_hardening_matches'] ?? null) === false
-            )
-        ) {
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'workspace.security.fpm_systemd_hardening',
-                kind: $observed['fpm_hardening_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
-                summary: "Workspace {$workspace->name} PHP-FPM service hardening is missing or divergent.",
-                detail: [
-                    'workspace' => $workspace->name,
-                    'expected' => $this->fpmSystemdHardening()->path((string) $workspace->effectivePhpVersion()),
-                ],
-            );
+            if (
+                ($observed['php_fpm_available'] ?? null) === true
+                && (
+                    ($observed['fpm_hardening_exists'] ?? null) === false
+                    || ($observed['fpm_hardening_matches'] ?? null) === false
+                )
+            ) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.security.fpm_systemd_hardening',
+                    kind: $observed['fpm_hardening_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} PHP-FPM service hardening is missing or divergent.",
+                    detail: [
+                        'workspace' => $workspace->name,
+                        'expected' => $this->fpmSystemdHardening()->path((string) $workspace->effectivePhpVersion()),
+                    ],
+                );
+            }
         }
 
         return $drift;
@@ -555,5 +604,10 @@ PHP;
     private function nodeRoleAssignments(): NodeRoleAssignments
     {
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
+    }
+
+    private function phpRuntimeCatalog(): PhpRuntimeCatalog
+    {
+        return $this->phpRuntimeCatalog ?? app(PhpRuntimeCatalog::class);
     }
 }

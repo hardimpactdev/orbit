@@ -107,26 +107,6 @@ final class CreateWorkspaceProgressPlan
                 },
             ],
             [
-                'key' => 'install_php_fpm_artifacts',
-                'label' => 'Install PHP-FPM artifacts',
-                'doneLabel' => 'Installed PHP-FPM artifacts',
-                'run' => function (): string {
-                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
-                        return 'skip:Workspace source was not provisioned.';
-                    }
-
-                    $warning = $this->setupWorkspace->enactFpmPool($this->workspace, $this->node);
-
-                    if ($warning !== null) {
-                        $this->warnings[] = $warning;
-
-                        return 'skip:'.$warning['message'];
-                    }
-
-                    return 'ready';
-                },
-            ],
-            [
                 'key' => 'install_workspace_runtime_container',
                 'label' => 'Install workspace runtime container',
                 'doneLabel' => 'Installed workspace runtime container',

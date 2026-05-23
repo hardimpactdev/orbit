@@ -143,9 +143,9 @@ CADDY;
         $bind = $backendArtifact['bind'] ?? null;
         $documentRoot = $backendArtifact['document_root'] ?? null;
         $runtimeUpstream = $backendArtifact['runtime_upstream'] ?? null;
-        $phpSocket = $backendArtifact['php_socket'] ?? null;
-        $isAppKind = $route->kind === 'app';
-        $isStaticApp = $isAppKind && $route->app?->runtime_kind === AppRuntimeKind::Static;
+        $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
+        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Php;
+        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Static;
 
         if (! is_string($bind) || $bind === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a bind address.");
@@ -159,8 +159,8 @@ CADDY;
 
         $port = OrbitCaddyContainer::PrivateBackendPort;
 
-        if ($isAppKind && ! $isStaticApp) {
-            $runtimeUpstream = $this->deriveAppRuntimeUpstreamIfMissing($route, $runtimeUpstream);
+        if ($usesPhpRuntime) {
+            $runtimeUpstream = $this->deriveRuntimeUpstreamIfMissing($route, $runtimeUpstream);
 
             if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
                 throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a runtime container upstream.");
@@ -211,27 +211,10 @@ http://{$route->domain}:{$port} {
 CADDY;
         }
 
-        if (! is_string($phpSocket) || $phpSocket === '') {
-            throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a PHP socket.");
-        }
-
-        $phpSocket = $this->validatedAbsolutePath($route, $phpSocket, 'backend artifact has an invalid PHP socket path.');
-
-        return <<<CADDY
-http://{$route->domain}:{$port} {
-    root * {$documentRoot}
-    encode gzip
-
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
-    php_fastcgi unix/{$phpSocket}
-    file_server
-}
-
-CADDY;
+        // App and workspace routes must have a resolved runtime_kind of
+        // `php` or `static`. Reaching this line means the route config is
+        // malformed or the runtime_kind is unrecognised.
+        throw new RuntimeException("Proxy route '{$route->domain}' backend artifact has an unresolvable runtime target.");
     }
 
     private function renderProxy(ProxyRoute $route): string
@@ -297,17 +280,17 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
         $documentRoot = $config['document_root'] ?? null;
         $runtimeUpstream = $config['runtime_upstream'] ?? null;
-        $phpSocket = $config['php_socket'] ?? null;
         $tls = $this->tlsDirective($route);
-        $isAppKind = $route->kind === 'app';
-        $isStaticApp = $isAppKind && $route->app?->runtime_kind === AppRuntimeKind::Static;
+        $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
+        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Php;
+        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Static;
 
         $pathBlocking = $route->app?->document_root === '.'
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
-        if ($isAppKind && ! $isStaticApp) {
-            $runtimeUpstream = $this->deriveAppRuntimeUpstreamIfMissing($route, $runtimeUpstream);
+        if ($usesPhpRuntime) {
+            $runtimeUpstream = $this->deriveRuntimeUpstreamIfMissing($route, $runtimeUpstream);
 
             if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
                 throw new RuntimeException("Proxy route '{$route->domain}' is missing a runtime container upstream.");
@@ -358,26 +341,10 @@ CADDY;
 CADDY;
         }
 
-        if (! is_string($phpSocket) || $phpSocket === '') {
-            throw new RuntimeException("Proxy route '{$route->domain}' is missing a PHP socket.");
-        }
-
-        return <<<CADDY
-{$route->domain} {
-    {$tls}
-    root * {$documentRoot}
-    encode gzip
-
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
-    php_fastcgi unix/{$phpSocket}
-    file_server
-}
-
-CADDY;
+        // App and workspace routes must have a resolved runtime_kind of
+        // `php` or `static`. Reaching this line means the route config is
+        // malformed or the runtime_kind is unrecognised.
+        throw new RuntimeException("Proxy route '{$route->domain}' has an unresolvable runtime target.");
     }
 
     private function tlsDirective(ProxyRoute $route): string
@@ -477,22 +444,23 @@ CADDY;
     }
 
     /**
-     * Derive the FrankenPHP runtime container upstream from the app identity
-     * when the persisted route config has none. This backstops legacy app
-     * route rows (or backend artifacts) carried over from origin/main, where
-     * configs only contained `php_socket`. The migration backfills most
-     * rows; this method handles edge cases (adopted rows, restore from an
-     * older snapshot, app-only fixtures) so ProxyRouteFixer / doctor restore
-     * can repair instead of throwing. Returns the existing upstream if
-     * present; never revives php_fastcgi for app routes.
+     * Derive the FrankenPHP runtime container upstream from the app or
+     * workspace identity when the persisted route config has none. This
+     * backstops legacy route rows (or backend artifacts) carried over from
+     * origin/main, where configs only contained `php_socket`. The migration
+     * backfills most rows; this method handles edge cases (adopted rows,
+     * restore from an older snapshot, app-only fixtures) so ProxyRouteFixer /
+     * doctor restore can repair instead of throwing. Returns the existing
+     * upstream if present; never revives php_fastcgi for app or workspace
+     * routes.
      */
-    private function deriveAppRuntimeUpstreamIfMissing(ProxyRoute $route, mixed $current): ?string
+    private function deriveRuntimeUpstreamIfMissing(ProxyRoute $route, mixed $current): ?string
     {
         if (is_string($current) && $current !== '') {
             return $current;
         }
 
-        $route->loadMissing('app');
+        $route->loadMissing('app', 'workspace');
 
         if ($route->app === null) {
             return null;
@@ -502,6 +470,10 @@ CADDY;
 
         if (! is_string($slug) || $slug === '') {
             return null;
+        }
+
+        if ($route->kind === 'workspace' && $route->workspace !== null) {
+            return "http://orbit-ws-{$slug}-{$route->workspace->name}";
         }
 
         return "http://orbit-app-{$slug}";
