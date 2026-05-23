@@ -17,7 +17,7 @@ final readonly class AppsFixer
         private RemoteShell $remoteShell,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
-        private AppFpmPoolRenderer $appFpmPoolRenderer,
+        private AppRuntimeUser $appRuntimeUser,
     ) {}
 
     /**
@@ -183,7 +183,7 @@ final readonly class AppsFixer
             'summary' => "Re-applied app runtime user and filesystem policy for {$app->name}.",
             'details' => [
                 'app' => $app->name,
-                'runtime_user' => $this->appFpmPoolRenderer->runtimeUser($app),
+                'runtime_user' => $this->appRuntimeUser->forApp($app),
                 'path' => $app->path,
             ],
         ];
@@ -191,7 +191,7 @@ final readonly class AppsFixer
 
     private function renderAppSecurityRepairScript(App $app): string
     {
-        $user = $this->appFpmPoolRenderer->runtimeUser($app);
+        $user = $this->appRuntimeUser->forApp($app);
         $home = $user === 'root' ? '/root' : "/home/{$user}";
         $appPath = rtrim((string) $app->path, '/');
 

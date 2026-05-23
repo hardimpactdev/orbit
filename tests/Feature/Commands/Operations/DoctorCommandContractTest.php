@@ -408,10 +408,10 @@ describe('doctor command contract', function (): void {
                             'actions' => [[
                                 'family' => 'workspace',
                                 'node' => 'beast',
-                                'key' => 'workspace.fpm_config_mismatch',
+                                'key' => 'workspace.path_missing',
                                 'mode' => 'restore',
-                                'status' => 'completed',
-                                'summary' => 'Re-applied workspace PHP-FPM pool.',
+                                'status' => 'skipped',
+                                'summary' => 'Skipped fix for workspace.path_missing: workspace auto-fix is not supported in the Docker-first runtime.',
                             ]],
                         ],
                     ],
@@ -472,7 +472,7 @@ describe('doctor command contract', function (): void {
             'name' => 'feature',
             'path' => '/home/orbit/apps/docs/.worktrees/feature',
         ]);
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("feature\t0\t0\t1\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("feature\t0\t1\t0\t0\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['workspace'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

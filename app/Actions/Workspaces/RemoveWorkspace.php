@@ -11,14 +11,12 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use App\Services\Processes\SupervisorProgramRenderer;
-use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use Illuminate\Support\Facades\DB;
 
 final readonly class RemoveWorkspace
 {
     public function __construct(
         private RemoteShell $remoteShell,
-        private WorkspaceFpmPoolRenderer $fpmPoolRenderer,
         private SupervisorProgramRenderer $supervisorProgramRenderer,
     ) {}
 
@@ -29,7 +27,6 @@ final readonly class RemoveWorkspace
      *     action: string,
      *     proxy_routes_removed: int,
      *     processes_removed: int,
-     *     fpm_config_removed: bool,
      *     worktree_removed: bool,
      *     teardown_steps_run: int,
      *     kept_files: bool,
@@ -69,7 +66,6 @@ final readonly class RemoveWorkspace
 
         $warnings = [];
         $processesRemoved = 0;
-        $fpmConfigRemoved = false;
         $worktreeRemoved = false;
         $teardownStepsRun = 0;
 
@@ -106,18 +102,6 @@ final readonly class RemoveWorkspace
                 }
             }
 
-            $fpmResult = $this->remoteShell->run($node, $this->renderFpmRemovalScript($workspace));
-            $fpmConfigRemoved = $fpmResult->successful();
-
-            if (! $fpmConfigRemoved) {
-                $warnings[] = [
-                    'code' => 'workspace.artifact_extra',
-                    'family' => 'workspace',
-                    'message' => 'Workspace PHP-FPM configuration could not be removed during cleanup.',
-                    'next_command' => 'doctor --fix --family=workspace --restore',
-                ];
-            }
-
             if (! $keepFiles) {
                 $worktreeResult = $this->remoteShell->run($node, 'sudo rm -rf '.escapeshellarg($workspace->path));
                 $worktreeRemoved = $worktreeResult->successful();
@@ -139,7 +123,6 @@ final readonly class RemoveWorkspace
             'action' => 'removed',
             'proxy_routes_removed' => count($proxyRouteIds),
             'processes_removed' => $processesRemoved,
-            'fpm_config_removed' => $fpmConfigRemoved,
             'worktree_removed' => $worktreeRemoved,
             'teardown_steps_run' => $teardownStepsRun,
             'kept_files' => $keepFiles,
@@ -167,18 +150,6 @@ final readonly class RemoveWorkspace
         $commands[] = 'sudo supervisorctl update || true';
 
         return implode("\n", $commands);
-    }
-
-    private function renderFpmRemovalScript(Workspace $workspace): string
-    {
-        return sprintf(
-            <<<'SH'
-sudo rm -f %s
-sudo systemctl reload %s || sudo systemctl reload php-fpm || true
-SH,
-            escapeshellarg($this->fpmPoolRenderer->path($workspace)),
-            escapeshellarg($this->fpmPoolRenderer->service($workspace)),
-        );
     }
 
     /**

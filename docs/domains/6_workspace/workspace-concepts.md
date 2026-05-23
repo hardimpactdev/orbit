@@ -42,7 +42,7 @@ These terms describe how PHP version is resolved for workspaces.
   workspace row. When absent, the workspace inherits the parent app PHP version
   and JSON renderers report `php_inherited=true`. The selected version chooses
   the workspace runtime container image; it does not install host PHP or render
-  host PHP-FPM pools.
+  host FPM pools.
 
 ## Setup and teardown
 
@@ -82,4 +82,4 @@ These boundaries define what the workspace family owns and what belongs to other
   workspace-derived hostname configuration. They do not own proxy route
   convergence, inherited process-unit convergence, app configuration, or
   node-level firewall policy. Workspace commands do not install host PHP,
-  Composer, Caddy, or PHP-FPM.
+  Composer, or Caddy.

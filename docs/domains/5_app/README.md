@@ -33,7 +33,7 @@ These rules govern all app family commands.
 - PHP app runtime uses a FrankenPHP app runtime container selected by gateway
   app configuration. Changing `php_version` recreates the app runtime container
   from the selected PHP image; it does not install host PHP or render host
-  PHP-FPM pools.
+  FPM pools.
 - App command execution that needs PHP, Composer, or Artisan runs inside the
   app runtime container through explicit app execution surfaces such as
   `app:exec`. Host PHP and host Composer are not fallbacks.
