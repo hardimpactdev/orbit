@@ -146,6 +146,7 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
         ->and($gatewaySettings['ca_pem_path'])->toContain('storage/app/orbit/gateway-ca/orbit.crt');
 
     E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
+    expectPreparedGatewayCertificateKeysReadable($gateway, $key);
 
     $gatewayNode = readPreparedLocalGatewayNode($gateway);
     $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');
@@ -284,6 +285,20 @@ PHP;
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;
+}
+
+function expectPreparedGatewayCertificateKeysReadable(E2EInstance $gateway, SshKeyPair $key): void
+{
+    E2ECommand::ssh(
+        $gateway,
+        'orbit',
+        $key,
+        implode(' && ', [
+            'test -r /home/orbit/orbit/storage/app/orbit/ca/root.key',
+            '(test -r /home/orbit/orbit/storage/app/orbit/certs/gateway.key || test -r /home/orbit/orbit/storage/app/orbit/certs/10.6.0.2.key)',
+        ]),
+        timeoutSeconds: 60,
+    );
 }
 
 /**
