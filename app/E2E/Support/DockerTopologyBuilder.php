@@ -72,6 +72,7 @@ final readonly class DockerTopologyBuilder
                 }
 
                 $this->persistRuntimeSource($container, $role);
+                $this->normalizePersistedRuntimeStateOwnership($container, $role);
 
                 $this->mustRun(
                     sprintf(
@@ -231,6 +232,29 @@ final readonly class DockerTopologyBuilder
             $this->copyPathContentsBetweenContainersCommand($this->runtimeContainerName($nodeContainer), $nodeContainer, $sourcePath),
             "Could not persist {$sourcePath} into {$nodeContainer}",
             timeoutSeconds: 300,
+        );
+    }
+
+    private function normalizePersistedRuntimeStateOwnership(string $nodeContainer, string $role): void
+    {
+        if ($role !== 'gateway') {
+            return;
+        }
+
+        $orbitStatePath = "{$this->orbitPathForRole($role)}/storage/app/orbit";
+
+        $this->mustRun(
+            sprintf(
+                'docker exec %s sh -lc %s',
+                escapeshellarg($nodeContainer),
+                escapeshellarg(sprintf(
+                    'if [ -d %s ]; then chown -R orbit:orbit %s; fi',
+                    escapeshellarg($orbitStatePath),
+                    escapeshellarg($orbitStatePath),
+                )),
+            ),
+            "Could not normalize persisted Orbit runtime state ownership in {$nodeContainer}",
+            timeoutSeconds: 60,
         );
     }
 

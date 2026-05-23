@@ -142,6 +142,37 @@ it('keeps the build gateway runtime marked without starting services before migr
         ->and($gatewayRuntimeStart)->toContain("'orbit-runtime:current' tail -f /dev/null");
 });
 
+it('normalizes persisted gateway orbit state ownership before committing prepared images', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::ControlGateway);
+
+    $persist = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -xf -"));
+    $ownership = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec 'orbit-e2e-build-operator_gateway-gateway'")
+        && str_contains($command, 'chown -R orbit:orbit')
+        && str_contains($command, '/home/orbit/orbit/storage/app/orbit'));
+    $commit = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker commit')
+        && str_contains($command, "'orbit-e2e-build-operator_gateway-gateway'")
+        && str_contains($command, 'operator_gateway-gateway-current'));
+
+    expect($persist)->toBeString()
+        ->and($ownership)->toBeString()
+        ->and($commit)->toBeString()
+        ->and(array_search($persist, $commands, strict: true))->toBeLessThan(array_search($ownership, $commands, strict: true))
+        ->and(array_search($ownership, $commands, strict: true))->toBeLessThan(array_search($commit, $commands, strict: true));
+});
+
 it('commits Docker build topology images from node image-layer state instead of mounted home volumes', function (): void {
     $commands = [];
 
@@ -290,6 +321,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *migrate*" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-build-operator_gateway-gateway' sh -lc *migrate*" => Process::result(),
@@ -340,6 +372,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
         'docker exec --user *bootstrap-gateway-local*' => Process::result(),
@@ -413,6 +446,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
         'docker exec --user *bootstrap-gateway-local*' => Process::result(),
@@ -465,6 +499,7 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
         'docker exec --user *bootstrap-gateway-local*' => Process::result(),
