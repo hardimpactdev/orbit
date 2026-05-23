@@ -119,8 +119,7 @@ HTTP status mapping:
    owning node. The container is the same one rendered by the app runtime
    renderer; the command does not start, stop, or recreate it.
 3. **PHP-only.** Apps with `runtime_kind != php` cannot be exec targets.
-   `app:exec` fails with `app.exec_unsupported_runtime` and does not
-   attempt host PHP or host Composer fallbacks.
+   `app:exec` fails with `app.exec_unsupported_runtime`.
 4. **Container must be running.** A preflight `docker container inspect`
    runs before `docker exec`. When the preflight or the exec step reports
    the container is missing or not running, `app:exec` fails with
