@@ -182,7 +182,7 @@ final readonly class DockerTopologyBuilder
             : '';
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --env %s --env %s --env %s%s --workdir %s %s',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --env %s --env %s --env %s%s --workdir %s %s tail -f /dev/null',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
@@ -307,6 +307,7 @@ final readonly class DockerTopologyBuilder
         $key = new SshKeyPair('/dev/null', '/dev/null');
 
         E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install', timeoutSeconds: 120);
+        $this->startGatewayScheduler($gateway);
         E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && orbit doctor --node=gateway --family=schedule --restore --json', timeoutSeconds: 120);
         E2EGatewayApi::seedControlIdentity($gateway, '10.6.0.3', 'control');
         if ($mode === 'dns-alias') {
@@ -393,6 +394,19 @@ final readonly class DockerTopologyBuilder
 
             $this->authorizeGatewaySshKey($containers[$role], $publicKey);
         }
+    }
+
+    private function startGatewayScheduler(DockerBuildInstance $gateway): void
+    {
+        $this->mustRun(
+            sprintf(
+                'docker exec --detach --workdir %s %s orbit orbit-scheduler',
+                escapeshellarg('/home/orbit/orbit'),
+                escapeshellarg($this->runtimeContainerName($gateway->name())),
+            ),
+            'Could not start Docker build gateway scheduler',
+            timeoutSeconds: 60,
+        );
     }
 
     /**

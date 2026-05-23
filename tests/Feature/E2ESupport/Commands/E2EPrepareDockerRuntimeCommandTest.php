@@ -76,6 +76,7 @@ it('installs a Docker-first orbit launcher without a host PHP fallback', functio
         ->toContain('sudo docker network connect')
         ->toContain('--env "ORBIT_HOST_CWD=$PWD"')
         ->toContain('--env "ORBIT_SOURCE_PATH=$PWD"')
+        ->toContain('--env "ORBIT_RUNTIME_CONTAINER=$runtime_container"')
         ->toContain('${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}')
         ->not->toContain('exec php "$PWD/artisan" "$@"')
         ->not->toContain('exec php "$HOME/orbit/artisan" "$@"');

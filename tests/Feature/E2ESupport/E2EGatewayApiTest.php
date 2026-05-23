@@ -200,6 +200,10 @@ it('starts Docker gateway API support through runtime container commands without
     $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
         && str_contains($command, 'orbit tinker --execute='));
+    $certificateSetup = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --env')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, 'orbit key:generate --force --no-interaction')
+        && str_contains($command, 'issueLeaf'));
     $runtimeIdentity = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
         && str_contains($command, '/home/orbit/.ssh/id_ed25519')
@@ -220,6 +224,12 @@ it('starts Docker gateway API support through runtime container commands without
     expect($runtimeIdentity)->toBeString()
         ->toContain('install -d -m 700 /root/.ssh')
         ->toContain('cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519');
+
+    expect($certificateSetup)->toBeString()
+        ->toContain('([ -f .env ] || cp .env.example .env)')
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->toContain('--workdir')
+        ->not->toContain('sudo -iu orbit');
 
     expect(array_search($runtimeIdentity, $commands, strict: true))
         ->toBeLessThan(array_search($httpStart, $commands, strict: true))

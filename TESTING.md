@@ -478,14 +478,13 @@ composer e2e:prepare-topology -- --force operator_gateway_app-prod_ingress
 
 # Prepare Docker feature topology images
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
 composer e2e:prepare-docker-topology -- --force operator_gateway_app-prod_ingress
 
 # Prepare Docker feature topology images on the build host, then import on Docker hosts
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias control-gateway-dev-prod
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod_agent
 composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
 
 # Reap stale E2E resources
@@ -548,7 +547,7 @@ refresh each configured Docker host:
 ```bash
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias control-gateway-dev-prod
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod_agent
 ```
 
 For single-host local debugging, the lower-level equivalents are:
@@ -612,6 +611,14 @@ interfaces, WireGuard peer routing, or VM networking behavior. Tests that need
 those capabilities must call
 `E2ETopologyFactory::fromEnvironment()->requireCapabilities(E2ETopologyCapabilities::vm())->require(...)`
 so the provider pool refuses Docker for them.
+
+The Docker topology build context intentionally includes the local `vendor/`
+directory. Prepared topology source is copied into `orbit-runtime` sibling
+containers on the isolated `10.6.0.0/16` build network, where external egress
+may be unavailable on build hosts that also run Orbit VPN routes. Carrying
+`vendor/` in the topology image makes the guarded runtime dependency install a
+no-op during normal preparation, avoiding Packagist dependency downloads from
+inside that network.
 
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*`
 runtime assertions because Docker topologies provide `orbit-runtime`,
@@ -712,7 +719,7 @@ configured Docker host pool:
 ```bash
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod
+composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod_agent
 composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
 ```
 

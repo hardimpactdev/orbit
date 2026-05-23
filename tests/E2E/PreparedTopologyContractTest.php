@@ -141,7 +141,7 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
 
     $gatewaySettings = readPreparedGatewaySettings($control, $config->controlUser, $key);
 
-    expect($gatewaySettings['gateway_url'])->toBe('https://10.6.0.2')
+    expect($gatewaySettings['gateway_url'])->toBe(expectedPreparedGatewayUrl($topology))
         ->and($gatewaySettings['gateway_wg_ip'])->toBe('10.6.0.2')
         ->and($gatewaySettings['ca_pem_path'])->toContain('storage/app/orbit/gateway-ca/orbit.crt');
 
@@ -173,7 +173,7 @@ function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config
 
     $devNode = E2EGatewayApi::getNode($gateway, 'app-dev-1');
 
-    expectPreparedAppNode($devNode, 'development', 'test');
+    expectPreparedAppNode($devNode, 'development', 'test', expectedPreparedGatewayEndpoint());
     expectPreparedDevDatabaseAndRedis($topology);
 }
 
@@ -193,7 +193,7 @@ function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $confi
 
     $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
 
-    expectPreparedAppNode($prodNode, 'production', null);
+    expectPreparedAppNode($prodNode, 'production', null, expectedPreparedGatewayEndpoint());
 }
 
 /**
@@ -276,7 +276,7 @@ PHP;
 
     $result = E2ECommand::orbit(
         $gateway,
-        'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
+        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
         'Could not read prepared appdev service state',
     );
 
@@ -309,11 +309,18 @@ PHP;
 
     $result = E2ECommand::orbit(
         $gateway,
-        'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg($php),
+        'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
         'Could not read prepared local gateway node',
     );
 
     return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
+function preparedOrbitTinkerCommand(string $orbitPath, string $php): string
+{
+    $encodedPhp = base64_encode($php);
+
+    return 'cd '.escapeshellarg($orbitPath).' && orbit tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));");
 }
 
 /**
@@ -341,7 +348,7 @@ PHP;
         $control,
         $controlUser,
         $key,
-        'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && orbit tinker --execute='.escapeshellarg($php),
     );
 
     /** @var array<string, mixed>|null $node */
@@ -368,7 +375,7 @@ PHP;
         $control,
         $controlUser,
         $key,
-        'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && orbit tinker --execute='.escapeshellarg($php),
     );
 
     /** @var array{gateway_url: string|null, gateway_wg_ip: string|null, ca_pem_path: string|null} $settings */
@@ -380,12 +387,30 @@ PHP;
 /**
  * @param  array<string, mixed>  $node
  */
-function expectPreparedAppNode(array $node, string $environment, ?string $tld): void
+function expectedPreparedGatewayUrl(E2ETopologyLease $topology): string
+{
+    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+        return 'https://gateway';
+    }
+
+    return 'https://'.$topology->gatewayApiIp();
+}
+
+function expectedPreparedGatewayEndpoint(): string
+{
+    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+        return 'gateway';
+    }
+
+    return '10.6.0.2';
+}
+
+function expectPreparedAppNode(array $node, string $environment, ?string $tld, string $gatewayEndpoint): void
 {
     expect($node['role'])->toBe('app')
         ->and($node['environment'])->toBe($environment)
         ->and($node['tld'])->toBe($tld)
-        ->and($node['gateway_endpoint'])->toBe('10.6.0.2')
+        ->and($node['gateway_endpoint'])->toBe($gatewayEndpoint)
         ->and($node['user'])->toBe('orbit')
         ->and(is_string($node['wireguard_address']))->toBeTrue()
         ->and(str_starts_with((string) $node['wireguard_address'], '10.6.0.'))->toBeTrue();

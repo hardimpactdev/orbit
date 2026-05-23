@@ -2,7 +2,6 @@
 .idea
 .vscode
 node_modules
-vendor
 storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*

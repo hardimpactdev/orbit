@@ -245,9 +245,17 @@ PHP;
         $scriptPath = "/tmp/orbit-{$label}-tls.php";
         $scriptPathArgument = escapeshellarg($scriptPath);
 
-        E2ECommand::orbit(
+        $certificateCommand = "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';");
+
+        E2ECommand::exec(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
+            sprintf(
+                'sudo docker exec --env %s --workdir %s %s sh -lc %s',
+                escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+                $orbitPathArgument,
+                $runtimeContainer,
+                escapeshellarg($certificateCommand),
+            ),
             'Could not issue gateway leaf certificate',
         );
 

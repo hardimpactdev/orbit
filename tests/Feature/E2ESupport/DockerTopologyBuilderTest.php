@@ -85,8 +85,61 @@ it('builds Docker topology state through the host orbit launcher', function (): 
         ->toContain('cd /home/control/orbit && orbit migrate --force')
         ->toContain('cd /home/orbit/orbit && orbit migrate --force')
         ->toContain('cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install')
+        ->toContain('sudo -iu orbit env ORBIT_RUNTIME_CONTAINER="${ORBIT_RUNTIME_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" bash -lc')
         ->toContain('cd /home/control/orbit && orbit gateway:add 10.6.0.2 --json')
         ->not->toContain('php artisan migrate --force');
+});
+
+it('starts the build gateway scheduler before schedule doctor verification', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::ControlGateway);
+
+    $setup = implode("\n", $commands);
+    $bootstrap = strpos($setup, 'orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
+    $scheduler = strpos($setup, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' orbit orbit-scheduler");
+    $doctor = strpos($setup, 'orbit doctor --node=gateway --family=schedule --restore --json');
+
+    expect($bootstrap)->toBeInt()
+        ->and($scheduler)->toBeInt()
+        ->and($doctor)->toBeInt()
+        ->and($bootstrap)->toBeLessThan($scheduler)
+        ->and($scheduler)->toBeLessThan($doctor);
+});
+
+it('keeps the build gateway runtime marked without starting services before migration', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::ControlGateway);
+
+    $gatewayRuntimeStart = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime'"));
+
+    expect($gatewayRuntimeStart)->toBeString()
+        ->and($gatewayRuntimeStart)->toContain('ORBIT_IS_GATEWAY=1')
+        ->and($gatewayRuntimeStart)->toContain("'orbit-runtime:current' tail -f /dev/null");
 });
 
 it('commits Docker build topology images from node image-layer state instead of mounted home volumes', function (): void {
@@ -241,6 +294,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *migrate*" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-build-operator_gateway-gateway' sh -lc *migrate*" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-build-operator_gateway-gateway' sh -lc *bootstrap-gateway-local*" => Process::result(),
+        "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' orbit orbit-scheduler" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-build-operator_gateway-gateway' sh -lc *doctor*--family=schedule*" => Process::result(),
         "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *tinker*" => Process::result(),
         "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *cat*" => Process::result(),
@@ -289,6 +343,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
         'docker exec --user *bootstrap-gateway-local*' => Process::result(),
+        'docker exec --detach *orbit-scheduler' => Process::result(),
         'docker exec --user *doctor*--family=schedule*' => Process::result(),
         'docker exec *tinker*' => Process::result(),
         'docker exec *orbit serve*' => Process::result(),
@@ -361,6 +416,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
         'docker exec --user *bootstrap-gateway-local*' => Process::result(),
+        'docker exec --detach *orbit-scheduler' => Process::result(),
         'docker exec --user *doctor*--family=schedule*' => Process::result(),
         'docker exec *tinker*' => Process::result(),
         'docker exec *orbit serve*' => Process::result(),
@@ -412,6 +468,7 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
         'docker exec --user *bootstrap-gateway-local*' => Process::result(),
+        'docker exec --detach *orbit-scheduler' => Process::result(),
         'docker exec --user *doctor*--family=schedule*' => Process::result(),
         'docker exec *tinker*' => Process::result(),
         'docker exec *orbit serve*' => Process::result(),

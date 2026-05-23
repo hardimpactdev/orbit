@@ -35,6 +35,7 @@ RUN printf '%s\n' \
         'exec sudo docker exec \' \
         '    --env "ORBIT_HOST_CWD=$PWD" \' \
         '    --env "ORBIT_SOURCE_PATH=$PWD" \' \
+        '    --env "ORBIT_RUNTIME_CONTAINER=$runtime_container" \' \
         '    "${runtime_container}" \' \
         '    orbit "$@"' \
         > /usr/local/bin/orbit \

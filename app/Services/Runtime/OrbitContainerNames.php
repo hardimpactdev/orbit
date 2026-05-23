@@ -8,6 +8,12 @@ class OrbitContainerNames
 {
     public function runtime(): string
     {
+        $container = getenv('ORBIT_RUNTIME_CONTAINER');
+
+        if (is_string($container) && $container !== '') {
+            return $container;
+        }
+
         return 'orbit-runtime';
     }
 

@@ -270,6 +270,13 @@ it('keeps persisted orbit certificate material out of the docker build context',
         ->toContain('storage/app/orbit/keys/**');
 });
 
+it('keeps local composer dependencies in the docker topology build context', function (): void {
+    $dockerignore = file_get_contents(base_path('docker/e2e/topology/Dockerfile.dockerignore'));
+    $ignoredPaths = preg_split('/\R/', trim($dockerignore));
+
+    expect(in_array('vendor', $ignoredPaths, true))->toBeFalse();
+});
+
 it('removes persisted orbit certificate material from runtime image worktrees before install', function (): void {
     $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
 
