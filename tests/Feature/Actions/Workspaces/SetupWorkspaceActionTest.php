@@ -445,6 +445,119 @@ it('reports progress while setup steps are running', function (): void {
     ]);
 });
 
+it('routes php and composer setup steps through the workspace runtime container', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'composer install --no-interaction',
+        'timeout_seconds' => 1200,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 2,
+        'command' => 'php artisan migrate --force',
+        'timeout_seconds' => 300,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    $stepRuns = array_values(array_filter($shell->runs, fn (array $run): bool => str_contains($run['script'], 'composer install') || str_contains($run['script'], 'php artisan')
+    ));
+
+    expect($stepRuns)->toHaveCount(2);
+
+    expect($stepRuns[0]['script'])
+        ->toContain("'docker'")
+        ->toContain("'exec'")
+        ->toContain("'orbit-ws-demo-feature-a'")
+        ->toContain("'composer install --no-interaction'")
+        ->toContain("'-w'")
+        ->toContain("'/app'");
+
+    expect($stepRuns[1]['script'])
+        ->toContain("'docker'")
+        ->toContain("'exec'")
+        ->toContain("'orbit-ws-demo-feature-a'")
+        ->toContain("'php artisan migrate --force'")
+        ->toContain("'-w'")
+        ->toContain("'/app'");
+});
+
+it('keeps non-php setup steps on the host', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'npm ci',
+        'timeout_seconds' => 900,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    $npmRun = collect($shell->runs)
+        ->first(fn (array $run): bool => str_contains($run['script'], 'npm ci'));
+
+    expect($npmRun['script'])->not->toContain("'docker'");
+    expect($npmRun['options']['cwd'] ?? null)->toBe('/home/nckrtl/apps/demo/.worktrees/feature-a');
+});
+
+it('passes lifecycle environment into containerized setup steps', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'composer install',
+        'timeout_seconds' => 1200,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    $composerRun = collect($shell->runs)
+        ->first(fn (array $run): bool => str_contains($run['script'], 'composer install'));
+
+    expect($composerRun['script'])->toContain("'ORBIT_APP=demo'");
+    expect($composerRun['script'])->toContain("'ORBIT_WORKSPACE_NAME=feature-a'");
+});
+
 it('skips setup steps when hash matches previous successful run', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,

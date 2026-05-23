@@ -21,8 +21,15 @@ final readonly class WorkspaceSetupStepRunner
      * @param  array<string, string>  $env
      * @param  (callable(string, WorkspaceStep, int, int): void)|null  $onProgress
      */
-    public function run(WorkspaceRun $run, array $steps, string $path, array $env, Node $node, ?callable $onProgress = null): bool
-    {
+    public function run(
+        WorkspaceRun $run,
+        array $steps,
+        string $path,
+        array $env,
+        Node $node,
+        ?string $containerName = null,
+        ?callable $onProgress = null,
+    ): bool {
         $run->update(['status' => 'running']);
         $stepCount = count($steps);
 
@@ -38,8 +45,13 @@ final readonly class WorkspaceSetupStepRunner
                 $onProgress('running', $step, $index + 1, $stepCount);
             }
 
-            $result = $this->remoteShell->run($node, $step->command, [
-                'cwd' => $path,
+            $isContainerized = $containerName !== null && $this->isPhpCommand($step->command);
+            $command = $isContainerized
+                ? $this->containerCommand($step->command, $containerName, $env)
+                : $step->command;
+
+            $result = $this->remoteShell->run($node, $command, [
+                'cwd' => $isContainerized ? null : $path,
                 'timeout' => $step->timeoutSeconds(),
                 'metadata' => $env,
             ]);
@@ -68,5 +80,32 @@ final readonly class WorkspaceSetupStepRunner
         $run->update(['status' => 'completed', 'completed_at' => now()]);
 
         return true;
+    }
+
+    private function isPhpCommand(string $command): bool
+    {
+        $trimmed = ltrim($command);
+
+        return str_starts_with($trimmed, 'php ') || str_starts_with($trimmed, 'composer ');
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     */
+    private function containerCommand(string $command, string $containerName, array $env): string
+    {
+        $parts = ['docker', 'exec', '-w', '/app'];
+
+        foreach ($env as $key => $value) {
+            $parts[] = '-e';
+            $parts[] = "{$key}={$value}";
+        }
+
+        $parts[] = $containerName;
+        $parts[] = 'bash';
+        $parts[] = '-c';
+        $parts[] = $command;
+
+        return implode(' ', array_map(escapeshellarg(...), $parts));
     }
 }
