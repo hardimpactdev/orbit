@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\Process;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Spatie\Activitylog\Models\Activity;
-use Symfony\Component\Process\PhpExecutableFinder;
 
 uses(RefreshDatabase::class);
 
@@ -323,10 +322,7 @@ final class UpdateAllE2EFakeUpdater extends OrbitUpdater
 
     public bool $migrationsCalled = false;
 
-    public function __construct()
-    {
-        parent::__construct(new PhpExecutableFinder);
-    }
+    public function __construct() {}
 
     public function pullSource(): ProcessResult
     {

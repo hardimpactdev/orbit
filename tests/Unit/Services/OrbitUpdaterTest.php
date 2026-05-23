@@ -7,14 +7,11 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\OrbitUpdater;
 use Illuminate\Support\Facades\Process;
-use Symfony\Component\Process\PhpExecutableFinder;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('runs migrations with the resolved cli php binary', function (): void {
-    app()->instance(PhpExecutableFinder::class, new OrbitUpdaterTestPhpExecutableFinder('/usr/local/bin/php-cli'));
-
+it('runs migrations inside orbit-runtime', function (): void {
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
     ]);
@@ -23,13 +20,33 @@ it('runs migrations with the resolved cli php binary', function (): void {
     app(OrbitUpdater::class)->runMigrations();
 
     Process::assertRan(fn ($process): bool => is_array($process->command)
-        && $process->command[0] === '/usr/local/bin/php-cli'
-        && $process->command[1] === 'artisan'
-        && $process->command[2] === 'migrate'
-        && $process->command[3] === '--force');
+        && $process->command[0] === 'docker'
+        && $process->command[1] === 'exec'
+        && $process->command[2] === 'orbit-runtime'
+        && $process->command[3] === 'php'
+        && $process->command[4] === 'artisan'
+        && $process->command[5] === 'migrate'
+        && $process->command[6] === '--force');
 });
 
-it('updates remote nodes with separate stage commands', function (): void {
+it('installs dependencies inside orbit-runtime', function (): void {
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    app(OrbitUpdater::class)->installDependencies();
+
+    Process::assertRan(fn ($process): bool => is_array($process->command)
+        && $process->command[0] === 'docker'
+        && $process->command[1] === 'exec'
+        && $process->command[2] === 'orbit-runtime'
+        && $process->command[3] === 'composer'
+        && $process->command[4] === 'install'
+        && $process->command[5] === '--no-interaction');
+});
+
+it('updates remote nodes through orbit-runtime container', function (): void {
     $node = new Node([
         'name' => 'beast',
         'orbit_path' => '/home/nckrtl/orbit',
@@ -42,8 +59,8 @@ it('updates remote nodes with separate stage commands', function (): void {
     expect($result->successful())->toBeTrue();
     expect(array_column($shell->calls, 'script'))->toBe([
         'git pull --ff-only',
-        'COMPOSER_BIN="$(command -v composer || true)"; if [ -z "$COMPOSER_BIN" ] && [ -x "$HOME/.local/bin/composer" ]; then COMPOSER_BIN="$HOME/.local/bin/composer"; fi; if [ -z "$COMPOSER_BIN" ]; then echo "composer not found" >&2; exit 127; fi; "$COMPOSER_BIN" install --no-interaction',
-        'php artisan migrate --force',
+        'docker exec orbit-runtime composer install --no-interaction',
+        'docker exec orbit-runtime php artisan migrate --force',
     ]);
     expect(array_column($shell->calls, 'cwd'))->toBe([
         '/home/nckrtl/orbit',
@@ -51,16 +68,6 @@ it('updates remote nodes with separate stage commands', function (): void {
         '/home/nckrtl/orbit',
     ]);
 });
-
-final class OrbitUpdaterTestPhpExecutableFinder extends PhpExecutableFinder
-{
-    public function __construct(private readonly string|false $phpBinary) {}
-
-    public function find(bool $includeArgs = true): string|false
-    {
-        return $this->phpBinary;
-    }
-}
 
 final class OrbitUpdaterTestRemoteShell implements RemoteShell
 {
