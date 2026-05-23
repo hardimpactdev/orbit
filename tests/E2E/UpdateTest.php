@@ -8,7 +8,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 use Spatie\Activitylog\Models\Activity;
-use Symfony\Component\Process\PhpExecutableFinder;
 
 uses(RefreshDatabase::class);
 
@@ -157,10 +156,7 @@ final class UpdateFakeUpdater extends OrbitUpdater
 
     public bool $migrationsCalled = false;
 
-    public function __construct()
-    {
-        parent::__construct(new PhpExecutableFinder);
-    }
+    public function __construct() {}
 
     public function pullSource(): ProcessResult
     {
