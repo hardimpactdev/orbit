@@ -26,9 +26,12 @@ These terms describe the units of work that make up a deployment pipeline.
 - **Deployment step definition:** Record assigned by the gateway and owned by
   the app, containing a title, shell command, order, timeout, and optional
   retention metadata.
-- **Deployment step command:** Arbitrary shell script executed during
-  `deploy:run` from the app source path tracked by the gateway, on the app's
-  owning node. Step commands may be single-line commands or multiline scripts.
+- **Deployment step command:** Shell script executed during `deploy:run` from
+  the app source path tracked by the gateway, on the app's owning node. For
+  PHP apps, steps that invoke `php`, `composer`, or `artisan` are automatically
+  routed through the app's FrankenPHP runtime container. Non-PHP steps and
+  static app steps continue to execute on the host node. Step commands may be
+  single-line commands or multiline scripts.
 - **Deployment step order:** Positive integer ordering within a production
   app's deployment pipeline. Insertions and removals reorder neighboring steps
   to keep the pipeline stable and ascending.

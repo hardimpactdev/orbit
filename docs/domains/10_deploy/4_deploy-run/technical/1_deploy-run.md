@@ -51,7 +51,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `database_path`, `app_user`, `app_name`, `domain`, and `repository`, plus
   nested app and node metadata for placeholder resolution.
 - Executes each configured step on the app's owning node through the gateway.
-- Executes each step from the app source path that the gateway tracks.
+- Routes steps that invoke `php`, `composer`, or `artisan` through the app's
+  FrankenPHP runtime container when the app uses `runtime_kind=php`. Host
+  paths referenced in step commands are translated to the container mount path
+  (`/app`) before execution.
+- Executes non-PHP steps and static app steps from the app source path on the
+  host node.
 - Renders `{{ key }}` placeholders against the deployment run context before
   execution. Dot notation may address nested context values such as
   `{{ app.name }}`.
@@ -70,6 +75,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Stores the rendered command on each deployment run step so deploy logs show
   the script that actually executed for that run.
 - Stops at the first failed step and does not execute later steps.
+- After all configured steps complete successfully for a PHP app with a running
+  FrankenPHP container, runs built-in production warmup:
+  `composer install --no-dev --optimize-autoloader --no-interaction` and
+  `php artisan optimize` inside the app container.
+- When the app defines `deploy_warmup_paths`, sends HTTP warmup requests to
+  those paths on the app container before the deployment is marked complete.
 - Updates the run status and the app's latest deployment status to
   `completed`, `failed`, or `cancelled`.
 
@@ -120,6 +131,7 @@ deployment status when reporting `app.latest_deployment_failed` or
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering the deploy-run lifecycle; see detail below. |
+| `tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Container routing for PHP/Composer/Artisan steps, host path translation, built-in warmup steps, and HTTP warmup behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |
 
 `DeployCommandTest.php` covers production app lookup, grant denial before
