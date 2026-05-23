@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\Requests\Processes\ShowProcessLogsRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -36,7 +38,7 @@ describe('process:logs base contract', function (): void {
         createProcessLogsLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessLogsRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "2026-04-30T12:00:00Z Vite ready\nplain line\n", stderr: '', durationMs: 1),
         ]);
@@ -65,7 +67,7 @@ describe('process:logs base contract', function (): void {
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessLogsRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "Vite ready\n", stderr: '', durationMs: 1),
         ]);
@@ -113,7 +115,7 @@ describe('process:logs base contract', function (): void {
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         if ($code === 'process.log_read_failed') {
-            Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+            Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         }
         app()->instance(RemoteShell::class, new ProcessLogsRemoteShell($results));
 
@@ -184,6 +186,83 @@ describe('process:logs base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['logs']['lines'][0]['message'])->toBe('Vite ready');
+    });
+});
+
+describe('process:logs runtime routing', function (): void {
+    it('reads docker logs for docker runtime processes', function (): void {
+        createProcessLogsLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
+        $remoteShell = new ProcessLogsRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "2026-04-30T12:00:00Z queue ready\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:logs', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--lines' => 1,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($remoteShell->scripts[0])->toContain('docker logs')
+            ->and($remoteShell->scripts[0])->toContain('orbit_docs_main_queue')
+            ->and($payload['success']['data']['logs']['runtime_unit'])->toBe('orbit_docs_main_queue')
+            ->and($payload['success']['data']['logs']['lines'][0])->toBe([
+                'timestamp' => '2026-04-30T12:00:00Z',
+                'message' => 'queue ready',
+            ]);
+    });
+
+    it('reads supervisor logs for supervisor runtime processes', function (): void {
+        createProcessLogsLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
+        $remoteShell = new ProcessLogsRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "2026-04-30T12:00:00Z Vite ready\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:logs', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--lines' => 1,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($remoteShell->scripts[0])->toBe("sudo tail -n 1 '/home/orbit/.config/orbit/logs/orbit_docs_main_vite.log'")
+            ->and($payload['success']['data']['logs']['runtime_unit'])->toBe('orbit_docs_main_vite');
+    });
+
+    it('follows docker logs for docker runtime processes with --follow', function (): void {
+        createProcessLogsLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
+        $remoteShell = new ProcessLogsRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "queue ready\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $this->artisan('process:logs', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--lines' => 1,
+            '--follow' => true,
+        ])
+            ->expectsOutput('queue ready')
+            ->assertSuccessful();
+
+        expect($remoteShell->scripts[0])->toContain('docker logs')
+            ->and($remoteShell->scripts[0])->toContain('--follow')
+            ->and($remoteShell->scripts[0])->toContain('orbit_docs_main_queue');
     });
 });
 

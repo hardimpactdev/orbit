@@ -24,6 +24,7 @@ final readonly class ProcessesProbe
         private ?SupervisorProgramRenderer $supervisorProgramRenderer = null,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?ProcessEventNotifierRenderer $processEventNotifierRenderer = null,
+        private ?ProcessDockerContainerRenderer $dockerContainerRenderer = null,
     ) {}
 
     public function key(): string
@@ -44,20 +45,121 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot([]);
         }
 
-        // Docker process runtime units are not yet covered by the supervisor
-        // probe pipeline. Live Docker container inspection lands with the
-        // ORBIT-RUNTIME-08B lifecycle/log work (todo 338). Returning an
-        // empty snapshot here means none of the snapshot-driven diff checks
-        // (runtime_backend_unavailable, runtime_unit_missing, etc.) fire
-        // for Docker processes — the gateway-side checks
-        // (record_incomplete, owner_app_invalid, runtime context identity)
-        // still run because they do not consult the snapshot.
         if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-            return new ProbeSnapshot([]);
+            return $this->introspectDocker($process);
         }
 
+        return $this->introspectSupervisor($process);
+    }
+
+    private function introspectDocker(Process $process): ProbeSnapshot
+    {
+        $node = $process->app->node;
+        $shell = $this->runtimeBackendProbe()->remoteShell();
+        $expectedUnits = $this->expectedDockerUnitSpecs($process);
+        $runtimeUnits = [];
+        $backendAvailable = true;
+        $backendExitCode = 0;
+        $backendOutput = '';
+
+        foreach ($expectedUnits as $unit) {
+            $result = $shell->run($node, 'docker container inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']));
+
+            if (! $result->successful()) {
+                $stderr = $result->errorOutput();
+
+                if (str_contains($stderr, 'No such container')) {
+                    $runtimeUnits[$unit['name']] = [
+                        'config_exists' => false,
+                        'config_matches' => false,
+                        'container_state' => null,
+                    ];
+
+                    continue;
+                }
+
+                $backendAvailable = false;
+                $backendExitCode = $result->exitCode;
+                $backendOutput = trim($result->output());
+
+                break;
+            }
+
+            $output = trim($result->stdout);
+
+            if ($output === '') {
+                $runtimeUnits[$unit['name']] = [
+                    'config_exists' => false,
+                    'config_matches' => false,
+                    'container_state' => null,
+                ];
+
+                continue;
+            }
+
+            $inspection = json_decode($output, true);
+
+            if (! is_array($inspection)) {
+                $runtimeUnits[$unit['name']] = [
+                    'config_exists' => false,
+                    'config_matches' => false,
+                    'container_state' => null,
+                ];
+
+                continue;
+            }
+
+            $labels = $inspection['Config']['Labels'] ?? [];
+            $observedHash = is_array($labels) ? ($labels[ProcessDockerContainer::SpecHashLabel] ?? null) : null;
+            $containerState = $inspection['State']['Status'] ?? null;
+
+            $runtimeUnits[$unit['name']] = [
+                'config_exists' => true,
+                'config_matches' => $observedHash === $unit['config_hash'],
+                'container_state' => $containerState,
+            ];
+        }
+
+        $runtimeUnitExtras = [];
+
+        if ($backendAvailable) {
+            $expectedNames = array_column($expectedUnits, 'name');
+            $psResult = $shell->run(
+                $node,
+                sprintf(
+                    "docker ps -a --filter label=orbit.managed=true --filter label=orbit.app=%s --filter label=orbit.process=%s --format '{{.Names}}'",
+                    escapeshellarg($process->app->name),
+                    escapeshellarg($process->name),
+                ),
+            );
+
+            if ($psResult->successful()) {
+                foreach (explode("\n", trim($psResult->stdout)) as $containerName) {
+                    $containerName = trim($containerName);
+
+                    if ($containerName !== '' && ! in_array($containerName, $expectedNames, true)) {
+                        $runtimeUnitExtras[] = $containerName;
+                    }
+                }
+            }
+        }
+
+        return new ProbeSnapshot([
+            $process->name => [
+                'runtime_backend_available' => $backendAvailable,
+                'runtime_backend_exit_code' => $backendExitCode,
+                'runtime_backend_output' => $backendOutput,
+                'runtime_units' => $runtimeUnits,
+                'runtime_unit_extras' => $runtimeUnitExtras,
+                'event_notifier' => null,
+            ],
+        ]);
+    }
+
+    private function introspectSupervisor(Process $process): ProbeSnapshot
+    {
         $probe = $this->runtimeBackendProbe()->check($process->app->node);
-        $spec = $this->expectedRuntimeUnitSpecs($process);
+        $spec = $this->expectedSupervisorUnitSpecs($process);
         $notifier = [
             'required' => $this->requiresEventNotifier($process),
             'script_hash' => $this->processEventNotifierRenderer()->hash(),
@@ -290,18 +392,25 @@ PHP;
             return [];
         }
 
+        $isDocker = $this->runtimeFor($process) === ProcessRuntime::Docker;
+
         return collect($observed['runtime_unit_extras'])
             ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
-            ->map(fn (string $runtimeUnit): DriftEntry => new DriftEntry(
-                family: $this->key(),
-                key: 'process.runtime_unit_extra',
-                kind: DriftKind::Extra,
-                summary: "Process runtime unit {$runtimeUnit} has no matching active gateway process intent.",
-                detail: [
-                    'runtime_unit' => $runtimeUnit,
-                    'expected_path' => "/etc/supervisor/conf.d/{$runtimeUnit}.conf",
-                ],
-            ))
+            ->map(function (string $runtimeUnit) use ($isDocker): DriftEntry {
+                $detail = ['runtime_unit' => $runtimeUnit];
+
+                if (! $isDocker) {
+                    $detail['expected_path'] = "/etc/supervisor/conf.d/{$runtimeUnit}.conf";
+                }
+
+                return new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.runtime_unit_extra',
+                    kind: DriftKind::Extra,
+                    summary: "Process runtime unit {$runtimeUnit} has no matching active gateway process intent.",
+                    detail: $detail,
+                );
+            })
             ->values()
             ->all();
     }
@@ -372,6 +481,10 @@ PHP;
      */
     private function checkRestartPolicy(Process $process, ProbeSnapshot $snapshot): array
     {
+        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+            return [];
+        }
+
         return $this->checkRuntimeUnitField(
             process: $process,
             snapshot: $snapshot,
@@ -386,6 +499,10 @@ PHP;
      */
     private function checkRuntimeEnvironment(Process $process, ProbeSnapshot $snapshot): array
     {
+        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+            return [];
+        }
+
         return $this->checkRuntimeUnitField(
             process: $process,
             snapshot: $snapshot,
@@ -479,11 +596,17 @@ PHP;
                 continue;
             }
 
-            if (
-                ($runtimeUnit['config_matches'] ?? null) === false
-                && ($runtimeUnit['restart_policy_matches'] ?? null) !== false
-                && ($runtimeUnit['environment_matches'] ?? null) !== false
-            ) {
+            // For Docker runtime, any mismatch in config_matches is a runtime_unit_mismatch
+            // For Supervisor, config_matches false with restart_policy_matches true and environment_matches true is a mismatch
+            $isMismatch = ($runtimeUnit['config_matches'] ?? null) === false;
+
+            if ($this->runtimeFor($process) !== ProcessRuntime::Docker) {
+                $isMismatch = $isMismatch
+                    && ($runtimeUnit['restart_policy_matches'] ?? null) !== false
+                    && ($runtimeUnit['environment_matches'] ?? null) !== false;
+            }
+
+            if ($isMismatch) {
                 $drift[] = new DriftEntry(
                     family: $this->key(),
                     key: 'process.runtime_unit_mismatch',
@@ -518,12 +641,16 @@ PHP;
         }
 
         if (($observed['runtime_backend_available'] ?? null) === false) {
+            $backendName = $this->runtimeFor($process) === ProcessRuntime::Docker
+                ? 'Docker'
+                : 'Supervisor';
+
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'process.runtime_backend_unavailable',
                     kind: DriftKind::Unverifiable,
-                    summary: "Supervisor runtime backend is unavailable for process {$process->name} on app node {$process->app->node->name}.",
+                    summary: "{$backendName} runtime backend is unavailable for process {$process->name} on app node {$process->app->node->name}.",
                     detail: [
                         'node' => $process->app->node->name,
                         'exit_code' => $observed['runtime_backend_exit_code'] ?? null,
@@ -588,6 +715,13 @@ PHP;
             return [];
         }
 
+        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+            return collect([null, ...$process->app->workspaces->all()])
+                ->map(fn (?Workspace $workspace): string => $this->dockerContainerRenderer()->containerName($process->app, $process, $workspace))
+                ->values()
+                ->all();
+        }
+
         return collect([null, ...$process->app->workspaces->all()])
             ->map(fn (?Workspace $workspace): string => $this->supervisorProgramRenderer()->programName($process->app, $process, $workspace))
             ->values()
@@ -598,6 +732,51 @@ PHP;
      * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
      */
     private function expectedRuntimeUnitSpecs(Process $process): array
+    {
+        $process->loadMissing('app.workspaces');
+
+        if (! $process->app instanceof App) {
+            return [];
+        }
+
+        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+            return $this->expectedDockerUnitSpecs($process);
+        }
+
+        return $this->expectedSupervisorUnitSpecs($process);
+    }
+
+    /**
+     * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
+     */
+    private function expectedDockerUnitSpecs(Process $process): array
+    {
+        $process->loadMissing('app.workspaces');
+
+        if (! $process->app instanceof App) {
+            return [];
+        }
+
+        return collect([null, ...$process->app->workspaces->all()])
+            ->map(function (?Workspace $workspace) use ($process): array {
+                $container = $this->dockerContainerRenderer()->render($process->app, $process, $workspace);
+
+                return [
+                    'name' => $container->name(),
+                    'config_path' => $container->name(),
+                    'config_hash' => $container->specHash(),
+                    'restart_policy' => '',
+                    'environment_line' => '',
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
+     */
+    private function expectedSupervisorUnitSpecs(Process $process): array
     {
         $process->loadMissing('app.workspaces');
 
@@ -662,5 +841,10 @@ PHP;
     private function processEventNotifierRenderer(): ProcessEventNotifierRenderer
     {
         return $this->processEventNotifierRenderer ?? app(ProcessEventNotifierRenderer::class);
+    }
+
+    private function dockerContainerRenderer(): ProcessDockerContainerRenderer
+    {
+        return $this->dockerContainerRenderer ?? app(ProcessDockerContainerRenderer::class);
     }
 }

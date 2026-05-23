@@ -17,6 +17,7 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -509,39 +510,168 @@ describe('runtime context expansion', function (): void {
 });
 
 describe('docker runtime probe scope', function (): void {
-    it('skips the supervisor probe pipeline for docker-runtime processes and emits no missing-supervisor drift', function (): void {
-        $app = processableApp();
+    it('introspects docker containers for docker-runtime processes via docker container inspect', function (): void {
+        $app = processableApp(['name' => 'docs']);
         $process = processFor($app, [
             'name' => 'queue',
             'runtime' => ProcessRuntime::Docker,
         ]);
-        $shell = new ProcessesProbeRecordingRemoteShell([]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
+            ]), stderr: '', durationMs: 1),
+        ]);
 
         $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
 
-        // No supervisor SSH calls were made because the probe short-circuits
-        // on runtime=docker. Live Docker container coverage is deferred to
-        // ORBIT-RUNTIME-08B; until then the empty snapshot keeps doctor
-        // from raising false supervisor drift for Docker processes.
-        expect($shell->scripts)->toBe([])
-            ->and($snapshot->get('queue'))->toBeNull();
+        expect($shell->scripts[0])->toContain('docker container inspect')
+            ->and($snapshot->get('queue'))->toMatchArray([
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit_docs_main_queue' => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'container_state' => 'running',
+                    ],
+                ],
+            ]);
     });
 
-    it('produces no supervisor-flavored diff entries for docker-runtime processes', function (): void {
-        $app = processableApp();
+    it('detects missing docker containers for docker-runtime processes', function (): void {
+        $app = processableApp(['name' => 'docs']);
         $process = processFor($app, [
             'name' => 'queue',
-            'crash_notification' => ProcessCrashNotification::AgentIde,
             'runtime' => ProcessRuntime::Docker,
         ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such container', durationMs: 1),
+        ]);
 
-        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
 
-        expect(issue($drift, 'process.runtime_unit_missing'))->toBeNull()
-            ->and(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull()
-            ->and(issue($drift, 'process.runtime_unit_extra'))->toBeNull()
-            ->and(issue($drift, 'process.event_notifier_missing'))->toBeNull()
-            ->and(issue($drift, 'process.runtime_backend_unavailable'))->toBeNull();
+        expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
+            'runtime_unit' => 'orbit_docs_main_queue',
+        ]);
+    });
+
+    it('detects docker container spec hash mismatches for docker-runtime processes', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => 'wrong-hash']],
+            ]), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects stale docker containers for docker-runtime processes', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
+            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit_docs_main_oldqueue\n", stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        $extra = issue($drift, 'process.runtime_unit_extra');
+        expect($extra?->kind)->toBe(DriftKind::Extra);
+        expect($extra?->detail)->toMatchArray(['runtime_unit' => 'orbit_docs_main_oldqueue']);
+    });
+
+    it('does not flag created container state as drift', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'created'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
+            ]), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
+    });
+
+    it('does not flag exited container state as drift', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'exited'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
+            ]), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
+    });
+
+    it('does not flag paused container state as drift', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'paused'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
+            ]), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
+    });
+
+    it('does not flag dead container state as drift', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'dead'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
+            ]), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
     });
 
     it('still detects gateway-side drift (record completeness, owner app) for docker-runtime processes', function (): void {

@@ -42,6 +42,11 @@ class DockerCommandBuilder
         return 'docker start '.$this->quote($name);
     }
 
+    public function containerStop(string $name): string
+    {
+        return 'docker stop '.$this->quote($name);
+    }
+
     public function containerRestart(string $name): string
     {
         return 'docker restart '.$this->quote($name);

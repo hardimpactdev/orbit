@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\Requests\Processes\RemoveProcessRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -39,7 +40,7 @@ describe('process:remove base contract', function (): void {
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessRemoveRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -66,11 +67,36 @@ describe('process:remove base contract', function (): void {
             ->and($remoteShell->scripts[1])->toContain('/etc/supervisor/conf.d/orbit_docs_feature-docs_vite.conf');
     });
 
+    it('dispatches docker rm for docker runtime processes', function (): void {
+        createProcessRemoveLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
+        $remoteShell = new ProcessRemoveRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '{"State":{"Status":"running"},"Config":{}}', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:remove', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--force' => true,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(Process::query()->where('name', 'queue')->exists())->toBeFalse()
+            ->and($remoteShell->scripts[1])->toContain('docker rm -f')
+            ->and($remoteShell->scripts[1])->toContain('orbit_docs_main_queue');
+    });
+
     it('returns success with warnings when cleanup fails after intent removal', function (): void {
         createProcessRemoveLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
         ]));
@@ -92,7 +118,7 @@ describe('process:remove base contract', function (): void {
         createProcessRemoveLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([]));
 
         $exitCode = Artisan::call('process:remove', [
@@ -112,7 +138,7 @@ describe('process:remove base contract', function (): void {
         createProcessRemoveLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -129,7 +155,7 @@ describe('process:remove base contract', function (): void {
         createProcessRemoveLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessRemoveRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
@@ -202,7 +228,7 @@ describe('process:remove base contract', function (): void {
         createProcessRemoveLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));

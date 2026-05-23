@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\Requests\Processes\StartProcessesRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -37,7 +39,7 @@ describe('process:start base contract', function (): void {
         createProcessStartLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStartRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'started', stderr: '', durationMs: 1),
         ]);
@@ -62,8 +64,8 @@ describe('process:start base contract', function (): void {
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10, 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStartRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -93,8 +95,8 @@ describe('process:start base contract', function (): void {
         createProcessStartLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10, 'runtime' => ProcessRuntime::Supervisor]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessStartRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
@@ -117,7 +119,7 @@ describe('process:start base contract', function (): void {
         createProcessStartLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessStartRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -136,7 +138,7 @@ describe('process:start base contract', function (): void {
         createProcessStartLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStartRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
@@ -214,7 +216,7 @@ describe('process:start base contract', function (): void {
         createProcessStartLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessStartRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -230,6 +232,53 @@ describe('process:start base contract', function (): void {
             ->expectsOutputToContain('└  Working...')
             ->expectsOutput("Process 'vite' started for app 'docs'")
             ->assertSuccessful();
+    });
+});
+
+describe('process:start runtime routing', function (): void {
+    it('dispatches docker start for docker runtime processes', function (): void {
+        createProcessStartLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
+        $remoteShell = new ProcessStartRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'started', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:start', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($remoteShell->scripts[0])->toContain('docker start')
+            ->and($remoteShell->scripts[0])->toContain('orbit_docs_main_queue')
+            ->and($payload['success']['data']['runtimes'][0]['state'])->toBe('running');
+    });
+
+    it('dispatches supervisorctl start for supervisor runtime processes', function (): void {
+        createProcessStartLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
+        $remoteShell = new ProcessStartRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'started', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $exitCode = Artisan::call('process:start', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($remoteShell->scripts[0])->toBe("sudo supervisorctl start 'orbit_docs_main_vite'")
+            ->and($payload['success']['data']['runtimes'][0]['state'])->toBe('running');
     });
 });
 
