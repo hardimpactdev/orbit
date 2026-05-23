@@ -98,9 +98,46 @@ describe('GatewayApiRuntimeInstaller', function (): void {
             ->and($writtenGatewayApiCaddyfile)->not->toContain('bind 10.6.0.2')
             ->and($writtenGatewayApiCaddyfile)->toContain('tls '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.crt '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.key')
             ->and($writtenGatewayApiCaddyfile)->toContain('reverse_proxy http://orbit-runtime:8080')
+            ->and($writtenGatewayApiCaddyfile)->toContain('flush_interval -1')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('php_fastcgi')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('php-fpm')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('orbit-api.sock');
+    });
+
+    it('preserves real-time streaming through the containerized gateway api with flush_interval disabled', function (): void {
+        $writtenGatewayApiCaddyfile = null;
+        $caDir = storage_path('app/orbit/ca');
+        $certsDir = storage_path('app/orbit/certs');
+
+        File::ensureDirectoryExists($caDir);
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$caDir}/root.key", 'test-root-key');
+        File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
+
+        Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
+                $writtenGatewayApiCaddyfile = (string) $process->input;
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+
+        app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
+
+        expect($writtenGatewayApiCaddyfile)
+            ->toContain('flush_interval -1')
+            ->and($writtenGatewayApiCaddyfile)->toContain('reverse_proxy http://orbit-runtime:8080');
     });
 
     it('ensures the orbit-runtime container before writing the gateway API Caddy config', function (): void {

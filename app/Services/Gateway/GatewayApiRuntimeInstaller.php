@@ -139,13 +139,13 @@ class GatewayApiRuntimeInstaller
         return <<<CADDY
 https://{$wireguardAddress}:443 {
     tls {$certPath} {$keyPath}
-    encode zstd gzip
 
     request_header -X-Forwarded-For
     request_header -X-Real-IP
     request_header -Forwarded
 
     reverse_proxy http://{$runtimeAlias}:{$port} {
+        flush_interval -1
         header_up Host {host}
         header_up X-Forwarded-Proto https
     }

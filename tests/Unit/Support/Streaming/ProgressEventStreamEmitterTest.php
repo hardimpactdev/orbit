@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Support\Streaming\ProgressEventStreamEmitter;
 
 it('emits progress events as server sent event frames', function (): void {
-    $emitter = new ProgressEventStreamEmitter;
+    $emitter = new ProgressEventStreamEmitter('cli');
 
     ob_start();
     $emitter->tree('Workspace - feature-docs', [
@@ -27,11 +27,28 @@ it('emits progress events as server sent event frames', function (): void {
 });
 
 it('emits heartbeat comments', function (): void {
-    $emitter = new ProgressEventStreamEmitter;
+    $emitter = new ProgressEventStreamEmitter('cli');
 
     ob_start();
     $emitter->heartbeat();
     $output = (string) ob_get_clean();
 
     expect($output)->toBe(": heartbeat\n\n");
+});
+
+it('flushes output under fpm-fcgi and cli-server sapi', function (): void {
+    $emitter = new ProgressEventStreamEmitter('cli-server');
+
+    $emitter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+});
+
+it('skips flush under cli sapi', function (): void {
+    $emitter = new ProgressEventStreamEmitter('cli');
+
+    ob_start();
+    $emitter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+    $output = (string) ob_get_clean();
+
+    expect($output)->toContain("event: tree\n")
+        ->and($output)->toContain('"title":"Test"');
 });

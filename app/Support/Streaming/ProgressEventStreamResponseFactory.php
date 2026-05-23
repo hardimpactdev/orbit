@@ -11,19 +11,23 @@ use Throwable;
 
 final class ProgressEventStreamResponseFactory
 {
+    public function __construct(
+        private readonly string $sapi = PHP_SAPI,
+    ) {}
+
     /**
      * @param  callable(ProgressEventStreamEmitter): void  $streamer
      */
     public function make(callable $streamer): StreamedResponse
     {
         return new StreamedResponse(function () use ($streamer): void {
-            if (PHP_SAPI === 'fpm-fcgi') {
+            if ($this->sapi === 'fpm-fcgi' || $this->sapi === 'cli-server') {
                 while (ob_get_level() > 0) {
                     ob_end_flush();
                 }
             }
 
-            $emitter = new ProgressEventStreamEmitter;
+            $emitter = new ProgressEventStreamEmitter($this->sapi);
 
             app()->instance(ProgressReporter::class, new SseProgressReporter($emitter));
 

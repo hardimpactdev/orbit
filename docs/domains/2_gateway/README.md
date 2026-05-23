@@ -27,14 +27,37 @@ drift repair. Gateway commands may repair caller-local gateway trust, but they
 do not create a gateway doctor family.
 
 The gateway API runtime is the gateway `orbit-runtime` container, exposed on
-the Orbit network through the gateway `orbit-caddy` container. Gateway bootstrap
-ensures `orbit-runtime` is created and running before `orbit-caddy` is
-configured to route HTTPS gateway traffic to it. Gateway commands verify and
-trust that API; they do not install host PHP, host Caddy, or PHP-FPM gateway
-fallbacks, and the gateway API path does not render PHP-FPM sockets or
-`php_fastcgi` upstream configuration.
+ the Orbit network through the gateway `orbit-caddy` container. Gateway bootstrap
+ ensures `orbit-runtime` is created and running before `orbit-caddy` is
+ configured to route HTTPS gateway traffic to it. Gateway commands verify and
+ trust that API; they do not install host PHP, host Caddy, or PHP-FPM gateway
+ fallbacks, and the gateway API path does not render PHP-FPM sockets or
+ `php_fastcgi` upstream configuration.
 
-## Domain Rules
+ ## Streaming under Docker runtime
+
+ The containerized gateway API preserves the existing progress/SSE streaming
+ contract with three mechanisms:
+
+ 1. **Caddy `flush_interval -1`**: The gateway API Caddy block disables
+    response buffering on the `reverse_proxy` to `orbit-runtime`, so SSE frames
+    are forwarded immediately.
+ 2. **No compression on gateway API**: The gateway API Caddy block omits
+    `encode zstd gzip` to prevent compression middleware from buffering small
+    SSE frames or heartbeats.
+ 3. **SAPI-conditional flush in PHP**: Streaming controllers and the progress
+    factory flush output buffers only under `fpm-fcgi` and `cli-server` SAPI.
+    This covers the Docker runtime (`php artisan serve` runs under
+    `cli-server`) while avoiding double-flush under FrankenPHP or other SAPIs.
+ 4. **Multi-process dev server**: The gateway HTTP server inside
+    `orbit-runtime` sets `PHP_CLI_SERVER_WORKERS=4` (configurable via
+     environment) so that long-lived SSE streams do not starve ordinary API
+     requests. The PHP built-in server is single-process by default.
+
+ The product invariant from the proxy domain applies: streaming traffic cannot
+ starve ordinary gateway API execution.
+
+ ## Domain Rules
 
 These rules apply to all gateway commands and define the invariants the family enforces.
 

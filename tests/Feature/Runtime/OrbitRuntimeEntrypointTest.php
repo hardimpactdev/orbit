@@ -114,3 +114,60 @@ it('exposes the gateway API host and port through ORBIT_API_HOST / ORBIT_API_POR
         ->toContain('ORBIT_API_PORT')
         ->toContain('start_gateway_http_server');
 });
+
+it('sets PHP_CLI_SERVER_WORKERS for concurrent gateway api requests', function (): void {
+    $root = sys_get_temp_dir().'/orbit-runtime-workers-'.bin2hex(random_bytes(6));
+    $source = "{$root}/source";
+    $bin = "{$root}/bin";
+    $capture = "{$root}/capture";
+
+    mkdir($source, recursive: true);
+    mkdir($bin, recursive: true);
+
+    file_put_contents("{$source}/artisan", "<?php\n");
+
+    file_put_contents("{$bin}/php", <<<'BASH'
+#!/usr/bin/env bash
+{
+    printf 'php_env=%s\n' "${PHP_CLI_SERVER_WORKERS:-not-set}"
+    printf 'php_argv=%s\n' "$*"
+} >> "$PHP_CAPTURE"
+
+for arg do
+    case "$arg" in
+        serve)
+            exit 0
+            ;;
+    esac
+done
+
+exit 0
+BASH);
+    chmod("{$bin}/php", 0755);
+
+    $entrypoint = base_path('docker/orbit-runtime/entrypoint.sh');
+
+    try {
+        $process = new Process(
+            ['bash', $entrypoint, 'sleep', 'infinity'],
+            null,
+            [
+                'ORBIT_SOURCE_PATH' => $source,
+                'ORBIT_IS_GATEWAY' => '1',
+                'PATH' => $bin.':/usr/bin:/bin',
+                'PHP_CAPTURE' => $capture,
+            ],
+        );
+
+        $process->setTimeout(15);
+        $process->run();
+
+        $logged = file_exists($capture) ? file_get_contents($capture) : '';
+
+        expect($logged)
+            ->toContain('php_env=4')
+            ->toContain('serve');
+    } finally {
+        (new Process(['rm', '-rf', $root]))->run();
+    }
+});

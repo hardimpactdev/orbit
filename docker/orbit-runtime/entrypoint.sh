@@ -36,10 +36,11 @@ wait_for_source() {
 start_gateway_http_server() {
     local host="${ORBIT_API_HOST:-0.0.0.0}"
     local port="${ORBIT_API_PORT:-8080}"
+    local workers="${PHP_CLI_SERVER_WORKERS:-4}"
 
-    printf 'orbit-runtime: starting gateway API server on %s:%s\n' "$host" "$port" >&2
+    printf 'orbit-runtime: starting gateway API server on %s:%s (workers=%s)\n' "$host" "$port" "$workers" >&2
 
-    php "$orbit_artisan" serve --host="$host" --port="$port" --no-reload &
+    PHP_CLI_SERVER_WORKERS="$workers" php "$orbit_artisan" serve --host="$host" --port="$port" --no-reload &
 }
 
 run_scheduler() {
