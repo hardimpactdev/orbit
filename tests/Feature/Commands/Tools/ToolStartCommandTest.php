@@ -335,7 +335,7 @@ describe('tool:start command contract', function (): void {
     it('shows remote action diagnostics and log and doctor recovery guidance in human mode', function (): void {
         createToolStartLocalNode('gateway');
         createToolStartTargetWithApp('app-failing-caddy', 'testabc');
-        app()->instance(RemoteShell::class, new ToolStartRecordingShell(exitCode: 7, stderr: 'systemctl start caddy failed'));
+        app()->instance(RemoteShell::class, new ToolStartRecordingShell(exitCode: 7, stderr: 'docker start orbit-caddy failed'));
 
         $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--node' => 'app-failing-caddy']);
         $output = Artisan::output();
@@ -343,7 +343,7 @@ describe('tool:start command contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($output)->toContain("Tool 'caddy' start failed on node 'app-failing-caddy'.")
             ->and($output)->toContain('Exit code: 7')
-            ->and($output)->toContain('systemctl start caddy failed')
+            ->and($output)->toContain('docker start orbit-caddy failed')
             ->and($output)->toContain('orbit tool:logs caddy --node=app-failing-caddy')
             ->and($output)->toContain('orbit doctor --fix --family=tool --restore');
     });

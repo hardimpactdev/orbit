@@ -147,7 +147,7 @@ describe('tool:restart command contract', function (): void {
             'expected_version' => '2.10.2',
             'config' => ['endpoints' => [['name' => 'http', 'url' => 'https://example.test']]],
         ]);
-        app()->instance(RemoteShell::class, new ToolRestartRecordingShell(exitCode: 7, stderr: 'systemctl restart caddy failed'));
+        app()->instance(RemoteShell::class, new ToolRestartRecordingShell(exitCode: 7, stderr: 'docker restart orbit-caddy failed'));
 
         $exitCode = Artisan::call('tool:restart', ['tool' => 'caddy', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -156,7 +156,7 @@ describe('tool:restart command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.remote_action_failed')
             ->and($payload['error']['meta'])->toMatchArray([
                 'exit_code' => 7,
-                'stderr' => 'systemctl restart caddy failed',
+                'stderr' => 'docker restart orbit-caddy failed',
             ])
             ->and($tool->refresh()->expected_state)->toBe('running')
             ->and($tool->expected_version)->toBe('2.10.2')
@@ -171,7 +171,7 @@ describe('tool:restart command contract', function (): void {
             'name' => 'caddy',
             'expected_state' => 'running',
         ]);
-        app()->instance(RemoteShell::class, new ToolRestartRecordingShell(exitCode: 7, stderr: 'systemctl restart caddy failed'));
+        app()->instance(RemoteShell::class, new ToolRestartRecordingShell(exitCode: 7, stderr: 'docker restart orbit-caddy failed'));
 
         $exitCode = Artisan::call('tool:restart', ['tool' => 'caddy', '--node' => 'app-1']);
         $output = Artisan::output();
@@ -179,7 +179,7 @@ describe('tool:restart command contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($output)->toContain("Tool 'caddy' restart failed on node 'app-1'.")
             ->and($output)->toContain('Exit code: 7')
-            ->and($output)->toContain('systemctl restart caddy failed')
+            ->and($output)->toContain('docker restart orbit-caddy failed')
             ->and($output)->toContain('orbit tool:logs caddy --node=app-1')
             ->and($output)->toContain('orbit doctor --fix --family=tool --restore')
             ->and($output)->toContain('Retry with orbit tool:restart caddy --node=app-1');

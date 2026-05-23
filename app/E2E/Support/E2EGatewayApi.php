@@ -181,8 +181,8 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            'systemctl stop caddy >/dev/null 2>&1 || true',
-            'Could not stop gateway Caddy before starting gateway test servers',
+            'docker stop orbit-caddy >/dev/null 2>&1 || true',
+            'Could not stop gateway orbit-caddy before starting gateway test servers',
         );
 
         self::prepareRootRemoteShellIdentity($gateway);

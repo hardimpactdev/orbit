@@ -176,7 +176,7 @@ describe('tool:restart JSON renderer', function (): void {
                 'node' => 'app-json-restart-1',
                 'action' => 'restart',
                 'exit_code' => 7,
-                'stderr' => 'systemctl restart caddy failed',
+                'stderr' => 'docker restart orbit-caddy failed',
             ],
         ], 502],
     ]);
@@ -185,7 +185,7 @@ describe('tool:restart JSON renderer', function (): void {
         createToolRestartJsonLocalNode('gateway');
         $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
-        app()->instance(RemoteShell::class, new ToolRestartJsonRecordingShell(exitCode: 7, stderr: 'systemctl restart caddy failed'));
+        app()->instance(RemoteShell::class, new ToolRestartJsonRecordingShell(exitCode: 7, stderr: 'docker restart orbit-caddy failed'));
 
         $exitCode = Artisan::call('tool:restart', [
             'tool' => 'caddy',
@@ -198,7 +198,7 @@ describe('tool:restart JSON renderer', function (): void {
             ->and($payload['error']['code'])->toBe('tool.remote_action_failed')
             ->and($payload['error']['meta'])->toHaveKeys(['exit_code', 'stderr'])
             ->and($payload['error']['meta']['exit_code'])->toBe(7)
-            ->and($payload['error']['meta']['stderr'])->toBe('systemctl restart caddy failed');
+            ->and($payload['error']['meta']['stderr'])->toBe('docker restart orbit-caddy failed');
     });
 });
 
