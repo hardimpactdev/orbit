@@ -49,7 +49,7 @@ record.
   It mounts the app source, uses the selected PHP image, receives app
   environment, and is targeted by `orbit-caddy` over the node Docker network.
 - **FrankenPHP app runtime:** PHP app/workspace web runtime. Classic mode is
-  the default. It replaces the host PHP/PHP-FPM web runtime and must carry
+  the default. It serves HTTP for PHP apps and workspaces and must carry
   OPcache, realpath cache, Composer autoload optimization, Laravel cache warmup,
   and optional preload configuration.
 - **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in
