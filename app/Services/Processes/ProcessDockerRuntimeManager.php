@@ -138,6 +138,11 @@ final readonly class ProcessDockerRuntimeManager
         return $this->run($node, $this->commands->containerStart($containerName))->successful();
     }
 
+    public function stop(Node $node, string $containerName): bool
+    {
+        return $this->run($node, $this->commands->containerStop($containerName))->successful();
+    }
+
     public function restart(Node $node, string $containerName): bool
     {
         return $this->run($node, $this->commands->containerRestart($containerName))->successful();

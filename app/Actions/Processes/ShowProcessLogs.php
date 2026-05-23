@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Contracts\RemoteShell;
+use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\SupervisorProgramRenderer;
 
 final readonly class ShowProcessLogs
@@ -16,6 +18,7 @@ final readonly class ShowProcessLogs
     public function __construct(
         private RemoteShell $remoteShell,
         private SupervisorProgramRenderer $renderer,
+        private ProcessDockerContainerRenderer $dockerRenderer,
     ) {}
 
     /**
@@ -50,20 +53,15 @@ final readonly class ShowProcessLogs
             ]);
         }
 
-        $definition = $this->renderer->definition($app, $process, $workspace);
-        $script = collect([
-            'sudo tail',
-            "-n {$lines}",
-            $follow ? '-F' : null,
-            escapeshellarg($definition->stdoutLogFile),
-        ])->filter()->implode(' ');
+        $runtimeUnit = $this->resolveRuntimeUnit($app, $process, $workspace);
+        $script = $this->buildLogScript($app, $process, $workspace, $runtimeUnit, $lines, $follow);
 
         $result = $this->remoteShell->run($app->node, $script);
 
         if (! $result->successful()) {
             throw new GatewayApiException('The runtime backend could not read the process log.', 'process.log_read_failed', [
                 'process' => $name,
-                'runtime_unit' => $definition->name,
+                'runtime_unit' => $runtimeUnit,
             ]);
         }
 
@@ -75,7 +73,7 @@ final readonly class ShowProcessLogs
                     'process' => $process->name,
                     'app' => $app->name,
                     'workspace' => $workspace?->name,
-                    'runtime_unit' => $definition->name,
+                    'runtime_unit' => $runtimeUnit,
                     'lines' => $parsedLines,
                 ],
             ],
@@ -83,6 +81,36 @@ final readonly class ShowProcessLogs
                 'line_count' => count($parsedLines),
             ],
         ];
+    }
+
+    private function resolveRuntimeUnit(App $app, Process $process, ?Workspace $workspace): string
+    {
+        if ($process->runtime === ProcessRuntime::Docker) {
+            return $this->dockerRenderer->containerName($app, $process, $workspace);
+        }
+
+        return $this->renderer->programName($app, $process, $workspace);
+    }
+
+    private function buildLogScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string
+    {
+        if ($process->runtime === ProcessRuntime::Docker) {
+            return collect([
+                'docker logs',
+                "--tail {$lines}",
+                $follow ? '--follow' : null,
+                escapeshellarg($runtimeUnit),
+            ])->filter()->implode(' ');
+        }
+
+        $definition = $this->renderer->definition($app, $process, $workspace);
+
+        return collect([
+            'sudo tail',
+            "-n {$lines}",
+            $follow ? '-F' : null,
+            escapeshellarg($definition->stdoutLogFile),
+        ])->filter()->implode(' ');
     }
 
     /**

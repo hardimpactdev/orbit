@@ -37,15 +37,12 @@ The node has Docker process runtime support available and responsive. Explicit
 fails, the probe stops and reports `process.runtime_backend_unavailable`
 instead of cascading to downstream checks.
 
-> **Known scope limit (ORBIT-RUNTIME-08A):** Live Docker container probing
-> lands with the lifecycle/log work in ORBIT-RUNTIME-08B (todo 338). Until
-> then, `doctor --family=process` only inspects runtime artifacts for
-> `process.runtime=supervisor` units. Docker-runtime processes still receive
-> gateway-side checks (record completeness, owner-app validity, runtime
-> context identity) but their live container state is intentionally not
-> surfaced as drift here. This avoids false-positive supervisor drift for
-> the new Docker default while the matching Docker probe layer is being
-> built.
+For Docker runtime units, the probe runs `docker container inspect` over SSH
+and checks the container state (`Created`, `Running`, `Exited`) and the
+`orbit.process.spec_hash` label against the rendered gateway spec. For
+Supervisor runtime units, the probe reads `/etc/supervisor/conf.d/orbit_*.conf`
+files and compares their content hash, restart policy, and environment line
+against the rendered gateway spec.
 
 ### Runtime-unit identity
 
@@ -59,7 +56,7 @@ container for Docker process runtime units, or Supervisor program for explicit
 
 ### Runtime artifact shape
 
-The rendered command, working directory, restart policy, user, and runtime environment match gateway configuration.
+The rendered command, working directory, restart policy, user, and runtime environment match gateway configuration. For Docker runtime units, the `orbit.process.spec_hash` label on the live container must match the gateway-rendered spec hash.
 
 ### Lifecycle notifier material
 

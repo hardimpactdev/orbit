@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Contracts\RemoteShell;
+use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
+use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 
 final readonly class RemoveProcess
@@ -15,6 +17,7 @@ final readonly class RemoveProcess
     public function __construct(
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
         private RemoteShell $remoteShell,
+        private ProcessDockerRuntimeManager $dockerManager,
     ) {}
 
     /**
@@ -37,7 +40,7 @@ final readonly class RemoveProcess
         }
 
         $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process);
-        $warnings = $this->removeRuntimeUnits($app, $runtimeUnits);
+        $warnings = $this->removeRuntimeUnits($app, $process, $runtimeUnits);
         $process->delete();
 
         return [
@@ -56,7 +59,7 @@ final readonly class RemoveProcess
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
      */
-    private function removeRuntimeUnits(App $app, array $runtimeUnits): array
+    private function removeRuntimeUnits(App $app, Process $process, array $runtimeUnits): array
     {
         if ($app->node === null) {
             return [[
@@ -71,9 +74,9 @@ final readonly class RemoveProcess
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $result = $this->remoteShell->run($app->node, $this->removeScript($name));
+            $ok = $this->removeRuntimeUnit($app, $process, $name);
 
-            if (! $result->successful()) {
+            if (! $ok) {
                 $warnings[] = [
                     'code' => 'process.runtime_unit_extra',
                     'family' => 'process',
@@ -86,7 +89,16 @@ final readonly class RemoveProcess
         return $warnings;
     }
 
-    private function removeScript(string $name): string
+    private function removeRuntimeUnit(App $app, Process $process, string $name): bool
+    {
+        if ($process->runtime === ProcessRuntime::Docker) {
+            return $this->dockerManager->remove($app->node, $name);
+        }
+
+        return $this->remoteShell->run($app->node, $this->supervisorRemoveScript($name))->successful();
+    }
+
+    private function supervisorRemoveScript(string $name): string
     {
         $configPath = "/etc/supervisor/conf.d/{$name}.conf";
 
