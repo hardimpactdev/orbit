@@ -280,9 +280,9 @@ class WorkspaceRemoveCommand extends Command
                 'run' => fn (): string => 'done',
             ],
             [
-                'key' => 'clean_php_fpm',
-                'label' => 'Clean workspace PHP-FPM pool',
-                'doneLabel' => 'Cleaned workspace PHP-FPM pool',
+                'key' => 'clean_runtime_artifacts',
+                'label' => 'Clean workspace runtime artifacts',
+                'doneLabel' => 'Cleaned workspace runtime artifacts',
                 'run' => fn (): string => 'done',
             ],
             [
@@ -301,7 +301,6 @@ class WorkspaceRemoveCommand extends Command
      *     action: string,
      *     proxy_routes_removed: int,
      *     processes_removed: int,
-     *     fpm_config_removed: bool,
      *     worktree_removed: bool,
      *     teardown_steps_run: int,
      *     kept_files: bool,
@@ -317,7 +316,6 @@ class WorkspaceRemoveCommand extends Command
             'action' => $result['action'],
             'proxy_routes_removed' => $result['proxy_routes_removed'],
             'processes_removed' => $result['processes_removed'],
-            'fpm_config_removed' => $result['fpm_config_removed'],
             'worktree_removed' => $result['worktree_removed'],
             'teardown_steps_run' => $result['teardown_steps_run'],
         ];

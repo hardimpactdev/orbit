@@ -37,7 +37,6 @@ use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
-use App\Services\Workspaces\WorkspacesFixer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -77,7 +76,6 @@ final readonly class DoctorReportRunner
         private ToolsFixer $toolsFixer,
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
-        private WorkspacesFixer $workspacesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
@@ -936,9 +934,9 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>
      */
-    private function handleAppExtraAction(Node $node, string $appSlug): ?array
+    private function handleAppExtraAction(Node $node, string $appSlug): array
     {
         try {
             return $this->appsFixer->removeExtra($node, $appSlug);
@@ -1077,9 +1075,9 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>
      */
-    private function handleAppConfigExtraAction(Node $node, string $appSlug): ?array
+    private function handleAppConfigExtraAction(Node $node, string $appSlug): array
     {
         try {
             return $this->appsFixer->removeRuntimeConfigExtra($node, $appSlug);
@@ -1343,12 +1341,8 @@ final readonly class DoctorReportRunner
             'proxy.tls_mismatch',
             'proxy.caddy_container_missing',
             'proxy.caddy_container_down',
-            'workspace.fpm_config_missing',
-            'workspace.fpm_config_mismatch',
             'workspace.security.system_user',
             'workspace.security.fs_permissions',
-            'workspace.security.fpm_pool_isolation',
-            'workspace.security.fpm_systemd_hardening',
             'app.runtime_container_missing',
             'app.runtime_container_mismatch',
             'app.runtime_container_extra',
@@ -1642,28 +1636,21 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>
      */
-    private function handleWorkspaceAction(Workspace $workspace, DriftEntry $entry): ?array
+    private function handleWorkspaceAction(Workspace $workspace, DriftEntry $entry): array
     {
-        try {
-            return $this->workspacesFixer->fix($workspace, $entry);
-        } catch (\Throwable $e) {
-            $workspace->loadMissing('app.node');
+        $workspace->loadMissing('app.node');
 
-            return [
-                'family' => $entry->family,
-                'node' => $workspace->app?->node?->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
+        return [
+            'family' => $entry->family,
+            'node' => $workspace->app?->node?->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'restore',
+            'status' => 'skipped',
+            'summary' => "Skipped fix for {$entry->key}: workspace auto-fix is not supported in the Docker-first runtime.",
+        ];
     }
 
     /**

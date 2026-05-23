@@ -724,7 +724,7 @@ class ProfileCommand extends Command implements Loggable
         if ($phpStart !== null && $laravelStart !== null) {
             $phpBootMs = max(0.0, $laravelStart - $phpStart);
             $accountedMs += $phpBootMs;
-            $this->dottedLine('PHP-FPM', $this->formatMs($phpBootMs).'ms', indent: 2, dim: true);
+            $this->dottedLine('FrankenPHP', $this->formatMs($phpBootMs).'ms', indent: 2, dim: true);
         }
 
         $profiler = is_array($toolbar['profiler'] ?? null) ? $toolbar['profiler'] : [];

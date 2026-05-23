@@ -80,7 +80,6 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     app()->instance(RemoteShell::class, $remoteShell);
 
@@ -96,7 +95,7 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
     expect($exitCode)->toBe(0)
         ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
         ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())->toBeFalse()
-        ->and($remoteShell->scripts)->toHaveCount(4)
+        ->and($remoteShell->scripts)->toHaveCount(3)
         ->and($remoteShell->scripts[0])->toContain('orbit_docs_feature-api_queue')
         ->and($remoteShell->scripts[1])->toBe('php artisan migrate:rollback --force')
         ->and($remoteShell->options[1]['cwd'])->toBe('/home/orbit/apps/docs/.worktrees/feature-api')
@@ -111,15 +110,13 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
             'VITE_APP_URL' => 'https://feature-api.docs.test',
             'VITE_VALET_HOST' => 'feature-api.docs.test',
         ])
-        ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature-api.conf')
-        ->and($remoteShell->scripts[3])->toContain("sudo rm -rf '/home/orbit/apps/docs/.worktrees/feature-api'")
+        ->and($remoteShell->scripts[2])->toContain("sudo rm -rf '/home/orbit/apps/docs/.worktrees/feature-api'")
         ->and($payload['success']['data'])->toMatchArray([
             'name' => 'feature-api',
             'app' => 'docs',
             'action' => 'removed',
             'proxy_routes_removed' => 1,
             'processes_removed' => 1,
-            'fpm_config_removed' => true,
             'worktree_removed' => true,
             'teardown_steps_run' => 1,
         ])
@@ -164,7 +161,7 @@ it('renders the documented human progress tree while removing a workspace', func
         ->expectsOutputToContain('●  Stopped traffic for workspace hostname')
         ->expectsOutputToContain('●  Stopped inherited processes')
         ->expectsOutputToContain('●  Ran teardown steps')
-        ->expectsOutputToContain('●  Cleaned workspace PHP-FPM pool')
+        ->expectsOutputToContain('●  Cleaned workspace runtime artifacts')
         ->expectsOutputToContain('●  Removed worktree')
         ->expectsOutputToContain("└  Workspace 'feature-api' removed.")
         ->expectsOutputToContain("Workspace 'feature-api' removed.")
@@ -291,7 +288,7 @@ it('preserves files when keep files is requested', function (): void {
 
     expect($exitCode)->toBe(0)
         ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
-        ->and($remoteShell->scripts)->toHaveCount(2)
+        ->and($remoteShell->scripts)->toHaveCount(1)
         ->and(implode("\n", $remoteShell->scripts))->not->toContain('rm -rf')
         ->and($payload['success']['data']['worktree_removed'])->toBeFalse()
         ->and($payload['success']['meta']['kept_files'])->toBeTrue();
@@ -308,7 +305,6 @@ it('reports cleanup drift as success warnings after intent removal', function ()
     ]);
     app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'process failed', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'fpm failed', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'files failed', durationMs: 1),
     ]));
 
@@ -323,12 +319,10 @@ it('reports cleanup drift as success warnings after intent removal', function ()
     expect($exitCode)->toBe(0)
         ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
         ->and($payload['success']['data']['processes_removed'])->toBe(0)
-        ->and($payload['success']['data']['fpm_config_removed'])->toBeFalse()
         ->and($payload['success']['data']['worktree_removed'])->toBeFalse()
-        ->and($payload['success']['meta']['warnings'])->toHaveCount(3)
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(2)
         ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('process.runtime_unit_extra')
-        ->and($payload['success']['meta']['warnings'][1]['code'])->toBe('workspace.artifact_extra')
-        ->and($payload['success']['meta']['warnings'][2]['code'])->toBe('workspace.artifact_extra');
+        ->and($payload['success']['meta']['warnings'][1]['code'])->toBe('workspace.artifact_extra');
 });
 
 it('continues workspace teardown after a failed step and reports the failed step warning', function (): void {
@@ -488,7 +482,7 @@ it('forwards configured non-gateway callers through the typed gateway request', 
                     'action' => 'removed',
                     'proxy_routes_removed' => 1,
                     'processes_removed' => 1,
-                    'fpm_config_removed' => true,
+
                     'worktree_removed' => false,
                     'teardown_steps_run' => 0,
                 ],

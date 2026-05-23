@@ -100,4 +100,4 @@ These boundaries define what the app family owns and what belongs to other famil
   to `ingress`; private route selection and backend-pool targeting belong to
   `router`; `app-production` owns the private backend runtime; `websocket`
   owns the Reverb runtime. App commands do not install host PHP, Composer,
-  Caddy, PHP-FPM, or Reverb.
+  Caddy, or Reverb.

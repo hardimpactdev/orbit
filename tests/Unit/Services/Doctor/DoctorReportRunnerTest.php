@@ -852,8 +852,7 @@ describe('DoctorReportRunner', function (): void {
             'path' => '/home/orbit/apps/docs/.worktrees/feature',
         ]);
         $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\t0\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 

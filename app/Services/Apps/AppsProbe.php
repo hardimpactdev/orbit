@@ -18,7 +18,7 @@ final readonly class AppsProbe
 {
     public function __construct(
         private ?RemoteShell $remoteShell = null,
-        private ?AppFpmPoolRenderer $fpmPoolRenderer = null,
+        private ?AppRuntimeUser $appRuntimeUser = null,
         private ?AppRuntimeContainerRenderer $appRuntimeContainerRenderer = null,
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
         private ?AppAgentIdeDefaults $agentIdeDefaults = null,
@@ -70,7 +70,7 @@ final readonly class AppsProbe
             'APP_PATH' => rtrim((string) $app->path, '/'),
             'APP_DOCUMENT_ROOT' => (string) $app->document_root,
             'RUNTIME_KIND' => $app->runtime_kind->value,
-            'RUNTIME_USER' => $this->fpmPoolRenderer()->runtimeUser($app),
+            'RUNTIME_USER' => $this->appRuntimeUser()->forApp($app),
             'RUNTIME_CONTAINER_NAME' => $containerName,
             'EXPECTED_SPEC_HASH' => $expectedSpecHash,
             'RUNTIME_CONFIG_PATH' => $runtimeConfigPath,
@@ -838,7 +838,7 @@ BASH;
                 summary: "Production app {$app->name} is missing its expected runtime user.",
                 detail: [
                     'app' => $app->name,
-                    'runtime_user' => $this->fpmPoolRenderer()->runtimeUser($app),
+                    'runtime_user' => $this->appRuntimeUser()->forApp($app),
                 ],
             );
         }
@@ -852,7 +852,7 @@ BASH;
                 detail: [
                     'app' => $app->name,
                     'path' => $app->path,
-                    'runtime_user' => $this->fpmPoolRenderer()->runtimeUser($app),
+                    'runtime_user' => $this->appRuntimeUser()->forApp($app),
                 ],
             );
         }
@@ -1065,9 +1065,9 @@ BASH;
         return [];
     }
 
-    private function fpmPoolRenderer(): AppFpmPoolRenderer
+    private function appRuntimeUser(): AppRuntimeUser
     {
-        return $this->fpmPoolRenderer ?? app(AppFpmPoolRenderer::class);
+        return $this->appRuntimeUser ?? app(AppRuntimeUser::class);
     }
 
     private function appRuntimeContainerRenderer(): AppRuntimeContainerRenderer

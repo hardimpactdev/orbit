@@ -49,16 +49,15 @@ describe('source path reality', function (): void {
                 'name' => 'feature',
                 'path' => "{$app->path}/.worktrees/feature",
             ]);
-        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\n");
+        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\n");
 
         $snapshot = (new WorkspacesProbe($shell))->introspect($workspace);
 
         expect($snapshot->get('feature'))->toMatchArray([
             'path_exists' => true,
             'path_usable' => true,
-            'php_fpm_available' => true,
-            'fpm_config_exists' => true,
-            'fpm_config_matches' => true,
+            'system_user_exists' => true,
+            'fs_permissions_ok' => true,
         ]);
         expect($shell->scripts[0])->toContain('php -r')
             ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))->toMatchArray([
@@ -166,15 +165,14 @@ describe('PHP runtime reality', function (): void {
         expect(issue($drift, 'workspace.php_version_unavailable')?->kind)->toBe(DriftKind::Missing);
     });
 
-    it('does not report PHP version unavailable for PHP workspaces when only FPM is missing', function (): void {
+    it('does not report PHP version unavailable when path is missing', function (): void {
         $app = workspaceableApp(['php_version' => '8.5']);
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
         $snapshot = new ProbeSnapshot([
             'feature' => [
-                'path_exists' => true,
-                'path_usable' => true,
-                'php_fpm_available' => false,
+                'path_exists' => false,
+                'path_usable' => false,
             ],
         ]);
 
@@ -191,7 +189,6 @@ describe('PHP runtime reality', function (): void {
             'feature' => [
                 'path_exists' => false,
                 'path_usable' => false,
-                'php_fpm_available' => false,
             ],
         ]);
 
@@ -201,78 +198,22 @@ describe('PHP runtime reality', function (): void {
     });
 });
 
-describe('PHP-FPM configuration reality', function (): void {
-    it('detects missing workspace PHP-FPM pool configuration for non-PHP apps', function (): void {
-        $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Static]);
-        $workspace = workspaceFor($app, ['name' => 'feature']);
-
-        $snapshot = new ProbeSnapshot([
-            'feature' => convergedRuntimeSnapshot([
-                'fpm_config_exists' => false,
-                'fpm_config_matches' => false,
-            ]),
-        ]);
-
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
-
-        expect(issue($drift, 'workspace.fpm_config_missing')?->kind)->toBe(DriftKind::Missing);
-        expect(issue($drift, 'workspace.fpm_config_mismatch'))->toBeNull();
-    });
-
-    it('detects workspace PHP-FPM pool configuration mismatches for non-PHP apps', function (): void {
-        $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Static]);
-        $workspace = workspaceFor($app, ['name' => 'feature']);
-
-        $snapshot = new ProbeSnapshot([
-            'feature' => convergedRuntimeSnapshot(['fpm_config_matches' => false]),
-        ]);
-
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
-
-        expect(issue($drift, 'workspace.fpm_config_mismatch')?->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('does not report workspace PHP-FPM pool drift before PHP-FPM is available', function (): void {
-        $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Static]);
-        $workspace = workspaceFor($app, ['name' => 'feature']);
-
-        $snapshot = new ProbeSnapshot([
-            'feature' => convergedRuntimeSnapshot([
-                'php_fpm_available' => false,
-                'fpm_config_exists' => false,
-                'fpm_config_matches' => false,
-            ]),
-        ]);
-
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
-
-        expect(issue($drift, 'workspace.fpm_config_missing'))->toBeNull();
-        expect(issue($drift, 'workspace.fpm_config_mismatch'))->toBeNull();
-    });
-});
-
 describe('workspace security reality', function (): void {
-    it('detects development workspace runtime isolation drift for non-PHP apps', function (): void {
+    it('detects development workspace runtime isolation drift', function (): void {
         $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Static]);
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
         $snapshot = new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
-                'fpm_config_exists' => false,
-                'fpm_config_matches' => false,
                 'system_user_exists' => false,
                 'fs_permissions_ok' => false,
-                'fpm_hardening_exists' => false,
-                'fpm_hardening_matches' => false,
             ]),
         ]);
 
         $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.security.system_user')?->kind)->toBe(DriftKind::Missing)
-            ->and(issue($drift, 'workspace.security.fs_permissions')?->kind)->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.security.fpm_pool_isolation')?->kind)->toBe(DriftKind::Missing)
-            ->and(issue($drift, 'workspace.security.fpm_systemd_hardening')?->kind)->toBe(DriftKind::Missing);
+            ->and(issue($drift, 'workspace.security.fs_permissions')?->kind)->toBe(DriftKind::Divergent);
     });
 
     it('flags workspaces that belong to production app nodes', function (): void {
@@ -291,10 +232,7 @@ describe('docker-first runtime (no FPM drift for PHP workspaces)', function (): 
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
         $snapshot = new ProbeSnapshot([
-            'feature' => convergedRuntimeSnapshot([
-                'fpm_config_exists' => false,
-                'fpm_config_matches' => false,
-            ]),
+            'feature' => convergedRuntimeSnapshot(),
         ]);
 
         $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
@@ -309,12 +247,8 @@ describe('docker-first runtime (no FPM drift for PHP workspaces)', function (): 
 
         $snapshot = new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
-                'fpm_config_exists' => false,
-                'fpm_config_matches' => false,
                 'system_user_exists' => false,
                 'fs_permissions_ok' => false,
-                'fpm_hardening_exists' => false,
-                'fpm_hardening_matches' => false,
             ]),
         ]);
 
@@ -405,9 +339,8 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     return [
         'path_exists' => true,
         'path_usable' => true,
-        'php_fpm_available' => true,
-        'fpm_config_exists' => true,
-        'fpm_config_matches' => true,
+        'system_user_exists' => true,
+        'fs_permissions_ok' => true,
         ...$overrides,
     ];
 }

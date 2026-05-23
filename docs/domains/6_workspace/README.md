@@ -21,7 +21,7 @@ These rules govern all workspace family commands.
   the parent app PHP version unless a workspace override is stored on the
   workspace row. The effective PHP version selects the workspace FrankenPHP
   runtime container image; it does not install host PHP or render a host
-  PHP-FPM pool.
+  FPM pool.
 - Each workspace owns a Docker runtime container derived from workspace,
   app, and PHP image configuration. Workspace setup, teardown, PHP, Composer,
   and Artisan execution run through that runtime container.

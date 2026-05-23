@@ -9,9 +9,9 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
-use App\Services\Apps\AppFpmPoolRenderer;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppsFixer;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
@@ -50,7 +50,7 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
         $shell,
         new AppRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
         new AppRuntimeContainerManager($shell, new DockerCommandBuilder),
-        new AppFpmPoolRenderer,
+        new AppRuntimeUser,
     );
 }
 

@@ -144,7 +144,7 @@ it('renders toolbar stages and query summary in human mode', function (): void {
     expect($exitCode)->toBe(0);
     expect($output)->not->toContain('Profiling /');
     expect($output)->toMatch('/  Caddy in \.+ 1\.50ms/');
-    expect($output)->toMatch('/  PHP-FPM \.+ 10\.50ms/');
+    expect($output)->toMatch('/  FrankenPHP \.+ 10\.50ms/');
     expect($output)->toMatch('/  Middleware \.+ 10\.50ms/');
     expect($output)->toMatch('/  Controller \.+ 80\.20ms/');
     expect($output)->toMatch('/  View \.+ 2\.30ms/');

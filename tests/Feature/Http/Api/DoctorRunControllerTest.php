@@ -226,7 +226,7 @@ describe('DoctorRunController', function (): void {
             'name' => 'feature',
             'path' => '/home/orbit/apps/docs/.worktrees/feature',
         ]);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("feature\t0\t0\t1\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("feature\t0\t1\t0\t0\n"));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
