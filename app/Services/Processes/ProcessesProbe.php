@@ -822,10 +822,10 @@ PHP;
         $raw = $process->getRawOriginal('runtime');
 
         if (is_string($raw)) {
-            return ProcessRuntime::tryFrom($raw) ?? ProcessRuntime::Supervisor;
+            return ProcessRuntime::tryFrom($raw) ?? ProcessRuntime::Docker;
         }
 
-        return $process->runtime ?? ProcessRuntime::Supervisor;
+        return $process->runtime ?? ProcessRuntime::Docker;
     }
 
     private function supervisorProgramRenderer(): SupervisorProgramRenderer
