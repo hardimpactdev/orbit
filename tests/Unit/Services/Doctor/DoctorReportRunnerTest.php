@@ -838,7 +838,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
 });
 
 describe('DoctorReportRunner', function (): void {
-    it('restores workspace PHP-FPM pool mismatches from gateway intent', function (): void {
+    it('does not probe or fix workspace PHP-FPM pools for PHP apps because workspaces use Docker containers', function (): void {
         $node = createDoctorRunnerAppHostNode();
         $app = App::factory()->create([
             'name' => 'docs',
@@ -862,20 +862,10 @@ describe('DoctorReportRunner', function (): void {
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
                 'issues' => 0,
-                'fixed' => 1,
+                'fixed' => 0,
                 'skipped' => 0,
             ])
-            ->and($report['actions'][0])->toMatchArray([
-                'family' => 'workspace',
-                'node' => 'app-1',
-                'key' => 'workspace.fpm_config_mismatch',
-                'mode' => 'restore',
-                'status' => 'completed',
-            ])
-            ->and($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature.conf')
-            ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
-            ->and($shell->scripts[1])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
-            ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
+            ->and(collect($report['actions'])->pluck('key')->all())->not->toContain('workspace.fpm_config_mismatch');
     });
 
     it('suppresses resolved issues when a supported restore completes', function (): void {
