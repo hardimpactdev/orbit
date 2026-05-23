@@ -287,7 +287,7 @@ class WorkspaceShowCommand extends Command
                 (string) ($runtime['php_version'] ?? '—'),
                 (string) ($runtime['php_version_inherited_from'] ?? '—'),
             ),
-            'FPM pool' => $runtime['fpm_pool'] ?? null,
+            'Runtime container' => $runtime['runtime_container'] ?? null,
             'Hostname' => $runtime['hostname'] ?? null,
             'Processes' => $this->processLabels($processes),
             'Route' => $this->routeLabel($route),

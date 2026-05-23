@@ -16,12 +16,9 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
-use App\Services\Php\PhpFpmServiceReloader;
-use App\Services\Php\PhpFpmSystemdHardening;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
-use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceRuntimeContainerApplyException;
@@ -37,9 +34,6 @@ final readonly class SetupWorkspace
     public function __construct(
         private RemoteShell $remoteShell,
         private EnsureWorkspaceProxyRoute $proxyRoute,
-        private WorkspaceFpmPoolRenderer $fpmRenderer,
-        private PhpFpmServiceReloader $fpmServiceReloader,
-        private PhpFpmSystemdHardening $fpmSystemdHardening,
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private WorkspaceRuntimeContainerManager $runtimeContainerManager,
         private WorkspaceSetupStepRunner $stepRunner,
@@ -83,16 +77,7 @@ final readonly class SetupWorkspace
         $routeWarnings = $this->registerProxyRoutes($workspace);
         $warnings = array_merge($warnings, $routeWarnings);
 
-        // Phase 3a: PHP-FPM pool convergence — proxy routes still target the
-        // FPM socket until the workspace proxy cutover (ORBIT-RUNTIME-06C /
-        // todo 336). Keeping FPM artifacts ensures freshly set-up workspaces
-        // remain reachable through their existing proxy route.
-        $fpmWarning = $this->enactFpmPool($workspace, $node);
-        if ($fpmWarning !== null) {
-            $warnings[] = $fpmWarning;
-        }
-
-        // Phase 3b: Runtime Container Convergence (FrankenPHP for PHP workspaces)
+        // Phase 3: Runtime Container Convergence (FrankenPHP for PHP workspaces)
         $runtimeWarning = $this->enactRuntimeContainer($workspace, $node);
         if ($runtimeWarning !== null) {
             $warnings[] = $runtimeWarning;
@@ -168,71 +153,6 @@ final readonly class SetupWorkspace
     public function registerProxyRoutes(Workspace $workspace): array
     {
         return $this->proxyRoute->handle($workspace);
-    }
-
-    /**
-     * Converge the legacy PHP-FPM pool used by current workspace proxy routes.
-     * The proxy renderer still uses `php_fastcgi unix/<socket>` for workspaces
-     * until the FPM→FrankenPHP proxy cutover (ORBIT-RUNTIME-06C / todo 336).
-     * Removing FPM convergence here would leave proxy routes pointing at a
-     * socket that does not exist.
-     *
-     * @return array{code: string, family: string, message: string, next_command: string}|null
-     */
-    public function enactFpmPool(Workspace $workspace, Node $node): ?array
-    {
-        $content = $this->fpmRenderer->content($workspace);
-        $path = $this->fpmRenderer->path($workspace);
-        $service = $this->fpmRenderer->service($workspace);
-        $user = $this->fpmRenderer->runtimeUser($workspace);
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $phpVersion = (string) $workspace->effectivePhpVersion();
-        $hardening = $this->fpmSystemdHardening->contentForNode($node, $phpVersion);
-
-        $script = sprintf(
-            <<<'SH'
-set -e
-if ! id -u %s >/dev/null 2>&1; then
-    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
-fi
-sudo install -d -m 0750 -o %s -g %s %s
-sudo install -d -m 0755 %s %s %s
-if [ -d %s ]; then sudo chown -R %s:%s %s; fi
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-%s
-%s
-SH,
-            escapeshellarg($user),
-            escapeshellarg($home),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($home),
-            escapeshellarg(dirname($path)),
-            escapeshellarg(dirname($this->fpmRenderer->socketPath($workspace))),
-            escapeshellarg(dirname($this->fpmRenderer->logPath($workspace))),
-            escapeshellarg($workspace->path),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($workspace->path),
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg($path),
-            $this->fpmSystemdHardening->installScript($phpVersion, $hardening),
-            $this->fpmServiceReloader->reloadOrRestartScript($service),
-        );
-
-        $result = $this->remoteShell->run($node, $script);
-
-        if ($result->successful()) {
-            return null;
-        }
-
-        return [
-            'code' => 'workspace.fpm_enactment_failed',
-            'family' => 'workspace',
-            'message' => 'PHP-FPM pool configuration was not enacted. Run doctor to converge workspace artifacts.',
-            'next_command' => 'doctor --fix --family=workspace --restore',
-        ];
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -14,7 +15,7 @@ class WorkspaceShowPayload
 {
     public function __construct(
         private readonly AppAgentIdeDefaults $appAgentIdeDefaults,
-        private readonly WorkspaceFpmPoolRenderer $workspaceFpmPoolRenderer,
+        private readonly WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
     ) {}
 
     /**
@@ -45,7 +46,7 @@ class WorkspaceShowPayload
                 'runtime_expectations' => [
                     'php_version' => $workspace->effectivePhpVersion(),
                     'php_version_inherited_from' => $workspace->php_version === null ? 'app' : 'workspace',
-                    'fpm_pool' => $this->fpmPool($workspace),
+                    'runtime_container' => $this->runtimeContainer($workspace),
                     'hostname' => is_string($hostname) ? $hostname : $workspace->url(),
                 ],
                 'inherited_processes' => $app?->processes->map(fn (Process $process): array => [
@@ -116,8 +117,15 @@ class WorkspaceShowPayload
         return in_array($adapter, ['opencode', 'polyscope'], true) ? 'available' : 'unsupported';
     }
 
-    private function fpmPool(Workspace $workspace): string
+    private function runtimeContainer(Workspace $workspace): ?string
     {
-        return $this->workspaceFpmPoolRenderer->poolName($workspace);
+        $workspace->loadMissing('app');
+        $app = $workspace->app;
+
+        if ($app === null || $app->runtime_kind !== AppRuntimeKind::Php) {
+            return null;
+        }
+
+        return $this->runtimeContainerRenderer->containerName($workspace);
     }
 }

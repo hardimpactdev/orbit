@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -543,6 +544,156 @@ CADDY);
         $content = (new ProxyRouteRenderer)->render($route);
 
         expect($content)->toContain('file_server')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('reverse_proxy');
+    });
+
+    it('renders workspace PHP routes as reverse_proxy to the FrankenPHP runtime container', function (): void {
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/etc/orbit/certs/feature-a.docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/feature-a.docs.test.key',
+                    ],
+                ],
+            ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toContain('feature-a.docs.test {')
+            ->and($content)->toContain('reverse_proxy http://orbit-ws-docs-feature-a')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('file_server');
+    });
+
+    it('derives a FrankenPHP runtime upstream from the workspace identity for a legacy workspace route persisted with only php_socket', function (): void {
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'domain' => 'feature-a.legacy-docs.test',
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/legacy-docs/.worktrees/feature-a/public',
+                    // Legacy origin/main config: only php_socket, no runtime_upstream.
+                    'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                    'tls' => [
+                        'cert_path' => '/etc/orbit/certs/feature-a.legacy-docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/feature-a.legacy-docs.test.key',
+                    ],
+                ],
+            ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toContain('feature-a.legacy-docs.test {')
+            ->and($content)->toContain('reverse_proxy http://orbit-ws-legacy-docs-feature-a')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('file_server');
+    });
+
+    it('renders private backend routes for PHP workspaces as HTTP reverse proxies to the FrankenPHP runtime container', function (): void {
+        $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'example',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'app_id' => $app->id,
+            'domain' => 'feature-a.example.com',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'config' => [
+                'placement' => 'ingress',
+                'backend_artifacts' => [
+                    [
+                        'node_id' => $appNode->id,
+                        'domain' => 'feature-a.example.com',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/example/.worktrees/feature-a/public',
+                        'runtime_upstream' => 'http://orbit-ws-example-feature-a',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+
+        expect($content)->toBe(<<<'CADDY'
+http://feature-a.example.com:8081 {
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    import path_blocking_public_root
+    import security_txt
+    import cache_headers
+
+    reverse_proxy http://orbit-ws-example-feature-a {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY);
+    });
+
+    it('renders private backend routes for static workspaces as file_server only', function (): void {
+        $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->static()->create([
+            'name' => 'marketing',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'app_id' => $app->id,
+            'domain' => 'feature-a.marketing.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'config' => [
+                'placement' => 'ingress',
+                'backend_artifacts' => [
+                    [
+                        'node_id' => $appNode->id,
+                        'domain' => 'feature-a.marketing.test',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/marketing/.worktrees/feature-a/public',
+                        'runtime_upstream' => null,
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+
+        expect($content)->toContain('file_server')
+            ->and($content)->toContain('root * /home/orbit/sites/marketing/.worktrees/feature-a/public')
             ->and($content)->not->toContain('php_fastcgi')
             ->and($content)->not->toContain('reverse_proxy');
     });

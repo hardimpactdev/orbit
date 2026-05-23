@@ -157,4 +157,26 @@ describe('ProxyRouteIntent', function (): void {
 
         expect($result['data']['route']['domain'])->toBe('vite.docs.test');
     });
+
+    it('rejects custom proxy:add on php app-owned domains so frankenphp routes are not overwritten', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        app(ProxyRouteIntent::class)->add(
+            domain: 'docs.test',
+            nodeName: 'app-1',
+            upstream: 'http://127.0.0.1:5173',
+            redirect: null,
+            code: null,
+            force: true,
+        );
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
 });
