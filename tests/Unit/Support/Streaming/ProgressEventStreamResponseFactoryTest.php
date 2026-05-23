@@ -53,3 +53,35 @@ it('turns stream exceptions into error events and restores the null reporter', f
 
     Log::shouldHaveReceived('error')->once();
 });
+
+it('flushes output buffers under fpm-fcgi and cli-server sapi', function (): void {
+    $this->expectOutputRegex('/event: tree/');
+
+    $response = (new ProgressEventStreamResponseFactory('cli-server'))->make(function (): void {
+        $reporter = app(ProgressReporter::class);
+
+        expect($reporter)->toBeInstanceOf(SseProgressReporter::class);
+
+        $reporter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+        $reporter->stepStart('step');
+        $reporter->stepDone('step');
+    });
+
+    $response->sendContent();
+});
+
+it('skips buffer flush under cli sapi', function (): void {
+    $response = (new ProgressEventStreamResponseFactory('cli'))->make(function (): void {
+        $reporter = app(ProgressReporter::class);
+        $reporter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+        $reporter->stepStart('step');
+        $reporter->stepDone('step');
+    });
+
+    ob_start();
+    $response->sendContent();
+    $output = (string) ob_get_clean();
+
+    expect($output)->toContain('event: tree')
+        ->and($output)->toContain('"status":"done"');
+});

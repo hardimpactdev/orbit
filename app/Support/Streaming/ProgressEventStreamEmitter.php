@@ -6,6 +6,10 @@ namespace App\Support\Streaming;
 
 final class ProgressEventStreamEmitter
 {
+    public function __construct(
+        private readonly string $sapi = PHP_SAPI,
+    ) {}
+
     /**
      * @param  list<array{key: string, label: string, doneLabel?: string}>  $steps
      */
@@ -72,7 +76,7 @@ final class ProgressEventStreamEmitter
 
     private function flush(): void
     {
-        if (PHP_SAPI !== 'fpm-fcgi') {
+        if ($this->sapi !== 'fpm-fcgi' && $this->sapi !== 'cli-server') {
             return;
         }
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 
@@ -34,6 +35,19 @@ it('keeps gateway stream requests on canonical action endpoints', function (): v
         ->all();
 
     expect($violations)->toBe([]);
+});
+
+it('preserves real-time streaming headers on gateway api stream routes', function (): void {
+    $factory = new ProgressEventStreamResponseFactory;
+
+    $response = $factory->make(function (): void {
+        echo "data: test\n\n";
+    });
+
+    expect($response->headers->get('Content-Type'))->toBe('text/event-stream')
+        ->and($response->headers->get('Cache-Control'))->toContain('no-cache')
+        ->and($response->headers->get('Connection'))->toBe('keep-alive')
+        ->and($response->headers->get('X-Accel-Buffering'))->toBe('no');
 });
 
 it('does not use laravel http for gateway transport', function (): void {

@@ -351,6 +351,43 @@ it('can split gateway wireguard identity from bind address and cert key', functi
         ->toContain("'wireguard' => \$wireguardIdentity");
 });
 
+it('starts docker gateway api through orbit-runtime without host php-fpm or caddy', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(
+        new DockerHost(E2EConfig::fromEnvironment()),
+        'orbit-e2e-run123-gateway',
+        'orbit-e2e-run123',
+    );
+
+    E2EGatewayApi::start(
+        $instance,
+        'docker-gateway-api',
+        gatewayIp: '10.6.0.2',
+        wireguardIdentity: '10.6.0.2',
+        bindAddress: '0.0.0.0',
+        certKey: 'gateway',
+        certSans: ['10.6.0.2'],
+    );
+
+    $setup = implode("\n", $commands);
+
+    expect($setup)
+        ->toContain('orbit serve --host=')
+        ->toContain('sudo docker exec --detach')
+        ->toContain("'orbit-e2e-run123-gateway-orbit-runtime'")
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->not->toContain('php-fpm')
+        ->not->toContain('php8.5-fpm')
+        ->not->toContain('fpm-fcgi');
+});
+
 it('maps configured docker peer ips to canonical wireguard identities in the gateway tls proxy', function (): void {
     $script = gatewayTlsServerScript(peerIdentityMap: [
         '10.61.42.3' => '10.6.0.3',

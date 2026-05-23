@@ -59,7 +59,7 @@ final class ToolLogsStreamController implements Loggable
                 onOutput: function (string $output): void {
                     echo $output;
 
-                    if (PHP_SAPI === 'fpm-fcgi') {
+                    if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
                         @ob_flush();
                         @flush();
                     }
