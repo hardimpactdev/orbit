@@ -6,6 +6,7 @@ namespace App\Services\Deploy;
 
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\DeploymentRun;
@@ -153,12 +154,13 @@ final readonly class DeployManager
         foreach ($steps as $step) {
             $stepStartedAt = now();
             $command = $this->renderCommand($step->command, $context);
+            $routedCommand = $this->routeCommand($model, $command, $context);
             $progress?->stepStart($this->progressKey($step));
             $result = $this->remoteShell->run($model->node ?? throw new GatewayApiException(
                 message: "App '{$model->name}' has no owning node.",
                 errorCode: 'deploy.execution_failed',
                 errorMeta: ['app' => $model->name],
-            ), $command, [
+            ), $routedCommand, [
                 'cwd' => $model->path,
                 'timeout' => $step->timeout_seconds,
                 'strict' => true,
@@ -173,7 +175,7 @@ final readonly class DeployManager
                 'deployment_run_id' => $run->id,
                 'deploy_step_id' => $step->id,
                 'title' => $step->title,
-                'command' => $command,
+                'command' => $routedCommand,
                 'status' => $stepStatus,
                 'stdout' => $result->stdout,
                 'stderr' => $result->stderr,
@@ -192,6 +194,28 @@ final readonly class DeployManager
             }
 
             $progress?->stepDone($this->progressKey($step), $this->formatDurationMs($result->durationMs));
+        }
+
+        if ($status === 'completed') {
+            try {
+                $warmupResult = $this->runWarmupSteps($model, $context, $progress);
+                if ($warmupResult !== null) {
+                    $stdout .= $warmupResult['stdout'];
+                    $stderr .= $warmupResult['stderr'];
+                }
+            } catch (GatewayApiException $warmupException) {
+                $status = 'failed';
+                $exitCode = 1;
+                $finishedAt = now();
+                $run->forceFill([
+                    'status' => $status,
+                    'exit_code' => $exitCode,
+                    'finished_at' => $finishedAt,
+                    'duration_ms' => (int) $startedAt->diffInMilliseconds($finishedAt),
+                ])->save();
+                $model->forceFill(['latest_deployment_status' => $status])->save();
+                throw $warmupException;
+            }
         }
 
         $finishedAt = now();
@@ -238,6 +262,243 @@ final readonly class DeployManager
         }
 
         return $payload;
+    }
+
+    /**
+     * Route a deploy step command through the app container when the app is
+     * a PHP app and the command uses PHP, Composer, or Artisan.
+     *
+     * If the app's FrankenPHP container is not running, falls back to host
+     * execution so legacy or adopted apps do not crash on first deploy.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function routeCommand(App $app, string $command, array $context): string
+    {
+        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+            return $command;
+        }
+
+        if (! $this->usesPhpTools($command)) {
+            return $command;
+        }
+
+        if (! $this->isContainerRunning($app)) {
+            return $command;
+        }
+
+        return $this->wrapForContainer($app, $command, $context);
+    }
+
+    /**
+     * Detect whether a shell command invokes PHP, Composer, or Artisan.
+     *
+     * Excludes php-fpm and php\d+.\d+-fpm service commands, which are host
+     * infrastructure operations and must not be routed into the container.
+     */
+    private function usesPhpTools(string $command): bool
+    {
+        $normalized = preg_replace('/[\'"].*?[\'"]/', '', $command);
+
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php-fpm\b/', $normalized) === 1) {
+            return false;
+        }
+
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\d+\.\d+-fpm\b/', $normalized) === 1) {
+            return false;
+        }
+
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\s/', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*composer\s/', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*artisan\b/', $normalized) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check whether the app's FrankenPHP runtime container is running on its
+     * owning node. Returns false when the container does not exist or is not
+     * in the running state.
+     */
+    private function isContainerRunning(App $app): bool
+    {
+        $node = $app->node;
+
+        if ($node === null) {
+            return false;
+        }
+
+        $preflight = $this->remoteShell->run(
+            $node,
+            'docker container inspect --format '.escapeshellarg('{{.State.Running}}').' '.escapeshellarg($this->containerName($app)),
+        );
+
+        return $preflight->successful() && trim($preflight->stdout) === 'true';
+    }
+
+    private function containerName(App $app): string
+    {
+        return "orbit-app-{$app->name}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function wrapForContainer(App $app, string $command, array $context): string
+    {
+        $containerName = $this->containerName($app);
+        $appPath = rtrim($app->path, '/');
+        $containerCommand = $this->replaceHostPathsWithContainerPaths($command, $appPath);
+
+        $dockerParts = [
+            'docker',
+            'exec',
+            '--workdir',
+            '/app',
+        ];
+
+        foreach ($this->environment($context) as $key => $value) {
+            $dockerParts[] = '-e';
+            $dockerParts[] = "{$key}={$value}";
+        }
+
+        $dockerParts[] = $containerName;
+        $dockerParts[] = 'bash';
+        $dockerParts[] = '-lc';
+        $dockerParts[] = $containerCommand;
+
+        return implode(' ', array_map(escapeshellarg(...), $dockerParts));
+    }
+
+    /**
+     * Replace host app paths with their container mount path so commands
+     * rendered with {{ app_path }} and derived paths work inside the
+     * FrankenPHP container.
+     */
+    private function replaceHostPathsWithContainerPaths(string $command, string $appPath): string
+    {
+        $escapedPath = preg_quote($appPath, '/');
+
+        return preg_replace("/{$escapedPath}(?![a-zA-Z0-9_-])/", '/app', $command) ?? $command;
+    }
+
+    /**
+     * Run built-in production warmup steps for PHP apps when the app's
+     * FrankenPHP container is available. Returns captured output when warmups
+     * run, or null when skipped.
+     *
+     * Warmup failures are caught and surfaced as deploy.warmup_failed so the
+     * run status is updated to failed rather than left stuck at running.
+     *
+     * @param  array<string, mixed>  $context
+     * @return array{stdout: string, stderr: string}|null
+     */
+    private function runWarmupSteps(App $app, array $context, ?ProgressReporter $progress = null): ?array
+    {
+        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+            return null;
+        }
+
+        $node = $app->node;
+
+        if ($node === null) {
+            return null;
+        }
+
+        if (! $this->isContainerRunning($app)) {
+            $progress?->stepStart('warmup-skipped');
+            $progress?->stepDone('warmup-skipped', 'container not running');
+
+            return null;
+        }
+
+        $warmupCommands = [
+            'composer install --no-dev --optimize-autoloader --no-interaction',
+            'php artisan optimize',
+        ];
+
+        $stdout = '';
+        $stderr = '';
+
+        foreach ($warmupCommands as $warmupCommand) {
+            $routedCommand = $this->wrapForContainer($app, $warmupCommand, $context);
+
+            $result = $this->remoteShell->run($node, $routedCommand, [
+                'cwd' => $app->path,
+                'timeout' => 300,
+                'strict' => true,
+                'metadata' => $this->environment($context),
+            ]);
+
+            $stdout .= $result->stdout;
+            $stderr .= $result->stderr;
+
+            if (! $result->successful()) {
+                throw new GatewayApiException(
+                    message: "Deployment warmup step '{$warmupCommand}' failed for app '{$app->name}'.",
+                    errorCode: 'deploy.warmup_failed',
+                    errorMeta: [
+                        'app' => $app->name,
+                        'warmup_command' => $warmupCommand,
+                        'container' => $this->containerName($app),
+                    ],
+                    errorData: [
+                        'stdout' => $stdout,
+                        'stderr' => $stderr,
+                    ],
+                );
+            }
+        }
+
+        $this->runHttpWarmup($app, $context);
+
+        return ['stdout' => $stdout, 'stderr' => $stderr];
+    }
+
+    /**
+     * Send HTTP warmup requests to the app container when warmup paths
+     * are configured on the app.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function runHttpWarmup(App $app, array $context): void
+    {
+        $warmupPaths = $app->deploy_warmup_paths ?? [];
+
+        if ($warmupPaths === []) {
+            return;
+        }
+
+        $node = $app->node;
+
+        if ($node === null) {
+            return;
+        }
+
+        $containerName = $this->containerName($app);
+
+        foreach ($warmupPaths as $path) {
+            $command = sprintf(
+                'docker exec %s curl -sSf http://localhost%s',
+                escapeshellarg($containerName),
+                escapeshellarg((string) $path),
+            );
+
+            $this->remoteShell->run($node, $command, [
+                'cwd' => $app->path,
+                'timeout' => 30,
+                'strict' => false,
+                'metadata' => $this->environment($context),
+            ]);
+        }
     }
 
     /**

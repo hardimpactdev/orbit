@@ -26,6 +26,7 @@ use Illuminate\Support\Str;
  * @property AppRuntimeKind $runtime_kind
  * @property bool $worker_enabled
  * @property array<string, mixed>|null $worker_config
+ * @property list<string>|null $deploy_warmup_paths
  * @property bool $adopted
  * @property array<string, mixed>|null $agent_ide_config
  * @property string|null $latest_deployment_status
@@ -55,6 +56,7 @@ class App extends Model
         'runtime_kind',
         'worker_enabled',
         'worker_config',
+        'deploy_warmup_paths',
         'adopted',
         'agent_ide_config',
         'latest_deployment_status',
@@ -75,6 +77,7 @@ class App extends Model
             'runtime_kind' => AppRuntimeKind::class,
             'worker_enabled' => 'boolean',
             'worker_config' => 'array',
+            'deploy_warmup_paths' => 'array',
         ];
     }
 

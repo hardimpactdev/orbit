@@ -151,10 +151,8 @@ SH,
 
     expect($runExit)->toBe(0)
         ->and($runPayload['success']['data']['run']['status'])->toBe('completed')
-        ->and($runPayload['success']['data']['output'])->toBe([
-            'stdout' => "deployed\n",
-            'stderr' => '',
-        ])
+        ->and($runPayload['success']['data']['output']['stdout'])->toContain("deployed\n")
+        ->and($runPayload['success']['data']['output']['stderr'])->toBe('')
         ->and($shell->runs[0]['script'])->not->toContain('{{')
         ->and($shell->runs[0]['options']['cwd'])->toBe('/srv/docs')
         ->and($shell->runs[0]['options']['timeout'])->toBe(120)
