@@ -19,10 +19,11 @@ usage() {
 usage: bin/install-orbit [options]
 
 Install the Orbit CLI and its Docker-first runtime prerequisites on the
-current host. The installer prepares Docker, the Orbit source checkout, the
-orbit-runtime and orbit-caddy container images, starts the orbit-runtime
-container, and runs migrations inside the container. No host PHP, host
-Composer, host Caddy, or host PHP-FPM is installed.
+current host. The installer prepares host PHP CLI for the CLI/local-executor
+artifact, Docker, the Orbit source checkout, the orbit-runtime and orbit-caddy
+container images, starts the orbit-runtime container, and runs migrations
+inside the container. No host Composer, host Caddy, or host PHP-FPM is
+installed.
 
 Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
@@ -125,7 +126,7 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Validate installer input\n'
     printf '  │\n'
-    printf '  ○  Install Docker prerequisites\n'
+    printf '  ○  Install host prerequisites\n'
     printf '  │\n'
     printf '  ○  Install Orbit source\n'
     printf '  │\n'
@@ -231,6 +232,80 @@ wait_for_cloud_init() {
     sudo_run cloud-init status --wait || true
 }
 
+host_php_is_ready() {
+    local version
+
+    command -v php >/dev/null 2>&1 || return 1
+
+    version="$(php --version 2>/dev/null | head -n 1 || true)"
+
+    [[ "$version" == PHP\ 8.4.* ]] || return 1
+
+    php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { exit(1); } }' >/dev/null 2>&1
+}
+
+verify_host_php_baseline() {
+    local version
+
+    require_command php
+
+    version="$(php --version 2>/dev/null | head -n 1 || true)"
+
+    if [[ "$version" != PHP\ 8.4.* ]]; then
+        fail validation_failed "host php must resolve to PHP 8.4.x after prerequisite installation; got: ${version:-missing}"
+    fi
+
+    if ! php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }' >/dev/null 2>&1; then
+        fail validation_failed "host php is missing one of the required extensions: pdo_sqlite, openssl, curl, mbstring, json"
+    fi
+}
+
+ubuntu_requires_ondrej_php_ppa() {
+    local version_id
+
+    version_id="$(. /etc/os-release && printf '%s' "$VERSION_ID")"
+
+    case "$version_id" in
+        22.04|24.04)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+install_host_php_ubuntu() {
+    if host_php_is_ready; then
+        printf 'orbit-install: host PHP 8.4 CLI baseline already present\n'
+        return
+    fi
+
+    printf 'orbit-install: installing host PHP 8.4 CLI baseline\n'
+
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
+
+    if ubuntu_requires_ondrej_php_ppa; then
+        sudo_run add-apt-repository ppa:ondrej/php -y
+        sudo_run apt-get update
+    else
+        printf 'orbit-install: using Ubuntu package repositories for PHP 8.4 CLI baseline\n'
+    fi
+
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        php8.4-cli \
+        php8.4-mbstring \
+        php8.4-curl \
+        php8.4-sqlite3 \
+        php8.4-xml
+
+    if [ -x /usr/bin/php8.4 ]; then
+        sudo_run update-alternatives --set php /usr/bin/php8.4
+    fi
+
+    verify_host_php_baseline
+}
+
 install_ubuntu_prerequisites() {
     wait_for_cloud_init
 
@@ -246,6 +321,7 @@ install_ubuntu_prerequisites() {
         wireguard \
         wireguard-tools
 
+    install_host_php_ubuntu
     install_docker_engine_ubuntu
 }
 
@@ -318,10 +394,38 @@ docker_cli() {
     sudo -n docker "$@"
 }
 
+brew_formula_installed() {
+    brew --prefix "$1" >/dev/null 2>&1
+}
+
+install_host_php_macos() {
+    if host_php_is_ready; then
+        printf 'orbit-install: host PHP 8.4 CLI baseline already present\n'
+        return
+    fi
+
+    printf 'orbit-install: installing host PHP 8.4 CLI baseline\n'
+
+    if brew_formula_installed php@8.4; then
+        printf 'orbit-install: Homebrew php@8.4 already installed; linking host php\n'
+    elif brew search --formula php@8.4 2>/dev/null | grep -qx php@8.4; then
+        run brew install php@8.4
+    else
+        run brew install php
+    fi
+
+    if brew_formula_installed php@8.4; then
+        run brew link --overwrite --force php@8.4
+    fi
+
+    verify_host_php_baseline
+}
+
 install_macos_prerequisites() {
     require_command brew
 
     run brew update
+    install_host_php_macos
     run brew install git
     require_command docker
 }
@@ -584,7 +688,7 @@ main() {
     validate_args
     complete_step
 
-    start_step "Install Docker prerequisites"
+    start_step "Install host prerequisites"
     install_prerequisites
     complete_step
 
