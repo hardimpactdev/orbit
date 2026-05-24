@@ -10,6 +10,7 @@ use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
+use Illuminate\Contracts\Container\Container;
 
 final readonly class WorkspaceSourceDriverResolver implements WorkspaceSourceDrivers
 {
@@ -17,13 +18,13 @@ final readonly class WorkspaceSourceDriverResolver implements WorkspaceSourceDri
         private AppAgentIdeDefaults $agentIdeDefaults,
         private WorktreeWorkspaceDriver $worktreeDriver,
         private OpenCodeWorkspaceDriver $openCodeDriver,
-        private PolyscopeWorkspaceDriver $polyscopeDriver,
+        private Container $container,
     ) {}
 
     public function resolve(App $app): WorkspaceSourceDriver
     {
         return match ($this->effectiveAdapter($app)) {
-            'polyscope' => $this->polyscopeDriver,
+            'polyscope' => $this->container->make(PolyscopeWorkspaceDriver::class),
             'opencode' => $this->openCodeDriver,
             null => $this->worktreeDriver,
             default => throw new WorkspaceCreateFailed(

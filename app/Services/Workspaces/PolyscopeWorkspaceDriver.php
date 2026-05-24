@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\WorkspaceSourceDriver;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use JsonException;
 use Polyscope\Laravel\Polyscope;
 use Throwable;
 
 final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private PolyscopeWorkspaceBranchAligner $branchAligner,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
@@ -140,10 +142,21 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
      */
     private function readRemoteConfig(App $app, Node $node): array
     {
-        $result = $this->remoteShell->run($node, $this->remoteConfigScript(), [
-            'metadata' => ['ORBIT_APP_PATH' => $app->path],
-            'timeout' => 30,
-        ]);
+        $result = $this->localExecutor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: [],
+            commandOptions: [
+                'adapter' => 'polyscope',
+                'lookup' => 'config',
+                'app-path' => $app->path,
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+            ],
+        );
 
         if (! $result->successful()) {
             throw new WorkspaceCreateFailed(
@@ -153,14 +166,29 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
                     'adapter' => 'polyscope',
                     'node' => $node->name,
                     'app' => $app->name,
-                    'reason' => trim($result->stderr) ?: trim($result->stdout),
+                    'reason' => $this->failureReason($result),
                 ],
             );
         }
 
-        $decoded = json_decode(trim($result->stdout), true);
+        $payload = $this->successPayload($result, $app, $node);
 
-        if (! is_array($decoded)) {
+        return [
+            'api_token' => $this->stringValue($payload['api_token'] ?? null),
+            'server_id' => $this->stringValue($payload['server_id'] ?? null),
+            'repository_id' => $this->stringValue($payload['repository_id'] ?? null),
+            'base_url' => $this->stringValue($payload['base_url'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function successPayload(RemoteShellResult $result, App $app, Node $node): array
+    {
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
             throw new WorkspaceCreateFailed(
                 'workspace.agent_ide_not_configured',
                 'Polyscope configuration returned by the app node was invalid.',
@@ -168,66 +196,32 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
             );
         }
 
-        return [
-            'api_token' => $this->stringValue($decoded['api_token'] ?? null),
-            'server_id' => $this->stringValue($decoded['server_id'] ?? null),
-            'repository_id' => $this->stringValue($decoded['repository_id'] ?? null),
-            'base_url' => $this->stringValue($decoded['base_url'] ?? null),
-        ];
+        if (! is_array($decoded) || ($decoded['ok'] ?? null) !== true || ! is_array($decoded['data'] ?? null)) {
+            throw new WorkspaceCreateFailed(
+                'workspace.agent_ide_not_configured',
+                'Polyscope configuration returned by the app node was invalid.',
+                ['adapter' => 'polyscope', 'node' => $node->name, 'app' => $app->name],
+            );
+        }
+
+        return $decoded['data'];
     }
 
-    private function remoteConfigScript(): string
+    private function failureReason(RemoteShellResult $result): string
     {
-        return <<<'SH'
-python3 - <<'PY'
-import json
-import os
-import pathlib
-import sqlite3
-import sys
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return trim($result->stderr) ?: trim($result->stdout);
+        }
 
-app_path = os.environ.get("ORBIT_APP_PATH", "").rstrip("/")
-home = pathlib.Path.home()
-settings_path = home / ".polyscope" / "settings.json"
-database_path = home / ".polyscope" / "polyscope.db"
+        $message = is_array($decoded)
+            && is_array($decoded['error'] ?? null)
+            && is_string($decoded['error']['message'] ?? null)
+            ? trim($decoded['error']['message'])
+            : '';
 
-if not app_path:
-    print("ORBIT_APP_PATH is missing", file=sys.stderr)
-    sys.exit(2)
-
-if not settings_path.exists():
-    print(f"Polyscope settings file is missing: {settings_path}", file=sys.stderr)
-    sys.exit(2)
-
-if not database_path.exists():
-    print(f"Polyscope database is missing: {database_path}", file=sys.stderr)
-    sys.exit(2)
-
-settings = json.loads(settings_path.read_text())
-api_token = settings.get("authToken")
-server_id = settings.get("serverId")
-base_url = settings.get("backendUrl") or settings.get("backend")
-
-connection = sqlite3.connect(database_path)
-try:
-    rows = connection.execute("select id, path from repositories").fetchall()
-finally:
-    connection.close()
-
-repository_id = None
-for row_id, row_path in rows:
-    if isinstance(row_path, str) and row_path.rstrip("/") == app_path:
-        repository_id = row_id
-        break
-
-print(json.dumps({
-    "api_token": api_token,
-    "server_id": server_id,
-    "repository_id": repository_id,
-    "base_url": base_url,
-}))
-PY
-SH;
+        return $message !== '' ? $message : (trim($result->stderr) ?: trim($result->stdout));
     }
 
     private function stringValue(mixed $value): ?string

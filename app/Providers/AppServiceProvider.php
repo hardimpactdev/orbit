@@ -44,6 +44,8 @@ use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Updates\UnattendedUpgradesDriver;
 use App\Services\Updates\UpdateDriverRegistry;
 use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
+use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
@@ -90,7 +92,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
         $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
         $this->app->bind(OpenCodeClientFactory::class, SdkOpenCodeClientFactory::class);
-        $this->app->bind(AgentIdeWorkspacePathResolver::class, CoreAgentIdeWorkspacePathResolver::class);
+        $this->app->bind(AgentIdeWorkspacePathResolver::class, fn ($app): CoreAgentIdeWorkspacePathResolver => new CoreAgentIdeWorkspacePathResolver(
+            localExecutor: $app->make(RemoteLocalExecutor::class),
+        ));
         $this->app->bind(RequestProfiler::class, CurlRequestProfiler::class);
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
@@ -102,6 +106,10 @@ class AppServiceProvider extends ServiceProvider
             activityLogger: $app->make(ActivityLogger::class),
         ));
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
+        $this->app->bind(PolyscopeWorkspaceDriver::class, fn ($app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
+            branchAligner: $app->make(PolyscopeWorkspaceBranchAligner::class),
+            localExecutor: $app->make(RemoteLocalExecutor::class),
+        ));
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(ToolLogGatewayStream::class, ToolLogGatewayStreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, UpdateAllGatewayStreamClient::class);

@@ -13,6 +13,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
@@ -20,8 +21,8 @@ final readonly class WorkspaceSetupTargetResolver
 {
     public function __construct(
         private AppAgentIdeDefaults $appAgentIdeDefaults,
-        private AgentIdeWorkspacePathResolver $pathResolver,
         private WorkspaceRoleGuard $roleGuard,
+        private Container $container,
     ) {}
 
     /**
@@ -199,7 +200,7 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         try {
-            $resolution = $this->pathResolver->resolve($workspace->agent_ide, $app, $cwd);
+            $resolution = $this->pathResolver()->resolve($workspace->agent_ide, $app, $cwd);
         } catch (Throwable $exception) {
             throw new WorkspaceSetupResolutionFailed(
                 'workspace.agent_ide_path_resolution_failed',
@@ -248,7 +249,7 @@ final readonly class WorkspaceSetupTargetResolver
             }
 
             try {
-                $match = $this->pathResolver->resolve($adapter, $app, $cwd);
+                $match = $this->pathResolver()->resolve($adapter, $app, $cwd);
             } catch (Throwable $exception) {
                 throw new WorkspaceSetupResolutionFailed(
                     'workspace.agent_ide_path_resolution_failed',
@@ -417,5 +418,10 @@ final readonly class WorkspaceSetupTargetResolver
     private function pathMatches(string $candidate, string $cwd): bool
     {
         return $candidate === $cwd || str_starts_with($cwd, "{$candidate}/");
+    }
+
+    private function pathResolver(): AgentIdeWorkspacePathResolver
+    {
+        return $this->container->make(AgentIdeWorkspacePathResolver::class);
     }
 }

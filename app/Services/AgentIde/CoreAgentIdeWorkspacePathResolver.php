@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace App\Services\AgentIde;
 
 use App\Contracts\AgentIdeWorkspacePathResolver;
-use App\Contracts\RemoteShell;
 use App\Data\AgentIde\WorkspacePathResolution;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use JsonException;
 use RuntimeException;
 
 final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorkspacePathResolver
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
@@ -27,156 +29,86 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
 
     private function resolveOpenCode(App $app, string $absolutePath): ?WorkspacePathResolution
     {
-        $app->loadMissing('node');
-
-        if ($app->node === null) {
-            return null;
-        }
-
-        $result = $this->remoteShell->run($app->node, $this->openCodeScript(), [
-            'metadata' => [
-                'ORBIT_WORKSPACE_PATH' => $absolutePath,
-                'ORBIT_APP_PATH' => $app->path,
-            ],
-            'timeout' => 30,
-        ]);
-
-        if (! $result->successful()) {
-            throw new RuntimeException(trim($result->stderr) ?: trim($result->stdout) ?: 'adapter_unreachable');
-        }
-
-        $decoded = json_decode(trim($result->stdout), true);
-
-        if (! is_array($decoded) || ($decoded['match'] ?? null) !== true) {
-            return null;
-        }
-
-        return new WorkspacePathResolution(
-            workspaceName: $this->requiredString($decoded, 'workspace_name'),
-            appSlug: $app->name,
-            path: $this->requiredString($decoded, 'path'),
-            adapterWorkspaceId: $this->requiredString($decoded, 'adapter_workspace_id'),
-        );
+        return $this->resolveWorkspace('opencode', $app, $absolutePath);
     }
 
     private function resolvePolyscope(App $app, string $absolutePath): ?WorkspacePathResolution
     {
+        return $this->resolveWorkspace('polyscope', $app, $absolutePath);
+    }
+
+    private function resolveWorkspace(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
+    {
         $app->loadMissing('node');
 
         if ($app->node === null) {
             return null;
         }
 
-        $result = $this->remoteShell->run($app->node, $this->polyscopeScript(), [
-            'metadata' => [
-                'ORBIT_WORKSPACE_PATH' => $absolutePath,
-                'ORBIT_APP_PATH' => $app->path,
+        $result = $this->localExecutor->runInternal(
+            node: $app->node,
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: [],
+            commandOptions: [
+                'adapter' => $adapter,
+                'lookup' => 'workspace',
+                'workspace-path' => $absolutePath,
+                'app-path' => $app->path,
             ],
-            'timeout' => 30,
-        ]);
+            transportOptions: ['timeout' => 30],
+        );
 
         if (! $result->successful()) {
-            throw new RuntimeException(trim($result->stderr) ?: trim($result->stdout) ?: 'adapter_unreachable');
+            throw new RuntimeException($this->failureReason($result));
         }
 
-        $decoded = json_decode(trim($result->stdout), true);
+        $payload = $this->successPayload($result);
 
-        if (! is_array($decoded) || ($decoded['match'] ?? null) !== true) {
+        if (($payload['match'] ?? null) !== true) {
             return null;
         }
 
         return new WorkspacePathResolution(
-            workspaceName: $this->requiredString($decoded, 'workspace_name'),
+            workspaceName: $this->requiredString($payload, 'workspace_name'),
             appSlug: $app->name,
-            path: $this->requiredString($decoded, 'path'),
-            adapterWorkspaceId: $this->requiredString($decoded, 'adapter_workspace_id'),
+            path: $this->requiredString($payload, 'path'),
+            adapterWorkspaceId: $this->requiredString($payload, 'adapter_workspace_id'),
         );
     }
 
-    private function openCodeScript(): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function successPayload(RemoteShellResult $result): array
     {
-        return <<<'SH'
-python3 - <<'PY'
-import json, os, pathlib, sqlite3, sys
-path = os.environ.get("ORBIT_WORKSPACE_PATH", "").rstrip("/")
-app_path = os.environ.get("ORBIT_APP_PATH", "").rstrip("/")
-db = pathlib.Path.home() / ".local/share/opencode/opencode.db"
-if not path:
-    print("path_missing", file=sys.stderr); sys.exit(2)
-if not app_path:
-    print("app_path_missing", file=sys.stderr); sys.exit(2)
-if not db.exists():
-    print(json.dumps({"match": False})); sys.exit(0)
-conn = sqlite3.connect(db)
-try:
-    rows = conn.execute("""
-        select workspace.id, workspace.name, workspace.branch, workspace.directory, project.worktree
-        from workspace
-        left join project on project.id = workspace.project_id
-    """).fetchall()
-finally:
-    conn.close()
-for row_id, name, branch, directory, project_path in rows:
-    if (
-        isinstance(directory, str)
-        and isinstance(project_path, str)
-        and path == directory.rstrip("/")
-        and app_path == project_path.rstrip("/")
-    ):
-        print(json.dumps({
-            "match": True,
-            "workspace_name": branch or name,
-            "path": directory.rstrip("/"),
-            "adapter_workspace_id": row_id,
-        }))
-        sys.exit(0)
-print(json.dumps({"match": False}))
-PY
-SH;
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new RuntimeException('adapter_invalid_response');
+        }
+
+        if (! is_array($decoded) || ($decoded['ok'] ?? null) !== true || ! is_array($decoded['data'] ?? null)) {
+            throw new RuntimeException('adapter_invalid_response');
+        }
+
+        return $decoded['data'];
     }
 
-    private function polyscopeScript(): string
+    private function failureReason(RemoteShellResult $result): string
     {
-        return <<<'SH'
-python3 - <<'PY'
-import json, os, pathlib, sqlite3, sys
-path = os.environ.get("ORBIT_WORKSPACE_PATH", "").rstrip("/")
-app_path = os.environ.get("ORBIT_APP_PATH", "").rstrip("/")
-db = pathlib.Path.home() / ".polyscope/polyscope.db"
-if not path:
-    print("path_missing", file=sys.stderr); sys.exit(2)
-if not app_path:
-    print("app_path_missing", file=sys.stderr); sys.exit(2)
-if not db.exists():
-    print(json.dumps({"match": False})); sys.exit(0)
-conn = sqlite3.connect(db)
-try:
-    rows = conn.execute("""
-        select worktrees.id, worktrees.branch, worktrees.path, repositories.path
-        from worktrees
-        left join repositories on repositories.id = worktrees.repo_id
-    """).fetchall()
-except sqlite3.Error:
-    rows = conn.execute("select id, branch, path, null from workspaces").fetchall()
-finally:
-    conn.close()
-for row_id, branch, workspace_path, repository_path in rows:
-    if (
-        isinstance(workspace_path, str)
-        and isinstance(repository_path, str)
-        and path == workspace_path.rstrip("/")
-        and app_path == repository_path.rstrip("/")
-    ):
-        print(json.dumps({
-            "match": True,
-            "workspace_name": branch,
-            "path": workspace_path.rstrip("/"),
-            "adapter_workspace_id": row_id,
-        }))
-        sys.exit(0)
-print(json.dumps({"match": False}))
-PY
-SH;
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return trim($result->stderr) ?: trim($result->stdout) ?: 'adapter_unreachable';
+        }
+
+        $message = is_array($decoded)
+            && is_array($decoded['error'] ?? null)
+            && is_string($decoded['error']['message'] ?? null)
+            ? trim($decoded['error']['message'])
+            : '';
+
+        return $message !== '' ? $message : (trim($result->stderr) ?: trim($result->stdout) ?: 'adapter_unreachable');
     }
 
     /**

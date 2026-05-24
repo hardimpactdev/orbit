@@ -553,6 +553,40 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and(str_ends_with($completedProperties['stderr_summary'], '[truncated]'))->toBeTrue();
     });
 
+    it('suppresses stdout and stderr summaries when transport options request output redaction', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: '{"api_token":"poly-token-secret"}',
+                stderr: 'stderr secret',
+                durationMs: 12,
+            ),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: [],
+            commandOptions: [
+                'adapter' => 'polyscope',
+                'lookup' => 'config',
+                'app-path' => '/srv/docs',
+            ],
+            transportOptions: [
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+            ],
+        );
+
+        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+
+        expect($completedProperties['stdout_summary'])->toBe('<suppressed>')
+            ->and($completedProperties['stderr_summary'])->toBe('<suppressed>')
+            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('poly-token-secret')
+            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('stderr secret');
+    });
+
     it('keeps default executor bindings while making the local executor explicitly resolvable', function (): void {
         config()->set('orbit.operation_token_secret', 'gateway-secret');
         config()->set('orbit.operation_token_ttl_seconds', 120);
