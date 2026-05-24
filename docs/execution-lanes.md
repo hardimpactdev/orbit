@@ -128,6 +128,12 @@ record and carry a gateway-issued operation token. The local executor validates
 the token before side effects and records the result through the gateway-owned
 operation path. Node-local CLI execution is never an authority bypass.
 
+`LocalExecutorCommandBuilder` is the only sanctioned way to compose internal
+CLI invocations sent through this lane. It validates the `internal:*` command
+name and option keys, escapes every positional argument and option value,
+always appends `--operation-token` and `--json`, and exposes a token-redacted
+audit line. Do not hand-build local-executor shell strings at call sites.
+
 ## Hard Rules
 
 Use these rules for every new or migrated gateway-to-node execution path.
