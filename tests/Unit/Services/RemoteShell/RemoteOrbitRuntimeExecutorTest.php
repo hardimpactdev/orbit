@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteOrbitRuntimeExecutor;
+use App\Services\Runtime\OrbitRuntimeContainer;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
@@ -47,14 +48,35 @@ it('normalizes artisan commands to php artisan inside orbit-runtime', function (
     'php artisan migrate --force',
 ]);
 
+it('does not double wrap commands already targeting orbit-runtime', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "migrated\n"),
+    ]);
+
+    app(RemoteOrbitRuntimeExecutor::class)->run(
+        remoteRuntimeExecutorNode(),
+        'docker exec -i orbit-runtime php artisan migrate --force',
+    );
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $command = (string) $process->command;
+
+        return substr_count($command, 'docker exec -i orbit-runtime') === 1
+            && ! str_contains($command, 'orbit-runtime docker exec')
+            && str_contains($command, 'docker exec -i orbit-runtime php artisan migrate --force');
+    });
+});
+
 it('preserves runtime env, cwd, timeout, input, stdout, and stderr semantics', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "runtime-ok\n", errorOutput: "runtime-warning\n"),
     ]);
+    $node = remoteRuntimeExecutorNode();
 
-    $result = app(RemoteOrbitRuntimeExecutor::class)->run(remoteRuntimeExecutorNode(), 'php artisan orbit:cleanup', [
-        'cwd' => '/home/orbit/orbit',
+    $result = app(RemoteOrbitRuntimeExecutor::class)->run($node, 'php artisan orbit:cleanup', [
+        'cwd' => $node->orbit_path,
         'metadata' => ['ORBIT_REQUEST_ID' => 'runtime-req'],
         'timeout' => 75,
         'input' => 'runtime-stdin',
@@ -71,7 +93,8 @@ it('preserves runtime env, cwd, timeout, input, stdout, and stderr semantics', f
             && str_contains($command, '--env')
             && str_contains($command, 'ORBIT_REQUEST_ID=runtime-req')
             && str_contains($command, '--workdir')
-            && str_contains($command, '/home/orbit/orbit')
+            && str_contains($command, OrbitRuntimeContainer::SourcePath)
+            && ! str_contains($command, '/home/orbit/orbit')
             && str_contains($command, 'orbit-runtime php artisan orbit:cleanup')
             && $process->timeout === 75
             && $process->input === 'runtime-stdin'
@@ -95,7 +118,8 @@ it('falls back to an in-container shell for compound runtime scripts', function 
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return str_contains($command, 'docker exec -i orbit-runtime sh -lc')
+        return str_contains($command, 'docker exec -i orbit-runtime sh -c')
+            && ! str_contains($command, 'docker exec -i orbit-runtime sh -lc')
             && str_contains($command, 'ORBIT_REQUEST_ID')
             && str_contains($command, 'php artisan migrate --force && php artisan orbit:cleanup');
     });

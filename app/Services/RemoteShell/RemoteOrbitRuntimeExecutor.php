@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Runtime\OrbitRuntimeContainer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
@@ -38,7 +39,7 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
     #[\Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $runtimeScript = $this->runtimeScript($script, $options);
+        $runtimeScript = $this->runtimeScript($node, $script, $options);
         $command = $this->command($node, $runtimeScript);
 
         $startedAt = hrtime(true);
@@ -75,7 +76,7 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
     public function start(Node $node, string $script, array $options = []): InvokedProcess
     {
         $process = $this->pendingProcess($options)->start(
-            $this->command($node, $this->runtimeScript($script, $options)),
+            $this->command($node, $this->runtimeScript($node, $script, $options)),
         );
 
         $this->auditLogger->log('remote_shell.start', $node, $script, $options);
@@ -114,8 +115,9 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
      *     strict?: bool,
      * }  $options
      */
-    private function runtimeScript(string $script, array $options): string
+    private function runtimeScript(Node $node, string $script, array $options): string
     {
+        $options = $this->optionsWithContainerCwd($node, $options);
         $directCommand = $this->directRuntimeCommand($script);
 
         if ($directCommand !== null && ! (bool) ($options['strict'] ?? false)) {
@@ -125,7 +127,7 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         return implode(' ', [
             'docker exec -i',
             self::CONTAINER,
-            'sh -lc',
+            'sh -c',
             escapeshellarg($this->scripts->compose($script, $options)),
         ]);
     }
@@ -166,6 +168,8 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
             return null;
         }
 
+        $command = $this->unwrapRuntimeCommand($command) ?? $command;
+
         if ($command === 'artisan') {
             return 'php artisan';
         }
@@ -181,6 +185,23 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         return $this->safeDirectCommand($command);
     }
 
+    private function unwrapRuntimeCommand(string $command): ?string
+    {
+        $prefixes = [
+            'docker exec -i '.self::CONTAINER.' ',
+            'docker exec --interactive '.self::CONTAINER.' ',
+            'docker exec '.self::CONTAINER.' ',
+        ];
+
+        foreach ($prefixes as $prefix) {
+            if (str_starts_with($command, $prefix)) {
+                return trim(substr($command, strlen($prefix)));
+            }
+        }
+
+        return null;
+    }
+
     private function safeDirectCommand(string $command): ?string
     {
         if (preg_match('/\A[A-Za-z0-9_\/.:-]+(?: [A-Za-z0-9_\/.=:,@%+-]+)*\z/', $command) === 1) {
@@ -193,6 +214,56 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
     private function normalizeWhitespace(string $script): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $script));
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }  $options
+     * @return array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }
+     */
+    private function optionsWithContainerCwd(Node $node, array $options): array
+    {
+        if (! isset($options['cwd']) || $options['cwd'] === '') {
+            return $options;
+        }
+
+        return [
+            ...$options,
+            'cwd' => $this->containerCwd($node, (string) $options['cwd']),
+        ];
+    }
+
+    private function containerCwd(Node $node, string $cwd): string
+    {
+        $hostOrbitPath = rtrim((string) $node->orbit_path, '/');
+        $normalizedCwd = rtrim($cwd, '/');
+
+        if ($hostOrbitPath === '') {
+            return $cwd;
+        }
+
+        if ($normalizedCwd === $hostOrbitPath) {
+            return OrbitRuntimeContainer::SourcePath;
+        }
+
+        if (str_starts_with($normalizedCwd, "{$hostOrbitPath}/")) {
+            return OrbitRuntimeContainer::SourcePath.substr($normalizedCwd, strlen($hostOrbitPath));
+        }
+
+        return $cwd;
     }
 
     private function command(Node $node, string $script): string

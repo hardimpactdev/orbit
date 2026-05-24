@@ -31,8 +31,13 @@ it('mirrors the existing remote shell public surface', function (): void {
 });
 
 it('defaults RemoteExecutor resolution to the host executor while keeping runtime explicit', function (): void {
+    app()->forgetInstance(RemoteShell::class);
+    app()->forgetInstance(StartsRemoteShellProcesses::class);
+
     expect(app(RemoteExecutor::class))->toBeInstanceOf(RemoteHostExecutor::class)
-        ->and(app(RemoteOrbitRuntimeExecutor::class))->toBeInstanceOf(RemoteOrbitRuntimeExecutor::class);
+        ->and(app(RemoteOrbitRuntimeExecutor::class))->toBeInstanceOf(RemoteOrbitRuntimeExecutor::class)
+        ->and(app(RemoteShell::class))->toBeInstanceOf(RemoteHostExecutor::class)
+        ->and(app(StartsRemoteShellProcesses::class))->toBeInstanceOf(RemoteHostExecutor::class);
 });
 
 /**
