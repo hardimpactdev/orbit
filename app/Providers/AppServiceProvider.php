@@ -20,6 +20,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\ToolLogGatewayStreamClient;
 use App\Http\Gateway\UpdateAllGatewayStreamClient;
 use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
 use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
 use App\Services\AgentIde\SdkOpenCodeClientFactory;
@@ -98,6 +99,7 @@ class AppServiceProvider extends ServiceProvider
             transport: $app->make(RemoteHostExecutor::class),
             commands: $app->make(LocalExecutorCommandBuilder::class),
             operationTokens: $app->make(OperationTokenFactory::class),
+            activityLogger: $app->make(ActivityLogger::class),
         ));
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
