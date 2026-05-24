@@ -40,6 +40,9 @@ owning family concept document.
 - **S3 service credentials** — service-level RustFS access key and secret material stored on the `rustfs` tool row. See [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **Orbit launcher** — host `orbit` executable that runs commands inside the local `orbit-runtime` container and passes `ORBIT_HOST_CWD`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit runtime container** — one `orbit-runtime` container per node; it is the CLI execution target and, on the gateway, the API and scheduler runtime. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Execution lane** — gateway-to-node workload classification for Docker-first-managed nodes. Host substrate work uses `RemoteHostExecutor`; Orbit PHP/PDO/artisan work uses `RemoteOrbitRuntimeExecutor` inside `orbit-runtime`, because steady-state host PHP is forbidden. See [Runtime Execution Lanes](execution-lanes.md).
+- **RemoteHostExecutor** — execution lane for host bootstrap, Docker, WireGuard, Caddy, security, filesystem, git, and container-control work. See [Runtime Execution Lanes](execution-lanes.md).
+- **RemoteOrbitRuntimeExecutor** — execution lane for Orbit PHP, PDO/database access, Composer, and Artisan work on a node through `docker exec orbit-runtime`. See [Runtime Execution Lanes](execution-lanes.md).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
 - **App runtime container** — dedicated Docker container for one PHP app or workspace runtime. See [App Concepts](domains/5_app/app-concepts.md).
 - **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
@@ -55,7 +58,7 @@ owning family concept document.
 - **Runtime unit** — derived runnable unit for a process definition in a specific app/workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Orbit Scheduler** — the resident schedule executor loop that runs inside gateway `orbit-runtime`. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager. In the Docker-first runtime, its steady-state Orbit responsibility is keeping Docker alive.
-- **RemoteShell** — gateway-to-node execution primitive. See [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
+- **RemoteShell** — gateway-to-node transport primitive; workload classification belongs to the execution lanes, not the transport itself. See [Runtime Execution Lanes](execution-lanes.md) and [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).

@@ -90,7 +90,9 @@ The other seven are workload roles applied to nodes in the fleet.
 Application roles use the Docker-first runtime baseline. PHP apps and PHP
 workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
 run as Docker process runtime units by default. Host PHP and PHP-FPM are not
-fallbacks.
+fallbacks; steady-state Orbit PHP/PDO/artisan work on Docker-first-managed
+nodes must enter `orbit-runtime` through the runtime execution lane. See
+[Runtime Execution Lanes](execution-lanes.md).
 
 The `websocket` role is a private workload role for Orbit-managed realtime
 infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
@@ -184,7 +186,11 @@ CLI callers can run on any node — a client, the gateway, or a node carrying wo
 
 Nodes other than the gateway do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on such a node, the gateway opens the SSH connection and runs the work there. They do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
 
-The SSH primitive the gateway uses to act on other nodes is called `RemoteShell`. How scripts are composed, files uploaded, and sudo scoped lives in [tech-stack.md](tech-stack.md#gateway-to-node).
+The SSH primitive the gateway uses to act on other nodes is called
+`RemoteShell`. `RemoteShell` is transport; workload lane selection is defined
+by [Runtime Execution Lanes](execution-lanes.md). How scripts
+are composed, files uploaded, and sudo scoped lives in
+[tech-stack.md](tech-stack.md#gateway-to-node).
 
 ### Authentication and authorization
 
