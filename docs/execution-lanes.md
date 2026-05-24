@@ -105,6 +105,12 @@ Forbidden work:
 logic that needs host file access and PHP/PDO without relying on ad hoc
 `python3` or `sqlite3` snippets.
 
+The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
+with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
+and dispatches that host command through the SSH transport. It never wraps local
+executor work in `docker exec orbit-runtime`; the role-aware host `orbit`
+launcher selects `apps/cli` on non-gateway nodes.
+
 Required work:
 
 - Workspace adapter SQLite lookups for Polyscope and OpenCode when the adapter
@@ -123,16 +129,28 @@ Forbidden work:
 - App/workspace runtime PHP execution, which belongs in app/workspace
   containers.
 
-Every `RemoteLocalExecutor` invocation must be tied to a gateway operation
-record and carry a gateway-issued operation token. The local executor validates
-the token before side effects and records the result through the gateway-owned
-operation path. Node-local CLI execution is never an authority bypass.
+Every `RemoteLocalExecutor` invocation must carry a gateway-issued operation
+token. The local executor validates the token before side effects, and
+node-local CLI execution is never an authority bypass. When the operation-record
+layer is wired in, the token id must correspond to the gateway operation record
+and results must be recorded through that gateway-owned operation path; that
+recording/audit-redaction layer is separate from the executor primitive.
 
 `LocalExecutorCommandBuilder` is the only sanctioned way to compose internal
 CLI invocations sent through this lane. It validates the `internal:*` command
 name and option keys, escapes every positional argument and option value,
 always appends `--operation-token` and `--json`, and exposes a token-redacted
 audit line. Do not hand-build local-executor shell strings at call sites.
+
+Callers that need arguments or command options use:
+
+```php
+RemoteLocalExecutor::runInternal(Node $node, string $commandName, array $arguments = [], array $commandOptions = [], array $transportOptions = [])
+```
+
+The inherited `RemoteShell::run()` method is reserved for command-name-only
+internal invocations such as `internal:executor:verify`; callers must not encode
+structured local-executor input as JSON or as a free-form shell script.
 
 ## Hard Rules
 
