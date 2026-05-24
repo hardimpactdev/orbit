@@ -139,10 +139,57 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
         ),
         [
             'adapter_error_code' => 'adapter_database_missing',
-            'reason' => 'Workspace adapter database does not exist.',
+            'reason' => 'Polyscope configuration lookup failed.',
         ],
     ],
 ]);
+
+it('treats Polyscope config lookup error messages as untrusted remote output', function (): void {
+    $secret = 'secret-token-probe-XYZ';
+    $node = Node::factory()->create([
+        'name' => 'app-dev',
+        'role' => 'app',
+        'agent_ide_config' => null,
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/srv/docs',
+        'agent_ide_config' => null,
+    ]);
+    $transport = new PolyscopeWorkspaceDriverTransport(new RemoteShellResult(
+        exitCode: 1,
+        stdout: json_encode([
+            'ok' => false,
+            'error' => [
+                'code' => 'some_code',
+                'message' => "leak: {$secret}",
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        stderr: '',
+        durationMs: 2,
+    ));
+    $driver = new PolyscopeWorkspaceDriver(
+        branchAligner: new PolyscopeWorkspaceBranchAligner(new PolyscopeWorkspaceDriverUnusedShell),
+        localExecutor: polyscopeWorkspaceDriverExecutor($transport),
+    );
+
+    try {
+        $driver->create($app, $node, 'feature-docs', 'main');
+
+        $this->fail('Expected Polyscope workspace creation to fail.');
+    } catch (WorkspaceCreateFailed $exception) {
+        $exceptionBlob = polyscopeWorkspaceDriverExceptionBlob($exception);
+
+        expect($exception->getMessage())->not->toContain($secret)
+            ->and($exception->errorCode)->not->toContain($secret)
+            ->and((string) $exception->getCode())->not->toContain($secret)
+            ->and($exceptionBlob)->not->toContain($secret)
+            ->and($exception->getTraceAsString())->not->toContain($secret)
+            ->and($exception->meta)->not->toHaveKey('adapter_error_code')
+            ->and($exception->meta['reason'])->toBe('Polyscope configuration lookup failed.');
+    }
+});
 
 function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $transport): RemoteLocalExecutor
 {

@@ -19,6 +19,21 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
 {
     private const string CONFIG_LOOKUP_UNPARSEABLE = 'Polyscope config lookup returned unparseable output.';
 
+    private const string CONFIG_LOOKUP_FAILED = 'Polyscope configuration lookup failed.';
+
+    private const array SAFE_CONFIG_LOOKUP_ERROR_CODES = [
+        'adapter_database_missing',
+        'adapter_database_query_failed',
+        'adapter_database_unreadable',
+        'adapter_settings_invalid',
+        'adapter_settings_missing',
+        'adapter_settings_unreadable',
+        'home_directory_unavailable',
+        'invalid_token',
+        'missing_token',
+        'validation_failed',
+    ];
+
     public function __construct(
         private PolyscopeWorkspaceBranchAligner $branchAligner,
         private RemoteLocalExecutor $localExecutor,
@@ -212,18 +227,34 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     private function configLookupFailure(array $envelope, App $app, Node $node): WorkspaceCreateFailed
     {
         $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
+        $meta = [
+            'adapter' => 'polyscope',
+            'node' => $node->name,
+            'app' => $app->name,
+            'reason' => self::CONFIG_LOOKUP_FAILED,
+        ];
+        $code = $this->safeConfigLookupErrorCode($error['code'] ?? null);
+
+        if ($code !== null) {
+            $meta['adapter_error_code'] = $code;
+        }
 
         return new WorkspaceCreateFailed(
             'workspace.agent_ide_not_configured',
             'Polyscope configuration could not be read from the app node.',
-            [
-                'adapter' => 'polyscope',
-                'node' => $node->name,
-                'app' => $app->name,
-                'adapter_error_code' => $this->stringValue($error['code'] ?? null) ?? 'adapter_lookup_failed',
-                'reason' => $this->stringValue($error['message'] ?? null) ?? 'Workspace adapter lookup failed.',
-            ],
+            $meta,
         );
+    }
+
+    private function safeConfigLookupErrorCode(mixed $value): ?string
+    {
+        $code = $this->stringValue($value);
+
+        if ($code === null) {
+            return null;
+        }
+
+        return in_array($code, self::SAFE_CONFIG_LOOKUP_ERROR_CODES, true) ? $code : null;
     }
 
     private function unparseableConfigLookup(App $app, Node $node): WorkspaceCreateFailed
