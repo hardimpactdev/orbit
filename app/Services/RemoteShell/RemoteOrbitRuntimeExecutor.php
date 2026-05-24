@@ -126,9 +126,9 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         }
 
         return implode(' ', [
-            $this->dockerExecPrefix($options, $runtimeCommand['docker_exec_options'], includeExecutorOptions: false),
+            $this->dockerExecPrefix($options, $runtimeCommand['docker_exec_options']),
             'sh -c',
-            escapeshellarg($this->scripts->compose($runtimeCommand['script'], $options)),
+            escapeshellarg($this->scripts->compose($runtimeCommand['script'], $this->shellFallbackComposeOptions($options))),
         ]);
     }
 
@@ -177,9 +177,9 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
      *     workdir: string|null,
      * }  $dockerExecOptions
      *
-     * Caller-provided Docker exec flags are emitted before executor metadata and
-     * cwd, so direct runtime options override duplicate environment and workdir
-     * values. Shell fallback keeps executor metadata/cwd in the composed script.
+     * Caller-provided Docker exec flags are emitted before executor metadata and cwd,
+     * so direct runtime options override duplicate environment and workdir values.
+     * Shell fallback strips those executor options from the composed script body.
      */
     private function dockerExecPrefix(array $options, array $dockerExecOptions, bool $includeExecutorOptions = true): string
     {
@@ -348,13 +348,35 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
             return true;
         }
 
-        foreach ($this->dockerExecValueOptions() as $name => $key) {
-            if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, $name, $key)) {
-                return true;
-            }
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '--detach-keys', 'detach_keys')) {
+            return true;
         }
 
-        return false;
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '--env', 'environment')) {
+            return true;
+        }
+
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '--env-file', 'env_files')) {
+            return true;
+        }
+
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '--user', 'user')) {
+            return true;
+        }
+
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '--workdir', 'workdir')) {
+            return true;
+        }
+
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '-e', 'environment')) {
+            return true;
+        }
+
+        if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '-u', 'user')) {
+            return true;
+        }
+
+        return $this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, '-w', 'workdir');
     }
 
     /**
@@ -469,30 +491,33 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
      */
     private function recordDockerExecValueOption(array &$dockerExecOptions, string $key, string $value): void
     {
-        if ($key === 'environment' || $key === 'env_files') {
-            $dockerExecOptions[$key][] = $value;
+        if ($key === 'environment') {
+            $dockerExecOptions['environment'][] = $value;
 
             return;
         }
 
-        $dockerExecOptions[$key] = $value;
-    }
+        if ($key === 'env_files') {
+            $dockerExecOptions['env_files'][] = $value;
 
-    /**
-     * @return array<string, string>
-     */
-    private function dockerExecValueOptions(): array
-    {
-        return [
-            '--detach-keys' => 'detach_keys',
-            '--env' => 'environment',
-            '--env-file' => 'env_files',
-            '--user' => 'user',
-            '--workdir' => 'workdir',
-            '-e' => 'environment',
-            '-u' => 'user',
-            '-w' => 'workdir',
-        ];
+            return;
+        }
+
+        if ($key === 'detach_keys') {
+            $dockerExecOptions['detach_keys'] = $value;
+
+            return;
+        }
+
+        if ($key === 'user') {
+            $dockerExecOptions['user'] = $value;
+
+            return;
+        }
+
+        if ($key === 'workdir') {
+            $dockerExecOptions['workdir'] = $value;
+        }
     }
 
     /**
@@ -604,6 +629,31 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
     private function normalizeWhitespace(string $script): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $script));
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }  $options
+     * @return array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }
+     */
+    private function shellFallbackComposeOptions(array $options): array
+    {
+        unset($options['cwd'], $options['metadata']);
+
+        return $options;
     }
 
     /**

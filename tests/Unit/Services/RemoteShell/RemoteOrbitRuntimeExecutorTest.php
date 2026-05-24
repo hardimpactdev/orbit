@@ -170,6 +170,30 @@ it('merges unwrapped docker exec workdir with runtime cwd without conflicts', fu
     });
 });
 
+it('lets runtime cwd override unwrapped docker exec workdir for shell fallback', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "compound\n"),
+    ]);
+    $node = remoteRuntimeExecutorNode();
+
+    app(RemoteOrbitRuntimeExecutor::class)->run(
+        $node,
+        "docker exec -i --workdir /foo orbit-runtime sh -c 'echo hi && echo bye'",
+        ['cwd' => $node->orbit_path],
+    );
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $command = (string) $process->command;
+
+        return substr_count($command, '--workdir') === 1
+            && str_contains($command, OrbitRuntimeContainer::SourcePath)
+            && ! str_contains($command, '/foo')
+            && ! str_contains($command, 'cd ')
+            && str_contains($command, 'echo hi && echo bye');
+    });
+});
+
 it('merges unwrapped docker exec env with runtime metadata deterministically', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
@@ -280,8 +304,10 @@ it('falls back to an in-container shell for compound runtime scripts', function 
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return str_contains($command, 'docker exec -i orbit-runtime sh -c')
+        return str_contains($command, 'docker exec -i')
+            && str_contains($command, 'orbit-runtime sh -c')
             && ! str_contains($command, 'docker exec -i orbit-runtime sh -lc')
+            && str_contains($command, '--env')
             && str_contains($command, 'ORBIT_REQUEST_ID')
             && str_contains($command, 'php artisan migrate --force && php artisan orbit:cleanup');
     });
