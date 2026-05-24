@@ -207,6 +207,15 @@ commands are hidden from normal CLI help, require a gateway-issued operation
 token, and must fail before side effects when invoked directly without a valid
 token.
 
+Gateway operation tokens are minted by the gateway-side operation token
+factory, using `ORBIT_OPERATION_TOKEN_SECRET` and the configured
+`ORBIT_OPERATION_TOKEN_TTL_SECONDS` value. The default TTL is 120 seconds. Each
+token carries the operation id, target node, internal command name, issued
+timestamp, expiry timestamp, and signature. The local executor verifies the
+signature, target node, command, and expiry before side effects. Missing signing
+secret configuration prevents minting; token minting is stateless and uses the
+existing operation id rather than creating operation persistence itself.
+
 ### Authentication and authorization
 
 Every Orbit command needs two things: an identity and permission.
