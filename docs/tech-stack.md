@@ -9,12 +9,12 @@ Control plane:
 
 Client
   -> host orbit launcher
-  -> local orbit-runtime
+  -> CLI/local-executor artifact
   -> HTTPS over WireGuard
   -> gateway orbit-caddy
   -> gateway orbit-runtime
   -> RemoteShell over WireGuard
-  -> node Docker runtime containers
+  -> node execution lane
 
 Public production HTTP:
 
@@ -63,7 +63,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | Gateway scheduler loop inside `orbit-runtime` |
 | Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Host prerequisites | Git, Docker, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
+| Host prerequisites | Git, Docker, host PHP CLI for the CLI/local-executor artifact, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | `orbit-caddy` on `app-production` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
@@ -81,9 +81,21 @@ Laravel is Orbit's application framework, while command behavior remains documen
 
 ### Application
 
-Orbit is a single Laravel 13 codebase that runs inside `orbit-runtime`. On the gateway, `orbit-runtime` serves the typed HTTPS API behind `orbit-caddy` and runs the gateway-local Orbit Scheduler. On clients and on every other node, the host `orbit` executable is a launcher that executes the same code inside the local `orbit-runtime` container, gathers local input, calls the gateway over the VPN, and renders the result.
+Orbit's gateway application is Laravel 13 and runs inside `orbit-runtime`. On
+the gateway, `orbit-runtime` serves the typed HTTPS API behind `orbit-caddy`
+and runs the gateway-local Orbit Scheduler. On clients and workload nodes, the
+host `orbit` executable launches the CLI/local-executor artifact from the
+source checkout. Public commands gather local input, call the gateway over the
+VPN, and render the result. Internal executor commands are dispatched by the
+gateway and require an operation token before side effects.
 
-Orbit runs from source mounted into the runtime container. There is no PHAR. The installer checks out the repo, prepares the Docker runtime, and links the host `orbit` launcher into the local executable path. Host PHP and host Composer are not supported fallbacks for running Orbit commands.
+Orbit runs from source. There is no PHAR. The installer checks out the repo,
+prepares the Docker runtime, and links the host `orbit` launcher into the local
+executable path.
+
+Host PHP CLI is required for the Orbit CLI/local-executor artifact in the
+source-checkout distribution. Host PHP is not an app/workspace runtime fallback
+and must not replace FrankenPHP app/workspace containers.
 
 ## Storage
 
@@ -126,10 +138,13 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 
 See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
 
-Gateway-to-node work is split into `RemoteHostExecutor` for host substrate work
-and `RemoteOrbitRuntimeExecutor` for Orbit PHP/PDO/artisan work inside
-`orbit-runtime`. Docker-first-managed nodes forbid steady-state host PHP for
-Orbit work. See [Runtime Execution Lanes](execution-lanes.md).
+Gateway-to-node work is split into `RemoteHostExecutor` for host substrate
+work, `RemoteOrbitRuntimeExecutor` for gateway Laravel/artisan/PDO work inside
+`orbit-runtime`, and `RemoteLocalExecutor` for token-gated packaged node-local
+helper logic that needs host file access plus PHP/PDO. Host PHP is allowed for
+the CLI/local-executor artifact; it is not an app/workspace runtime fallback
+and must not replace FrankenPHP containers. See
+[Runtime Execution Lanes](execution-lanes.md).
 
 VPN-role runtime administration is the one runtime exception to the normal
 gateway-to-node flow. Commands that administer VPN clients (`vpn-client:*`) or
@@ -177,9 +192,19 @@ Installer and doctor repair code must be additive: ensure required imports and m
 
 ### PHP runtime
 
-PHP app execution runs in FrankenPHP containers. The gateway and CLI runtime run in `orbit-runtime`; apps and workspaces run in dedicated long-lived app/workspace containers when their runtime kind is PHP. Static or non-PHP apps do not get a FrankenPHP container.
+PHP app execution runs in FrankenPHP containers. The gateway runtime runs in
+`orbit-runtime`; the CLI/local-executor artifact runs through host PHP CLI in
+the source-checkout distribution. Apps and workspaces run in dedicated
+long-lived app/workspace containers when their runtime kind is PHP. Static or
+non-PHP apps do not get a FrankenPHP container.
 
-Each PHP workspace gets its own FrankenPHP container so workspaces are isolated from one another. Production PHP apps get a dedicated container as well. The PHP version for an app or workspace is gateway-tracked configuration; changing it recreates the affected runtime container from the selected PHP image on the owning node through `RemoteShell`. Host PHP and PHP-FPM are not supported fallbacks.
+Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
+from one another. Production PHP apps get a dedicated container as well. The
+PHP version for an app or workspace is gateway-tracked configuration; changing
+it recreates the affected runtime container from the selected PHP image on the
+owning node through `RemoteShell`. Host PHP CLI is reserved for the
+CLI/local-executor artifact; host PHP and PHP-FPM are not app/workspace runtime
+fallbacks.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-production` nodes are production runtime backends:
