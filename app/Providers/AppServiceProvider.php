@@ -30,6 +30,7 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Doctor\DnsRuntimeProbe;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\SshRemoteShellStream;
@@ -62,6 +63,7 @@ use App\Tools\ReverbTool;
 use App\Tools\SupervisorTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
+use Orbit\Core\Security\OperationTokenSigner;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -75,6 +77,11 @@ class AppServiceProvider extends ServiceProvider
         $_SERVER['PAO_DISABLE'] ??= '1';
 
         $this->app->scoped(ActivityLogCorrelation::class);
+        $this->app->bind(OperationTokenFactory::class, fn ($app): OperationTokenFactory => new OperationTokenFactory(
+            signer: $app->make(OperationTokenSigner::class),
+            secret: $this->operationTokenSecret(),
+            ttlSeconds: $this->operationTokenTtlSeconds(),
+        ));
         $this->app->singleton(GatewayConnector::class);
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
@@ -168,6 +175,41 @@ class AppServiceProvider extends ServiceProvider
         }
 
         return $home.'/.config/orbit';
+    }
+
+    private function operationTokenSecret(): string
+    {
+        $secret = config('orbit.operation_token_secret');
+
+        if (! is_string($secret) || trim($secret) === '') {
+            throw new RuntimeException('Operation token signing secret is not configured.');
+        }
+
+        return $secret;
+    }
+
+    private function operationTokenTtlSeconds(): int
+    {
+        $ttlSeconds = config('orbit.operation_token_ttl_seconds');
+
+        if (is_int($ttlSeconds)) {
+            return $this->validateOperationTokenTtlSeconds($ttlSeconds);
+        }
+
+        if (is_string($ttlSeconds) && ctype_digit($ttlSeconds)) {
+            return $this->validateOperationTokenTtlSeconds((int) $ttlSeconds);
+        }
+
+        throw new RuntimeException('Operation token TTL is not configured.');
+    }
+
+    private function validateOperationTokenTtlSeconds(int $ttlSeconds): int
+    {
+        if ($ttlSeconds < 1) {
+            throw new RuntimeException('Operation token TTL is not configured.');
+        }
+
+        return $ttlSeconds;
     }
 
     private function wgEasyStatePath(): string
