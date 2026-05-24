@@ -368,7 +368,7 @@ JS;
             return;
         }
 
-        throw new RuntimeException($this->wgEasyStateFailureMessage($failureMessage, $envelope));
+        throw $this->wgEasyStateFailure($failureMessage, $envelope);
     }
 
     /**
@@ -379,11 +379,11 @@ JS;
         try {
             $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            throw new RuntimeException($failureMessage);
+            throw new WgEasyStatePreflightFailed($failureMessage);
         }
 
         if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
-            throw new RuntimeException($failureMessage);
+            throw new WgEasyStatePreflightFailed($failureMessage);
         }
 
         return $decoded;
@@ -392,16 +392,18 @@ JS;
     /**
      * @param  array<string, mixed>  $envelope
      */
-    private function wgEasyStateFailureMessage(string $failureMessage, array $envelope): string
+    private function wgEasyStateFailure(string $failureMessage, array $envelope): WgEasyStatePreflightFailed
     {
         $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
         $code = $this->safeWgEasyStateErrorCode($error['code'] ?? null);
 
         if ($code === null) {
-            return $failureMessage;
+            return new WgEasyStatePreflightFailed($failureMessage);
         }
 
-        return "{$failureMessage} Remote error code: {$code}.";
+        return new WgEasyStatePreflightFailed($failureMessage, [
+            'wg_easy_state_error_code' => $code,
+        ]);
     }
 
     private function safeWgEasyStateErrorCode(mixed $value): ?string
@@ -438,5 +440,16 @@ JS;
         }
 
         file_put_contents($envPath, $contents);
+    }
+}
+
+final class WgEasyStatePreflightFailed extends RuntimeException
+{
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public function __construct(string $message, public readonly array $meta = [])
+    {
+        parent::__construct($message);
     }
 }
