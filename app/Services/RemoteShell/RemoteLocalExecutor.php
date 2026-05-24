@@ -124,10 +124,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
 
             $redactedMessage = $this->redactOperationToken($throwable->getMessage(), $dispatch['operationToken']);
 
-            if ($redactedMessage === $throwable->getMessage()) {
-                throw $throwable;
-            }
-
             throw new RuntimeException(
                 message: "Remote local executor transport failed: {$this->truncate($redactedMessage)}",
                 code: (int) $throwable->getCode(),
@@ -359,7 +355,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
     private function redactOperationToken(string $value, string $operationToken): string
     {
         $redacted = preg_replace(
-            '/--operation-token(?:=|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
+            '/--operation-token\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
             '--operation-token=<redacted>',
             $value,
         ) ?? $value;

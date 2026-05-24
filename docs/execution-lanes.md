@@ -151,8 +151,11 @@ Operation tokens are secret material. Activity descriptions, subjects,
 properties, stdout/stderr summaries, and sanitized local-executor shell-failure
 exceptions must never contain the raw token. The dispatch record uses the
 builder's redacted audit line, and completion summaries defensively scrub both
-`--operation-token=...` arguments and the exact minted token value before
-truncation.
+`--operation-token=...` arguments, including whitespace around `=`, and the
+exact minted token value before truncation. Generic transport exceptions are
+rewrapped without a previous-exception chain after logging the sanitized
+exception class and message, because PHP exception traces may retain
+token-bearing method arguments from the failed transport call.
 
 `LocalExecutorCommandBuilder` is the only sanctioned way to compose internal
 CLI invocations sent through this lane. It validates the `internal:*` command

@@ -283,6 +283,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ->and($exception->script)->not->toContain($token)
                 ->and($exception->result->stdout)->not->toContain($token)
                 ->and($exception->result->stderr)->not->toContain($token)
+                ->and($exception->getTraceAsString())->not->toContain($token)
                 ->and($completedProperties)->toMatchArray([
                     'lane' => 'local-executor',
                     'status' => 'failed',
@@ -293,6 +294,114 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ])
                 ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
         }
+    });
+
+    it('wraps generic transport failures with token-bearing messages without chaining the original exception', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static function (Node $node, string $script, array $options): RemoteShellResult {
+                $token = remoteLocalExecutorTokenFromScript($script);
+
+                throw new RuntimeException("transport leaked --operation-token={$token}");
+            },
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        try {
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                commandOptions: [],
+            );
+
+            $this->fail('Expected the local executor transport to throw.');
+        } catch (RuntimeException $exception) {
+            $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
+            $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+
+            expect($exception)->not->toBeInstanceOf(RemoteShellFailed::class)
+                ->and($exception->getPrevious())->toBeNull()
+                ->and($exception->getMessage())->toBe('Remote local executor transport failed: transport leaked --operation-token=<redacted>')
+                ->and($exception->getMessage())->not->toContain($token)
+                ->and($exception->getTraceAsString())->not->toContain($token)
+                ->and($completedProperties)->toMatchArray([
+                    'lane' => 'local-executor',
+                    'status' => 'failed',
+                    'command' => 'internal:executor:verify',
+                    'exit_code' => null,
+                    'exception_class' => RuntimeException::class,
+                    'exception_message' => 'transport leaked --operation-token=<redacted>',
+                ])
+                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
+        }
+    });
+
+    it('wraps generic transport failures with clean messages so traces cannot retain token-bearing method arguments', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException('transport disconnected'),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        try {
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                commandOptions: [],
+            );
+
+            $this->fail('Expected the local executor transport to throw.');
+        } catch (RuntimeException $exception) {
+            $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
+            $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+
+            expect($exception)->not->toBeInstanceOf(RemoteShellFailed::class)
+                ->and($exception->getPrevious())->toBeNull()
+                ->and($exception->getMessage())->toBe('Remote local executor transport failed: transport disconnected')
+                ->and($exception->getMessage())->not->toContain($token)
+                ->and($exception->getTraceAsString())->not->toContain($token)
+                ->and($completedProperties)->toMatchArray([
+                    'lane' => 'local-executor',
+                    'status' => 'failed',
+                    'command' => 'internal:executor:verify',
+                    'exit_code' => null,
+                    'exception_class' => RuntimeException::class,
+                    'exception_message' => 'transport disconnected',
+                ])
+                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
+        }
+    });
+
+    it('redacts operation-token output variants from any operation before storing summaries', function (): void {
+        $otherOperationToken = 'external-operation-token-402';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
+                exitCode: 0,
+                stdout: implode("\n", [
+                    "--operation-token={$otherOperationToken}",
+                    "--operation-token = {$otherOperationToken}",
+                    "--operation-token {$otherOperationToken}",
+                    "--operation-token=\"{$otherOperationToken}\"",
+                    "--operation-token='{$otherOperationToken}'",
+                    "ending --operation-token={$otherOperationToken}",
+                ]),
+                stderr: '',
+                durationMs: 6,
+            ),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            arguments: [],
+            commandOptions: [],
+        );
+
+        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+
+        expect($completedProperties['stdout_summary'])->not->toContain($otherOperationToken)
+            ->and(substr_count($completedProperties['stdout_summary'], '--operation-token=<redacted>'))->toBe(6);
     });
 
     it('does not write raw operation tokens to activity rows even when command output echoes them', function (): void {
@@ -323,6 +432,36 @@ describe(RemoteLocalExecutor::class, function (): void {
         expect($logBlob)->not->toContain($token)
             ->and($logBlob)->toContain('--operation-token=<redacted>')
             ->and($logBlob)->toContain('raw token <redacted>');
+    });
+
+    it('scrubs output before truncating when the operation token crosses the summary boundary', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static function (Node $node, string $script, array $options): RemoteShellResult {
+                $token = remoteLocalExecutorTokenFromScript($script);
+
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: str_repeat('p', 4_000).$token.str_repeat('s', 300),
+                    stderr: '',
+                    durationMs: 10,
+                );
+            },
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            arguments: [],
+            commandOptions: [],
+        );
+
+        $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
+        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+
+        expect($completedProperties['stdout_summary'])->not->toContain($token)
+            ->and($completedProperties['stdout_summary'])->toContain('<redacted>')
+            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))->toBeTrue();
     });
 
     it('truncates long stdout and stderr summaries in completed records', function (): void {
