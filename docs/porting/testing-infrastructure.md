@@ -67,8 +67,9 @@ Prepared Docker topologies model the target runtime contract:
   default;
 - service dependencies, including WebSocket and S3-compatible services, run as
   Docker sibling containers via the host Docker socket;
-- host PHP, host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app
-  processes are intentionally absent.
+- host PHP CLI is present only for the CLI/local-executor artifact; host
+  Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app processes are
+  intentionally absent.
 
 Public production HTTP tests must preserve the landed ingress contract:
 `ingress -> router -> backend`. Downstream WebSocket and S3 topology support
