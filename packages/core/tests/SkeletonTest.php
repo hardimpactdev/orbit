@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Hardimpactdev\OrbitCore\OrbitCoreServiceProvider;
+use Orbit\Core\OrbitCoreServiceProvider;
 
 it('can instantiate the service provider', function (): void {
     expect(class_exists(OrbitCoreServiceProvider::class))->toBeTrue();

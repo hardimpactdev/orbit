@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hardimpactdev\OrbitCore\Enums;
+namespace Orbit\Core\Enums;
 
 enum OperationStatus: string
 {

@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Hardimpactdev\OrbitCore\Enums\ExecutionLane;
-use Hardimpactdev\OrbitCore\Enums\OperationStatus;
+use Orbit\Core\Enums\ExecutionLane;
+use Orbit\Core\Enums\OperationStatus;
 
 describe(ExecutionLane::class, function (): void {
     it('exposes the documented lane cases and values', function (): void {

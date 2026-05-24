@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Hardimpactdev\OrbitCore\Http\JsonEnvelope;
+use Orbit\Core\Http\JsonEnvelope;
 
 describe(JsonEnvelope::class, function (): void {
     it('returns a success envelope with empty data and meta by default', function (): void {

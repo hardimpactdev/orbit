@@ -1319,7 +1319,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/core",
-                "reference": "c4522de55abf8fe2e2e7cd8c1c7135fce53bf0e3"
+                "reference": "2f99d0cd2e3fbf4fa0bb69ed513019aa8c5cde00"
             },
             "require": {
                 "illuminate/support": "^13.0",
@@ -1333,18 +1333,18 @@
             "extra": {
                 "laravel": {
                     "providers": [
-                        "Hardimpactdev\\OrbitCore\\OrbitCoreServiceProvider"
+                        "Orbit\\Core\\OrbitCoreServiceProvider"
                     ]
                 }
             },
             "autoload": {
                 "psr-4": {
-                    "Hardimpactdev\\OrbitCore\\": "src/"
+                    "Orbit\\Core\\": "src/"
                 }
             },
             "autoload-dev": {
                 "psr-4": {
-                    "Hardimpactdev\\OrbitCore\\Tests\\": "tests/"
+                    "Orbit\\Core\\Tests\\": "tests/"
                 }
             },
             "scripts": {
