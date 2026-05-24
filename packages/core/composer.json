@@ -1,0 +1,48 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "hardimpactdev/orbit-core",
+    "description": "Shared Orbit core contracts and helpers.",
+    "keywords": [
+        "laravel",
+        "orbit"
+    ],
+    "license": "MIT",
+    "type": "library",
+    "require": {
+        "php": "^8.4",
+        "illuminate/support": "^13.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.29",
+        "pestphp/pest": "^4.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Orbit\\Core\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Orbit\\Core\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "format": "vendor/bin/pint",
+        "test": "vendor/bin/pest --compact"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Orbit\\Core\\OrbitCoreServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
