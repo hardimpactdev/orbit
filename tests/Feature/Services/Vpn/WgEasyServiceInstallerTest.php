@@ -2,14 +2,56 @@
 
 declare(strict_types=1);
 
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Vpn\WgEasyServiceInstaller;
+use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationTokenSigner;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->workdir = sys_get_temp_dir().'/orbit-wg-easy-installer-'.bin2hex(random_bytes(4));
     File::ensureDirectoryExists($this->workdir);
     $this->statePath = $this->workdir.'/.wg-easy';
+
+    config()->set('orbit.operation_token_secret', 'gateway-secret');
+    config()->set('orbit.operation_token_ttl_seconds', 120);
+
+    $this->vpnNode = Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->for($this->vpnNode)->create([
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+
+    $this->wgEasyStateTransport = new WgEasyServiceInstallerStateTransport(
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stderr: '',
+            durationMs: 1,
+        ),
+    );
+
+    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($this->wgEasyStateTransport));
 });
 
 afterEach(function (): void {
@@ -21,7 +63,7 @@ afterEach(function (): void {
 it('renders the wg-easy compose file with the configured runtime envs', function (): void {
     Process::fake();
 
-    $installer = new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath);
+    $installer = wgEasyServiceInstaller($this->workdir, $this->statePath);
 
     $installer->install(
         publicHost: '203.0.113.10',
@@ -100,7 +142,7 @@ it('resolves the configured database state path when resolved from the container
 it('uses the default runtime values when install inputs are omitted', function (): void {
     Process::fake();
 
-    $installer = new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath);
+    $installer = wgEasyServiceInstaller($this->workdir, $this->statePath);
 
     $installer->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
 
@@ -115,7 +157,7 @@ it('uses the default runtime values when install inputs are omitted', function (
 it('invokes docker compose up to start the wg-easy container', function (): void {
     Process::fake();
 
-    (new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath))
+    wgEasyServiceInstaller($this->workdir, $this->statePath)
         ->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '$ORBIT_DOCKER compose')
@@ -131,7 +173,7 @@ it('reads the wg-easy server public key from the running container', function ()
         return Process::result();
     });
 
-    $publicKey = (new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath))->publicKey();
+    $publicKey = wgEasyServiceInstaller($this->workdir, $this->statePath)->publicKey();
 
     expect($publicKey)->toBe('wg-easy-public-key');
 });
@@ -147,7 +189,7 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         return Process::result();
     });
 
-    (new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath))->configurePeers([
+    wgEasyServiceInstaller($this->workdir, $this->statePath)->configurePeers([
         [
             'name' => 'gateway-1',
             'private_key' => 'gateway-private',
@@ -177,7 +219,7 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         ->and($peerScript)->toContain('preshared-key');
 });
 
-it('converges the runtime server address using the configured cidr dns ip and port', function (): void {
+it('converges the runtime server address and routes supported database updates through the local executor', function (): void {
     $serverAddressScript = null;
 
     Process::fake(function ($process) use (&$serverAddressScript) {
@@ -188,7 +230,7 @@ it('converges the runtime server address using the configured cidr dns ip and po
         return Process::result();
     });
 
-    (new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath))->install(
+    wgEasyServiceInstaller($this->workdir, $this->statePath)->install(
         publicHost: 'vpn.example.com',
         username: 'orbit',
         password: 'secret-password',
@@ -200,14 +242,34 @@ it('converges the runtime server address using the configured cidr dns ip and po
     expect($serverAddressScript)->toContain("ip addr replace '10.7.0.1/24' dev wg0")
         ->and($serverAddressScript)->toContain("ip route replace '10.7.0.0/24' dev wg0")
         ->and($serverAddressScript)->toContain("ipv4_cidr = '10.7.0.0/24'")
-        ->and($serverAddressScript)->toContain('default_dns = \'["10.7.0.1"]\'')
-        ->and($serverAddressScript)->toContain("host = 'vpn.example.com'");
+        ->and($serverAddressScript)->not->toContain('user_configs_table')
+        ->and($serverAddressScript)->not->toContain('general_table')
+        ->and($serverAddressScript)->not->toContain('default_dns')
+        ->and($serverAddressScript)->not->toContain('setup_step');
+
+    $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
+
+    expect($scripts)->toHaveCount(3)
+        ->and($scripts[0])->toContain('internal:wg-easy:state')
+        ->and($scripts[0])->toContain("--action='ensure-writable'")
+        ->and($scripts[0])->toContain('--operation-token=')
+        ->and($scripts[1])->toContain("--action='update-user'")
+        ->and($scripts[1])->toContain("--host='vpn.example.com'")
+        ->and($scripts[1])->toContain("--default-dns='[\"10.7.0.1\"]'")
+        ->and($scripts[1])->toContain("--default-persistent-keepalive='25'")
+        ->and($scripts[2])->toContain("--action='update-general'")
+        ->and($scripts[2])->toContain("--setup-step='0'");
+
+    foreach ($scripts as $script) {
+        expect($script)->not->toContain('sqlite3')
+            ->and($script)->not->toContain('sudo sqlite3');
+    }
 });
 
 it('is idempotent: rerunning with same inputs does not recreate compose file unnecessarily', function (): void {
     Process::fake();
 
-    $installer = new WgEasyServiceInstaller(rootPath: $this->workdir, statePath: $this->statePath);
+    $installer = wgEasyServiceInstaller($this->workdir, $this->statePath);
 
     $installer->install(publicHost: '203.0.113.10', username: 'orbit', password: 'secret-password');
     $composePath = $this->workdir.'/wg-easy/docker-compose.yaml';
@@ -226,19 +288,153 @@ it('is idempotent: rerunning with same inputs does not recreate compose file unn
 });
 
 it('rejects invalid public host', function (): void {
-    expect(fn (): mixed => (new WgEasyServiceInstaller(rootPath: $this->workdir))
+    expect(fn (): mixed => wgEasyServiceInstaller($this->workdir)
         ->install(publicHost: '', username: 'orbit', password: 'secret-password'))
         ->toThrow(RuntimeException::class);
 });
 
 it('rejects empty username', function (): void {
-    expect(fn (): mixed => (new WgEasyServiceInstaller(rootPath: $this->workdir))
+    expect(fn (): mixed => wgEasyServiceInstaller($this->workdir)
         ->install(publicHost: '203.0.113.10', username: '', password: 'secret-password'))
         ->toThrow(RuntimeException::class);
 });
 
 it('rejects empty password', function (): void {
-    expect(fn (): mixed => (new WgEasyServiceInstaller(rootPath: $this->workdir))
+    expect(fn (): mixed => wgEasyServiceInstaller($this->workdir)
         ->install(publicHost: '203.0.113.10', username: 'orbit', password: ''))
         ->toThrow(RuntimeException::class);
 });
+
+it('raises a generic exception when wg-easy state output is not parseable JSON', function (): void {
+    $secret = 'remote-output-secret';
+    $transport = new WgEasyServiceInstallerStateTransport(new RemoteShellResult(
+        exitCode: 1,
+        stdout: "not-json {$secret}",
+        stderr: "stderr {$secret}",
+        durationMs: 1,
+    ));
+
+    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+    Process::fake();
+
+    try {
+        wgEasyServiceInstaller($this->workdir, $this->statePath)
+            ->install(publicHost: 'vpn.example.com', username: 'orbit', password: 'secret-password');
+
+        $this->fail('Expected wg-easy state parsing to fail.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toBe('Failed to verify wg-easy state writability.')
+            ->and($exception->getMessage())->not->toContain($secret)
+            ->and($exception->getMessage())->not->toContain('not-json');
+    }
+});
+
+it('only exposes whitelisted wg-easy state error codes from remote failure envelopes', function (
+    string $remoteCode,
+    bool $shouldExposeCode,
+): void {
+    $secret = 'remote-message-secret';
+    $transport = new WgEasyServiceInstallerStateTransport(new RemoteShellResult(
+        exitCode: 1,
+        stdout: json_encode([
+            'ok' => false,
+            'error' => [
+                'code' => $remoteCode,
+                'message' => "remote leak {$secret}",
+            ],
+            'meta' => [
+                'raw' => $secret,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        stderr: "stderr {$secret}",
+        durationMs: 1,
+    ));
+
+    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+    Process::fake();
+
+    try {
+        wgEasyServiceInstaller($this->workdir, $this->statePath)
+            ->install(publicHost: 'vpn.example.com', username: 'orbit', password: 'secret-password');
+
+        $this->fail('Expected wg-easy state failure.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toContain('Failed to verify wg-easy state writability.')
+            ->and($exception->getMessage())->not->toContain($secret)
+            ->and($exception->getMessage())->not->toContain('remote leak');
+
+        if ($shouldExposeCode) {
+            expect($exception->getMessage())->toContain($remoteCode);
+        } else {
+            expect($exception->getMessage())->not->toContain($remoteCode);
+        }
+    }
+})->with([
+    'whitelisted database_missing' => ['database_missing', true],
+    'unknown code' => ['remote_secret_code', false],
+]);
+
+function wgEasyServiceInstaller(string $rootPath, ?string $statePath = null): WgEasyServiceInstaller
+{
+    return new WgEasyServiceInstaller(
+        rootPath: $rootPath,
+        statePath: $statePath,
+        localExecutor: app(RemoteLocalExecutor::class),
+    );
+}
+
+function wgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $transport): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+    );
+}
+
+final class WgEasyServiceInstallerStateTransport implements RemoteExecutor
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
+
+    /**
+     * @param  RemoteShellResult|Closure(Node, string, array<string, mixed>): RemoteShellResult  $result
+     */
+    public function __construct(
+        private readonly RemoteShellResult|Closure $result,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    #[Override]
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->calls[] = [
+            'node' => $node,
+            'script' => $script,
+            'options' => $options,
+        ];
+
+        if ($this->result instanceof Closure) {
+            return ($this->result)($node, $script, $options);
+        }
+
+        return $this->result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    #[Override]
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('The recording transport does not start processes.');
+    }
+}

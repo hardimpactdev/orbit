@@ -4,15 +4,33 @@ declare(strict_types=1);
 
 namespace App\Services\Vpn;
 
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Vpn\VpnBackendClient;
 use App\Data\Vpn\VpnPasswordRotationResult;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
+use JsonException;
 use RuntimeException;
 
 final class WgEasyVpnBackend implements VpnBackend
 {
+    private const string WG_EASY_STATE_COMMAND = 'internal:wg-easy:state';
+
+    private const string ACTION_ENSURE_WRITABLE = 'ensure-writable';
+
+    private const array SAFE_WG_EASY_STATE_ERROR_CODES = [
+        'database_missing',
+        'database_unwritable',
+        'home_directory_unavailable',
+        'invalid_action',
+        'invalid_token',
+        'missing_token',
+        'query_failed',
+        'validation_failed',
+    ];
+
     private string $baseUrl = 'http://127.0.0.1:51821';
 
     private ?string $sessionCookie = null;
@@ -20,10 +38,16 @@ final class WgEasyVpnBackend implements VpnBackend
     public function __construct(
         private readonly string $username = '',
         private readonly string $password = '',
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?VpnNodeResolver $vpnNodeResolver = null,
     ) {}
 
     public static function fromConfig(): self
     {
+        if (app()->bound(self::class)) {
+            return app(self::class);
+        }
+
         return new self(
             username: (string) config('services.wg_easy.username', config('orbit.wg_easy.username', 'orbit')),
             password: (string) config('services.wg_easy.password', config('orbit.wg_easy.password', '')),
@@ -109,6 +133,7 @@ final class WgEasyVpnBackend implements VpnBackend
         $this->clients($totp);
         $hash = $this->argon2Hash($password);
 
+        $this->ensureWgEasyStateWritable();
         $this->updatePasswordHash($hash);
         $this->rotateSessionSecret();
         $this->updateEnvironmentPassword($password);
@@ -311,6 +336,92 @@ JS;
         }
     }
 
+    private function ensureWgEasyStateWritable(): void
+    {
+        if (! $this->localExecutor instanceof RemoteLocalExecutor || ! $this->vpnNodeResolver instanceof VpnNodeResolver) {
+            return;
+        }
+
+        $result = $this->localExecutor->runInternal(
+            node: $this->vpnNodeResolver->activeVpnNode(),
+            commandName: self::WG_EASY_STATE_COMMAND,
+            arguments: [],
+            commandOptions: [
+                'action' => self::ACTION_ENSURE_WRITABLE,
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => (string) Str::uuid(),
+                ],
+            ],
+        );
+
+        $this->assertWgEasyStateSucceeded($result, 'Could not verify VPN web UI database writability.');
+    }
+
+    private function assertWgEasyStateSucceeded(RemoteShellResult $result, string $failureMessage): void
+    {
+        $envelope = $this->wgEasyStateEnvelope($result, $failureMessage);
+
+        if ($result->successful() && ($envelope['ok'] ?? null) === true) {
+            return;
+        }
+
+        throw $this->wgEasyStateFailure($failureMessage, $envelope);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function wgEasyStateEnvelope(RemoteShellResult $result, string $failureMessage): array
+    {
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new WgEasyStatePreflightFailed($failureMessage);
+        }
+
+        if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
+            throw new WgEasyStatePreflightFailed($failureMessage);
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param  array<string, mixed>  $envelope
+     */
+    private function wgEasyStateFailure(string $failureMessage, array $envelope): WgEasyStatePreflightFailed
+    {
+        $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
+        $code = $this->safeWgEasyStateErrorCode($error['code'] ?? null);
+
+        if ($code === null) {
+            return new WgEasyStatePreflightFailed($failureMessage);
+        }
+
+        return new WgEasyStatePreflightFailed($failureMessage, [
+            'wg_easy_state_error_code' => $code,
+        ]);
+    }
+
+    private function safeWgEasyStateErrorCode(mixed $value): ?string
+    {
+        $code = $this->stringValue($value);
+
+        if ($code === null) {
+            return null;
+        }
+
+        return in_array($code, self::SAFE_WG_EASY_STATE_ERROR_CODES, true) ? $code : null;
+    }
+
+    private function stringValue(mixed $value): ?string
+    {
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
     private function updateEnvironmentPassword(string $password): void
     {
         $envPath = base_path('.env');
@@ -329,5 +440,16 @@ JS;
         }
 
         file_put_contents($envPath, $contents);
+    }
+}
+
+final class WgEasyStatePreflightFailed extends RuntimeException
+{
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public function __construct(string $message, public readonly array $meta = [])
+    {
+        parent::__construct($message);
     }
 }

@@ -4,15 +4,41 @@ declare(strict_types=1);
 
 namespace App\Services\Vpn;
 
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
+use JsonException;
 use RuntimeException;
 
 class WgEasyServiceInstaller
 {
+    private const string WG_EASY_STATE_COMMAND = 'internal:wg-easy:state';
+
+    private const string ACTION_UPDATE_USER = 'update-user';
+
+    private const string ACTION_UPDATE_GENERAL = 'update-general';
+
+    private const string ACTION_ENSURE_WRITABLE = 'ensure-writable';
+
+    private const array SAFE_WG_EASY_STATE_ERROR_CODES = [
+        'database_missing',
+        'database_unwritable',
+        'home_directory_unavailable',
+        'invalid_action',
+        'invalid_token',
+        'missing_token',
+        'query_failed',
+        'validation_failed',
+    ];
+
     public function __construct(
         private readonly string $rootPath,
         private readonly ?string $statePath = null,
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?VpnNodeResolver $vpnNodeResolver = null,
     ) {}
 
     public function install(
@@ -60,6 +86,7 @@ class WgEasyServiceInstaller
         }
 
         $this->waitUntilReady();
+        $this->ensureWgEasyStateWritable();
         $this->convergeServerAddress($publicHost, $wireguardCidr, $dnsIp);
     }
 
@@ -219,24 +246,23 @@ SH,
 %s
 $ORBIT_DOCKER exec wg-easy ip addr replace %s dev wg0
 $ORBIT_DOCKER exec wg-easy ip route replace %s dev wg0
-sqlite3 %s/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = %s WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = %s, default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
+sqlite3 %s/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = %s WHERE name = 'wg0';" || true
 SH,
             $this->dockerShellPrefix(),
             escapeshellarg($serverAddress),
             escapeshellarg($wireguardCidr),
             $this->statePathForShell(),
             $this->sqliteString($wireguardCidr),
-            $this->sqliteString($publicHost),
-            $this->sqliteString('["'.$dnsIp.'"]'),
         ));
 
-        if ($result->successful()) {
-            return;
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                'Failed to converge wg-easy server address: '.trim($result->errorOutput().' '.$result->output())
+            );
         }
 
-        throw new RuntimeException(
-            'Failed to converge wg-easy server address: '.trim($result->errorOutput().' '.$result->output())
-        );
+        $this->updateWgEasyUserConfig($publicHost, '["'.$dnsIp.'"]', 25);
+        $this->updateWgEasyGeneralSetupStep(0);
     }
 
     private function ensureStateWritable(): void
@@ -346,5 +372,137 @@ YAML;
         $lastOctet = (int) substr(strrchr($ipv4, '.') ?: '.0', 1);
 
         return 'fdcc:ad94:bacf:61a4::cafe:'.dechex($lastOctet);
+    }
+
+    private function updateWgEasyUserConfig(string $host, string $defaultDns, int $defaultPersistentKeepalive): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_UPDATE_USER,
+            commandOptions: [
+                'host' => $host,
+                'default-dns' => $defaultDns,
+                'default-persistent-keepalive' => $defaultPersistentKeepalive,
+            ],
+            failureMessage: 'Failed to update wg-easy user configuration.',
+        );
+    }
+
+    private function updateWgEasyGeneralSetupStep(int $setupStep): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_UPDATE_GENERAL,
+            commandOptions: [
+                'setup-step' => $setupStep,
+            ],
+            failureMessage: 'Failed to update wg-easy general configuration.',
+        );
+    }
+
+    private function ensureWgEasyStateWritable(): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_ENSURE_WRITABLE,
+            commandOptions: [],
+            failureMessage: 'Failed to verify wg-easy state writability.',
+        );
+    }
+
+    /**
+     * @param  array<string, bool|float|int|string>  $commandOptions
+     */
+    private function runWgEasyStateAction(string $action, array $commandOptions, string $failureMessage): void
+    {
+        $result = $this->localExecutor()->runInternal(
+            node: $this->vpnNode(),
+            commandName: self::WG_EASY_STATE_COMMAND,
+            arguments: [],
+            commandOptions: [
+                'action' => $action,
+                ...$commandOptions,
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => (string) Str::uuid(),
+                ],
+            ],
+        );
+
+        $this->assertWgEasyStateSucceeded($result, $failureMessage);
+    }
+
+    private function assertWgEasyStateSucceeded(RemoteShellResult $result, string $failureMessage): void
+    {
+        $envelope = $this->wgEasyStateEnvelope($result, $failureMessage);
+
+        if ($result->successful() && ($envelope['ok'] ?? null) === true) {
+            return;
+        }
+
+        throw new RuntimeException($this->wgEasyStateFailureMessage($failureMessage, $envelope));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function wgEasyStateEnvelope(RemoteShellResult $result, string $failureMessage): array
+    {
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new RuntimeException($failureMessage);
+        }
+
+        if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
+            throw new RuntimeException($failureMessage);
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param  array<string, mixed>  $envelope
+     */
+    private function wgEasyStateFailureMessage(string $failureMessage, array $envelope): string
+    {
+        $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
+        $code = $this->safeWgEasyStateErrorCode($error['code'] ?? null);
+
+        if ($code === null) {
+            return $failureMessage;
+        }
+
+        return "{$failureMessage} Remote error code: {$code}.";
+    }
+
+    private function safeWgEasyStateErrorCode(mixed $value): ?string
+    {
+        $code = $this->stringValue($value);
+
+        if ($code === null) {
+            return null;
+        }
+
+        return in_array($code, self::SAFE_WG_EASY_STATE_ERROR_CODES, true) ? $code : null;
+    }
+
+    private function stringValue(mixed $value): ?string
+    {
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function localExecutor(): RemoteLocalExecutor
+    {
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+    }
+
+    private function vpnNode(): Node
+    {
+        return $this->vpnNodeResolver()->activeVpnNode();
+    }
+
+    private function vpnNodeResolver(): VpnNodeResolver
+    {
+        return $this->vpnNodeResolver ?? app(VpnNodeResolver::class);
     }
 }
