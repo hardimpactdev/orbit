@@ -131,10 +131,31 @@ Forbidden work:
 
 Every `RemoteLocalExecutor` invocation must carry a gateway-issued operation
 token. The local executor validates the token before side effects, and
-node-local CLI execution is never an authority bypass. When the operation-record
-layer is wired in, the token id must correspond to the gateway operation record
-and results must be recorded through that gateway-owned operation path; that
-recording/audit-redaction layer is separate from the executor primitive.
+node-local CLI execution is never an authority bypass. The token id corresponds
+to the gateway operation id supplied in `ORBIT_OPERATION_ID`, or to a generated
+operation id when the caller did not provide one.
+
+Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
+gateway-owned activity records on the `local_executor` channel:
+
+- `local_executor.dispatching` before SSH dispatch, after command validation and
+  token minting. It records `lane=local-executor`, operation id, target node id
+  and name, internal command name, scalar arguments/options, and the
+  `LocalExecutorCommandBuilder::buildAuditLine()` command shape.
+- `local_executor.completed` after the transport returns or throws. It records
+  the same operation id, target node, command name, success/failure status, exit
+  code when available, duration, and stdout/stderr summaries capped at 4 KiB
+  with a `[truncated]` suffix.
+
+Operation tokens are secret material. Activity descriptions, subjects,
+properties, stdout/stderr summaries, and sanitized local-executor shell-failure
+exceptions must never contain the raw token. The dispatch record uses the
+builder's redacted audit line, and completion summaries defensively scrub both
+`--operation-token=...` arguments, including whitespace around `=`, and the
+exact minted token value before truncation. Generic transport exceptions are
+rewrapped without a previous-exception chain after logging the sanitized
+exception class and message, because PHP exception traces may retain
+token-bearing method arguments from the failed transport call.
 
 `LocalExecutorCommandBuilder` is the only sanctioned way to compose internal
 CLI invocations sent through this lane. It validates the `internal:*` command
@@ -147,6 +168,12 @@ Callers that need arguments or command options use:
 ```php
 RemoteLocalExecutor::runInternal(Node $node, string $commandName, array $arguments = [], array $commandOptions = [], array $transportOptions = [])
 ```
+
+Long-running `start()` and `startInternal()` dispatch is unsupported for
+`RemoteLocalExecutor` until async audit semantics are designed. Local-executor
+work must use `runInternal()` for completion-based dispatch and result
+recording; asynchronous workflows should route through `runInternal()` plus
+polling, or through a different execution lane with its own audit contract.
 
 The inherited `RemoteShell::run()` method is reserved for command-name-only
 internal invocations such as `internal:executor:verify`; callers must not encode
