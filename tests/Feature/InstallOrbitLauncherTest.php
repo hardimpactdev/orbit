@@ -19,7 +19,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
     })->skip(ROLE_AWARE_LAUNCHER_PENDING);
 
     it('dispatches gateway-role nodes through the gateway artifact with launcher environment', function (): void {
-        $capture = orbitLauncherProbe(role: 'gateway', arguments: ['node:list', '--json']);
+        $capture = orbitLauncherProbe(isGateway: true, arguments: ['node:list', '--json']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/gateway/artisan')
             ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
@@ -29,7 +29,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
     })->skip(ROLE_AWARE_LAUNCHER_PENDING);
 
     it('dispatches workload-role nodes through the cli artifact with launcher environment', function (): void {
-        $capture = orbitLauncherProbe(role: 'app-development', arguments: ['app:list']);
+        $capture = orbitLauncherProbe(isGateway: false, arguments: ['app:list']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
             ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
@@ -39,7 +39,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
     })->skip(ROLE_AWARE_LAUNCHER_PENDING);
 
     it('defaults unconfigured nodes to the non-gateway cli artifact', function (): void {
-        $capture = orbitLauncherProbe(role: null, arguments: ['node:doctor']);
+        $capture = orbitLauncherProbe(isGateway: null, arguments: ['node:doctor']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
             ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
@@ -49,7 +49,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
     })->skip(ROLE_AWARE_LAUNCHER_PENDING);
 
     it('propagates launcher environment even when json and other flags are present', function (): void {
-        $capture = orbitLauncherProbe(role: null, arguments: ['--json', 'node:list', '--no-interaction']);
+        $capture = orbitLauncherProbe(isGateway: false, arguments: ['--json', 'node:list', '--no-interaction']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
             ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
@@ -71,7 +71,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
  * @param  list<string>  $arguments
  * @return array<string, string>
  */
-function orbitLauncherProbe(?string $role, array $arguments): array
+function orbitLauncherProbe(?bool $isGateway, array $arguments): array
 {
     $root = sys_get_temp_dir().'/orbit-launcher-contract-'.bin2hex(random_bytes(4));
 
@@ -85,8 +85,8 @@ function orbitLauncherProbe(?string $role, array $arguments): array
         orbitLauncherPrepareFakeCheckout($repo, $fakeBin);
         File::ensureDirectoryExists($hostCwd);
 
-        if ($role !== null) {
-            orbitLauncherWriteRoleMarkers($repo, $role);
+        if ($isGateway !== null) {
+            orbitLauncherWriteGatewayEnvironment($repo, $isGateway);
         }
 
         $process = new Process(
@@ -133,16 +133,11 @@ function orbitLauncherPrepareFakeCheckout(string $repo, string $fakeBin): void
     orbitLauncherWriteExecutable("{$fakeBin}/php", orbitLauncherFakePhpScript());
 }
 
-function orbitLauncherWriteRoleMarkers(string $repo, string $role): void
+function orbitLauncherWriteGatewayEnvironment(string $repo, bool $isGateway): void
 {
-    File::ensureDirectoryExists("{$repo}/.orbit");
-    File::put("{$repo}/.orbit/role", $role.PHP_EOL);
-    File::put("{$repo}/.orbit/node-role", $role.PHP_EOL);
-    File::put("{$repo}/.orbit/roles", $role.PHP_EOL);
+    $value = $isGateway ? 'true' : 'false';
 
-    if ($role === 'gateway') {
-        File::put("{$repo}/.orbit/has-gateway-role", '1'.PHP_EOL);
-    }
+    File::put("{$repo}/.env", "ORBIT_IS_GATEWAY={$value}".PHP_EOL);
 }
 
 function orbitLauncherWriteExecutable(string $path, string $contents): void
