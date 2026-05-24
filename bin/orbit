@@ -2,21 +2,78 @@
 
 set -Eeuo pipefail
 
-if ! command -v docker >/dev/null 2>&1; then
-    printf 'orbit: Docker is required to run Orbit.\n' >&2
-    printf 'orbit: install Docker and bootstrap orbit-runtime before retrying.\n' >&2
-    exit 127
+PRODUCTION_ORBIT_REPO="/home/orbit/orbit"
+
+resolve_launcher_path() {
+    local source
+    local directory
+
+    source="${BASH_SOURCE[0]}"
+
+    while [ -L "$source" ]; do
+        directory="$(cd "$(dirname "$source")" >/dev/null 2>&1 && pwd)"
+        source="$(readlink "$source")"
+
+        if [[ "$source" != /* ]]; then
+            source="${directory}/${source}"
+        fi
+    done
+
+    cd "$(dirname "$source")" >/dev/null 2>&1 && pwd
+}
+
+resolve_default_repo() {
+    local launcher_directory
+
+    launcher_directory="$(resolve_launcher_path)"
+
+    cd "${launcher_directory}/.." >/dev/null 2>&1 && pwd
+}
+
+gateway_flag() {
+    local env_file
+
+    env_file="${ORBIT_REPO}/.env"
+
+    if [ ! -f "$env_file" ]; then
+        return
+    fi
+
+    grep -E '^ORBIT_IS_GATEWAY=' "$env_file" | tail -n 1 | cut -d= -f2- || true
+}
+
+resolve_host_cwd() {
+    local host_cwd
+    local public_cwd
+
+    host_cwd="${PWD}"
+
+    if [[ "$host_cwd" == /private/* && "$ORBIT_REPO" != /private/* ]]; then
+        public_cwd="/${host_cwd#/private/}"
+
+        if [ -d "$public_cwd" ]; then
+            host_cwd="$public_cwd"
+        fi
+    fi
+
+    printf '%s\n' "$host_cwd"
+}
+
+ORBIT_REPO="${ORBIT_REPO:-$(resolve_default_repo)}"
+
+if [ -z "$ORBIT_REPO" ]; then
+    ORBIT_REPO="$PRODUCTION_ORBIT_REPO"
 fi
 
-if ! runtime_status="$(docker container inspect --format '{{.State.Running}}' orbit-runtime 2>/dev/null)" || [ "$runtime_status" != "true" ]; then
-    printf 'orbit: orbit-runtime is not running.\n' >&2
-    printf 'orbit: bootstrap the Orbit runtime container before running Orbit commands.\n' >&2
-    exit 69
+export ORBIT_REPO
+export ORBIT_HOST_CWD="$(resolve_host_cwd)"
+
+if [ "$(gateway_flag)" = "true" ]; then
+    export ORBIT_APP="gateway"
+
+    exec php "${ORBIT_REPO}/apps/gateway/artisan" "$@"
 fi
 
-exec docker exec \
-    --env "ORBIT_HOST_CWD=${PWD}" \
-    --env "ORBIT_HOST_UID=$(id -u)" \
-    --env "ORBIT_HOST_GID=$(id -g)" \
-    orbit-runtime \
-    orbit "$@"
+export ORBIT_APP="cli"
+
+exec "${ORBIT_REPO}/apps/cli/orbit" "$@"
