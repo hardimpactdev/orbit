@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Commands\Internal\VerifyExecutorCommand;
+use App\Commands\Internal\WorkspaceAdapterLookupCommand;
 use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
 use Illuminate\Console\Scheduling\ScheduleRunCommand;
@@ -33,6 +34,7 @@ return [
         VendorPublishCommand::class,
         StubPublishCommand::class,
         VerifyExecutorCommand::class,
+        WorkspaceAdapterLookupCommand::class,
     ],
 
     'remove' => [
