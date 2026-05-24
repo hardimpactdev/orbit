@@ -31,8 +31,10 @@ use App\Services\Dns\LocalResolver;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\SshRemoteShellStream;
 use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Trust\LinuxTrustStoreInstaller;
@@ -92,6 +94,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
+        $this->app->bind(RemoteLocalExecutor::class, fn ($app): RemoteLocalExecutor => new RemoteLocalExecutor(
+            transport: $app->make(RemoteHostExecutor::class),
+            commands: $app->make(LocalExecutorCommandBuilder::class),
+            operationTokens: $app->make(OperationTokenFactory::class),
+        ));
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(ToolLogGatewayStream::class, ToolLogGatewayStreamClient::class);
