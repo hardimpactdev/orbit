@@ -240,8 +240,9 @@ Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
 All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
-They require Git, Docker Engine and CLI, the Orbit checkout, host PHP CLI for
-the CLI/local-executor artifact, the host `orbit` launcher, `orbit-runtime`,
+They require Git, Docker Engine and CLI, the Orbit checkout, host PHP 8.4 CLI
+for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`,
+`mbstring`, and `json`, the host `orbit` launcher, `orbit-runtime`,
 WireGuard/SSH identity material, and any role-specific non-PHP host tools such
 as VitePlus on app nodes. Host Composer, host Caddy, and host PHP-FPM are not
 role prerequisites and are not runtime fallbacks.

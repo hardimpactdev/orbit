@@ -16,20 +16,15 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('SURY_PHP_REPO_URL')
             ->not->toContain('php-fpm')
             ->not->toContain('-fpm"')
-            ->not->toContain('-cli"')
             ->not->toContain('-bcmath')
-            ->not->toContain('-mbstring')
-            ->not->toContain('-sqlite3')
             ->not->toContain('-zip"')
             ->not->toContain('supervisor')
             ->not->toContain('install -y composer')
-            ->not->toContain('brew install php')
             ->not->toContain('apt-get install -y caddy')
             ->not->toContain(' caddy ')
             ->not->toContain('sudo systemctl restart caddy')
             ->not->toContain('sudo systemctl restart php')
-            ->not->toContain('sudo systemctl enable caddy')
-            ->not->toContain('update-alternatives --set php');
+            ->not->toContain('sudo systemctl enable caddy');
     });
 
     it('installs Docker engine prerequisites on Ubuntu before invoking the runtime container', function (): void {

@@ -63,7 +63,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | Gateway scheduler loop inside `orbit-runtime` |
 | Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Host prerequisites | Git, Docker, host PHP CLI for the CLI/local-executor artifact, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
+| Host prerequisites | Git, Docker, host PHP 8.4 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | `orbit-caddy` on `app-production` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
@@ -193,10 +193,11 @@ Installer and doctor repair code must be additive: ensure required imports and m
 ### PHP runtime
 
 PHP app execution runs in FrankenPHP containers. The gateway runtime runs in
-`orbit-runtime`; the CLI/local-executor artifact runs through host PHP CLI in
-the source-checkout distribution. Apps and workspaces run in dedicated
-long-lived app/workspace containers when their runtime kind is PHP. Static or
-non-PHP apps do not get a FrankenPHP container.
+`orbit-runtime`; the CLI/local-executor artifact runs through host PHP 8.4 CLI
+with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json` support in the
+source-checkout distribution. Apps and workspaces run in dedicated long-lived
+app/workspace containers when their runtime kind is PHP. Static or non-PHP apps
+do not get a FrankenPHP container.
 
 Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
 from one another. Production PHP apps get a dedicated container as well. The
@@ -352,7 +353,7 @@ Client setup is local:
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
-The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, host PHP CLI for the CLI/local-executor artifact, the Orbit checkout, the `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside `orbit-runtime`, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
+The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, host PHP 8.4 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, the Orbit checkout, the `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside `orbit-runtime`, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
 
 The installer does not create a client identity for the gateway to trust. That identity is minted later — by `node:new --role=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 

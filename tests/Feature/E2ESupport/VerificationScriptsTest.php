@@ -334,18 +334,19 @@ it('registers the e2e artisan commands', function (): void {
     }
 });
 
-it('installs Docker via the reachable docker.com repo on Ubuntu instead of host PHP toolchains', function (): void {
+it('installs Docker via docker.com and host PHP through the Ubuntu PPA package path', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 
     expect($script)
         ->toContain('download.docker.com')
         ->toContain('docker.gpg')
         ->toContain('docker-ce')
+        ->toContain('ppa:ondrej/php')
+        ->toContain('php8.4-cli')
         ->not->toContain('packages.sury.org/php')
         ->not->toContain('sury-php.gpg')
         ->not->toContain('ppa.launchpadcontent.net')
-        ->not->toContain('keyserver.ubuntu.com')
-        ->not->toContain('add-apt-repository');
+        ->not->toContain('keyserver.ubuntu.com');
 });
 
 it('waits for cloud-init before mutating apt on Ubuntu', function (): void {
@@ -401,12 +402,12 @@ it('installs the SSH client as a control-node provisioning prerequisite', functi
     expect($script)->toContain('openssh-client');
 });
 
-it('does not install the SQLite CLI or host PHP because SQLite is bound through the orbit-runtime container', function (): void {
+it('does not install the SQLite CLI while providing host PHP SQLite support for the CLI executor', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 
     expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
         ->and($script)->not->toContain('php8.5-sqlite3')
-        ->and($script)->not->toContain('-sqlite3"')
+        ->and($script)->toContain('php8.4-sqlite3')
         ->and($script)->toContain('orbit-runtime:current');
 });
 
