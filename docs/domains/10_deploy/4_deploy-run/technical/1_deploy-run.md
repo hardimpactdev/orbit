@@ -71,9 +71,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   context. Orbit does not apply global deployment retention outside the step
   that declares it.
 - Enforces the step timeout stored on the deploy-step definition.
-- Captures stdout, stderr, process status, and timing for every executed step.
-- Stores the rendered command on each deployment run step so deploy logs show
-  the script that actually executed for that run.
+- Captures stdout, stderr, process status, timing, and the rendered command
+  for every executed step, so deploy logs show the script that actually
+  executed for that run.
 - Stops at the first failed step and does not execute later steps.
 - After all configured steps complete successfully for a PHP app with a running
   FrankenPHP container, runs built-in production warmup:

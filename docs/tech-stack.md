@@ -55,7 +55,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | SQLite at `~/orbit/database/database.sqlite`, mounted into `orbit-runtime` on the gateway |
 | Gateway API | `orbit-caddy` to `orbit-runtime` over the node Docker network; exposed only over WireGuard |
-| Gateway to node | SSH through `RemoteShell` |
+| Gateway to node | SSH through `RemoteShell`, classified by execution lane |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon restart policy for Orbit runtime containers |
@@ -126,14 +126,20 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 
 See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
 
+Gateway-to-node work is split into `RemoteHostExecutor` for host substrate work
+and `RemoteOrbitRuntimeExecutor` for Orbit PHP/PDO/artisan work inside
+`orbit-runtime`. Docker-first-managed nodes forbid steady-state host PHP for
+Orbit work. See [Runtime Execution Lanes](execution-lanes.md).
+
 VPN-role runtime administration is the one runtime exception to the normal
 gateway-to-node flow. Commands that administer VPN clients (`vpn-client:*`) or
 the VPN web UI (`vpn-web-ui:*`) execute against the active `vpn` role runtime.
 In this version the active `vpn` role is gateway-coupled, so those commands
 still run on the gateway host. When initiated from a client, Orbit resolves the
 active `vpn` role host, reaches it over SSH on the Orbit/WireGuard path, and
-runs the VPN-role runtime command there. This exception is for VPN-role
-infrastructure administration only.
+runs the VPN-role runtime command there through the execution lane contract.
+Forwarded Artisan commands use `orbit-runtime`; they are not host PHP. This
+exception is for VPN-role infrastructure administration only.
 
 The gateway-to-node primitive is the `RemoteShell` contract:
 
