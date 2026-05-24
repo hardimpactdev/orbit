@@ -1,7 +1,9 @@
 <?php
 
 declare(strict_types=1);
+
 use App\Providers\GatewayApiServiceProvider;
+use App\Providers\OperationTokenGuardServiceProvider;
 
 return [
     'name' => 'Orbit',
@@ -9,6 +11,7 @@ return [
     'env' => env('APP_ENV', 'development'),
     'providers' => [
         GatewayApiServiceProvider::class,
+        OperationTokenGuardServiceProvider::class,
     ],
     'aliases' => [],
 ];

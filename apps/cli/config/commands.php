@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\Internal\VerifyExecutorCommand;
 use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
 use Illuminate\Console\Scheduling\ScheduleRunCommand;
@@ -31,6 +32,7 @@ return [
         ScheduleFinishCommand::class,
         VendorPublishCommand::class,
         StubPublishCommand::class,
+        VerifyExecutorCommand::class,
     ],
 
     'remove' => [
