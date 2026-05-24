@@ -27,7 +27,7 @@ final class OperationToken
             self::base64UrlEncode($this->command),
             self::base64UrlEncode((string) $this->issued_at),
             self::base64UrlEncode((string) $this->expires_at),
-            self::base64UrlEncode($this->signature),
+            $this->signature,
         ]);
     }
 
@@ -48,11 +48,7 @@ final class OperationToken
         $command = self::decodeStringSegment($segments[2], 'command');
         $issuedAt = self::decodeTimestampSegment($segments[3], 'issued_at');
         $expiresAt = self::decodeTimestampSegment($segments[4], 'expires_at');
-        $signature = self::decodeStringSegment($segments[5], 'signature');
-
-        if (! self::isBase64Url($signature)) {
-            throw new InvalidArgumentException('Operation token signature is malformed.');
-        }
+        $signature = self::decodeSignatureSegment($segments[5]);
 
         return new self(
             id: $id,
@@ -75,11 +71,27 @@ final class OperationToken
         return $decoded;
     }
 
+    private static function decodeSignatureSegment(string $segment): string
+    {
+        if (! self::isBase64Url($segment)) {
+            throw new InvalidArgumentException('Operation token signature is malformed.');
+        }
+
+        return $segment;
+    }
+
     private static function decodeTimestampSegment(string $segment, string $field): int
     {
         $decoded = self::decodeStringSegment($segment, $field);
 
-        if (! ctype_digit($decoded)) {
+        if (
+            ! ctype_digit($decoded)
+            || strlen($decoded) > strlen((string) PHP_INT_MAX)
+            || (
+                strlen($decoded) === strlen((string) PHP_INT_MAX)
+                && strcmp($decoded, (string) PHP_INT_MAX) > 0
+            )
+        ) {
             throw new InvalidArgumentException("Operation token {$field} is malformed.");
         }
 

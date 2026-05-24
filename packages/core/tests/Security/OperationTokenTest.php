@@ -40,12 +40,44 @@ describe(OperationToken::class, function (): void {
         expect($parsed)->toEqual($token);
     });
 
+    it('serializes the base64url signature segment verbatim', function (): void {
+        $token = (new OperationTokenSigner)->sign(
+            secret: 'gateway-secret',
+            id: '018fded1-f2f4-72c4-9c33-62978d6f26f5',
+            node: 'app-dev',
+            command: 'internal:workspace-adapter',
+            issuedAt: 1_798_105_200,
+            expiresAt: 1_798_105_320,
+        );
+
+        $segments = explode('.', $token->toString());
+
+        expect($segments[5])->toBe($token->signature)
+            ->and(OperationToken::parse($token->toString())->signature)->toBe($token->signature);
+    });
+
     it('rejects malformed compact strings', function (string $compact): void {
         expect(fn () => OperationToken::parse($compact))->toThrow(InvalidArgumentException::class);
     })->with([
         'empty' => '',
         'garbage' => 'not-a-token',
         'wrong segment count' => 'a.b.c',
+    ]);
+
+    it('rejects timestamp segments outside the signed 64-bit integer range', function (string $issuedAt): void {
+        $compact = implode('.', [
+            base64UrlEncodeForOperationTokenTest('018fded1-f2f4-72c4-9c33-62978d6f26f5'),
+            base64UrlEncodeForOperationTokenTest('app-dev'),
+            base64UrlEncodeForOperationTokenTest('internal:workspace-adapter'),
+            base64UrlEncodeForOperationTokenTest($issuedAt),
+            base64UrlEncodeForOperationTokenTest('1798105320'),
+            'c2lnbmF0dXJl',
+        ]);
+
+        expect(fn () => OperationToken::parse($compact))->toThrow(InvalidArgumentException::class);
+    })->with([
+        'too many digits' => str_repeat('9', 30),
+        'greater than PHP_INT_MAX' => '9223372036854775808',
     ]);
 });
 
@@ -157,6 +189,25 @@ describe(OperationTokenVerifier::class, function (): void {
         ))->toBeFalse();
     });
 
+    it('rejects payloads where field boundaries are forgeable by NUL bytes', function (): void {
+        $signer = new OperationTokenSigner;
+        $verifier = new OperationTokenVerifier;
+
+        $original = $signer->sign('gateway-secret', 'op', 'node-a', "cmd-a\0cmd-b", 100, 200);
+
+        $forged = new OperationToken(
+            id: "op\0node-a",
+            node: 'cmd-a',
+            command: 'cmd-b',
+            issued_at: 100,
+            expires_at: 200,
+            signature: $original->signature,
+        );
+
+        expect($verifier->verify('gateway-secret', $forged, 'cmd-a', 'cmd-b', 150))
+            ->toBeFalse();
+    });
+
     it('uses timing-safe string comparisons for verifier checks', function (): void {
         $token = validOperationToken();
 
@@ -182,4 +233,9 @@ function validOperationToken(): OperationToken
         issuedAt: 1_798_105_200,
         expiresAt: 1_798_105_320,
     );
+}
+
+function base64UrlEncodeForOperationTokenTest(string $value): string
+{
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
