@@ -167,6 +167,10 @@ final class WgEasyStateCommand extends OrbitCommand
     {
         $path = $this->databasePath();
 
+        if (is_int($path)) {
+            return $path;
+        }
+
         if ($path === null) {
             return $this->renderFailure(
                 'home_directory_unavailable',
@@ -230,6 +234,10 @@ final class WgEasyStateCommand extends OrbitCommand
     {
         $path = $this->databasePath();
 
+        if (is_int($path)) {
+            return $path;
+        }
+
         if ($path === null) {
             return $this->renderFailure(
                 'home_directory_unavailable',
@@ -287,12 +295,22 @@ final class WgEasyStateCommand extends OrbitCommand
         ];
     }
 
-    private function databasePath(): ?string
+    private function databasePath(): string|int|null
     {
-        $override = $this->environmentPath('ORBIT_WG_EASY_DB_PATH');
+        $override = $this->rawEnvironmentValue('ORBIT_WG_EASY_DB_PATH');
 
-        if ($override !== null) {
-            return $override;
+        if (is_string($override)) {
+            $path = $this->stringValue($override);
+
+            if ($path === null) {
+                return $this->renderFailure(
+                    'validation_failed',
+                    'The ORBIT_WG_EASY_DB_PATH environment value is invalid.',
+                    ['field' => 'ORBIT_WG_EASY_DB_PATH'],
+                );
+            }
+
+            return $path;
         }
 
         $home = $this->homeDirectory();
@@ -336,6 +354,10 @@ final class WgEasyStateCommand extends OrbitCommand
             return null;
         }
 
+        if (str_contains($value, "\0")) {
+            return null;
+        }
+
         $value = trim($value);
 
         return $value === '' ? null : $value;
@@ -372,9 +394,28 @@ final class WgEasyStateCommand extends OrbitCommand
 
     private function environmentPath(string $key): ?string
     {
-        $value = getenv($key);
+        $value = $this->rawEnvironmentValue($key);
 
         return $this->stringValue($value);
+    }
+
+    private function rawEnvironmentValue(string $key): ?string
+    {
+        $value = getenv($key);
+
+        if (is_string($value)) {
+            return $value;
+        }
+
+        $value = $_SERVER[$key] ?? null;
+
+        if (is_string($value)) {
+            return $value;
+        }
+
+        $value = $_ENV[$key] ?? null;
+
+        return is_string($value) ? $value : null;
     }
 
     private function homeDirectory(): ?string

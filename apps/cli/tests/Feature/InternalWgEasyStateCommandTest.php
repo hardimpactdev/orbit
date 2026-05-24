@@ -20,6 +20,7 @@ describe('internal wg-easy state command', function (): void {
 
     afterEach(function (): void {
         putenv('ORBIT_WG_EASY_DB_PATH');
+        unset($_ENV['ORBIT_WG_EASY_DB_PATH'], $_SERVER['ORBIT_WG_EASY_DB_PATH']);
 
         removeWgEasyStateTempDirectory($this->wgEasyStateTemp);
     });
@@ -224,6 +225,74 @@ describe('internal wg-easy state command', function (): void {
                 'The --setup-step option is invalid.',
                 ['field' => 'setup-step'],
             ));
+    });
+
+    it('rejects host values with null bytes before writing to the database', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUserConfigDatabase($databasePath);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-user',
+            '--host' => "vpn\0evil",
+            '--default-dns' => '["10.6.0.1"]',
+            '--default-persistent-keepalive' => '25',
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'user_configs_table');
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'The --host option is invalid.',
+                ['field' => 'host'],
+            ))
+            ->and($row['host'])->toBe('old.example.test');
+    });
+
+    it('rejects default DNS values with null bytes before writing to the database', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUserConfigDatabase($databasePath);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-user',
+            '--host' => 'vpn.example.test',
+            '--default-dns' => "1.1.1.1\0evil",
+            '--default-persistent-keepalive' => '25',
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'user_configs_table');
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'The --default-dns option is invalid.',
+                ['field' => 'default-dns'],
+            ))
+            ->and($row['default_dns'])->toBe('["8.8.8.8"]');
+    });
+
+    it('rejects database path overrides with null bytes before file operations', function (): void {
+        putenv('ORBIT_WG_EASY_DB_PATH');
+        $_SERVER['ORBIT_WG_EASY_DB_PATH'] = "{$this->wgEasyStateTemp}/wg-easy.db\0evil";
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'ensure-writable',
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'The ORBIT_WG_EASY_DB_PATH environment value is invalid.',
+                ['field' => 'ORBIT_WG_EASY_DB_PATH'],
+            ))
+            ->and($output)->not->toContain('ValueError')
+            ->and($output)->not->toContain('null byte');
     });
 
     it('returns a database_missing failure envelope without raw PDO details', function (): void {
