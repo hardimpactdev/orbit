@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Commands\Internal\VerifyExecutorCommand;
+use App\Commands\Internal\WgEasyStateCommand;
 use App\Commands\Internal\WorkspaceAdapterLookupCommand;
 use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
@@ -34,6 +35,7 @@ return [
         VendorPublishCommand::class,
         StubPublishCommand::class,
         VerifyExecutorCommand::class,
+        WgEasyStateCommand::class,
         WorkspaceAdapterLookupCommand::class,
     ],
 
