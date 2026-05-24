@@ -20,6 +20,20 @@ describe('internal executor verification command', function (): void {
             ->and($output)->toContain('Operation token is required.');
     });
 
+    it('returns missing_token failure envelope as JSON when --json is set and token is absent', function (): void {
+        configureOperationTokenGuard();
+
+        [$exitCode, $output] = runInternalExecutorCommand($this, [
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'missing_token',
+                'Operation token is required.',
+            ));
+    });
+
     it('rejects an empty operation token', function (): void {
         configureOperationTokenGuard();
 
@@ -30,6 +44,21 @@ describe('internal executor verification command', function (): void {
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('missing_token')
             ->and($output)->toContain('Operation token is required.');
+    });
+
+    it('returns missing_token failure envelope as JSON when --json and --operation-token= are empty', function (): void {
+        configureOperationTokenGuard();
+
+        [$exitCode, $output] = runInternalExecutorCommand($this, [
+            '--operation-token' => '',
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'missing_token',
+                'Operation token is required.',
+            ));
     });
 
     it('rejects a malformed operation token without leaking parser details', function (): void {
@@ -46,6 +75,21 @@ describe('internal executor verification command', function (): void {
             ->and($output)->not->toContain('InvalidArgumentException');
     });
 
+    it('returns invalid_token failure envelope as JSON when --json and token is malformed', function (): void {
+        configureOperationTokenGuard();
+
+        [$exitCode, $output] = runInternalExecutorCommand($this, [
+            '--operation-token' => 'not-a-token',
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'invalid_token',
+                'Operation token is invalid.',
+            ));
+    });
+
     it('rejects a token signed for the wrong node', function (): void {
         configureOperationTokenGuard();
 
@@ -56,6 +100,21 @@ describe('internal executor verification command', function (): void {
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('invalid_token')
             ->and($output)->toContain('Operation token is invalid.');
+    });
+
+    it('returns invalid_token failure envelope as JSON when --json and token targets the wrong node', function (): void {
+        configureOperationTokenGuard();
+
+        [$exitCode, $output] = runInternalExecutorCommand($this, [
+            '--operation-token' => signedOperationToken(node: 'app-prod'),
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'invalid_token',
+                'Operation token is invalid.',
+            ));
     });
 
     it('rejects a token signed for the wrong command', function (): void {
