@@ -83,10 +83,11 @@ This section defines the message delivery model.
 - **Agent IDE message:** Best-effort communication sent to the active Agent IDE
   session for a resolved app or workspace context. Accepted delivery means the
   adapter accepted the message; it does not mean the requested work completed.
-- **Agent IDE launcher context:** Host `orbit` launcher context passed into
-  local `orbit-runtime` as `ORBIT_HOST_CWD`. Agent IDE commands may use it to
-  resolve app/workspace defaults, but authorization still comes from the
-  gateway's WireGuard peer and grant model.
+- **Agent IDE launcher context:** Host `orbit` launcher context exported to the
+  dispatched role artifact (`apps/cli/orbit` on non-gateway nodes,
+  `apps/gateway/artisan` on the gateway) as `ORBIT_HOST_CWD`. Agent IDE
+  commands may use it to resolve app/workspace defaults, but authorization
+  still comes from the gateway's WireGuard peer and grant model.
 
 ## Boundaries
 

@@ -185,7 +185,7 @@ The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talk
 
 The blast radius of any single caller, including an AI agent driving Orbit, is bounded by the API surface. If a caller needs to be cut off — a runaway agent, a compromised laptop, a former contributor — revoking its VPN access shuts down everything it could do, immediately.
 
-CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved. The launcher passes `ORBIT_HOST_CWD` so the runtime container can preserve current-directory ergonomics without broad host access. Caller location never changes who writes state — that is always the gateway.
+CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved. The launcher passes `ORBIT_HOST_CWD` so the dispatched artifact can preserve current-directory ergonomics without broad host access. Caller location never changes who writes state — that is always the gateway.
 
 Nodes other than the gateway do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on such a node, the gateway opens the SSH connection and runs the work there. They do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
 

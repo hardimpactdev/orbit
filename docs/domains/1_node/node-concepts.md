@@ -36,13 +36,17 @@ Each term below has a precise meaning in the node command family.
 - **Gateway-coupled infrastructure role:** Separate role assignment that is
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
-- **Orbit launcher:** Host `orbit` executable installed in the user's path. It
-  validates the local Docker runtime, passes host context such as
-  `ORBIT_HOST_CWD`, and executes the Orbit CLI inside `orbit-runtime`. It is not
-  a host PHP fallback.
-- **Orbit runtime container:** One `orbit-runtime` container per node. It is the
-  CLI execution target for the launcher and, on the gateway, the resident
-  gateway API and scheduler runtime.
+- **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
+  resolves `ORBIT_REPO`, reads `${ORBIT_REPO}/.env` for
+  `ORBIT_IS_GATEWAY=true`, exports `ORBIT_REPO`, `ORBIT_APP`, and
+  `ORBIT_HOST_CWD`, then dispatches to
+  `${ORBIT_REPO}/apps/gateway/artisan` on gateway nodes or
+  `${ORBIT_REPO}/apps/cli/orbit` on other nodes.
+- **Orbit runtime container:** One `orbit-runtime` container per node. On the
+  gateway it is the resident gateway API and scheduler runtime. On app nodes it
+  provides the Orbit PHP runtime baseline. App, workspace, and process
+  workloads run in their own containers. `orbit-runtime` is no longer the
+  Docker-only execution target for the host launcher.
 - **Orbit Caddy container:** Standalone `orbit-caddy` fleet proxy container.
   Nodes have at most one. It owns Orbit HTTP routing on that node, including
   gateway API, app/workspace, tool, ingress, router, and private backend routes
@@ -235,12 +239,12 @@ active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
-All managed Ubuntu nodes have the same Docker-first host prerequisite baseline:
-Git, Docker Engine and CLI, the Orbit checkout, the host `orbit` launcher,
-`orbit-runtime`, WireGuard/SSH identity material, and any role-specific
-non-PHP host tools such as VitePlus on app nodes. Host PHP, host Composer,
-host Caddy, and host PHP-FPM are not role prerequisites and are not runtime
-fallbacks.
+All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
+They require Git, Docker Engine and CLI, the Orbit checkout, host PHP CLI for
+the CLI/local-executor artifact, the host `orbit` launcher, `orbit-runtime`,
+WireGuard/SSH identity material, and any role-specific non-PHP host tools such
+as VitePlus on app nodes. Host Composer, host Caddy, and host PHP-FPM are not
+role prerequisites and are not runtime fallbacks.
 
 ## Identity and onboarding
 
@@ -265,9 +269,10 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
-  gateway-local, or a node with workload roles — to the gateway API. The CLI
-  runs inside the caller's local `orbit-runtime` container via the host
-  launcher.
+  gateway-local, or a node with workload roles — to the gateway API. On
+  non-gateway nodes, the launcher dispatches to host PHP through
+  `apps/cli/orbit`, which calls the gateway API. On the gateway, the launcher
+  dispatches directly to `apps/gateway/artisan`.
 - **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
   from the gateway.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built

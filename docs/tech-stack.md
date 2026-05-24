@@ -352,7 +352,7 @@ Client setup is local:
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
-The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, the Orbit checkout, the `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside `orbit-runtime`, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
+The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, host PHP CLI for the CLI/local-executor artifact, the Orbit checkout, the `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside `orbit-runtime`, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
 
 The installer does not create a client identity for the gateway to trust. That identity is minted later — by `node:new --role=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 
