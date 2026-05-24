@@ -44,7 +44,8 @@ Each term below has a precise meaning in the node command family.
   `${ORBIT_REPO}/apps/cli/orbit` on other nodes.
 - **Orbit runtime container:** One `orbit-runtime` container per node. On the
   gateway it is the resident gateway API and scheduler runtime. On app nodes it
-  supports workloads that Orbit runs in containers; it is no longer the
+  provides the Orbit PHP runtime baseline. App, workspace, and process
+  workloads run in their own containers. `orbit-runtime` is no longer the
   Docker-only execution target for the host launcher.
 - **Orbit Caddy container:** Standalone `orbit-caddy` fleet proxy container.
   Nodes have at most one. It owns Orbit HTTP routing on that node, including
@@ -238,12 +239,12 @@ active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
-All managed Ubuntu nodes have the same Docker-first host prerequisite baseline:
-Git, Docker Engine and CLI, the Orbit checkout, the host `orbit` launcher,
-`orbit-runtime`, WireGuard/SSH identity material, and any role-specific
-non-PHP host tools such as VitePlus on app nodes. Host PHP, host Composer,
-host Caddy, and host PHP-FPM are not role prerequisites and are not runtime
-fallbacks.
+All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
+They require Git, Docker Engine and CLI, the Orbit checkout, host PHP CLI for
+the CLI/local-executor artifact, the host `orbit` launcher, `orbit-runtime`,
+WireGuard/SSH identity material, and any role-specific non-PHP host tools such
+as VitePlus on app nodes. Host Composer, host Caddy, and host PHP-FPM are not
+role prerequisites and are not runtime fallbacks.
 
 ## Identity and onboarding
 

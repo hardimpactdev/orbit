@@ -59,8 +59,9 @@ real VM, network, OS, or installer semantics.
 
 Prepared Docker topologies model the target runtime contract:
 
-- host launcher -> local `orbit-runtime` container -> gateway `orbit-caddy` ->
-  gateway `orbit-runtime`;
+- host launcher -> role-aware artifact (`apps/cli/orbit` on non-gateway nodes
+  or `apps/gateway/artisan` on the gateway) -> gateway `orbit-caddy` -> gateway
+  `orbit-runtime`;
 - app and workspace PHP runtimes are FrankenPHP containers;
 - PHP app and workspace process units use Docker process runtime containers by
   default;
