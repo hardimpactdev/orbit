@@ -43,7 +43,9 @@ use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Updates\UnattendedUpgradesDriver;
 use App\Services\Updates\UpdateDriverRegistry;
+use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Vpn\WgEasyVpnBackend;
 use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
 use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
@@ -138,9 +140,18 @@ class AppServiceProvider extends ServiceProvider
             $app->make(UnattendedUpgradesDriver::class),
         ]));
 
-        $this->app->singleton(WgEasyServiceInstaller::class, fn (): WgEasyServiceInstaller => new WgEasyServiceInstaller(
+        $this->app->bind(WgEasyVpnBackend::class, fn ($app): WgEasyVpnBackend => new WgEasyVpnBackend(
+            username: (string) config('services.wg_easy.username', config('orbit.wg_easy.username', 'orbit')),
+            password: (string) config('services.wg_easy.password', config('orbit.wg_easy.password', '')),
+            localExecutor: $this->hasOperationTokenSecret() ? $app->make(RemoteLocalExecutor::class) : null,
+            vpnNodeResolver: $app->make(VpnNodeResolver::class),
+        ));
+
+        $this->app->singleton(WgEasyServiceInstaller::class, fn ($app): WgEasyServiceInstaller => new WgEasyServiceInstaller(
             rootPath: $this->orbitConfigPath(),
             statePath: $this->wgEasyStatePath(),
+            localExecutor: $this->hasOperationTokenSecret() ? $app->make(RemoteLocalExecutor::class) : null,
+            vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
         $this->app->singleton(OrbitDnsServiceInstaller::class, fn ($app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
@@ -203,6 +214,13 @@ class AppServiceProvider extends ServiceProvider
         }
 
         return $secret;
+    }
+
+    private function hasOperationTokenSecret(): bool
+    {
+        $secret = config('orbit.operation_token_secret');
+
+        return is_string($secret) && trim($secret) !== '';
     }
 
     private function operationTokenTtlSeconds(): int
