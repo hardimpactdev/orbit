@@ -118,17 +118,17 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
     private function runtimeScript(Node $node, string $script, array $options): string
     {
         $options = $this->optionsWithContainerCwd($node, $options);
-        $directCommand = $this->directRuntimeCommand($script);
+        $runtimeCommand = $this->runtimeCommand($script);
+        $directCommand = $this->directRuntimeCommand($runtimeCommand['script']);
 
         if ($directCommand !== null && ! (bool) ($options['strict'] ?? false)) {
-            return $this->directDockerExec($directCommand, $options);
+            return $this->directDockerExec($directCommand, $options, $runtimeCommand['docker_exec_options']);
         }
 
         return implode(' ', [
-            'docker exec -i',
-            self::CONTAINER,
+            $this->dockerExecPrefix($options, $runtimeCommand['docker_exec_options'], includeExecutorOptions: false),
             'sh -c',
-            escapeshellarg($this->scripts->compose($script, $options)),
+            escapeshellarg($this->scripts->compose($runtimeCommand['script'], $options)),
         ]);
     }
 
@@ -141,21 +141,85 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
      *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
      */
-    private function directDockerExec(string $runtimeCommand, array $options): string
+    private function directDockerExec(string $runtimeCommand, array $options, array $dockerExecOptions): string
+    {
+        return $this->dockerExecPrefix($options, $dockerExecOptions).' '.$runtimeCommand;
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }  $options
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     *
+     * Caller-provided Docker exec flags are emitted before executor metadata and
+     * cwd, so direct runtime options override duplicate environment and workdir
+     * values. Shell fallback keeps executor metadata/cwd in the composed script.
+     */
+    private function dockerExecPrefix(array $options, array $dockerExecOptions, bool $includeExecutorOptions = true): string
     {
         $parts = ['docker exec -i'];
 
-        foreach ($this->scripts->metadataFromOptions($options, validate: true) as $key => $value) {
-            $parts[] = '--env '.escapeshellarg("{$key}={$value}");
+        if ($dockerExecOptions['detach']) {
+            $parts[] = '--detach';
         }
 
-        if (isset($options['cwd']) && $options['cwd'] !== '') {
-            $parts[] = '--workdir '.escapeshellarg($options['cwd']);
+        if ($dockerExecOptions['tty']) {
+            $parts[] = '--tty';
+        }
+
+        if ($dockerExecOptions['privileged']) {
+            $parts[] = '--privileged';
+        }
+
+        if ($dockerExecOptions['detach_keys'] !== null && $dockerExecOptions['detach_keys'] !== '') {
+            $parts[] = '--detach-keys '.escapeshellarg($dockerExecOptions['detach_keys']);
+        }
+
+        if ($dockerExecOptions['user'] !== null && $dockerExecOptions['user'] !== '') {
+            $parts[] = '--user '.escapeshellarg($dockerExecOptions['user']);
+        }
+
+        foreach ($dockerExecOptions['env_files'] as $envFile) {
+            $parts[] = '--env-file '.escapeshellarg($envFile);
+        }
+
+        foreach ($this->mergedExecEnvironment($options, $dockerExecOptions, $includeExecutorOptions) as $env) {
+            $parts[] = '--env '.escapeshellarg($env);
+        }
+
+        $workdir = $this->execWorkdir($options, $dockerExecOptions, $includeExecutorOptions);
+
+        if ($workdir !== null && $workdir !== '') {
+            $parts[] = '--workdir '.escapeshellarg($workdir);
         }
 
         $parts[] = self::CONTAINER;
-        $parts[] = $runtimeCommand;
 
         return implode(' ', $parts);
     }
@@ -167,8 +231,6 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         if ($command === '') {
             return null;
         }
-
-        $command = $this->unwrapRuntimeCommand($command) ?? $command;
 
         if ($command === 'artisan') {
             return 'php artisan';
@@ -185,21 +247,73 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         return $this->safeDirectCommand($command);
     }
 
-    private function unwrapRuntimeCommand(string $command): ?string
+    /**
+     * @return array{
+     *     script: string,
+     *     docker_exec_options: array{
+     *         detach: bool,
+     *         detach_keys: string|null,
+     *         environment: list<string>,
+     *         env_files: list<string>,
+     *         privileged: bool,
+     *         tty: bool,
+     *         user: string|null,
+     *         workdir: string|null,
+     *     },
+     * }
+     */
+    private function runtimeCommand(string $script): array
     {
-        $prefixes = [
-            'docker exec -i '.self::CONTAINER.' ',
-            'docker exec --interactive '.self::CONTAINER.' ',
-            'docker exec '.self::CONTAINER.' ',
+        return $this->unwrapRuntimeCommand($script) ?? [
+            'script' => $script,
+            'docker_exec_options' => $this->emptyDockerExecOptions(),
         ];
+    }
 
-        foreach ($prefixes as $prefix) {
-            if (str_starts_with($command, $prefix)) {
-                return trim(substr($command, strlen($prefix)));
+    /**
+     * @return array{
+     *     script: string,
+     *     docker_exec_options: array{
+     *         detach: bool,
+     *         detach_keys: string|null,
+     *         environment: list<string>,
+     *         env_files: list<string>,
+     *         privileged: bool,
+     *         tty: bool,
+     *         user: string|null,
+     *         workdir: string|null,
+     *     },
+     * }|null
+     */
+    private function unwrapRuntimeCommand(string $command): ?array
+    {
+        $tokens = $this->shellTokens($command);
+
+        if ($tokens === null || count($tokens) < 4) {
+            return null;
+        }
+
+        if ($tokens[0]['value'] !== 'docker' || $tokens[1]['value'] !== 'exec') {
+            return null;
+        }
+
+        $dockerExecOptions = $this->emptyDockerExecOptions();
+        $index = 2;
+
+        while (isset($tokens[$index]) && str_starts_with($tokens[$index]['value'], '-')) {
+            if (! $this->consumeDockerExecOption($tokens, $index, $dockerExecOptions)) {
+                return null;
             }
         }
 
-        return null;
+        if (! isset($tokens[$index]) || $tokens[$index]['value'] !== self::CONTAINER || ! isset($tokens[$index + 1])) {
+            return null;
+        }
+
+        return [
+            'script' => trim(substr($command, $tokens[$index + 1]['start'])),
+            'docker_exec_options' => $dockerExecOptions,
+        ];
     }
 
     private function safeDirectCommand(string $command): ?string
@@ -211,9 +325,346 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         return null;
     }
 
+    /**
+     * @param  list<array{value: string, start: int, end: int}>  $tokens
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     */
+    private function consumeDockerExecOption(array $tokens, int &$index, array &$dockerExecOptions): bool
+    {
+        $option = $tokens[$index]['value'];
+
+        if ($this->consumeDockerExecBooleanOption($option, $dockerExecOptions)) {
+            $index++;
+
+            return true;
+        }
+
+        foreach ($this->dockerExecValueOptions() as $name => $key) {
+            if ($this->consumeDockerExecValueOption($tokens, $index, $dockerExecOptions, $name, $key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     */
+    private function consumeDockerExecBooleanOption(string $option, array &$dockerExecOptions): bool
+    {
+        if ($option === '-i' || $option === '--interactive') {
+            return true;
+        }
+
+        if ($option === '-t' || $option === '--tty') {
+            $dockerExecOptions['tty'] = true;
+
+            return true;
+        }
+
+        if ($option === '-d' || $option === '--detach') {
+            $dockerExecOptions['detach'] = true;
+
+            return true;
+        }
+
+        if ($option === '--privileged') {
+            $dockerExecOptions['privileged'] = true;
+
+            return true;
+        }
+
+        if (preg_match('/\A-[dit]+\z/', $option) !== 1) {
+            return false;
+        }
+
+        foreach (str_split(substr($option, 1)) as $flag) {
+            if ($flag === 'd') {
+                $dockerExecOptions['detach'] = true;
+            }
+
+            if ($flag === 't') {
+                $dockerExecOptions['tty'] = true;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<array{value: string, start: int, end: int}>  $tokens
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     */
+    private function consumeDockerExecValueOption(
+        array $tokens,
+        int &$index,
+        array &$dockerExecOptions,
+        string $name,
+        string $key,
+    ): bool {
+        $option = $tokens[$index]['value'];
+        $value = null;
+
+        if ($option === $name) {
+            if (! isset($tokens[$index + 1])) {
+                return false;
+            }
+
+            $value = $tokens[$index + 1]['value'];
+            $index += 2;
+        } elseif (str_starts_with($option, "{$name}=")) {
+            $value = substr($option, strlen($name) + 1);
+            $index++;
+        } elseif (strlen($name) === 2 && str_starts_with($option, $name) && strlen($option) > 2) {
+            $value = ltrim(substr($option, 2), '=');
+            $index++;
+        } else {
+            return false;
+        }
+
+        $this->recordDockerExecValueOption($dockerExecOptions, $key, $value);
+
+        return true;
+    }
+
+    /**
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     */
+    private function recordDockerExecValueOption(array &$dockerExecOptions, string $key, string $value): void
+    {
+        if ($key === 'environment' || $key === 'env_files') {
+            $dockerExecOptions[$key][] = $value;
+
+            return;
+        }
+
+        $dockerExecOptions[$key] = $value;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function dockerExecValueOptions(): array
+    {
+        return [
+            '--detach-keys' => 'detach_keys',
+            '--env' => 'environment',
+            '--env-file' => 'env_files',
+            '--user' => 'user',
+            '--workdir' => 'workdir',
+            '-e' => 'environment',
+            '-u' => 'user',
+            '-w' => 'workdir',
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }  $options
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     * @return list<string>
+     */
+    private function mergedExecEnvironment(array $options, array $dockerExecOptions, bool $includeExecutorOptions): array
+    {
+        $environment = [];
+
+        foreach ($dockerExecOptions['environment'] as $env) {
+            $environment[$this->environmentKey($env)] = $env;
+        }
+
+        if (! $includeExecutorOptions) {
+            return array_values($environment);
+        }
+
+        foreach ($this->scripts->metadataFromOptions($options, validate: true) as $key => $value) {
+            $environment[$key] = "{$key}={$value}";
+        }
+
+        return array_values($environment);
+    }
+
+    private function environmentKey(string $env): string
+    {
+        $position = strpos($env, '=');
+
+        if ($position === false) {
+            return $env;
+        }
+
+        return substr($env, 0, $position);
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }  $options
+     * @param  array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }  $dockerExecOptions
+     */
+    private function execWorkdir(array $options, array $dockerExecOptions, bool $includeExecutorOptions): ?string
+    {
+        if ($includeExecutorOptions && isset($options['cwd']) && $options['cwd'] !== '') {
+            return (string) $options['cwd'];
+        }
+
+        return $dockerExecOptions['workdir'];
+    }
+
+    /**
+     * @return array{
+     *     detach: bool,
+     *     detach_keys: string|null,
+     *     environment: list<string>,
+     *     env_files: list<string>,
+     *     privileged: bool,
+     *     tty: bool,
+     *     user: string|null,
+     *     workdir: string|null,
+     * }
+     */
+    private function emptyDockerExecOptions(): array
+    {
+        return [
+            'detach' => false,
+            'detach_keys' => null,
+            'environment' => [],
+            'env_files' => [],
+            'privileged' => false,
+            'tty' => false,
+            'user' => null,
+            'workdir' => null,
+        ];
+    }
+
     private function normalizeWhitespace(string $script): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $script));
+    }
+
+    /**
+     * @return list<array{value: string, start: int, end: int}>|null
+     */
+    private function shellTokens(string $command): ?array
+    {
+        $tokens = [];
+        $index = 0;
+        $length = strlen($command);
+
+        while ($index < $length) {
+            while ($index < $length && ctype_space($command[$index])) {
+                $index++;
+            }
+
+            if ($index >= $length) {
+                break;
+            }
+
+            $start = $index;
+            $value = '';
+            $quote = null;
+
+            while ($index < $length) {
+                $character = $command[$index];
+
+                if ($quote === null && ctype_space($character)) {
+                    break;
+                }
+
+                if (($character === "'" || $character === '"') && ($quote === null || $quote === $character)) {
+                    $quote = $quote === $character ? null : $character;
+                    $index++;
+
+                    continue;
+                }
+
+                if ($character === '\\' && $quote !== "'" && $index + 1 < $length) {
+                    $value .= $command[$index + 1];
+                    $index += 2;
+
+                    continue;
+                }
+
+                $value .= $character;
+                $index++;
+            }
+
+            if ($quote !== null) {
+                return null;
+            }
+
+            $tokens[] = [
+                'value' => $value,
+                'start' => $start,
+                'end' => $index,
+            ];
+        }
+
+        return $tokens;
     }
 
     /**
