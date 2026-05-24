@@ -25,6 +25,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
 
     private const string TRUNCATED_SUFFIX = '[truncated]';
 
+    private const string START_UNSUPPORTED_MESSAGE = 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See docs/execution-lanes.md.';
+
     public function __construct(
         private RemoteExecutor $transport,
         private LocalExecutorCommandBuilder $commands,
@@ -154,13 +156,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
     #[\Override]
     public function start(Node $node, string $script, array $options = []): InvokedProcess
     {
-        return $this->startInternal(
-            node: $node,
-            commandName: $script,
-            arguments: [],
-            commandOptions: [],
-            transportOptions: $options,
-        );
+        throw new RuntimeException(self::START_UNSUPPORTED_MESSAGE);
     }
 
     /**
@@ -182,20 +178,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         array $commandOptions = [],
         array $transportOptions = [],
     ): InvokedProcess {
-        $operationId = $this->operationId($transportOptions);
-        $dispatch = $this->dispatchCommand(
-            node: $node,
-            commandName: $commandName,
-            arguments: $arguments,
-            commandOptions: $commandOptions,
-            operationId: $operationId,
-        );
-
-        return $this->transport->start(
-            node: $node,
-            script: $dispatch['script'],
-            options: $transportOptions,
-        );
+        throw new RuntimeException(self::START_UNSUPPORTED_MESSAGE);
     }
 
     /**

@@ -166,6 +166,43 @@ describe(RemoteLocalExecutor::class, function (): void {
         ));
     });
 
+    it('rejects long-running local executor dispatch through start before minting a token', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        );
+        $executor = remoteLocalExecutor($transport, remoteLocalExecutorTokenFactory(
+            clock: static fn (): int => throw new RuntimeException('Operation token mint should not run.'),
+        ));
+
+        expect(fn (): InvokedProcess => $executor->start(
+            node: remoteLocalExecutorNode(),
+            script: 'internal:executor:verify',
+            options: [],
+        ))->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
+
+        expect($transport->calls)->toBeEmpty()
+            ->and(remoteLocalExecutorActivityRows())->toBeEmpty();
+    });
+
+    it('rejects long-running local executor dispatch through startInternal before minting a token', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        );
+        $executor = remoteLocalExecutor($transport, remoteLocalExecutorTokenFactory(
+            clock: static fn (): int => throw new RuntimeException('Operation token mint should not run.'),
+        ));
+
+        expect(fn (): InvokedProcess => $executor->startInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            arguments: [],
+            commandOptions: [],
+        ))->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
+
+        expect($transport->calls)->toBeEmpty()
+            ->and(remoteLocalExecutorActivityRows())->toBeEmpty();
+    });
+
     it('surfaces builder failures without dispatching to transport', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -372,19 +409,12 @@ describe(RemoteLocalExecutor::class, function (): void {
         }
     });
 
-    it('redacts operation-token output variants from any operation before storing summaries', function (): void {
+    it('redacts operation-token output variant :dataset from any operation before storing summaries', function (Closure $output, string $expected): void {
         $otherOperationToken = 'external-operation-token-402';
         $transport = new RemoteLocalExecutorRecordingTransport(
             static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
                 exitCode: 0,
-                stdout: implode("\n", [
-                    "--operation-token={$otherOperationToken}",
-                    "--operation-token = {$otherOperationToken}",
-                    "--operation-token {$otherOperationToken}",
-                    "--operation-token=\"{$otherOperationToken}\"",
-                    "--operation-token='{$otherOperationToken}'",
-                    "ending --operation-token={$otherOperationToken}",
-                ]),
+                stdout: $output($otherOperationToken),
                 stderr: '',
                 durationMs: 6,
             ),
@@ -401,8 +431,41 @@ describe(RemoteLocalExecutor::class, function (): void {
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
         expect($completedProperties['stdout_summary'])->not->toContain($otherOperationToken)
-            ->and(substr_count($completedProperties['stdout_summary'], '--operation-token=<redacted>'))->toBe(6);
-    });
+            ->and($completedProperties['stdout_summary'])->toBe($expected);
+    })->with([
+        'no spaces around equals' => [
+            static fn (string $token): string => "--operation-token={$token}",
+            '--operation-token=<redacted>',
+        ],
+        'space before equals' => [
+            static fn (string $token): string => "--operation-token ={$token}",
+            '--operation-token=<redacted>',
+        ],
+        'space after equals' => [
+            static fn (string $token): string => "--operation-token= {$token}",
+            '--operation-token=<redacted>',
+        ],
+        'spaces around equals' => [
+            static fn (string $token): string => "--operation-token = {$token}",
+            '--operation-token=<redacted>',
+        ],
+        'whitespace separator' => [
+            static fn (string $token): string => "--operation-token {$token}",
+            '--operation-token=<redacted>',
+        ],
+        'double quoted value' => [
+            static fn (string $token): string => "--operation-token=\"{$token}\"",
+            '--operation-token=<redacted>',
+        ],
+        'single quoted value' => [
+            static fn (string $token): string => "--operation-token='{$token}'",
+            '--operation-token=<redacted>',
+        ],
+        'at end of string' => [
+            static fn (string $token): string => "ending --operation-token={$token}",
+            'ending --operation-token=<redacted>',
+        ],
+    ]);
 
     it('does not write raw operation tokens to activity rows even when command output echoes them', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
@@ -529,6 +592,11 @@ function remoteLocalExecutor(RemoteLocalExecutorRecordingTransport $transport, ?
 function remoteLocalExecutorActivityLogger(): ActivityLogger
 {
     return new ActivityLogger(new ActivityLogCorrelation);
+}
+
+function remoteLocalExecutorStartUnsupportedMessage(): string
+{
+    return 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See docs/execution-lanes.md.';
 }
 
 function remoteLocalExecutorTokenFactory(?Closure $clock = null): OperationTokenFactory

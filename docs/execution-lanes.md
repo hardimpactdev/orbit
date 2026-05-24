@@ -169,6 +169,12 @@ Callers that need arguments or command options use:
 RemoteLocalExecutor::runInternal(Node $node, string $commandName, array $arguments = [], array $commandOptions = [], array $transportOptions = [])
 ```
 
+Long-running `start()` and `startInternal()` dispatch is unsupported for
+`RemoteLocalExecutor` until async audit semantics are designed. Local-executor
+work must use `runInternal()` for completion-based dispatch and result
+recording; asynchronous workflows should route through `runInternal()` plus
+polling, or through a different execution lane with its own audit contract.
+
 The inherited `RemoteShell::run()` method is reserved for command-name-only
 internal invocations such as `internal:executor:verify`; callers must not encode
 structured local-executor input as JSON or as a free-form shell script.
