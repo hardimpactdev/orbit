@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Orbit\Core\Security;
+namespace Hardimpactdev\OrbitCore\Security;
 
 final class OperationTokenSigner
 {

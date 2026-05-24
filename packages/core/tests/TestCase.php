@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Orbit\Core\Tests;
+namespace Hardimpactdev\OrbitCore\Tests;
 
 use PHPUnit\Framework\TestCase as BaseTestCase;
 

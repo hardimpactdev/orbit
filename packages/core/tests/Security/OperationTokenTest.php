@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use Orbit\Core\Security\OperationToken;
-use Orbit\Core\Security\OperationTokenSigner;
-use Orbit\Core\Security\OperationTokenVerifier;
+use Hardimpactdev\OrbitCore\Security\OperationToken;
+use Hardimpactdev\OrbitCore\Security\OperationTokenSigner;
+use Hardimpactdev\OrbitCore\Security\OperationTokenVerifier;
 
 describe(OperationToken::class, function (): void {
     it('constructs with readable fields', function (): void {

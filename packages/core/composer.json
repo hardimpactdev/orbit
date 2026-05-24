@@ -18,12 +18,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Orbit\\Core\\": "src/"
+            "Hardimpactdev\\OrbitCore\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Orbit\\Core\\Tests\\": "tests/"
+            "Hardimpactdev\\OrbitCore\\Tests\\": "tests/"
         }
     },
     "scripts": {
@@ -33,7 +33,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Orbit\\Core\\OrbitCoreServiceProvider"
+                "Hardimpactdev\\OrbitCore\\OrbitCoreServiceProvider"
             ]
         }
     },

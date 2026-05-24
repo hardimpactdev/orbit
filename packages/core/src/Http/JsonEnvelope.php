@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Orbit\Core\Http;
+namespace Hardimpactdev\OrbitCore\Http;
 
 final class JsonEnvelope
 {

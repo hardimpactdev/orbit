@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "dd53ef9571e979ab88e5a3b4f313c750",
+    "content-hash": "81452a6855b5b5a90855f1c6bb396d19",
     "packages": [
         {
             "name": "beyondcode/polyscope",
@@ -1312,6 +1312,61 @@
                 "source": "https://github.com/hardimpactdev/opencode-sdk-laravel/tree/0.0.7"
             },
             "time": "2026-04-15T11:31:04+00:00"
+        },
+        {
+            "name": "hardimpactdev/orbit-core",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/core",
+                "reference": "c4522de55abf8fe2e2e7cd8c1c7135fce53bf0e3"
+            },
+            "require": {
+                "illuminate/support": "^13.0",
+                "php": "^8.4"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.29",
+                "pestphp/pest": "^4.6"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Hardimpactdev\\OrbitCore\\OrbitCoreServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Hardimpactdev\\OrbitCore\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Hardimpactdev\\OrbitCore\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "format": [
+                    "vendor/bin/pint"
+                ],
+                "test": [
+                    "vendor/bin/pest --compact"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Shared Orbit core contracts and helpers.",
+            "keywords": [
+                "laravel",
+                "orbit"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "laravel/framework",
@@ -10500,6 +10555,7 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
+        "hardimpactdev/orbit-core": 20,
         "spatie/guidelines-skills": 20
     },
     "prefer-stable": true,

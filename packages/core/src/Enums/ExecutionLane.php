@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Orbit\Core\Enums;
+namespace Hardimpactdev\OrbitCore\Enums;
 
 enum ExecutionLane: string
 {

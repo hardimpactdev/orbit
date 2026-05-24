@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Orbit\Core;
+namespace Hardimpactdev\OrbitCore;
 
 use Illuminate\Support\ServiceProvider;
 
