@@ -2,7 +2,7 @@
 
 This page defines how the gateway may execute work on Docker-first-managed
 nodes. The SSH transport stays `RemoteShell`, but every gateway-to-node
-workload must belong to one of two execution lanes.
+workload must belong to one of three execution lanes.
 
 ## Scope
 
@@ -12,11 +12,27 @@ workload containers for apps, workspaces, processes, and backing services.
 
 Before that baseline exists, bootstrap may use host shell commands to install
 Docker, prepare the `orbit` user, clone Orbit source, and create the first
-runtime containers. After the baseline exists, Orbit PHP work in steady state
+runtime containers. After the baseline exists, gateway Laravel/artisan/PDO work
 must not rely on host PHP, host Composer, host Python, host SQLite, or host
-database client binaries.
+database client binaries. Host PHP is allowed only for the source-checkout
+CLI/local-executor artifact; it is not an app/workspace runtime fallback.
 
 ## Lanes
+
+```text
+RemoteHostExecutor:
+  SSH host substrate, bootstrap, Docker/container control, host git,
+  system packages, WireGuard host mutation, Caddy artifacts.
+
+RemoteOrbitRuntimeExecutor:
+  SSH then docker exec into orbit-runtime for gateway Laravel/artisan/PDO
+  work that belongs to the gateway runtime container.
+
+RemoteLocalExecutor:
+  SSH then invoke the host-installed apps/cli internal executor command.
+  It is for packaged node-local helper logic that needs host file access
+  and PHP/PDO without relying on ad hoc python3/sqlite3 snippets.
+```
 
 ### RemoteHostExecutor
 
@@ -52,26 +68,25 @@ Forbidden work:
 
 If work in the host lane currently needs PHP/Python/SQLite only to inspect host
 files, it must be rewritten in POSIX shell or another host-substrate primitive.
-If it needs Orbit application code or database access, it belongs in
-`RemoteOrbitRuntimeExecutor`.
+If it needs gateway Laravel/artisan/PDO work, it belongs in
+`RemoteOrbitRuntimeExecutor`. If it needs packaged node-local helper logic with
+host file access and PHP/PDO, it belongs in `RemoteLocalExecutor`.
 
 ### RemoteOrbitRuntimeExecutor
 
 `RemoteOrbitRuntimeExecutor` SSHs to the node and then enters the node's
 `orbit-runtime` container, normally with `docker exec` or `docker exec -i`.
-It is the only lane for Orbit PHP work in steady state on Docker-first-managed
-nodes.
+It is the lane for gateway Laravel/artisan/PDO work that belongs to the gateway
+runtime container on Docker-first-managed nodes.
 
 Required work:
 
 - Orbit `php artisan ...` commands executed on a node.
-- Orbit PHP scripts, Laravel boot, Eloquent/PDO access, database query helpers,
-  and local SQLite work owned by Orbit.
+- Gateway Laravel boot, Eloquent/PDO access, database query helpers, and local
+  SQLite work that belongs to the gateway runtime container.
 - Composer operations for Orbit itself.
-- Runtime-packaged helper logic that replaces current host Python/SQLite
-  adapter scripts.
 - VPN command forwarding when the forwarded command is an Orbit Artisan command
-  and may transitively inspect or mutate wg-easy state.
+  that belongs to the gateway runtime container.
 
 Forbidden work:
 
@@ -80,20 +95,59 @@ Forbidden work:
 - App/workspace PHP execution. App and workspace PHP commands run inside their
   own app/workspace containers; they are not Orbit runtime work unless they
   boot Orbit itself.
+- Packaged node-local helper logic that needs host file access and PHP/PDO.
+  That belongs in `RemoteLocalExecutor`.
+
+### RemoteLocalExecutor
+
+`RemoteLocalExecutor` SSHs to the node and invokes the host-installed
+`apps/cli` internal executor command. It is for packaged node-local helper
+logic that needs host file access and PHP/PDO without relying on ad hoc
+`python3` or `sqlite3` snippets.
+
+Required work:
+
+- Workspace adapter SQLite lookups for Polyscope and OpenCode when the adapter
+  database lives in a node-local host path.
+- Wg-easy SQLite state updates and ownership checks that must preserve
+  node-local file access and ownership semantics.
+- Prepared-topology fixture helpers that must run inside a topology node and
+  need PHP/PDO without adding host `sqlite3`.
+
+Forbidden work:
+
+- Public command execution or direct user-invoked state mutation.
+- Gateway Laravel/artisan/PDO work that belongs in `orbit-runtime`.
+- Host substrate mutation such as Docker installation, WireGuard host mutation,
+  Caddy artifact writes, package installation, or SSH hardening.
+- App/workspace runtime PHP execution, which belongs in app/workspace
+  containers.
+
+Every `RemoteLocalExecutor` invocation must be tied to a gateway operation
+record and carry a gateway-issued operation token. The local executor validates
+the token before side effects and records the result through the gateway-owned
+operation path. Node-local CLI execution is never an authority bypass.
 
 ## Hard Rules
 
 Use these rules for every new or migrated gateway-to-node execution path.
 
-- On Docker-first-managed nodes, PHP work owned by Orbit MUST go through
-  `RemoteOrbitRuntimeExecutor`.
-- Host-shell PHP is forbidden as a steady-state implementation detail.
+- On Docker-first-managed nodes, gateway Laravel/artisan/PDO work MUST go
+  through `RemoteOrbitRuntimeExecutor`.
+- Packaged node-local helper logic that needs host file access and PHP/PDO MUST
+  go through `RemoteLocalExecutor`.
+- Host-shell PHP is forbidden as a steady-state implementation detail outside
+  the host-installed CLI/local-executor artifact.
 - `RemoteShell` is transport, not a workload classification. New call sites
-  must choose `RemoteHostExecutor` or `RemoteOrbitRuntimeExecutor` explicitly.
+  must choose `RemoteHostExecutor`, `RemoteOrbitRuntimeExecutor`, or
+  `RemoteLocalExecutor` explicitly.
 - A host-lane command may control containers, including `docker exec`, but it
   must not execute Orbit PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside
   `orbit-runtime`, but it must not mutate host substrate directly.
+- A local-executor command may read/write node-local helper state with PHP/PDO,
+  but it must validate the gateway-issued operation token before side effects
+  and must not become a public authority path.
 - Legacy fallback paths that run PHP/Composer/Artisan on the host are not valid
   on Docker-first-managed nodes.
 
@@ -133,7 +187,7 @@ inherit the lane of the production code they exercise.
 | `app/Console/Commands/AppExecCommand.php:110,125` | `RemoteHostExecutor` | Inspects and executes inside an app runtime container through Docker. |
 | `app/Console/Commands/AppRegisterCommand.php:90` | `RemoteHostExecutor` | Probes a host app path before gateway registration. |
 | `app/Console/Commands/NodeNewCommand.php:2123` | `RemoteHostExecutor` | Passes host shell to node security baseline installers during provisioning. |
-| `app/Console/Commands/VpnCommandSupport.php:87` | `RemoteOrbitRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded Orbit PHP must run inside `orbit-runtime`, including transitive wg-easy SQLite writes in `app/Services/Vpn/WgEasyVpnBackend.php:298`. |
+| `app/Console/Commands/VpnCommandSupport.php:87` | `RemoteOrbitRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded gateway Laravel/artisan work must run inside `orbit-runtime`. |
 | `app/Console/Commands/WorkspaceExecCommand.php:143,158` | `RemoteHostExecutor` | Inspects and executes inside a workspace runtime container through Docker. |
 | `app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the `git pull --ff-only` stage for host source checkout. |
 | `app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime composer install --no-interaction` stage for Orbit dependencies. |
@@ -152,7 +206,7 @@ inherit the lane of the production code they exercise.
 | `app/Actions/Workspaces/CreateWorkspace.php:113` | `RemoteHostExecutor` | Preflights target node reachability before workspace creation. |
 | `app/Actions/Workspaces/RemoveWorkspace.php:73,87,106` | `RemoteHostExecutor` | Removes process units, runs teardown commands, and removes host worktree paths. |
 | `app/Actions/Workspaces/SetupWorkspace.php:330,342` | `RemoteHostExecutor` | Installs host process artifacts and starts explicit Supervisor residual units. |
-| `app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php:36,70` | `RemoteOrbitRuntimeExecutor` | Current OpenCode/Polyscope lookup scripts use host Python/SQLite; adapter state lookup must move into runtime-packaged logic. |
+| `app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php:36,70` | `RemoteLocalExecutor` | Current OpenCode/Polyscope lookup scripts use host Python/SQLite; adapter state lookup must move into token-gated local executor logic. |
 | `app/Services/Apps/AppRuntimeContainerManager.php:386` | `RemoteHostExecutor` | Creates, inspects, removes, and starts app runtime containers through Docker. |
 | `app/Services/Apps/AppsFixer.php:170` | `RemoteHostExecutor` | Repairs app host/runtime artifacts from gateway intent. |
 | `app/Services/Apps/AppsProbe.php:81,316,456` | `RemoteHostExecutor` | Uses POSIX/Docker host probes for app paths, runtime configs, and runtime containers. |
@@ -202,8 +256,8 @@ inherit the lane of the production code they exercise.
 | `app/Services/Workspaces/EnsureWorkspaceProxyRoute.php:79,115,145,162,174` | `RemoteHostExecutor` | Writes and reads Caddy route artifacts for workspace routes. |
 | `app/Services/Workspaces/OpenCodeWorkspaceDriver.php:109` | `RemoteHostExecutor` | Aligns host git branches for OpenCode workspaces. |
 | `app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php:19,74,91` | `RemoteHostExecutor` | Checks and renames the workspace Git branch in the host workspace path. |
-| `app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php:19,96,99` | `RemoteOrbitRuntimeExecutor` | Mutates Polyscope SQLite adapter state; the current Python/SQLite helper must move to runtime-packaged logic. |
-| `app/Services/Workspaces/PolyscopeWorkspaceDriver.php:143` | `RemoteOrbitRuntimeExecutor` | Current Polyscope config lookup uses host Python/SQLite; adapter state lookup must move into runtime-packaged logic. |
+| `app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php:19,96,99` | `RemoteLocalExecutor` | Mutates Polyscope SQLite adapter state; the current Python/SQLite helper must move to token-gated local executor logic. |
+| `app/Services/Workspaces/PolyscopeWorkspaceDriver.php:143` | `RemoteLocalExecutor` | Current Polyscope config lookup uses host Python/SQLite; adapter state lookup must move into token-gated local executor logic. |
 | `app/Services/Workspaces/WorkspaceRuntimeContainerManager.php:354` | `RemoteHostExecutor` | Creates, inspects, removes, and starts workspace runtime containers through Docker. |
 | `app/Services/Workspaces/WorkspaceSetupStepRunner.php:53` | `RemoteHostExecutor` | Dispatches setup steps; PHP/Composer steps are wrapped into the workspace container. |
 | `app/Services/Workspaces/WorkspacesProbe.php:102` | `RemoteHostExecutor` | Probes workspace host path, user, and filesystem state; current host PHP helper must be rewritten as host-substrate shell. |

@@ -17,6 +17,12 @@ Orbit has three supported test lanes:
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
 control, or app nodes as verification targets.
 
+For the MONO local-executor migration, prepared Docker/Incus E2E is the primary
+verification path. Standing live infrastructure is diagnostic only. Prepared
+topology images provide Orbit-capable hosts, including the host PHP CLI needed
+by the CLI/local-executor artifact, while the current checkout is synced into
+hosts during topology preparation or test setup.
+
 ## In-Memory Pest
 
 Use in-memory Pest tests for ordinary development:
@@ -59,6 +65,11 @@ composer test:e2e:provision
 Use `composer test:e2e:provision` only when topology, installer, image,
 `node:new`, WireGuard provisioning, or other VM setup behavior changes. Ordinary
 command ports should add prepared-topology feature tests instead.
+
+The MONO migration uses domain E2E gates 387, 390, and 394 for already-existing
+command paths: workspace adapter migration, wg-easy support migration, and the
+Docker E2E unblock gate. The SMOKE/E2E gate convention still applies to newly
+ported commands.
 
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
 default). It builds one reusable blank image plus cumulative role templates
@@ -288,17 +299,18 @@ topology kinds use the canonical `operator-*` spelling.
 
 Prepared topology images and templates are branch-agnostic topology baselines.
 They prove OS, users, SSH, Docker, `orbit-runtime`, `orbit-caddy`, service
-containers, trust, routes, and baseline Orbit installation state. Docker-first
-topology images intentionally omit host PHP, host Composer, host Caddy,
-PHP-FPM, and host Supervisor for PHP app processes. They must not be rebuilt
-just to carry feature-branch code for a command port.
+containers, trust, routes, host PHP CLI for the CLI/local-executor artifact,
+and baseline Orbit installation state. Docker-first topology images
+intentionally omit host Composer, host Caddy, PHP-FPM, and host Supervisor for
+PHP app processes. They must not be rebuilt just to carry feature-branch code
+for a command port.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, this means the worker's current worktree is the
 source of truth. The test installs or overlays that checkout into a disposable
 path on the clone and invokes commands through the host `orbit` launcher, which
-executes inside the clone's local `orbit-runtime` container and passes
-`ORBIT_HOST_CWD`. The clone's installed `orbit` CLI remains a
+launches the role-appropriate Orbit artifact and passes `ORBIT_HOST_CWD` when
+local path context is needed. The clone's installed `orbit` CLI remains a
 topology/bootstrap smoke target unless the test is explicitly about installed
 CLI behavior.
 
@@ -359,7 +371,9 @@ Common requirements for every prepared topology:
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
 - Docker Engine/CLI is available to the host launcher and runtime managers;
-- host PHP, host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app
+- host PHP CLI and PDO SQLite are available for the CLI/local-executor
+  artifact;
+- host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app
   processes are absent from Docker-first topology images;
 - Orbit runtime containers use sibling containers through the host Docker
   socket. Docker E2E must not use Docker-in-Docker.

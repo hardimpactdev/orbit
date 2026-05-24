@@ -11,12 +11,12 @@ Control plane:
 
 Client
   -> host orbit launcher
-  -> local orbit-runtime
+  -> CLI/local-executor artifact
   -> HTTPS over WireGuard
   -> gateway orbit-caddy
   -> gateway orbit-runtime
   -> RemoteShell over WireGuard
-  -> node Docker runtime containers
+  -> node execution lane
 
 Public production HTTP:
 
@@ -54,9 +54,9 @@ One hub, one path: there is exactly one place to answer "what should exist?", an
 A client is where you drive Orbit from, usually your Mac or Ubuntu workstation.
 It runs the host `orbit` launcher, presents a WireGuard identity, and
 communicates with the gateway to handle operations. The launcher executes the
-CLI inside the local `orbit-runtime` container and passes local context such as
-`ORBIT_HOST_CWD`. Clients do not write fleet state directly; they call the
-gateway and let the gateway do the work.
+CLI/local-executor artifact from the source checkout and passes local context
+such as `ORBIT_HOST_CWD`. Clients do not write fleet state directly; they call
+the gateway and let the gateway do the work.
 
 ### Gateway node
 
@@ -90,8 +90,10 @@ The other seven are workload roles applied to nodes in the fleet.
 Application roles use the Docker-first runtime baseline. PHP apps and PHP
 workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
 run as Docker process runtime units by default. Host PHP and PHP-FPM are not
-fallbacks; steady-state Orbit PHP/PDO/artisan work on Docker-first-managed
-nodes must enter `orbit-runtime` through the runtime execution lane. See
+app or workspace runtime fallbacks. Gateway Laravel/artisan/PDO work on
+Docker-first-managed nodes must enter `orbit-runtime` through the runtime
+execution lane; packaged node-local helpers that need host file access and
+PHP/PDO use the token-gated local executor lane. See
 [Runtime Execution Lanes](execution-lanes.md).
 
 The `websocket` role is a private workload role for Orbit-managed realtime
@@ -160,12 +162,13 @@ records.
 ### CLI
 
 The CLI is the product surface for humans, AI agents, and CI. The host
-`orbit` executable is a launcher that runs the CLI inside the local
-`orbit-runtime` container; it is not a host PHP entrypoint. The CLI runs on
-clients, on the gateway itself, and on any node carrying workload roles as a
-gateway client. Every command takes the same authority path: gather local input,
-call the gateway typed API over the VPN, and render output. Commands that
-return structured data expose `--json`.
+`orbit` executable is a launcher for the role-appropriate Orbit artifact. On
+clients and workload nodes it runs the CLI/local-executor artifact from the
+source checkout; on the gateway, the gateway API and scheduler still run in
+`orbit-runtime`. The CLI runs on clients, on the gateway itself, and on any
+node carrying workload roles as a gateway client. Public commands gather local
+input, call the gateway typed API over the VPN, and render output. Commands
+that return structured data expose `--json`.
 
 ## Relationships
 
@@ -191,6 +194,18 @@ The SSH primitive the gateway uses to act on other nodes is called
 by [Runtime Execution Lanes](execution-lanes.md). How scripts
 are composed, files uploaded, and sudo scoped lives in
 [tech-stack.md](tech-stack.md#gateway-to-node).
+
+`RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
+helper logic that needs host file access plus PHP/PDO without relying on ad hoc
+`python3` or `sqlite3` snippets. The gateway still owns authority. The
+authority path is:
+
+`CLI caller -> gateway API -> gateway authorization -> operation record -> RemoteShell to node -> token-gated local executor -> result recorded`
+
+Node-local CLI execution is never an authority bypass. Internal local executor
+commands are hidden from normal CLI help, require a gateway-issued operation
+token, and must fail before side effects when invoked directly without a valid
+token.
 
 ### Authentication and authorization
 
@@ -230,7 +245,9 @@ Self-targeting commands flow through the gateway like any other command. When a 
 
 `N → gateway (HTTPS over WireGuard) → gateway authorizes the self-grant → gateway SSHs back to N via RemoteShell and applies`
 
-Node-side state is never written by the local CLI. The gateway is the only writer.
+Node-side state is never written by the public local CLI. The gateway is the
+only authority, even when the gateway dispatches token-gated local executor
+work back to the same node.
 
 This is why commands like `workspace:setup` work when run from inside a workspace path on an `app-development` or `app-production` node: the node's self-grant includes the necessary workspace permissions. It is not an exception — it is the self-grant model.
 
