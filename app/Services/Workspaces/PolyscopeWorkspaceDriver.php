@@ -4,20 +4,39 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\WorkspaceSourceDriver;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use JsonException;
 use Polyscope\Laravel\Polyscope;
 use Throwable;
 
 final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
 {
+    private const string CONFIG_LOOKUP_UNPARSEABLE = 'Polyscope config lookup returned unparseable output.';
+
+    private const string CONFIG_LOOKUP_FAILED = 'Polyscope configuration lookup failed.';
+
+    private const array SAFE_CONFIG_LOOKUP_ERROR_CODES = [
+        'adapter_database_missing',
+        'adapter_database_query_failed',
+        'adapter_database_unreadable',
+        'adapter_settings_invalid',
+        'adapter_settings_missing',
+        'adapter_settings_unreadable',
+        'home_directory_unavailable',
+        'invalid_token',
+        'missing_token',
+        'validation_failed',
+    ];
+
     public function __construct(
-        private RemoteShell $remoteShell,
         private PolyscopeWorkspaceBranchAligner $branchAligner,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
@@ -140,94 +159,116 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
      */
     private function readRemoteConfig(App $app, Node $node): array
     {
-        $result = $this->remoteShell->run($node, $this->remoteConfigScript(), [
-            'metadata' => ['ORBIT_APP_PATH' => $app->path],
-            'timeout' => 30,
-        ]);
+        $result = $this->localExecutor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: [],
+            commandOptions: [
+                'adapter' => 'polyscope',
+                'lookup' => 'config',
+                'app-path' => $app->path,
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+            ],
+        );
 
-        if (! $result->successful()) {
-            throw new WorkspaceCreateFailed(
-                'workspace.agent_ide_not_configured',
-                'Polyscope configuration could not be read from the app node.',
-                [
-                    'adapter' => 'polyscope',
-                    'node' => $node->name,
-                    'app' => $app->name,
-                    'reason' => trim($result->stderr) ?: trim($result->stdout),
-                ],
-            );
-        }
-
-        $decoded = json_decode(trim($result->stdout), true);
-
-        if (! is_array($decoded)) {
-            throw new WorkspaceCreateFailed(
-                'workspace.agent_ide_not_configured',
-                'Polyscope configuration returned by the app node was invalid.',
-                ['adapter' => 'polyscope', 'node' => $node->name, 'app' => $app->name],
-            );
-        }
+        $payload = $this->configLookupPayload($result, $app, $node);
 
         return [
-            'api_token' => $this->stringValue($decoded['api_token'] ?? null),
-            'server_id' => $this->stringValue($decoded['server_id'] ?? null),
-            'repository_id' => $this->stringValue($decoded['repository_id'] ?? null),
-            'base_url' => $this->stringValue($decoded['base_url'] ?? null),
+            'api_token' => $this->stringValue($payload['api_token'] ?? null),
+            'server_id' => $this->stringValue($payload['server_id'] ?? null),
+            'repository_id' => $this->stringValue($payload['repository_id'] ?? null),
+            'base_url' => $this->stringValue($payload['base_url'] ?? null),
         ];
     }
 
-    private function remoteConfigScript(): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function configLookupPayload(RemoteShellResult $result, App $app, Node $node): array
     {
-        return <<<'SH'
-python3 - <<'PY'
-import json
-import os
-import pathlib
-import sqlite3
-import sys
+        $envelope = $this->configLookupEnvelope($result, $app, $node);
 
-app_path = os.environ.get("ORBIT_APP_PATH", "").rstrip("/")
-home = pathlib.Path.home()
-settings_path = home / ".polyscope" / "settings.json"
-database_path = home / ".polyscope" / "polyscope.db"
+        if (($envelope['ok'] ?? null) !== true) {
+            throw $this->configLookupFailure($envelope, $app, $node);
+        }
 
-if not app_path:
-    print("ORBIT_APP_PATH is missing", file=sys.stderr)
-    sys.exit(2)
+        if (! is_array($envelope['data'] ?? null)) {
+            throw $this->unparseableConfigLookup($app, $node);
+        }
 
-if not settings_path.exists():
-    print(f"Polyscope settings file is missing: {settings_path}", file=sys.stderr)
-    sys.exit(2)
+        return $envelope['data'];
+    }
 
-if not database_path.exists():
-    print(f"Polyscope database is missing: {database_path}", file=sys.stderr)
-    sys.exit(2)
+    /**
+     * @return array<string, mixed>
+     */
+    private function configLookupEnvelope(RemoteShellResult $result, App $app, Node $node): array
+    {
+        try {
+            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw $this->unparseableConfigLookup($app, $node);
+        }
 
-settings = json.loads(settings_path.read_text())
-api_token = settings.get("authToken")
-server_id = settings.get("serverId")
-base_url = settings.get("backendUrl") or settings.get("backend")
+        if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
+            throw $this->unparseableConfigLookup($app, $node);
+        }
 
-connection = sqlite3.connect(database_path)
-try:
-    rows = connection.execute("select id, path from repositories").fetchall()
-finally:
-    connection.close()
+        return $decoded;
+    }
 
-repository_id = None
-for row_id, row_path in rows:
-    if isinstance(row_path, str) and row_path.rstrip("/") == app_path:
-        repository_id = row_id
-        break
+    /**
+     * @param  array<string, mixed>  $envelope
+     */
+    private function configLookupFailure(array $envelope, App $app, Node $node): WorkspaceCreateFailed
+    {
+        $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
+        $meta = [
+            'adapter' => 'polyscope',
+            'node' => $node->name,
+            'app' => $app->name,
+            'reason' => self::CONFIG_LOOKUP_FAILED,
+        ];
+        $code = $this->safeConfigLookupErrorCode($error['code'] ?? null);
 
-print(json.dumps({
-    "api_token": api_token,
-    "server_id": server_id,
-    "repository_id": repository_id,
-    "base_url": base_url,
-}))
-PY
-SH;
+        if ($code !== null) {
+            $meta['adapter_error_code'] = $code;
+        }
+
+        return new WorkspaceCreateFailed(
+            'workspace.agent_ide_not_configured',
+            'Polyscope configuration could not be read from the app node.',
+            $meta,
+        );
+    }
+
+    private function safeConfigLookupErrorCode(mixed $value): ?string
+    {
+        $code = $this->stringValue($value);
+
+        if ($code === null) {
+            return null;
+        }
+
+        return in_array($code, self::SAFE_CONFIG_LOOKUP_ERROR_CODES, true) ? $code : null;
+    }
+
+    private function unparseableConfigLookup(App $app, Node $node): WorkspaceCreateFailed
+    {
+        return new WorkspaceCreateFailed(
+            'workspace.agent_ide_not_configured',
+            self::CONFIG_LOOKUP_UNPARSEABLE,
+            [
+                'adapter' => 'polyscope',
+                'node' => $node->name,
+                'app' => $app->name,
+                'reason' => self::CONFIG_LOOKUP_UNPARSEABLE,
+            ],
+        );
     }
 
     private function stringValue(mixed $value): ?string

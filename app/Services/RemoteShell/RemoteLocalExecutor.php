@@ -25,6 +25,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
 
     private const string TRUNCATED_SUFFIX = '[truncated]';
 
+    private const string SUPPRESSED_OUTPUT_SUMMARY = '<suppressed>';
+
     private const string START_UNSUPPORTED_MESSAGE = 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See docs/execution-lanes.md.';
 
     public function __construct(
@@ -42,6 +44,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
      * }  $options
      */
     #[\Override]
@@ -66,6 +70,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
      * }  $transportOptions
      */
     public function runInternal(
@@ -97,7 +103,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             $result = $this->transport->run(
                 node: $node,
                 script: $dispatch['script'],
-                options: $transportOptions,
+                options: $this->transportDispatchOptions($transportOptions),
             );
         } catch (RemoteShellFailed $exception) {
             $sanitizedResult = $this->sanitizedResult($exception->result, $dispatch['operationToken']);
@@ -108,6 +114,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 operationId: $operationId,
                 result: $sanitizedResult,
                 operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
             );
 
             throw new RemoteShellFailed(
@@ -122,12 +129,17 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 operationId: $operationId,
                 throwable: $throwable,
                 operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
             );
 
-            $redactedMessage = $this->redactOperationToken($throwable->getMessage(), $dispatch['operationToken']);
+            $redactedMessage = $this->outputSummary(
+                output: $throwable->getMessage(),
+                operationToken: $dispatch['operationToken'],
+                suppress: $this->shouldSuppressExceptionMessage($transportOptions),
+            );
 
             throw new RuntimeException(
-                message: "Remote local executor transport failed: {$this->truncate($redactedMessage)}",
+                message: "Remote local executor transport failed: {$redactedMessage}",
                 code: (int) $throwable->getCode(),
             );
         }
@@ -138,6 +150,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             operationId: $operationId,
             result: $result,
             operationToken: $dispatch['operationToken'],
+            transportOptions: $transportOptions,
         );
 
         return $result;
@@ -151,6 +164,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
      * }  $options
      */
     #[\Override]
@@ -169,6 +184,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
      * }  $transportOptions
      */
     public function startInternal(
@@ -263,6 +280,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         string $operationId,
         RemoteShellResult $result,
         string $operationToken,
+        array $transportOptions,
     ): void {
         $status = $result->successful() ? 'succeeded' : 'failed';
 
@@ -279,8 +297,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'target_node_name' => (string) $node->name,
                     'command' => $commandName,
                     'exit_code' => $result->exitCode,
-                    'stdout_summary' => $this->outputSummary($result->stdout, $operationToken),
-                    'stderr_summary' => $this->outputSummary($result->stderr, $operationToken),
+                    'stdout_summary' => $this->outputSummary($result->stdout, $operationToken, (bool) ($transportOptions['redact_stdout'] ?? false)),
+                    'stderr_summary' => $this->outputSummary($result->stderr, $operationToken, (bool) ($transportOptions['redact_stderr'] ?? false)),
                     'duration_ms' => $result->durationMs,
                 ],
             ),
@@ -289,12 +307,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         );
     }
 
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     * }  $transportOptions
+     */
     private function logTransportException(
         Node $node,
         string $commandName,
         string $operationId,
         Throwable $throwable,
         string $operationToken,
+        array $transportOptions,
     ): void {
         $this->activityLogger->log(
             new LocalExecutorActivity(
@@ -312,7 +343,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'stdout_summary' => '',
                     'stderr_summary' => '',
                     'exception_class' => $throwable::class,
-                    'exception_message' => $this->outputSummary($throwable->getMessage(), $operationToken),
+                    'exception_message' => $this->outputSummary($throwable->getMessage(), $operationToken, $this->shouldSuppressExceptionMessage($transportOptions)),
                 ],
             ),
             channel: 'local_executor',
@@ -330,9 +361,31 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         );
     }
 
-    private function outputSummary(string $output, string $operationToken): string
+    private function outputSummary(string $output, string $operationToken, bool $suppress = false): string
     {
+        if ($suppress) {
+            return self::SUPPRESSED_OUTPUT_SUMMARY;
+        }
+
         return $this->truncate($this->redactOperationToken($output, $operationToken));
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     * }  $transportOptions
+     */
+    private function shouldSuppressExceptionMessage(array $transportOptions): bool
+    {
+        return (bool) ($transportOptions['redact_stdout'] ?? false)
+            || (bool) ($transportOptions['redact_stderr'] ?? false);
     }
 
     private function redactOperationToken(string $value, string $operationToken): string
@@ -384,6 +437,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
      * }  $transportOptions
      */
     private function operationId(array $transportOptions): string
@@ -396,6 +451,33 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         }
 
         return (string) Str::uuid();
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     * }  $transportOptions
+     * @return array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     * }
+     */
+    private function transportDispatchOptions(array $transportOptions): array
+    {
+        unset($transportOptions['redact_stdout'], $transportOptions['redact_stderr']);
+
+        return $transportOptions;
     }
 }
 

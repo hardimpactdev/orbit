@@ -77,7 +77,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function containerName(Workspace $workspace): string
     {
         $workspace->loadMissing('app');
-        $appSlug = $workspace->app?->name ?? 'app';
+        $appSlug = $workspace->app->name;
 
         return "orbit-ws-{$appSlug}-{$workspace->name}";
     }
@@ -90,7 +90,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function runtimeConfigPath(Workspace $workspace): string
     {
         $workspace->loadMissing('app');
-        $appSlug = $workspace->app?->name ?? 'app';
+        $appSlug = $workspace->app->name;
 
         return "/etc/orbit/workspaces/{$appSlug}-{$workspace->name}.ini";
     }
