@@ -1,0 +1,12 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Core\Enums;
+
+enum ExecutionLane: string
+{
+    case Host = 'host';
+    case OrbitRuntime = 'orbit-runtime';
+    case LocalExecutor = 'local-executor';
+}
