@@ -83,6 +83,67 @@ it('reads Polyscope config through the local executor lookup command with stdout
         ->and(json_encode($properties, JSON_THROW_ON_ERROR))->not->toContain('poly-token-secret');
 });
 
+it('does not leak Polyscope api tokens from config lookup output into workspace exceptions', function (Closure $resultFactory, array $expectedMeta): void {
+    $secret = 'poly-token-secret-round-2';
+    $node = Node::factory()->create([
+        'name' => 'app-dev',
+        'role' => 'app',
+        'agent_ide_config' => null,
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/srv/docs',
+        'agent_ide_config' => null,
+    ]);
+    $transport = new PolyscopeWorkspaceDriverTransport($resultFactory());
+    $driver = new PolyscopeWorkspaceDriver(
+        branchAligner: new PolyscopeWorkspaceBranchAligner(new PolyscopeWorkspaceDriverUnusedShell),
+        localExecutor: polyscopeWorkspaceDriverExecutor($transport),
+    );
+
+    try {
+        $driver->create($app, $node, 'feature-docs', 'main');
+
+        $this->fail('Expected Polyscope workspace creation to fail.');
+    } catch (WorkspaceCreateFailed $exception) {
+        expect($exception->getMessage())->not->toContain($secret)
+            ->and(polyscopeWorkspaceDriverExceptionBlob($exception))->not->toContain($secret)
+            ->and($exception->meta)->toMatchArray($expectedMeta);
+    }
+})->with([
+    'malformed output' => [
+        fn (): RemoteShellResult => new RemoteShellResult(
+            exitCode: 1,
+            stdout: 'not-json api_token=poly-token-secret-round-2',
+            stderr: 'stderr api_token=poly-token-secret-round-2',
+            durationMs: 2,
+        ),
+        ['reason' => 'Polyscope config lookup returned unparseable output.'],
+    ],
+    'non-success envelope' => [
+        fn (): RemoteShellResult => new RemoteShellResult(
+            exitCode: 1,
+            stdout: json_encode([
+                'ok' => false,
+                'error' => [
+                    'code' => 'adapter_database_missing',
+                    'message' => 'Workspace adapter database does not exist.',
+                ],
+                'meta' => [
+                    'api_token' => 'poly-token-secret-round-2',
+                ],
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stderr: 'stderr api_token=poly-token-secret-round-2',
+            durationMs: 2,
+        ),
+        [
+            'adapter_error_code' => 'adapter_database_missing',
+            'reason' => 'Workspace adapter database does not exist.',
+        ],
+    ],
+]);
+
 function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $transport): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
@@ -96,6 +157,15 @@ function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $tra
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
     );
+}
+
+function polyscopeWorkspaceDriverExceptionBlob(WorkspaceCreateFailed $exception): string
+{
+    return json_encode([
+        'message' => $exception->getMessage(),
+        'error_code' => $exception->errorCode,
+        'meta' => $exception->meta,
+    ], JSON_THROW_ON_ERROR);
 }
 
 /**

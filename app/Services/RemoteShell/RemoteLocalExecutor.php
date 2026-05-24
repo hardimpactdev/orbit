@@ -129,12 +129,17 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 operationId: $operationId,
                 throwable: $throwable,
                 operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
             );
 
-            $redactedMessage = $this->redactOperationToken($throwable->getMessage(), $dispatch['operationToken']);
+            $redactedMessage = $this->outputSummary(
+                output: $throwable->getMessage(),
+                operationToken: $dispatch['operationToken'],
+                suppress: $this->shouldSuppressExceptionMessage($transportOptions),
+            );
 
             throw new RuntimeException(
-                message: "Remote local executor transport failed: {$this->truncate($redactedMessage)}",
+                message: "Remote local executor transport failed: {$redactedMessage}",
                 code: (int) $throwable->getCode(),
             );
         }
@@ -302,12 +307,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         );
     }
 
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     * }  $transportOptions
+     */
     private function logTransportException(
         Node $node,
         string $commandName,
         string $operationId,
         Throwable $throwable,
         string $operationToken,
+        array $transportOptions,
     ): void {
         $this->activityLogger->log(
             new LocalExecutorActivity(
@@ -325,7 +343,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'stdout_summary' => '',
                     'stderr_summary' => '',
                     'exception_class' => $throwable::class,
-                    'exception_message' => $this->outputSummary($throwable->getMessage(), $operationToken),
+                    'exception_message' => $this->outputSummary($throwable->getMessage(), $operationToken, $this->shouldSuppressExceptionMessage($transportOptions)),
                 ],
             ),
             channel: 'local_executor',
@@ -350,6 +368,24 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         }
 
         return $this->truncate($this->redactOperationToken($output, $operationToken));
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     * }  $transportOptions
+     */
+    private function shouldSuppressExceptionMessage(array $transportOptions): bool
+    {
+        return (bool) ($transportOptions['redact_stdout'] ?? false)
+            || (bool) ($transportOptions['redact_stderr'] ?? false);
     }
 
     private function redactOperationToken(string $value, string $operationToken): string

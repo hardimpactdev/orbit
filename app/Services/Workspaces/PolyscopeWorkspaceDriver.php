@@ -17,6 +17,8 @@ use Throwable;
 
 final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
 {
+    private const string CONFIG_LOOKUP_UNPARSEABLE = 'Polyscope config lookup returned unparseable output.';
+
     public function __construct(
         private PolyscopeWorkspaceBranchAligner $branchAligner,
         private RemoteLocalExecutor $localExecutor,
@@ -158,20 +160,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
             ],
         );
 
-        if (! $result->successful()) {
-            throw new WorkspaceCreateFailed(
-                'workspace.agent_ide_not_configured',
-                'Polyscope configuration could not be read from the app node.',
-                [
-                    'adapter' => 'polyscope',
-                    'node' => $node->name,
-                    'app' => $app->name,
-                    'reason' => $this->failureReason($result),
-                ],
-            );
-        }
-
-        $payload = $this->successPayload($result, $app, $node);
+        $payload = $this->configLookupPayload($result, $app, $node);
 
         return [
             'api_token' => $this->stringValue($payload['api_token'] ?? null),
@@ -184,44 +173,71 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     /**
      * @return array<string, mixed>
      */
-    private function successPayload(RemoteShellResult $result, App $app, Node $node): array
+    private function configLookupPayload(RemoteShellResult $result, App $app, Node $node): array
     {
-        try {
-            $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            throw new WorkspaceCreateFailed(
-                'workspace.agent_ide_not_configured',
-                'Polyscope configuration returned by the app node was invalid.',
-                ['adapter' => 'polyscope', 'node' => $node->name, 'app' => $app->name],
-            );
+        $envelope = $this->configLookupEnvelope($result, $app, $node);
+
+        if (($envelope['ok'] ?? null) !== true) {
+            throw $this->configLookupFailure($envelope, $app, $node);
         }
 
-        if (! is_array($decoded) || ($decoded['ok'] ?? null) !== true || ! is_array($decoded['data'] ?? null)) {
-            throw new WorkspaceCreateFailed(
-                'workspace.agent_ide_not_configured',
-                'Polyscope configuration returned by the app node was invalid.',
-                ['adapter' => 'polyscope', 'node' => $node->name, 'app' => $app->name],
-            );
+        if (! is_array($envelope['data'] ?? null)) {
+            throw $this->unparseableConfigLookup($app, $node);
         }
 
-        return $decoded['data'];
+        return $envelope['data'];
     }
 
-    private function failureReason(RemoteShellResult $result): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function configLookupEnvelope(RemoteShellResult $result, App $app, Node $node): array
     {
         try {
             $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            return trim($result->stderr) ?: trim($result->stdout);
+            throw $this->unparseableConfigLookup($app, $node);
         }
 
-        $message = is_array($decoded)
-            && is_array($decoded['error'] ?? null)
-            && is_string($decoded['error']['message'] ?? null)
-            ? trim($decoded['error']['message'])
-            : '';
+        if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
+            throw $this->unparseableConfigLookup($app, $node);
+        }
 
-        return $message !== '' ? $message : (trim($result->stderr) ?: trim($result->stdout));
+        return $decoded;
+    }
+
+    /**
+     * @param  array<string, mixed>  $envelope
+     */
+    private function configLookupFailure(array $envelope, App $app, Node $node): WorkspaceCreateFailed
+    {
+        $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
+
+        return new WorkspaceCreateFailed(
+            'workspace.agent_ide_not_configured',
+            'Polyscope configuration could not be read from the app node.',
+            [
+                'adapter' => 'polyscope',
+                'node' => $node->name,
+                'app' => $app->name,
+                'adapter_error_code' => $this->stringValue($error['code'] ?? null) ?? 'adapter_lookup_failed',
+                'reason' => $this->stringValue($error['message'] ?? null) ?? 'Workspace adapter lookup failed.',
+            ],
+        );
+    }
+
+    private function unparseableConfigLookup(App $app, Node $node): WorkspaceCreateFailed
+    {
+        return new WorkspaceCreateFailed(
+            'workspace.agent_ide_not_configured',
+            self::CONFIG_LOOKUP_UNPARSEABLE,
+            [
+                'adapter' => 'polyscope',
+                'node' => $node->name,
+                'app' => $app->name,
+                'reason' => self::CONFIG_LOOKUP_UNPARSEABLE,
+            ],
+        );
     }
 
     private function stringValue(mixed $value): ?string

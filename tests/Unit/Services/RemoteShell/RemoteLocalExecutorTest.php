@@ -553,7 +553,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and(str_ends_with($completedProperties['stderr_summary'], '[truncated]'))->toBeTrue();
     });
 
-    it('suppresses stdout and stderr summaries when transport options request output redaction', function (): void {
+    it('suppresses requested output summaries and strips redaction flags before dispatch :dataset', function (array $transportOptions, string $expectedStdoutSummary, string $expectedStderrSummary): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             new RemoteShellResult(
                 exitCode: 0,
@@ -573,18 +573,64 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'lookup' => 'config',
                 'app-path' => '/srv/docs',
             ],
-            transportOptions: [
-                'redact_stdout' => true,
-                'redact_stderr' => true,
-            ],
+            transportOptions: $transportOptions,
         );
 
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($completedProperties['stdout_summary'])->toBe('<suppressed>')
-            ->and($completedProperties['stderr_summary'])->toBe('<suppressed>')
-            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('poly-token-secret')
-            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('stderr secret');
+        expect($transport->calls[0]['options'])->not->toHaveKeys(['redact_stdout', 'redact_stderr'])
+            ->and($completedProperties['stdout_summary'])->toBe($expectedStdoutSummary)
+            ->and($completedProperties['stderr_summary'])->toBe($expectedStderrSummary);
+    })->with([
+        'no redaction flags' => [
+            ['timeout' => 30],
+            '{"api_token":"poly-token-secret"}',
+            'stderr secret',
+        ],
+        'stdout only' => [
+            ['timeout' => 30, 'redact_stdout' => true],
+            '<suppressed>',
+            'stderr secret',
+        ],
+        'stderr only' => [
+            ['timeout' => 30, 'redact_stderr' => true],
+            '{"api_token":"poly-token-secret"}',
+            '<suppressed>',
+        ],
+        'stdout and stderr' => [
+            ['timeout' => 30, 'redact_stdout' => true, 'redact_stderr' => true],
+            '<suppressed>',
+            '<suppressed>',
+        ],
+    ]);
+
+    it('suppresses generic transport exception messages when output redaction is requested', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException('transport leaked api_token=poly-token-secret'),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        try {
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:workspace-adapter:lookup',
+                arguments: [],
+                commandOptions: [
+                    'adapter' => 'polyscope',
+                    'lookup' => 'config',
+                    'app-path' => '/srv/docs',
+                ],
+                transportOptions: ['redact_stdout' => true],
+            );
+
+            $this->fail('Expected the local executor transport to throw.');
+        } catch (RuntimeException $exception) {
+            $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+
+            expect($exception->getMessage())->toBe('Remote local executor transport failed: <suppressed>')
+                ->and($completedProperties['exception_message'])->toBe('<suppressed>')
+                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('poly-token-secret');
+        }
     });
 
     it('keeps default executor bindings while making the local executor explicitly resolvable', function (): void {
