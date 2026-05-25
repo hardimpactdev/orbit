@@ -68,13 +68,50 @@ describe('internal wg-easy state command', function (): void {
         expect($exitCode)->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
                 'invalid_action',
-                'wg-easy state action must be one of: update-user, update-general, ensure-writable.',
+                'wg-easy state action must be one of: update-user, update-general, ensure-writable, upsert-peer, delete-peer, update-interface, update-user-password, update-session-password.',
                 [
                     'action' => 'evil',
-                    'allowed' => ['update-user', 'update-general', 'ensure-writable'],
+                    'allowed' => allowedWgEasyStateActions(),
                 ],
             ));
     });
+
+    it('rejects missing operation tokens for new actions before resolving the database path', function (array $parameters): void {
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge($parameters, [
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'missing_token',
+                'Operation token is required.',
+            ));
+    })->with([
+        'upsert-peer' => [validWgEasyUpsertPeerOptions()],
+        'delete-peer' => [validWgEasyDeletePeerOptions()],
+        'update-interface' => [validWgEasyUpdateInterfaceOptions()],
+        'update-user-password' => [validWgEasyPasswordOptions('update-user-password')],
+        'update-session-password' => [validWgEasyPasswordOptions('update-session-password')],
+    ]);
+
+    it('rejects invalid operation tokens for new actions before opening the database', function (array $parameters): void {
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge($parameters, [
+            '--operation-token' => 'not-a-token',
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'invalid_token',
+                'Operation token is invalid.',
+            ));
+    })->with([
+        'upsert-peer' => [validWgEasyUpsertPeerOptions()],
+        'delete-peer' => [validWgEasyDeletePeerOptions()],
+        'update-interface' => [validWgEasyUpdateInterfaceOptions()],
+        'update-user-password' => [validWgEasyPasswordOptions('update-user-password')],
+        'update-session-password' => [validWgEasyPasswordOptions('update-session-password')],
+    ]);
 
     it('updates user config values with parameterized statements', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
@@ -129,6 +166,176 @@ describe('internal wg-easy state command', function (): void {
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
             ->and($row['setup_step'])->toBe(0);
+    });
+
+    it('upserts a peer with parameterized statements', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        $pdo = createWgEasyPeerDatabase($databasePath);
+        insertWgEasyPeer($pdo, [
+            'name' => 'old-gateway',
+            'ipv4_address' => '10.6.0.2',
+            'ipv6_address' => 'fdcc:ad94:bacf:61a4::cafe:2',
+            'private_key' => 'old-private-key',
+            'public_key' => 'old-public-key',
+            'pre_shared_key' => 'old-pre-shared-key',
+        ]);
+
+        $name = "gateway', enabled = 0 --";
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'upsert-peer',
+            '--name' => $name,
+            '--ipv4' => '10.6.0.2',
+            '--ipv6' => 'fdcc:ad94:bacf:61a4::cafe:2',
+            '--private-key' => 'gateway-private-key',
+            '--public-key' => 'gateway-public-key',
+            '--pre-shared-key' => 'gateway-pre-shared-key',
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'clients_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'upsert-peer',
+                    'upserted' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and(countWgEasyStateRows($databasePath, 'clients_table'))->toBe(1)
+            ->and($row['name'])->toBe($name)
+            ->and($row['ipv4_address'])->toBe('10.6.0.2')
+            ->and($row['ipv6_address'])->toBe('fdcc:ad94:bacf:61a4::cafe:2')
+            ->and($row['private_key'])->toBe('gateway-private-key')
+            ->and($row['public_key'])->toBe('gateway-public-key')
+            ->and($row['pre_shared_key'])->toBe('gateway-pre-shared-key')
+            ->and($row['allowed_ips'])->toBe('["0.0.0.0/0", "::/0"]')
+            ->and($row['server_allowed_ips'])->toBe('["10.6.0.2/32"]')
+            ->and($row['persistent_keepalive'])->toBe(25)
+            ->and($row['mtu'])->toBe(1420)
+            ->and($row['dns'])->toBe('["10.6.0.1"]')
+            ->and($row['enabled'])->toBe(1);
+    });
+
+    it('deletes a peer by one whitelisted identity with a parameterized statement', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        $pdo = createWgEasyPeerDatabase($databasePath);
+        insertWgEasyPeer($pdo, [
+            'name' => 'gateway',
+            'ipv4_address' => '10.6.0.2',
+            'ipv6_address' => 'fdcc:ad94:bacf:61a4::cafe:2',
+            'private_key' => 'gateway-private-key',
+            'public_key' => "gateway-public-key' OR 1 = 1 --",
+            'pre_shared_key' => 'gateway-pre-shared-key',
+        ]);
+        insertWgEasyPeer($pdo, [
+            'name' => 'control',
+            'ipv4_address' => '10.6.0.3',
+            'ipv6_address' => 'fdcc:ad94:bacf:61a4::cafe:3',
+            'private_key' => 'control-private-key',
+            'public_key' => 'control-public-key',
+            'pre_shared_key' => 'control-pre-shared-key',
+        ]);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'delete-peer',
+            '--public-key' => "gateway-public-key' OR 1 = 1 --",
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $remaining = readWgEasyStateRow($databasePath, 'clients_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'delete-peer',
+                    'deleted' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and(countWgEasyStateRows($databasePath, 'clients_table'))->toBe(1)
+            ->and($remaining['name'])->toBe('control');
+    });
+
+    it('updates the wg0 interface cidr with a parameterized statement', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyInterfaceDatabase($databasePath);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-interface',
+            '--interface' => 'wg0',
+            '--ipv4-cidr' => '10.6.0.0/24',
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'interfaces_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-interface',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($row['name'])->toBe('wg0')
+            ->and($row['ipv4_cidr'])->toBe('10.6.0.0/24');
+    });
+
+    it('updates the wg-easy user password hash without printing the value', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUsersDatabase($databasePath);
+        $passwordHash = validWgEasyPasswordHash();
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-user-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'users_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-user-password',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($output)->not->toContain($passwordHash)
+            ->and($row['password'])->toBe($passwordHash);
+    });
+
+    it('updates the wg-easy session password hash without printing the value', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasySessionPasswordDatabase($databasePath);
+        $passwordHash = validWgEasyPasswordHash();
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-session-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'general_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-session-password',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($output)->not->toContain($passwordHash)
+            ->and($row['session_password'])->toBe($passwordHash);
     });
 
     it('returns success when the database file is writable', function (): void {
@@ -225,6 +432,195 @@ describe('internal wg-easy state command', function (): void {
                 'The --setup-step option is invalid.',
                 ['field' => 'setup-step'],
             ));
+    });
+
+    it('rejects invalid new action options before opening the database', function (array $parameters, string $message, array $meta): void {
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge($parameters, [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                $message,
+                $meta,
+            ));
+    })->with([
+        'upsert-peer missing public key' => [
+            array_diff_key(validWgEasyUpsertPeerOptions(), ['--public-key' => true]),
+            'The --public-key option is invalid.',
+            ['field' => 'public-key'],
+        ],
+        'delete-peer multiple identities' => [
+            array_merge(validWgEasyDeletePeerOptions(), ['--public-key' => 'gateway-public-key']),
+            'Exactly one peer identity option is required.',
+            ['field' => 'peer-identity', 'allowed' => ['name', 'public-key', 'ipv4']],
+        ],
+        'update-interface rejects other interface names' => [
+            array_merge(validWgEasyUpdateInterfaceOptions(), ['--interface' => 'wg1']),
+            'The --interface option is invalid.',
+            ['field' => 'interface'],
+        ],
+        'update-user-password rejects raw password values' => [
+            [
+                '--action' => 'update-user-password',
+                '--password-hash' => 'raw-password',
+            ],
+            'The --password-hash option is invalid.',
+            ['field' => 'password-hash'],
+        ],
+        'update-session-password rejects raw password values' => [
+            [
+                '--action' => 'update-session-password',
+                '--password-hash' => 'raw-password',
+            ],
+            'The --password-hash option is invalid.',
+            ['field' => 'password-hash'],
+        ],
+    ]);
+
+    it('returns database_missing for new actions when the database file is absent', function (array $parameters): void {
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge($parameters, [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'database_missing',
+                'wg-easy database does not exist.',
+            ));
+    })->with([
+        'upsert-peer' => [validWgEasyUpsertPeerOptions()],
+        'delete-peer' => [validWgEasyDeletePeerOptions()],
+        'update-interface' => [validWgEasyUpdateInterfaceOptions()],
+        'update-user-password' => [validWgEasyPasswordOptions('update-user-password')],
+        'update-session-password' => [validWgEasyPasswordOptions('update-session-password')],
+    ]);
+
+    it('returns interface_not_found when upserting a peer without the pinned wg0 interface row', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyPeerDatabase($databasePath, insertInterface: false);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyUpsertPeerOptions(), [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'interface_not_found',
+                'wg-easy interface was not found.',
+                ['interface' => 'wg0'],
+            ));
+    });
+
+    it('returns peer_not_found when deleting a missing peer identity', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyPeerDatabase($databasePath);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyDeletePeerOptions(), [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'peer_not_found',
+                'wg-easy peer was not found.',
+            ));
+    });
+
+    it('returns interface_not_found when updating a missing wg0 interface row', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyInterfaceDatabase($databasePath, insertInterface: false);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyUpdateInterfaceOptions(), [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'interface_not_found',
+                'wg-easy interface was not found.',
+                ['interface' => 'wg0'],
+            ));
+    });
+
+    it('returns user_not_found when updating a missing user password row', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUsersDatabase($databasePath, insertUser: false);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyPasswordOptions('update-user-password'), [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'user_not_found',
+                'wg-easy user was not found.',
+            ));
+    });
+
+    it('returns session_password_not_found when updating a missing session password row', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasySessionPasswordDatabase($databasePath, insertSettings: false);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyPasswordOptions('update-session-password'), [
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]));
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+                'session_password_not_found',
+                'wg-easy session password row was not found.',
+            ));
+    });
+
+    it('does not leak user password hash values to stdout, stderr, json, or logs', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUsersDatabase($databasePath);
+        $passwordHash = password_hash('user-password-'.bin2hex(random_bytes(8)), PASSWORD_BCRYPT);
+
+        $process = runWgEasyStateCommandProcess([
+            '--action' => 'update-user-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ], [
+            'ORBIT_WG_EASY_DB_PATH' => $databasePath,
+        ]);
+
+        expect($process->getExitCode())->toBe(0)
+            ->and($process->getOutput())->not->toContain($passwordHash)
+            ->and($process->getErrorOutput())->not->toContain($passwordHash)
+            ->and(json_decode(trim($process->getOutput()), associative: true, flags: JSON_THROW_ON_ERROR))->not->toContain($passwordHash)
+            ->and(wgEasyStateLogContents())->not->toContain($passwordHash);
+    });
+
+    it('does not leak session password hash values to stdout, stderr, json, or logs', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasySessionPasswordDatabase($databasePath);
+        $passwordHash = password_hash('session-password-'.bin2hex(random_bytes(8)), PASSWORD_BCRYPT);
+
+        $process = runWgEasyStateCommandProcess([
+            '--action' => 'update-session-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ], [
+            'ORBIT_WG_EASY_DB_PATH' => $databasePath,
+        ]);
+
+        expect($process->getExitCode())->toBe(0)
+            ->and($process->getOutput())->not->toContain($passwordHash)
+            ->and($process->getErrorOutput())->not->toContain($passwordHash)
+            ->and(json_decode(trim($process->getOutput()), associative: true, flags: JSON_THROW_ON_ERROR))->not->toContain($passwordHash)
+            ->and(wgEasyStateLogContents())->not->toContain($passwordHash);
     });
 
     it('rejects host values with null bytes before writing to the database', function (): void {
@@ -378,6 +774,201 @@ function createWgEasyGeneralDatabase(string $path): void
 }
 
 /**
+ * @return list<string>
+ */
+function allowedWgEasyStateActions(): array
+{
+    return [
+        'update-user',
+        'update-general',
+        'ensure-writable',
+        'upsert-peer',
+        'delete-peer',
+        'update-interface',
+        'update-user-password',
+        'update-session-password',
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function validWgEasyUpsertPeerOptions(): array
+{
+    return [
+        '--action' => 'upsert-peer',
+        '--name' => 'gateway',
+        '--ipv4' => '10.6.0.2',
+        '--ipv6' => 'fdcc:ad94:bacf:61a4::cafe:2',
+        '--private-key' => 'gateway-private-key',
+        '--public-key' => 'gateway-public-key',
+        '--pre-shared-key' => 'gateway-pre-shared-key',
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function validWgEasyDeletePeerOptions(): array
+{
+    return [
+        '--action' => 'delete-peer',
+        '--name' => 'gateway',
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function validWgEasyUpdateInterfaceOptions(): array
+{
+    return [
+        '--action' => 'update-interface',
+        '--ipv4-cidr' => '10.6.0.0/24',
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function validWgEasyPasswordOptions(string $action): array
+{
+    return [
+        '--action' => $action,
+        '--password-hash' => validWgEasyPasswordHash(),
+    ];
+}
+
+function validWgEasyPasswordHash(): string
+{
+    return '$2y$12$BoGFG2BtfhOdMhzU1PUt7OScj2ZJVvimGfq0thVV4m9hiZdLqI3Q6';
+}
+
+function createWgEasyPeerDatabase(string $path, bool $insertInterface = true): PDO
+{
+    $pdo = createWgEasyStateWritableSqliteDatabase($path);
+    $pdo->exec('create table interfaces_table (name text primary key, ipv4_cidr text not null)');
+    $pdo->exec(<<<'SQL'
+        create table clients_table (
+            user_id integer not null,
+            interface_id text not null,
+            name text not null,
+            ipv4_address text not null,
+            ipv6_address text not null,
+            private_key text not null,
+            public_key text not null,
+            pre_shared_key text not null,
+            allowed_ips text not null,
+            server_allowed_ips text not null,
+            persistent_keepalive integer not null,
+            mtu integer not null,
+            dns text not null,
+            enabled integer not null
+        )
+        SQL);
+
+    if ($insertInterface) {
+        $pdo->exec("insert into interfaces_table (name, ipv4_cidr) values ('wg0', '10.0.0.0/24')");
+    }
+
+    return $pdo;
+}
+
+function createWgEasyInterfaceDatabase(string $path, bool $insertInterface = true): void
+{
+    $pdo = createWgEasyStateWritableSqliteDatabase($path);
+    $pdo->exec('create table interfaces_table (name text primary key, ipv4_cidr text not null)');
+
+    if ($insertInterface) {
+        $pdo->exec("insert into interfaces_table (name, ipv4_cidr) values ('wg0', '10.0.0.0/24')");
+    }
+}
+
+function createWgEasyUsersDatabase(string $path, bool $insertUser = true): void
+{
+    $pdo = createWgEasyStateWritableSqliteDatabase($path);
+    $pdo->exec('create table users_table (password text not null)');
+
+    if ($insertUser) {
+        $pdo->exec("insert into users_table (password) values ('old-password-hash')");
+    }
+}
+
+function createWgEasySessionPasswordDatabase(string $path, bool $insertSettings = true): void
+{
+    $pdo = createWgEasyStateWritableSqliteDatabase($path);
+    $pdo->exec('create table general_table (session_password text not null)');
+
+    if ($insertSettings) {
+        $pdo->exec("insert into general_table (session_password) values ('old-session-password-hash')");
+    }
+}
+
+/**
+ * @param  array{
+ *     name: string,
+ *     ipv4_address: string,
+ *     ipv6_address: string,
+ *     private_key: string,
+ *     public_key: string,
+ *     pre_shared_key: string,
+ * }  $peer
+ */
+function insertWgEasyPeer(PDO $pdo, array $peer): void
+{
+    $statement = $pdo->prepare(<<<'SQL'
+        insert into clients_table (
+            user_id,
+            interface_id,
+            name,
+            ipv4_address,
+            ipv6_address,
+            private_key,
+            public_key,
+            pre_shared_key,
+            allowed_ips,
+            server_allowed_ips,
+            persistent_keepalive,
+            mtu,
+            dns,
+            enabled
+        ) values (
+            :user_id,
+            :interface_id,
+            :name,
+            :ipv4_address,
+            :ipv6_address,
+            :private_key,
+            :public_key,
+            :pre_shared_key,
+            :allowed_ips,
+            :server_allowed_ips,
+            :persistent_keepalive,
+            :mtu,
+            :dns,
+            :enabled
+        )
+        SQL);
+
+    $statement->execute([
+        'user_id' => 1,
+        'interface_id' => 'wg0',
+        'name' => $peer['name'],
+        'ipv4_address' => $peer['ipv4_address'],
+        'ipv6_address' => $peer['ipv6_address'],
+        'private_key' => $peer['private_key'],
+        'public_key' => $peer['public_key'],
+        'pre_shared_key' => $peer['pre_shared_key'],
+        'allowed_ips' => '["0.0.0.0/0", "::/0"]',
+        'server_allowed_ips' => '["'.$peer['ipv4_address'].'/32"]',
+        'persistent_keepalive' => 25,
+        'mtu' => 1420,
+        'dns' => '["10.6.0.1"]',
+        'enabled' => 1,
+    ]);
+}
+
+/**
  * @return array<string, mixed>
  */
 function readWgEasyStateRow(string $path, string $table): array
@@ -388,6 +979,64 @@ function readWgEasyStateRow(string $path, string $table): array
     expect($row)->toBeArray();
 
     return $row;
+}
+
+function countWgEasyStateRows(string $path, string $table): int
+{
+    $pdo = createWgEasyStateWritableSqliteDatabase($path);
+
+    return (int) $pdo->query("select count(*) from {$table}")->fetchColumn();
+}
+
+/**
+ * @param  array<string, mixed>  $parameters
+ * @param  array<string, string>  $environment
+ */
+function runWgEasyStateCommandProcess(array $parameters, array $environment = []): Process
+{
+    $arguments = [PHP_BINARY, 'orbit', 'internal:wg-easy:state'];
+
+    foreach ($parameters as $key => $value) {
+        if ($value === true) {
+            $arguments[] = $key;
+
+            continue;
+        }
+
+        $arguments[] = "{$key}={$value}";
+    }
+
+    $process = new Process($arguments, base_path(), array_merge([
+        'ORBIT_EXECUTOR_SECRET' => 'gateway-secret',
+        'ORBIT_NODE_IDENTITY' => 'app-dev',
+    ], $environment));
+    $process->run();
+
+    return $process;
+}
+
+function wgEasyStateLogContents(): string
+{
+    $directory = storage_path('logs');
+
+    if (! is_dir($directory)) {
+        return '';
+    }
+
+    $contents = '';
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+    );
+
+    foreach ($files as $file) {
+        if (! $file->isFile()) {
+            continue;
+        }
+
+        $contents .= (string) file_get_contents($file->getPathname());
+    }
+
+    return $contents;
 }
 
 function createWgEasyStateWritableSqliteDatabase(string $path): PDO
