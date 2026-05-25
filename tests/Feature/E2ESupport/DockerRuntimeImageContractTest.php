@@ -208,6 +208,21 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
         test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current was not built from the Docker-first topology Dockerfile.');
     }
 
+    $sourceLabel = new Process([
+        'docker',
+        'image',
+        'inspect',
+        '--format',
+        '{{ index .Config.Labels "org.orbit.e2e.source" }}',
+        'orbit-e2e-topology-runtime:current',
+    ]);
+
+    $sourceLabel->run();
+
+    if (trim($sourceLabel->getOutput()) !== 'prepared-checkout') {
+        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current was not built from the source-less topology Dockerfile.');
+    }
+
     $process = new Process([
         'docker',
         'run',
@@ -226,6 +241,10 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
             '! command -v caddy',
             '! command -v php-fpm',
             '! systemctl status caddy >/tmp/orbit-caddy-status.log 2>&1',
+            '! command -v orbit',
+            '! test -e /opt/orbit-source',
+            '! test -f /home/control/orbit/artisan',
+            '! test -f /home/orbit/orbit/artisan',
             'echo OK',
         ]),
     ]);

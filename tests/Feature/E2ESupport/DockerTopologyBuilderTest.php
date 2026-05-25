@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ECurrentCheckout;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Support\Facades\Process;
 
@@ -16,6 +17,7 @@ it('defines the Docker topology host PHP 8.4 CLI baseline without ad hoc helper 
 
     expect($dockerfile)
         ->toContain('FROM ubuntu:24.04')
+        ->toContain('LABEL org.orbit.e2e.source="prepared-checkout"')
         ->toContain('software-properties-common')
         ->toContain('add-apt-repository ppa:ondrej/php -y')
         ->toContain('apt-get purge -y --auto-remove software-properties-common')
@@ -33,7 +35,11 @@ it('defines the Docker topology host PHP 8.4 CLI baseline without ad hoc helper 
         ->toContain('curl')
         ->toContain('mbstring')
         ->toContain('json')
-        ->not->toContain('python3');
+        ->not->toContain('python3')
+        ->not->toContain('COPY . /opt/orbit')
+        ->not->toContain('COPY . /opt/orbit-source')
+        ->not->toContain('/opt/orbit-source')
+        ->not->toContain('cp -a /opt/orbit-source');
 
     expect(preg_match('/(?:^|\s)sqlite3(?:\s|\\\\|$)/m', $dockerfile))->toBe(0);
 });
@@ -63,7 +69,91 @@ it('starts Docker build topology nodes with the host Docker socket and runtime c
         ->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator-control-orbit-runtime'")
         ->toContain("--network 'container:orbit-e2e-build-operator-control'")
         ->toContain("--env 'ORBIT_SOURCE_PATH=/home/control/orbit'")
+        ->toContain('/home/control/orbit/apps/cli')
         ->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader');
+});
+
+it('syncs the current checkout into each Docker topology node before installing role dependencies', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+
+    $setup = implode("\n", $commands);
+
+    expect($setup)
+        ->toContain('COPYFILE_DISABLE=1 tar --null -czf')
+        ->toContain('-T ')
+        ->toContain("docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-control' tar --warning=no-unknown-keyword -xzf - -C '/home/control/orbit' < '")
+        ->toContain("docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-gateway' tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit' < '")
+        ->toContain('orbit-current-')
+        ->toContain('ln -sfn')
+        ->toContain('/home/control/orbit/bin/orbit')
+        ->toContain('/home/orbit/orbit/bin/orbit')
+        ->toContain('/usr/local/bin/orbit')
+        ->toContain('/home/control/orbit/apps/cli')
+        ->toContain('/home/orbit/orbit/apps/gateway/composer.json')
+        ->toContain('/home/orbit/orbit/apps/cli')
+        ->toContain('ORBIT_IS_GATEWAY=true')
+        ->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader');
+
+    $controlSync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-control'")
+        && str_contains($command, "tar --warning=no-unknown-keyword -xzf - -C '/home/control/orbit'")
+        && str_contains($command, 'orbit-current-')), $commands, strict: true);
+    $controlInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, 'control-orbit-runtime')
+        && str_contains($command, '/home/control/orbit/apps/cli')
+        && str_contains($command, 'composer install --no-interaction --prefer-dist --optimize-autoloader')), $commands, strict: true);
+    $gatewaySync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-gateway'")
+        && str_contains($command, "tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit'")
+        && str_contains($command, 'orbit-current-')), $commands, strict: true);
+    $gatewayInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, 'gateway-orbit-runtime')
+        && str_contains($command, '/home/orbit/orbit/apps/gateway/composer.json')
+        && str_contains($command, '/home/orbit/orbit/apps/gateway')
+        && str_contains($command, 'composer install --no-interaction --prefer-dist --optimize-autoloader')), $commands, strict: true);
+
+    expect($controlSync)->toBeInt()
+        ->and($controlInstall)->toBeInt()
+        ->and($controlSync)->toBeLessThan($controlInstall)
+        ->and($gatewaySync)->toBeInt()
+        ->and($gatewayInstall)->toBeInt()
+        ->and($gatewaySync)->toBeLessThan($gatewayInstall);
+});
+
+it('builds Docker checkout sync archives without gitignored local secrets', function (): void {
+    $secretPath = base_path('storage/t384-topology-secret.key');
+    $archive = null;
+
+    file_put_contents($secretPath, 'secret');
+    Process::preventStrayProcesses(false);
+
+    try {
+        $archive = E2ECurrentCheckout::buildArchive();
+        $entries = [];
+        exec(sprintf('tar -tzf %s', escapeshellarg($archive)), $entries, $exitCode);
+
+        expect($exitCode)->toBe(0)
+            ->and($entries)->toContain('composer.json')
+            ->and($entries)->not->toContain('storage/t384-topology-secret.key')
+            ->and($entries)->not->toContain('./storage/t384-topology-secret.key');
+    } finally {
+        Process::preventStrayProcesses();
+
+        if (is_string($archive) && is_file($archive)) {
+            @unlink($archive);
+        }
+
+        @unlink($secretPath);
+    }
 });
 
 it('fails clearly when the orbit runtime sibling image is missing during docker topology preparation', function (): void {
@@ -102,18 +192,33 @@ it('builds Docker topology state through the host orbit launcher', function (): 
 
     $setup = implode("\n", $commands);
     $controlRuntimeStart = strpos($setup, "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-control-orbit-runtime'");
-    $controlMigrate = strpos($setup, "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc 'cd /home/control/orbit && orbit migrate --force'");
+    $controlComposer = strpos($setup, '/home/control/orbit/apps/cli');
+    $controlPersist = strpos($setup, "docker exec 'orbit-e2e-build-operator_gateway-control-orbit-runtime' tar -C '/home/control/orbit' -cf - . | docker exec -i 'orbit-e2e-build-operator_gateway-control' tar -C '/home/control/orbit' -xf -");
+    $gatewayMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-build-operator_gateway-gateway' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
+    $gatewayRefresh = strpos($setup, "docker exec 'orbit-e2e-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -cf - . | docker exec -i 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' tar -C '/home/orbit/orbit' -xf -");
+    $gatewayBootstrap = strpos($setup, 'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
 
     expect($controlRuntimeStart)->toBeInt()
-        ->and($controlMigrate)->toBeInt()
-        ->and($controlRuntimeStart)->toBeLessThan($controlMigrate);
+        ->and($controlComposer)->toBeInt()
+        ->and($controlPersist)->toBeInt()
+        ->and($gatewayMigrate)->toBeInt()
+        ->and($gatewayRefresh)->toBeInt()
+        ->and($gatewayBootstrap)->toBeInt()
+        ->and($controlRuntimeStart)->toBeLessThan($controlComposer)
+        ->and($controlComposer)->toBeLessThan($controlPersist)
+        ->and($controlPersist)->toBeLessThan($gatewayMigrate)
+        ->and($gatewayMigrate)->toBeLessThan($gatewayRefresh)
+        ->and($gatewayRefresh)->toBeLessThan($gatewayBootstrap);
 
     expect($setup)
-        ->toContain('cd /home/control/orbit && orbit migrate --force')
         ->toContain('cd /home/orbit/orbit && orbit migrate --force')
         ->toContain('cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install')
         ->toContain('sudo -iu orbit env ORBIT_RUNTIME_CONTAINER="${ORBIT_RUNTIME_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" bash -lc')
-        ->toContain('cd /home/control/orbit && orbit gateway:add 10.6.0.2 --json')
+        ->toContain('/home/control/orbit/apps/cli')
+        ->toContain('ORBIT_GATEWAY_URL=%s')
+        ->toContain('http://10.6.0.2')
+        ->not->toContain('cd /home/control/orbit && orbit migrate --force')
+        ->not->toContain('cd /home/control/orbit && orbit gateway:add')
         ->not->toContain('php artisan migrate --force');
 });
 
@@ -346,8 +451,12 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'orbit-e2e-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        'docker exec *rm -rf*install -d*' => Process::result(),
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *ln -sfn*' => Process::result(),
         'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *migrate*" => Process::result(),
@@ -362,7 +471,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *orbit serve*" => Process::result(),
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *curl*" => Process::result(),
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *tinker*" => Process::result(),
-        "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *gateway:add*" => Process::result(),
+        'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         "docker commit --change * 'orbit-e2e-build-operator_gateway-control' 'orbit-e2e-topology:operator_gateway-control-current'" => Process::result(),
         "docker commit --change * 'orbit-e2e-build-operator_gateway-gateway' 'orbit-e2e-topology:operator_gateway-gateway-current'" => Process::result(),
         "docker rm -f 'orbit-e2e-build-operator_gateway-control' 'orbit-e2e-build-operator_gateway-control-orbit-runtime' 'orbit-e2e-build-operator_gateway-control-orbit-caddy' >/dev/null 2>&1 || true" => Process::result(),
@@ -397,8 +506,12 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         "docker image inspect 'orbit-runtime:current' >/dev/null" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-build-operator_gateway_app-dev'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec *rm -rf*install -d*' => Process::result(),
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *ln -sfn*' => Process::result(),
         'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
@@ -408,7 +521,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker exec *tinker*' => Process::result(),
         'docker exec *orbit serve*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
-        'docker exec --user *gateway:add*' => Process::result(),
+        'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
@@ -442,6 +555,8 @@ it('uses the configured instance prefix for transient resources but stable image
         "docker run -d --restart unless-stopped --name 'ci-foo-build-operator_gateway-control-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'ci-foo-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'ci-foo-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec --user *' => Process::result(),
         'docker exec *' => Process::result(),
         "docker commit --change * 'ci-foo-build-operator_gateway-control' 'orbit-e2e-topology:operator_gateway-control-current'" => Process::result(),
@@ -471,8 +586,12 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         "docker image inspect 'orbit-runtime:current' >/dev/null" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-build-operator_gateway_app-dev_app-prod'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec *rm -rf*install -d*' => Process::result(),
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *ln -sfn*' => Process::result(),
         'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
@@ -482,7 +601,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         'docker exec *tinker*' => Process::result(),
         'docker exec *orbit serve*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
-        'docker exec --user *gateway:add*' => Process::result(),
+        'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
@@ -509,8 +628,9 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         && ! str_contains($process->command, '--host=10.6.0.4'));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'LocalGatewaySettings::current()')
-        && str_contains($process->command, 'https://gateway'));
+        && str_contains($process->command, '/home/control/orbit/apps/cli')
+        && str_contains($process->command, 'ORBIT_GATEWAY_URL=%s')
+        && str_contains($process->command, 'http://gateway'));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker commit')
@@ -524,8 +644,12 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         "docker image inspect 'orbit-runtime:current' >/dev/null" => Process::result(),
         "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-build-operator_gateway_app-prod_ingress'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec *rm -rf*install -d*' => Process::result(),
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
+        'docker exec *ln -sfn*' => Process::result(),
         'docker exec *chown -R orbit:orbit*' => Process::result(),
         'docker exec --env *composer install*' => Process::result(),
         'docker exec --user *migrate*' => Process::result(),
@@ -535,7 +659,7 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         'docker exec *tinker*' => Process::result(),
         'docker exec *orbit serve*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
-        'docker exec --user *gateway:add*' => Process::result(),
+        'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
