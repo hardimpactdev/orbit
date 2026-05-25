@@ -49,7 +49,7 @@ it('reads Polyscope config through the local executor lookup command with stdout
     ));
 
     $driver = new PolyscopeWorkspaceDriver(
-        branchAligner: new PolyscopeWorkspaceBranchAligner(new PolyscopeWorkspaceDriverUnusedShell),
+        branchAligner: polyscopeWorkspaceDriverUnusedBranchAligner(),
         localExecutor: polyscopeWorkspaceDriverExecutor($transport),
     );
 
@@ -98,7 +98,7 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
     ]);
     $transport = new PolyscopeWorkspaceDriverTransport($resultFactory());
     $driver = new PolyscopeWorkspaceDriver(
-        branchAligner: new PolyscopeWorkspaceBranchAligner(new PolyscopeWorkspaceDriverUnusedShell),
+        branchAligner: polyscopeWorkspaceDriverUnusedBranchAligner(),
         localExecutor: polyscopeWorkspaceDriverExecutor($transport),
     );
 
@@ -170,7 +170,7 @@ it('treats Polyscope config lookup error messages as untrusted remote output', f
         durationMs: 2,
     ));
     $driver = new PolyscopeWorkspaceDriver(
-        branchAligner: new PolyscopeWorkspaceBranchAligner(new PolyscopeWorkspaceDriverUnusedShell),
+        branchAligner: polyscopeWorkspaceDriverUnusedBranchAligner(),
         localExecutor: polyscopeWorkspaceDriverExecutor($transport),
     );
 
@@ -203,6 +203,16 @@ function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $tra
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+    );
+}
+
+function polyscopeWorkspaceDriverUnusedBranchAligner(): PolyscopeWorkspaceBranchAligner
+{
+    return new PolyscopeWorkspaceBranchAligner(
+        remoteShell: new PolyscopeWorkspaceDriverUnusedShell,
+        localExecutor: polyscopeWorkspaceDriverExecutor(new PolyscopeWorkspaceDriverTransport(
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        )),
     );
 }
 
