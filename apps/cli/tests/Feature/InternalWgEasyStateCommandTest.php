@@ -338,6 +338,106 @@ describe('internal wg-easy state command', function (): void {
             ->and($row['session_password'])->toBe($passwordHash);
     });
 
+    it('updates the wg-easy user password hash when the value is a valid argon2id hash', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUsersDatabase($databasePath);
+        $passwordHash = password_hash('user-password-'.bin2hex(random_bytes(8)), PASSWORD_ARGON2ID);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-user-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'users_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-user-password',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($row['password'])->toBe($passwordHash);
+    });
+
+    it('updates the wg-easy session password hash when the value is a valid argon2id hash', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasySessionPasswordDatabase($databasePath);
+        $passwordHash = password_hash('session-password-'.bin2hex(random_bytes(8)), PASSWORD_ARGON2ID);
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-session-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'general_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-session-password',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($row['session_password'])->toBe($passwordHash);
+    });
+
+    it('accepts a structurally complete low cost argon2id user password hash because validation is format only', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyUsersDatabase($databasePath);
+        $passwordHash = '$argon2id$v=19$m=1,t=1,p=1$abc$def';
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-user-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'users_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-user-password',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($row['password'])->toBe($passwordHash);
+    });
+
+    it('accepts a structurally complete low cost argon2id session password hash because validation is format only', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasySessionPasswordDatabase($databasePath);
+        $passwordHash = '$argon2id$v=19$m=1,t=1,p=1$abc$def';
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'update-session-password',
+            '--password-hash' => $passwordHash,
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $row = readWgEasyStateRow($databasePath, 'general_table');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'update-session-password',
+                    'updated' => true,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($row['session_password'])->toBe($passwordHash);
+    });
+
     it('returns success when the database file is writable', function (): void {
         createWgEasyGeneralDatabase("{$this->wgEasyStateTemp}/wg-easy.db");
 
@@ -467,7 +567,39 @@ describe('internal wg-easy state command', function (): void {
                 '--action' => 'update-user-password',
                 '--password-hash' => 'raw-password',
             ],
-            'The --password-hash option is invalid.',
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-user-password rejects bare argon2id prefixes' => [
+            [
+                '--action' => 'update-user-password',
+                '--password-hash' => '$argon2id$',
+            ],
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-user-password rejects injected argon2id prefixes' => [
+            [
+                '--action' => 'update-user-password',
+                '--password-hash' => '$argon2id$...$<injection>',
+            ],
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-user-password rejects injected argon2i prefixes' => [
+            [
+                '--action' => 'update-user-password',
+                '--password-hash' => '$argon2i$...$<injection>',
+            ],
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-user-password rejects truncated bcrypt bodies' => [
+            [
+                '--action' => 'update-user-password',
+                '--password-hash' => '$2y$12$short',
+            ],
+            invalidWgEasyPasswordHashMessage(),
             ['field' => 'password-hash'],
         ],
         'update-session-password rejects raw password values' => [
@@ -475,7 +607,39 @@ describe('internal wg-easy state command', function (): void {
                 '--action' => 'update-session-password',
                 '--password-hash' => 'raw-password',
             ],
-            'The --password-hash option is invalid.',
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-session-password rejects bare argon2id prefixes' => [
+            [
+                '--action' => 'update-session-password',
+                '--password-hash' => '$argon2id$',
+            ],
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-session-password rejects injected argon2id prefixes' => [
+            [
+                '--action' => 'update-session-password',
+                '--password-hash' => '$argon2id$...$<injection>',
+            ],
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-session-password rejects injected argon2i prefixes' => [
+            [
+                '--action' => 'update-session-password',
+                '--password-hash' => '$argon2i$...$<injection>',
+            ],
+            invalidWgEasyPasswordHashMessage(),
+            ['field' => 'password-hash'],
+        ],
+        'update-session-password rejects truncated bcrypt bodies' => [
+            [
+                '--action' => 'update-session-password',
+                '--password-hash' => '$2y$12$short',
+            ],
+            invalidWgEasyPasswordHashMessage(),
             ['field' => 'password-hash'],
         ],
     ]);
@@ -842,6 +1006,11 @@ function validWgEasyPasswordOptions(string $action): array
 function validWgEasyPasswordHash(): string
 {
     return '$2y$12$BoGFG2BtfhOdMhzU1PUt7OScj2ZJVvimGfq0thVV4m9hiZdLqI3Q6';
+}
+
+function invalidWgEasyPasswordHashMessage(): string
+{
+    return 'password hash format is not a recognized bcrypt/argon2i/argon2id hash';
 }
 
 function createWgEasyPeerDatabase(string $path, bool $insertInterface = true): PDO

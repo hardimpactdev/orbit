@@ -54,14 +54,11 @@ final class WgEasyStateCommand extends OrbitCommand
         'ipv4',
     ];
 
-    /**
-     * @var list<string>
-     */
-    private const PasswordHashAlgorithms = [
-        'bcrypt',
-        'argon2i',
-        'argon2id',
-    ];
+    private const BcryptPasswordHashPattern = '/\A\$2[aby]\$\d{2}\$[.\/A-Za-z0-9]{53}\z/';
+
+    private const ArgonPasswordHashPattern = '/\A\$argon2(?:id|i)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+\/=]+\$[A-Za-z0-9+\/=]+\z/';
+
+    private const InvalidPasswordHashMessage = 'password hash format is not a recognized bcrypt/argon2i/argon2id hash';
 
     protected $signature = 'internal:wg-easy:state
         {--action=}
@@ -436,7 +433,7 @@ final class WgEasyStateCommand extends OrbitCommand
         $passwordHash = $this->passwordHashValue($this->option('password-hash'));
 
         if ($passwordHash === null) {
-            return $this->invalidOption('password-hash');
+            return $this->invalidPasswordHashOption();
         }
 
         $database = $this->openWritableDatabase();
@@ -479,7 +476,7 @@ final class WgEasyStateCommand extends OrbitCommand
         $passwordHash = $this->passwordHashValue($this->option('password-hash'));
 
         if ($passwordHash === null) {
-            return $this->invalidOption('password-hash');
+            return $this->invalidPasswordHashOption();
         }
 
         $database = $this->openWritableDatabase();
@@ -702,6 +699,15 @@ final class WgEasyStateCommand extends OrbitCommand
         );
     }
 
+    private function invalidPasswordHashOption(): int
+    {
+        return $this->renderFailure(
+            'validation_failed',
+            self::InvalidPasswordHashMessage,
+            ['field' => 'password-hash'],
+        );
+    }
+
     private function interfaceNotFound(): int
     {
         return $this->renderFailure(
@@ -838,12 +844,19 @@ final class WgEasyStateCommand extends OrbitCommand
             return null;
         }
 
+        return $this->isRecognizedPasswordHash($value) ? $value : null;
+    }
+
+    private function isRecognizedPasswordHash(string $value): bool
+    {
         $info = password_get_info($value);
         $algorithm = $info['algoName'] ?? null;
 
-        return is_string($algorithm) && in_array($algorithm, self::PasswordHashAlgorithms, true)
-            ? $value
-            : null;
+        return match ($algorithm) {
+            'bcrypt' => preg_match(self::BcryptPasswordHashPattern, $value) === 1,
+            'argon2i', 'argon2id' => preg_match(self::ArgonPasswordHashPattern, $value) === 1,
+            default => false,
+        };
     }
 
     private function stringValue(mixed $value): ?string
