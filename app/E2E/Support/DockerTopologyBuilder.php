@@ -312,11 +312,17 @@ final readonly class DockerTopologyBuilder
             timeoutSeconds: 120,
         );
 
-        $this->mustRun(
-            $this->copyCurrentCheckoutCommand($container, $sourcePath),
-            "Could not sync current checkout into {$container}",
-            timeoutSeconds: 300,
-        );
+        $archive = E2ECurrentCheckout::buildArchive();
+
+        try {
+            $this->mustRun(
+                $this->copyCurrentCheckoutCommand($container, $sourcePath, $archive),
+                "Could not sync current checkout into {$container}",
+                timeoutSeconds: 300,
+            );
+        } finally {
+            @unlink($archive);
+        }
 
         $this->mustRun(
             sprintf(
@@ -329,22 +335,14 @@ final readonly class DockerTopologyBuilder
         );
     }
 
-    private function copyCurrentCheckoutCommand(string $container, string $targetPath): string
+    private function copyCurrentCheckoutCommand(string $container, string $targetPath, string $archive): string
     {
         return sprintf(
-            'COPYFILE_DISABLE=1 tar %s -czf - -C %s . | docker exec -i %s tar --warning=no-unknown-keyword -xzf - -C %s',
-            $this->archiveExcludeArguments(),
-            escapeshellarg(base_path()),
+            'docker exec -i %s tar --warning=no-unknown-keyword -xzf - -C %s < %s',
             escapeshellarg($container),
             escapeshellarg($targetPath),
+            escapeshellarg($archive),
         );
-    }
-
-    private function archiveExcludeArguments(): string
-    {
-        return collect(E2ECurrentCheckout::archiveExcludePatterns())
-            ->map(fn (string $pattern): string => '--exclude='.escapeshellarg($pattern))
-            ->implode(' ');
     }
 
     private function prepareSyncedCheckoutCommand(string $role, bool $chownSource = true): string
@@ -667,7 +665,7 @@ SH;
             sleep(1);
         } while (time() < $deadline);
 
-        throw new RuntimeException(trim("SSH command failed: cd /home/orbit/orbit && orbit doctor --node=gateway --family=schedule --restore --json\n".$last?->output().$last?->errorOutput()));
+        throw new RuntimeException(trim("SSH command failed: cd /home/orbit/orbit && orbit doctor --node=gateway --family=schedule --restore --json\n".$last->output().$last->errorOutput()));
     }
 
     /**

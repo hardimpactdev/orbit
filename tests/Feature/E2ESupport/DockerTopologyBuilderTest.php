@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ECurrentCheckout;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Support\Facades\Process;
 
@@ -91,11 +92,11 @@ it('syncs the current checkout into each Docker topology node before installing 
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain('COPYFILE_DISABLE=1 tar')
-        ->toContain('--exclude='."'./vendor'")
-        ->toContain('--exclude='."'./.git'")
-        ->toContain("-C '".base_path()."' . | docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-control' tar --warning=no-unknown-keyword -xzf - -C '/home/control/orbit'")
-        ->toContain("-C '".base_path()."' . | docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-gateway' tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit'")
+        ->toContain('COPYFILE_DISABLE=1 tar --null -czf')
+        ->toContain('-T ')
+        ->toContain("docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-control' tar --warning=no-unknown-keyword -xzf - -C '/home/control/orbit' < '")
+        ->toContain("docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-gateway' tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit' < '")
+        ->toContain('orbit-current-')
         ->toContain('ln -sfn')
         ->toContain('/home/control/orbit/bin/orbit')
         ->toContain('/home/orbit/orbit/bin/orbit')
@@ -106,11 +107,15 @@ it('syncs the current checkout into each Docker topology node before installing 
         ->toContain('ORBIT_IS_GATEWAY=true')
         ->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader');
 
-    $controlSync = strpos($setup, "-C '".base_path()."' . | docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-control' tar --warning=no-unknown-keyword -xzf - -C '/home/control/orbit'");
+    $controlSync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-control'")
+        && str_contains($command, "tar --warning=no-unknown-keyword -xzf - -C '/home/control/orbit'")
+        && str_contains($command, 'orbit-current-')), $commands, strict: true);
     $controlInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, 'control-orbit-runtime')
         && str_contains($command, '/home/control/orbit/apps/cli')
         && str_contains($command, 'composer install --no-interaction --prefer-dist --optimize-autoloader')), $commands, strict: true);
-    $gatewaySync = strpos($setup, "-C '".base_path()."' . | docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-gateway' tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit'");
+    $gatewaySync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-build-operator_gateway_app-dev_app-prod_agent-gateway'")
+        && str_contains($command, "tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit'")
+        && str_contains($command, 'orbit-current-')), $commands, strict: true);
     $gatewayInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, 'gateway-orbit-runtime')
         && str_contains($command, '/home/orbit/orbit/apps/gateway/composer.json')
         && str_contains($command, '/home/orbit/orbit/apps/gateway')
@@ -118,10 +123,37 @@ it('syncs the current checkout into each Docker topology node before installing 
 
     expect($controlSync)->toBeInt()
         ->and($controlInstall)->toBeInt()
-        ->and($controlSync)->toBeLessThan(strpos($setup, $commands[$controlInstall]))
+        ->and($controlSync)->toBeLessThan($controlInstall)
         ->and($gatewaySync)->toBeInt()
         ->and($gatewayInstall)->toBeInt()
-        ->and($gatewaySync)->toBeLessThan(strpos($setup, $commands[$gatewayInstall]));
+        ->and($gatewaySync)->toBeLessThan($gatewayInstall);
+});
+
+it('builds Docker checkout sync archives without gitignored local secrets', function (): void {
+    $secretPath = base_path('storage/t384-topology-secret.key');
+    $archive = null;
+
+    file_put_contents($secretPath, 'secret');
+    Process::preventStrayProcesses(false);
+
+    try {
+        $archive = E2ECurrentCheckout::buildArchive();
+        $entries = [];
+        exec(sprintf('tar -tzf %s', escapeshellarg($archive)), $entries, $exitCode);
+
+        expect($exitCode)->toBe(0)
+            ->and($entries)->toContain('composer.json')
+            ->and($entries)->not->toContain('storage/t384-topology-secret.key')
+            ->and($entries)->not->toContain('./storage/t384-topology-secret.key');
+    } finally {
+        Process::preventStrayProcesses();
+
+        if (is_string($archive) && is_file($archive)) {
+            @unlink($archive);
+        }
+
+        @unlink($secretPath);
+    }
 });
 
 it('fails clearly when the orbit runtime sibling image is missing during docker topology preparation', function (): void {
@@ -421,6 +453,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker run -d --restart unless-stopped --name 'orbit-e2e-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
         'docker exec *ln -sfn*' => Process::result(),
@@ -475,6 +508,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
         'docker exec *ln -sfn*' => Process::result(),
@@ -522,6 +556,7 @@ it('uses the configured instance prefix for transient resources but stable image
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name 'ci-foo-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'ci-foo-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec --user *' => Process::result(),
         'docker exec *' => Process::result(),
         "docker commit --change * 'ci-foo-build-operator_gateway-control' 'orbit-e2e-topology:operator_gateway-control-current'" => Process::result(),
@@ -553,6 +588,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
         'docker exec *ln -sfn*' => Process::result(),
@@ -610,6 +646,7 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec *mkdir -p*' => Process::result(),
         'docker exec *tar -C*' => Process::result(),
         'docker exec *ln -sfn*' => Process::result(),

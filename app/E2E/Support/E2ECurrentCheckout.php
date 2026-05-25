@@ -464,7 +464,7 @@ final class E2ECurrentCheckout
         return [$instance, $user, "/home/{$user}/orbit"];
     }
 
-    private static function buildArchive(): string
+    public static function buildArchive(): string
     {
         $tarball = sys_get_temp_dir().'/orbit-current-'.bin2hex(random_bytes(6)).'.tar.gz';
         $manifest = self::writeArchiveManifest();
