@@ -231,7 +231,67 @@ it('forwards control callers to the gateway through orbit runtime executor', fun
     expect($command)->toContain('docker exec -i');
     expect($command)->toContain('--workdir');
     expect($command)->toContain(OrbitRuntimeContainer::SourcePath);
-    expect($command)->toContain('orbit-runtime php artisan vpn-client:list --json');
+    expect($command)->toContain('orbit-runtime /opt/orbit/artisan vpn-client:list --json');
+    expect((bool) preg_match("/bash -lc '\\''php artisan/", $command))->toBeFalse();
+});
+
+it('forwards escaped arguments through an absolute orbit runtime artisan path', function (): void {
+    config(['orbit.is_gateway' => false]);
+    Process::preventStrayProcesses();
+    $commands = [];
+    $runtimeResponse = json_encode([
+        'success' => [
+            'data' => [
+                'client' => [
+                    'id' => 'client-7',
+                    'name' => 'laptop',
+                    'address' => '10.6.0.7',
+                    'enabled' => true,
+                    'latest_handshake_at' => null,
+                    'kind' => 'admin',
+                ],
+            ],
+            'meta' => ['config_included' => false],
+        ],
+    ], JSON_THROW_ON_ERROR);
+    Process::fake(function ($process) use (&$commands, $runtimeResponse) {
+        $commands[] = (string) $process->command;
+
+        return Process::result($runtimeResponse);
+    });
+
+    vpnLocalNode('control');
+    $vpnNode = Node::factory()->create([
+        'name' => 'vpn-1',
+        'role' => 'gateway',
+        'host' => 'vpn-1.example.com',
+        'user' => 'orbit',
+        'orbit_path' => '/home/orbit/orbit',
+        'wireguard_address' => '10.6.0.1',
+        'status' => 'active',
+        ...vpnPinnedHostKey(),
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $vpnNode->id,
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+
+    $exitCode = Artisan::call('vpn-client:new', ['name' => 'laptop', '--json' => true]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['client']['name'])->toBe('laptop');
+
+    expect($commands)->toHaveCount(1);
+
+    $command = $commands[0];
+
+    expect($command)->toContain('docker exec -i');
+    expect($command)->toContain('orbit-runtime sh -c');
+    expect($command)->toContain('/opt/orbit/artisan vpn-client:new');
+    expect($command)->toContain('laptop');
+    expect($command)->not->toContain('php artisan');
     expect((bool) preg_match("/bash -lc '\\''php artisan/", $command))->toBeFalse();
 });
 
