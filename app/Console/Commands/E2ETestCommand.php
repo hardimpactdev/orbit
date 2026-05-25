@@ -893,6 +893,24 @@ class E2ETestCommand extends Command
                 throw new \RuntimeException("Could not create E2E test suite directory [{$directory}].");
             }
 
+            $supportDirectory = base_path('tests/E2E/Support');
+
+            if (is_dir($supportDirectory)) {
+                $generatedSupportDirectory = $directory.'/Support';
+
+                if (! mkdir($generatedSupportDirectory, 0777, true) && ! is_dir($generatedSupportDirectory)) {
+                    throw new \RuntimeException("Could not create E2E support directory [{$generatedSupportDirectory}].");
+                }
+
+                foreach (glob($supportDirectory.'/*.php') ?: [] as $supportFile) {
+                    $supportTarget = $generatedSupportDirectory.'/'.basename($supportFile);
+
+                    if (! copy($supportFile, $supportTarget)) {
+                        throw new \RuntimeException("Could not copy E2E support file [{$supportFile}].");
+                    }
+                }
+            }
+
             foreach ($testFiles as $index => $testFile) {
                 $target = base_path($testFile);
                 $link = $directory.'/Docker'.str_pad((string) $index, 3, '0', STR_PAD_LEFT).basename($testFile);

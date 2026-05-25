@@ -296,6 +296,33 @@ PHP);
     }
 });
 
+it('copies e2e support files into generated docker test suites', function (): void {
+    $command = app(E2ETestCommand::class);
+    $testPath = 'tests/E2E/.docker-feature-tests/run_support_'.bin2hex(random_bytes(4));
+    $plans = [
+        'docker' => [
+            'lane' => 'docker',
+            'command' => ['php', 'artisan', 'test'],
+            'environment' => [
+                'ORBIT_E2E' => '1',
+            ],
+            'test_path' => $testPath,
+            'test_files' => [
+                'tests/E2E/DatabaseDescribeTest.php',
+            ],
+        ],
+    ];
+
+    try {
+        invokeE2ETestCommandMethod($command, 'preparePlanArtifacts', [&$plans]);
+
+        expect(is_file(base_path($testPath.'/Docker000DatabaseDescribeTest.php')))->toBeTrue()
+            ->and(is_file(base_path($testPath.'/Support/SqliteDatabaseFixture.php')))->toBeTrue();
+    } finally {
+        invokeE2ETestCommandMethod($command, 'cleanupPlanArtifacts', [$plans]);
+    }
+});
+
 it('rejects unsupported lanes', function (): void {
     $this->artisan('e2e:test --dry-run --lanes=redis')
         ->expectsOutputToContain('Unsupported E2E lane(s): redis. Supported lanes: docker, incus.')
