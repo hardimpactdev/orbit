@@ -14,6 +14,7 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
@@ -96,24 +97,14 @@ it('defaults the wg-easy database path to the managed orbit home', function (): 
     expect(config('services.wg_easy.database_path'))->toBe('/home/orbit/.wg-easy/wg-easy.db');
 });
 
-it('resolves the configured database state path when resolved from the container', function (): void {
+it('routes peer persistence through the local executor when resolved from the container', function (): void {
     $previousServerHome = $_SERVER['HOME'] ?? null;
     $_SERVER['HOME'] = '/var/www';
 
     config()->set('services.wg_easy.database_path', '/home/orbit/.wg-easy/wg-easy.db');
     app()->forgetInstance(WgEasyServiceInstaller::class);
 
-    $peerScript = null;
-
-    Process::fake(function ($process) use (&$peerScript) {
-        $command = (string) $process->command;
-
-        if (str_contains($command, 'clients_table')) {
-            $peerScript = $command;
-        }
-
-        return Process::result();
-    });
+    Process::fake();
 
     try {
         app(WgEasyServiceInstaller::class)->configurePeers([
@@ -135,8 +126,18 @@ it('resolves the configured database state path when resolved from the container
         app()->forgetInstance(WgEasyServiceInstaller::class);
     }
 
-    expect($peerScript)->toContain("sqlite3 '/home/orbit/.wg-easy'/wg-easy.db")
-        ->and($peerScript)->not->toContain('/var/www/.wg-easy');
+    $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
+
+    expect($scripts)->toHaveCount(2)
+        ->and($scripts[0])->toContain('internal:wg-easy:state')
+        ->and($scripts[0])->toContain("--action='delete-peer'")
+        ->and($scripts[1])->toContain("--action='upsert-peer'");
+
+    foreach ($scripts as $script) {
+        expect($script)->not->toContain('sqlite3')
+            ->and($script)->not->toContain('sudo sqlite3')
+            ->and($script)->not->toContain('/var/www/.wg-easy');
+    }
 });
 
 it('uses the default runtime values when install inputs are omitted', function (): void {
@@ -179,11 +180,11 @@ it('reads the wg-easy server public key from the running container', function ()
 });
 
 it('persists and activates node peers on wg-easy wg0', function (): void {
-    $peerScript = null;
+    $runtimeScript = null;
 
-    Process::fake(function ($process) use (&$peerScript) {
-        if (str_contains((string) $process->command, 'clients_table')) {
-            $peerScript = (string) $process->command;
+    Process::fake(function ($process) use (&$runtimeScript) {
+        if (str_contains((string) $process->command, 'wg set wg0 peer')) {
+            $runtimeScript = (string) $process->command;
         }
 
         return Process::result();
@@ -206,24 +207,118 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         ],
     ]);
 
-    expect($peerScript)->toContain('wg-easy.db')
-        ->and($peerScript)->toContain('ORBIT_DOCKER="sudo docker"')
-        ->and($peerScript)->toContain('clients_table')
-        ->and($peerScript)->toContain('gateway-public')
-        ->and($peerScript)->toContain('gateway-psk')
-        ->and($peerScript)->toContain('10.6.0.2/32')
-        ->and($peerScript)->toContain('control-public')
-        ->and($peerScript)->toContain('control-psk')
-        ->and($peerScript)->toContain('10.6.0.3/32')
-        ->and($peerScript)->toContain('wg set wg0 peer')
-        ->and($peerScript)->toContain('preshared-key');
+    $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
+
+    expect($scripts)->toHaveCount(4)
+        ->and($scripts[0])->toContain("--action='delete-peer'")
+        ->and($scripts[0])->toContain("--name='gateway-1'")
+        ->and($scripts[1])->toContain("--action='upsert-peer'")
+        ->and($scripts[1])->toContain("--name='gateway-1'")
+        ->and($scripts[1])->toContain("--ipv4='10.6.0.2'")
+        ->and($scripts[1])->toContain("--ipv6='fdcc:ad94:bacf:61a4::cafe:2'")
+        ->and($scripts[1])->toContain("--private-key='gateway-private'")
+        ->and($scripts[1])->toContain("--public-key='gateway-public'")
+        ->and($scripts[1])->toContain("--pre-shared-key='gateway-psk'")
+        ->and($scripts[2])->toContain("--action='delete-peer'")
+        ->and($scripts[2])->toContain("--name='control-1'")
+        ->and($scripts[3])->toContain("--action='upsert-peer'")
+        ->and($scripts[3])->toContain("--name='control-1'")
+        ->and($scripts[3])->toContain("--ipv4='10.6.0.3'")
+        ->and($scripts[3])->toContain("--public-key='control-public'")
+        ->and($scripts[3])->toContain("--pre-shared-key='control-psk'");
+
+    foreach ($scripts as $script) {
+        expect($script)->toContain('internal:wg-easy:state')
+            ->and($script)->toContain('--operation-token=')
+            ->and($script)->not->toContain('sqlite3')
+            ->and($script)->not->toContain('sudo sqlite3')
+            ->and($script)->not->toContain('clients_table');
+    }
+
+    $dispatching = wgEasyServiceInstallerLocalExecutorDispatchingProperties();
+    $upsertLogs = [$dispatching[1], $dispatching[3]];
+
+    expect($dispatching)->toHaveCount(4)
+        ->and($dispatching[1]['command_options']['private-key'])->toBe('<redacted>')
+        ->and($dispatching[1]['command_options']['pre-shared-key'])->toBe('<redacted>')
+        ->and($dispatching[1]['command_line'])->toContain('--private-key=<redacted>')
+        ->and($dispatching[1]['command_line'])->toContain('--pre-shared-key=<redacted>')
+        ->and($dispatching[3]['command_options']['private-key'])->toBe('<redacted>')
+        ->and($dispatching[3]['command_options']['pre-shared-key'])->toBe('<redacted>')
+        ->and($dispatching[3]['command_line'])->toContain('--private-key=<redacted>')
+        ->and($dispatching[3]['command_line'])->toContain('--pre-shared-key=<redacted>')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('gateway-private')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('gateway-psk')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('control-private')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('control-psk');
+
+    expect($runtimeScript)->toContain('ORBIT_DOCKER="sudo docker"')
+        ->and($runtimeScript)->toContain('gateway-public')
+        ->and($runtimeScript)->toContain('gateway-psk')
+        ->and($runtimeScript)->toContain('10.6.0.2/32')
+        ->and($runtimeScript)->toContain('control-public')
+        ->and($runtimeScript)->toContain('control-psk')
+        ->and($runtimeScript)->toContain('10.6.0.3/32')
+        ->and($runtimeScript)->toContain('wg set wg0 peer')
+        ->and($runtimeScript)->toContain('preshared-key');
+});
+
+it('does not leak peer secrets from transport exception messages during peer upsert', function (): void {
+    Process::fake();
+
+    $privateKey = 'SENTINEL-PRIVKEY-XYZ';
+    $preSharedKey = 'SENTINEL-PSK-ABC';
+    $transport = new WgEasyServiceInstallerStateTransport(
+        static function (Node $node, string $script, array $options): RemoteShellResult {
+            if (str_contains($script, "--action='upsert-peer'")) {
+                throw new RuntimeException("transport failed while running {$script}");
+            }
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                stderr: '',
+                durationMs: 1,
+            );
+        },
+    );
+    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+
+    try {
+        wgEasyServiceInstaller($this->workdir, $this->statePath)->configurePeers([
+            [
+                'name' => 'gateway-1',
+                'private_key' => $privateKey,
+                'public_key' => 'gateway-public',
+                'pre_shared_key' => $preSharedKey,
+                'address' => '10.6.0.2',
+            ],
+        ]);
+
+        $this->fail('Expected wg-easy peer upsert transport failure.');
+    } catch (RuntimeException $exception) {
+        $completed = wgEasyServiceInstallerLocalExecutorCompletedProperties();
+        $failed = array_values(array_filter(
+            $completed,
+            fn (array $properties): bool => ($properties['status'] ?? null) === 'failed',
+        ));
+
+        expect($exception->getMessage())->not->toContain($privateKey)
+            ->and($exception->getMessage())->not->toContain($preSharedKey)
+            ->and($completed)->toHaveCount(2)
+            ->and($failed)->toHaveCount(1)
+            ->and($failed[0]['exception_message'])->toContain('--private-key=<redacted>')
+            ->and($failed[0]['exception_message'])->toContain('--pre-shared-key=<redacted>')
+            ->and($failed[0]['exception_message'])->not->toContain($privateKey)
+            ->and($failed[0]['exception_message'])->not->toContain($preSharedKey);
+    }
 });
 
 it('converges the runtime server address and routes supported database updates through the local executor', function (): void {
     $serverAddressScript = null;
 
     Process::fake(function ($process) use (&$serverAddressScript) {
-        if (str_contains((string) $process->command, 'UPDATE interfaces_table')) {
+        if (str_contains((string) $process->command, 'ip addr replace')) {
             $serverAddressScript = (string) $process->command;
         }
 
@@ -241,7 +336,10 @@ it('converges the runtime server address and routes supported database updates t
 
     expect($serverAddressScript)->toContain("ip addr replace '10.7.0.1/24' dev wg0")
         ->and($serverAddressScript)->toContain("ip route replace '10.7.0.0/24' dev wg0")
-        ->and($serverAddressScript)->toContain("ipv4_cidr = '10.7.0.0/24'")
+        ->and($serverAddressScript)->not->toContain('sqlite3')
+        ->and($serverAddressScript)->not->toContain('sudo sqlite3')
+        ->and($serverAddressScript)->not->toContain('interfaces_table')
+        ->and($serverAddressScript)->not->toContain('ipv4_cidr')
         ->and($serverAddressScript)->not->toContain('user_configs_table')
         ->and($serverAddressScript)->not->toContain('general_table')
         ->and($serverAddressScript)->not->toContain('default_dns')
@@ -249,16 +347,18 @@ it('converges the runtime server address and routes supported database updates t
 
     $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
 
-    expect($scripts)->toHaveCount(3)
+    expect($scripts)->toHaveCount(4)
         ->and($scripts[0])->toContain('internal:wg-easy:state')
         ->and($scripts[0])->toContain("--action='ensure-writable'")
         ->and($scripts[0])->toContain('--operation-token=')
-        ->and($scripts[1])->toContain("--action='update-user'")
-        ->and($scripts[1])->toContain("--host='vpn.example.com'")
-        ->and($scripts[1])->toContain("--default-dns='[\"10.7.0.1\"]'")
-        ->and($scripts[1])->toContain("--default-persistent-keepalive='25'")
-        ->and($scripts[2])->toContain("--action='update-general'")
-        ->and($scripts[2])->toContain("--setup-step='0'");
+        ->and($scripts[1])->toContain("--action='update-interface'")
+        ->and($scripts[1])->toContain("--ipv4-cidr='10.7.0.0/24'")
+        ->and($scripts[2])->toContain("--action='update-user'")
+        ->and($scripts[2])->toContain("--host='vpn.example.com'")
+        ->and($scripts[2])->toContain("--default-dns='[\"10.7.0.1\"]'")
+        ->and($scripts[2])->toContain("--default-persistent-keepalive='25'")
+        ->and($scripts[3])->toContain("--action='update-general'")
+        ->and($scripts[3])->toContain("--setup-step='0'");
 
     foreach ($scripts as $script) {
         expect($script)->not->toContain('sqlite3')
@@ -359,20 +459,65 @@ it('only exposes whitelisted wg-easy state error codes from remote failure envel
 
         $this->fail('Expected wg-easy state failure.');
     } catch (RuntimeException $exception) {
-        expect($exception->getMessage())->toContain('Failed to verify wg-easy state writability.')
+        $meta = wgEasyServiceInstallerExceptionMeta($exception);
+
+        expect($exception->getMessage())->toBe('Failed to verify wg-easy state writability.')
             ->and($exception->getMessage())->not->toContain($secret)
-            ->and($exception->getMessage())->not->toContain('remote leak');
+            ->and($exception->getMessage())->not->toContain('remote leak')
+            ->and($exception->getMessage())->not->toContain($remoteCode);
 
         if ($shouldExposeCode) {
-            expect($exception->getMessage())->toContain($remoteCode);
+            expect($meta)->toHaveKey('wg_easy_state_error_code', $remoteCode);
         } else {
-            expect($exception->getMessage())->not->toContain($remoteCode);
+            expect($meta)->not->toHaveKey('wg_easy_state_error_code');
         }
     }
 })->with([
     'whitelisted database_missing' => ['database_missing', true],
     'unknown code' => ['remote_secret_code', false],
 ]);
+
+/**
+ * @return array<string, mixed>
+ */
+function wgEasyServiceInstallerExceptionMeta(Throwable $exception): array
+{
+    if (! property_exists($exception, 'meta')) {
+        return [];
+    }
+
+    $meta = $exception->meta;
+
+    return is_array($meta) ? $meta : [];
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function wgEasyServiceInstallerLocalExecutorDispatchingProperties(): array
+{
+    return DB::table('activity_log')
+        ->where('log_name', 'local_executor')
+        ->where('event', 'local_executor.dispatching')
+        ->orderBy('id')
+        ->get()
+        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->all();
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function wgEasyServiceInstallerLocalExecutorCompletedProperties(): array
+{
+    return DB::table('activity_log')
+        ->where('log_name', 'local_executor')
+        ->where('event', 'local_executor.completed')
+        ->orderBy('id')
+        ->get()
+        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->all();
+}
 
 function wgEasyServiceInstaller(string $rootPath, ?string $statePath = null): WgEasyServiceInstaller
 {

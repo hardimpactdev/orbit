@@ -20,14 +20,22 @@ final class WgEasyVpnBackend implements VpnBackend
 
     private const string ACTION_ENSURE_WRITABLE = 'ensure-writable';
 
+    private const string ACTION_UPDATE_USER_PASSWORD = 'update-user-password';
+
+    private const string ACTION_UPDATE_SESSION_PASSWORD = 'update-session-password';
+
     private const array SAFE_WG_EASY_STATE_ERROR_CODES = [
         'database_missing',
         'database_unwritable',
         'home_directory_unavailable',
         'invalid_action',
         'invalid_token',
+        'interface_not_found',
         'missing_token',
+        'peer_not_found',
         'query_failed',
+        'session_password_not_found',
+        'user_not_found',
         'validation_failed',
     ];
 
@@ -307,39 +315,63 @@ JS;
 
     private function updatePasswordHash(string $hash): void
     {
-        $sql = "UPDATE users_table SET password = '".str_replace("'", "''", $hash)."';";
-
-        $this->runSql($sql, 'Could not update VPN web UI password.');
+        $this->runWgEasyStateAction(
+            action: self::ACTION_UPDATE_USER_PASSWORD,
+            commandOptions: [
+                'password-hash' => $hash,
+            ],
+            failureMessage: 'Could not update VPN web UI password.',
+            transportOptions: [
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+                'redact_command_options' => ['password-hash'],
+            ],
+        );
     }
 
     private function rotateSessionSecret(): void
     {
-        $secret = Str::random(128);
-        $sql = "UPDATE general_table SET session_password = '".str_replace("'", "''", $secret)."';";
+        $hash = $this->argon2Hash(Str::random(128));
 
-        $this->runSql($sql, 'Could not rotate VPN web UI sessions.');
-    }
-
-    private function runSql(string $sql, string $failureMessage): void
-    {
-        $databasePath = (string) config(
-            'services.wg_easy.database_path',
-            '/home/orbit/.wg-easy/wg-easy.db',
+        $this->runWgEasyStateAction(
+            action: self::ACTION_UPDATE_SESSION_PASSWORD,
+            commandOptions: [
+                'password-hash' => $hash,
+            ],
+            failureMessage: 'Could not rotate VPN web UI sessions.',
+            transportOptions: [
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+                'redact_command_options' => ['password-hash'],
+            ],
         );
-
-        $result = Process::timeout(5)
-            ->input($sql)
-            ->run('if command -v sudo >/dev/null 2>&1; then sudo sqlite3 '.escapeshellarg($databasePath).'; else sqlite3 '.escapeshellarg($databasePath).'; fi');
-
-        if (! $result->successful()) {
-            throw new RuntimeException($failureMessage);
-        }
     }
 
     private function ensureWgEasyStateWritable(): void
     {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_ENSURE_WRITABLE,
+            commandOptions: [],
+            failureMessage: 'Could not verify VPN web UI database writability.',
+        );
+    }
+
+    /**
+     * @param  array<string, bool|float|int|string>  $commandOptions
+     * @param  array{
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     */
+    private function runWgEasyStateAction(
+        string $action,
+        array $commandOptions,
+        string $failureMessage,
+        array $transportOptions = [],
+    ): void {
         if (! $this->localExecutor instanceof RemoteLocalExecutor || ! $this->vpnNodeResolver instanceof VpnNodeResolver) {
-            return;
+            throw new WgEasyStatePreflightFailed($failureMessage);
         }
 
         $result = $this->localExecutor->runInternal(
@@ -347,17 +379,19 @@ JS;
             commandName: self::WG_EASY_STATE_COMMAND,
             arguments: [],
             commandOptions: [
-                'action' => self::ACTION_ENSURE_WRITABLE,
+                'action' => $action,
+                ...$commandOptions,
             ],
             transportOptions: [
                 'timeout' => 30,
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => (string) Str::uuid(),
                 ],
+                ...$transportOptions,
             ],
         );
 
-        $this->assertWgEasyStateSucceeded($result, 'Could not verify VPN web UI database writability.');
+        $this->assertWgEasyStateSucceeded($result, $failureMessage);
     }
 
     private function assertWgEasyStateSucceeded(RemoteShellResult $result, string $failureMessage): void

@@ -27,6 +27,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
 
     private const string SUPPRESSED_OUTPUT_SUMMARY = '<suppressed>';
 
+    private const string REDACTED_VALUE = '<redacted>';
+
+    private const string COMMAND_OPTION_KEY_PATTERN = '/\A[a-z][a-z0-9-]*\z/';
+
     private const string START_UNSUPPORTED_MESSAGE = 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See docs/execution-lanes.md.';
 
     public function __construct(
@@ -46,6 +50,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $options
      */
     #[\Override]
@@ -72,6 +77,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $transportOptions
      */
     public function runInternal(
@@ -97,6 +103,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             commandOptions: $commandOptions,
             operationId: $operationId,
             auditLine: $dispatch['auditLine'],
+            transportOptions: $transportOptions,
         );
 
         try {
@@ -123,23 +130,30 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 result: $sanitizedResult,
             );
         } catch (Throwable $throwable) {
+            $redactedMessage = $this->transportExceptionMessageSummary(
+                throwable: $throwable,
+                operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
+                commandOptions: $commandOptions,
+            );
+            $redactedMetadata = $this->transportExceptionMetadata(
+                throwable: $throwable,
+                operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
+                commandOptions: $commandOptions,
+            );
+
             $this->logTransportException(
                 node: $node,
                 commandName: $commandName,
                 operationId: $operationId,
                 throwable: $throwable,
-                operationToken: $dispatch['operationToken'],
-                transportOptions: $transportOptions,
+                exceptionMessage: $redactedMessage,
             );
 
-            $redactedMessage = $this->outputSummary(
-                output: $throwable->getMessage(),
-                operationToken: $dispatch['operationToken'],
-                suppress: $this->shouldSuppressExceptionMessage($transportOptions),
-            );
-
-            throw new RuntimeException(
+            throw new RemoteLocalExecutorTransportFailed(
                 message: "Remote local executor transport failed: {$redactedMessage}",
+                meta: $redactedMetadata,
                 code: (int) $throwable->getCode(),
             );
         }
@@ -166,6 +180,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $options
      */
     #[\Override]
@@ -186,6 +201,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $transportOptions
      */
     public function startInternal(
@@ -251,7 +267,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         array $commandOptions,
         string $operationId,
         string $auditLine,
+        array $transportOptions,
     ): void {
+        $redactedCommandOptionNames = $this->redactedCommandOptionNames($transportOptions);
+
         $this->activityLogger->log(
             new LocalExecutorActivity(
                 event: 'local_executor.dispatching',
@@ -265,8 +284,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'target_node_name' => (string) $node->name,
                     'command' => $commandName,
                     'arguments' => $this->scalarPayload($arguments),
-                    'command_options' => $this->scalarPayload($commandOptions),
-                    'command_line' => $auditLine,
+                    'command_options' => $this->scalarPayload($commandOptions, $redactedCommandOptionNames),
+                    'command_line' => $this->redactCommandOptionsInLine($auditLine, $redactedCommandOptionNames),
                 ],
             ),
             channel: 'local_executor',
@@ -307,25 +326,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         );
     }
 
-    /**
-     * @param  array{
-     *     cwd?: string,
-     *     timeout?: int,
-     *     input?: string,
-     *     throw?: bool,
-     *     metadata?: array<string, string>,
-     *     strict?: bool,
-     *     redact_stdout?: bool,
-     *     redact_stderr?: bool,
-     * }  $transportOptions
-     */
     private function logTransportException(
         Node $node,
         string $commandName,
         string $operationId,
         Throwable $throwable,
-        string $operationToken,
-        array $transportOptions,
+        string $exceptionMessage,
     ): void {
         $this->activityLogger->log(
             new LocalExecutorActivity(
@@ -343,7 +349,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'stdout_summary' => '',
                     'stderr_summary' => '',
                     'exception_class' => $throwable::class,
-                    'exception_message' => $this->outputSummary($throwable->getMessage(), $operationToken, $this->shouldSuppressExceptionMessage($transportOptions)),
+                    'exception_message' => $exceptionMessage,
                 ],
             ),
             channel: 'local_executor',
@@ -371,6 +377,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
     }
 
     /**
+     * @param  array<int|string, mixed>  $commandOptions
      * @param  array{
      *     cwd?: string,
      *     timeout?: int,
@@ -380,6 +387,73 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     */
+    private function transportExceptionMessageSummary(
+        Throwable $throwable,
+        string $operationToken,
+        array $transportOptions,
+        array $commandOptions,
+    ): string {
+        return $this->outputSummary(
+            output: $this->redactExceptionText(
+                value: $throwable->getMessage(),
+                operationToken: $operationToken,
+                transportOptions: $transportOptions,
+                commandOptions: $commandOptions,
+            ),
+            operationToken: $operationToken,
+            suppress: $this->shouldSuppressExceptionMessage($transportOptions),
+        );
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     * @return array<array-key, mixed>
+     */
+    private function transportExceptionMetadata(
+        Throwable $throwable,
+        string $operationToken,
+        array $transportOptions,
+        array $commandOptions,
+    ): array {
+        $metadata = $this->rawTransportExceptionMetadata($throwable);
+
+        if ($metadata === []) {
+            return [];
+        }
+
+        return $this->redactExceptionMetadata(
+            metadata: $metadata,
+            operationToken: $operationToken,
+            transportOptions: $transportOptions,
+            commandOptions: $commandOptions,
+        );
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $transportOptions
      */
     private function shouldSuppressExceptionMessage(array $transportOptions): bool
@@ -388,11 +462,33 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             || (bool) ($transportOptions['redact_stderr'] ?? false);
     }
 
+    /**
+     * @return array<array-key, mixed>
+     */
+    private function rawTransportExceptionMetadata(Throwable $throwable): array
+    {
+        $reflection = new \ReflectionObject($throwable);
+
+        if (! $reflection->hasProperty('meta')) {
+            return [];
+        }
+
+        $property = $reflection->getProperty('meta');
+
+        if (! $property->isPublic()) {
+            return [];
+        }
+
+        $metadata = $property->getValue($throwable);
+
+        return is_array($metadata) ? $metadata : [];
+    }
+
     private function redactOperationToken(string $value, string $operationToken): string
     {
         $redacted = preg_replace(
             '/--operation-token\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
-            '--operation-token=<redacted>',
+            '--operation-token='.self::REDACTED_VALUE,
             $value,
         ) ?? $value;
 
@@ -400,7 +496,184 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             return $redacted;
         }
 
-        return str_replace($operationToken, '<redacted>', $redacted);
+        return str_replace($operationToken, self::REDACTED_VALUE, $redacted);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     */
+    private function redactExceptionText(
+        string $value,
+        string $operationToken,
+        array $transportOptions,
+        array $commandOptions,
+    ): string {
+        return $this->redactOperationToken(
+            $this->redactCommandOptionSecrets($value, $transportOptions, $commandOptions),
+            $operationToken,
+        );
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     */
+    private function redactCommandOptionSecrets(string $value, array $transportOptions, array $commandOptions): string
+    {
+        $optionNames = $this->redactedCommandOptionNames($transportOptions);
+
+        if ($optionNames === []) {
+            return $value;
+        }
+
+        $redacted = $this->redactCommandOptionsInLine($value, $optionNames);
+
+        foreach ($this->redactedCommandOptionValues($commandOptions, $optionNames) as $optionValue) {
+            $redacted = str_replace($optionValue, self::REDACTED_VALUE, $redacted);
+        }
+
+        return $redacted;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $metadata
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     * @return array<array-key, mixed>
+     */
+    private function redactExceptionMetadata(
+        array $metadata,
+        string $operationToken,
+        array $transportOptions,
+        array $commandOptions,
+    ): array {
+        $optionNames = $this->redactedCommandOptionNames($transportOptions);
+        $redacted = [];
+
+        foreach ($metadata as $key => $value) {
+            if (in_array($key, $optionNames, true)) {
+                $redacted[$key] = self::REDACTED_VALUE;
+
+                continue;
+            }
+
+            $redacted[$key] = $this->redactExceptionMetadataValue(
+                value: $value,
+                operationToken: $operationToken,
+                transportOptions: $transportOptions,
+                commandOptions: $commandOptions,
+            );
+        }
+
+        return $redacted;
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     */
+    private function redactExceptionMetadataValue(
+        mixed $value,
+        string $operationToken,
+        array $transportOptions,
+        array $commandOptions,
+    ): mixed {
+        if (is_string($value)) {
+            return $this->redactExceptionText($value, $operationToken, $transportOptions, $commandOptions);
+        }
+
+        if (is_array($value)) {
+            return $this->redactExceptionMetadata($value, $operationToken, $transportOptions, $commandOptions);
+        }
+
+        if (is_bool($value) || is_float($value) || is_int($value) || $value === null) {
+            return $value;
+        }
+
+        return self::REDACTED_VALUE;
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  list<string>  $optionNames
+     * @return list<string>
+     */
+    private function redactedCommandOptionValues(array $commandOptions, array $optionNames): array
+    {
+        $values = [];
+
+        foreach ($optionNames as $optionName) {
+            $optionValue = $commandOptions[$optionName] ?? null;
+
+            if (! is_string($optionValue) || $optionValue === '') {
+                continue;
+            }
+
+            if (! in_array($optionValue, $values, true)) {
+                $values[] = $optionValue;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param  list<string>  $optionNames
+     */
+    private function redactCommandOptionsInLine(string $value, array $optionNames): string
+    {
+        $redacted = $value;
+
+        foreach ($optionNames as $optionName) {
+            $redacted = preg_replace(
+                '/--'.preg_quote($optionName, '/').'\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
+                "--{$optionName}=".self::REDACTED_VALUE,
+                $redacted,
+            ) ?? $redacted;
+        }
+
+        return $redacted;
     }
 
     private function truncate(string $value): string
@@ -414,15 +687,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
 
     /**
      * @param  array<int|string, mixed>  $values
+     * @param  list<string>  $redactedKeys
      * @return array<int|string, bool|float|int|string>
      */
-    private function scalarPayload(array $values): array
+    private function scalarPayload(array $values, array $redactedKeys = []): array
     {
         $payload = [];
 
         foreach ($values as $key => $value) {
             if (is_bool($value) || is_float($value) || is_int($value) || is_string($value)) {
-                $payload[$key] = $value;
+                $payload[$key] = is_string($key) && in_array($key, $redactedKeys, true)
+                    ? self::REDACTED_VALUE
+                    : $value;
             }
         }
 
@@ -439,6 +715,48 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     * @return list<string>
+     */
+    private function redactedCommandOptionNames(array $transportOptions): array
+    {
+        $optionNames = $transportOptions['redact_command_options'] ?? [];
+
+        if ($optionNames === []) {
+            return [];
+        }
+
+        if (! is_array($optionNames) || ! array_is_list($optionNames)) {
+            throw new RuntimeException('redact_command_options must be a list of command option names.');
+        }
+
+        $redacted = [];
+
+        foreach ($optionNames as $optionName) {
+            if (! is_string($optionName) || preg_match(self::COMMAND_OPTION_KEY_PATTERN, $optionName) !== 1) {
+                throw new RuntimeException('redact_command_options must be a list of command option names.');
+            }
+
+            if (! in_array($optionName, $redacted, true)) {
+                $redacted[] = $optionName;
+            }
+        }
+
+        return $redacted;
+    }
+
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $transportOptions
      */
     private function operationId(array $transportOptions): string
@@ -463,6 +781,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     strict?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $transportOptions
      * @return array{
      *     cwd?: string,
@@ -475,7 +794,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      */
     private function transportDispatchOptions(array $transportOptions): array
     {
-        unset($transportOptions['redact_stdout'], $transportOptions['redact_stderr']);
+        unset($transportOptions['redact_stdout'], $transportOptions['redact_stderr'], $transportOptions['redact_command_options']);
 
         return $transportOptions;
     }
@@ -524,5 +843,16 @@ final readonly class LocalExecutorActivity implements Loggable
     public function description(): string
     {
         return $this->description;
+    }
+}
+
+final class RemoteLocalExecutorTransportFailed extends RuntimeException
+{
+    /**
+     * @param  array<array-key, mixed>  $meta
+     */
+    public function __construct(string $message, public readonly array $meta = [], int $code = 0)
+    {
+        parent::__construct($message, $code);
     }
 }

@@ -23,14 +23,24 @@ class WgEasyServiceInstaller
 
     private const string ACTION_ENSURE_WRITABLE = 'ensure-writable';
 
+    private const string ACTION_UPSERT_PEER = 'upsert-peer';
+
+    private const string ACTION_DELETE_PEER = 'delete-peer';
+
+    private const string ACTION_UPDATE_INTERFACE = 'update-interface';
+
     private const array SAFE_WG_EASY_STATE_ERROR_CODES = [
         'database_missing',
         'database_unwritable',
         'home_directory_unavailable',
         'invalid_action',
         'invalid_token',
+        'interface_not_found',
         'missing_token',
+        'peer_not_found',
         'query_failed',
+        'session_password_not_found',
+        'user_not_found',
         'validation_failed',
     ];
 
@@ -125,54 +135,11 @@ class WgEasyServiceInstaller
 
         $this->waitUntilReady();
 
-        $statements = [];
         $runtimeCommands = [];
 
         foreach ($peers as $peer) {
-            $name = $this->sqliteString($peer['name']);
-            $address = $this->sqliteString($peer['address']);
-            $ipv6 = $this->sqliteString($this->ipv6For($peer['address']));
-            $privateKey = $this->sqliteString($peer['private_key']);
-            $publicKey = $this->sqliteString($peer['public_key']);
-            $preSharedKey = $this->sqliteString($peer['pre_shared_key']);
-            $allowedIps = $this->sqliteString('["0.0.0.0/0", "::/0"]');
-            $serverAllowedIps = $this->sqliteString('["'.$peer['address'].'/32"]');
-            $dns = $this->sqliteString('["10.6.0.1"]');
-
-            $statements[] = <<<SQL
-DELETE FROM clients_table WHERE name = {$name} OR public_key = {$publicKey} OR ipv4_address = {$address};
-INSERT INTO clients_table (
-    user_id,
-    interface_id,
-    name,
-    ipv4_address,
-    ipv6_address,
-    private_key,
-    public_key,
-    pre_shared_key,
-    allowed_ips,
-    server_allowed_ips,
-    persistent_keepalive,
-    mtu,
-    dns,
-    enabled
-) VALUES (
-    1,
-    'wg0',
-    {$name},
-    {$address},
-    {$ipv6},
-    {$privateKey},
-    {$publicKey},
-    {$preSharedKey},
-    {$allowedIps},
-    {$serverAllowedIps},
-    25,
-    1420,
-    {$dns},
-    1
-);
-SQL;
+            $this->deleteWgEasyPeer($peer['name']);
+            $this->upsertWgEasyPeer($peer);
 
             $runtimeCommands[] = sprintf(
                 '$ORBIT_DOCKER exec wg-easy sh -lc %s',
@@ -190,14 +157,9 @@ SQL;
             <<<'SH'
 set -euo pipefail
 %s
-sqlite3 %s/wg-easy.db <<'ORBIT_WG_EASY_SQL'
-%s
-ORBIT_WG_EASY_SQL
 %s
 SH,
             $this->dockerShellPrefix(),
-            $this->statePathForShell(),
-            implode("\n", $statements),
             implode("\n", $runtimeCommands),
         );
 
@@ -246,13 +208,10 @@ SH,
 %s
 $ORBIT_DOCKER exec wg-easy ip addr replace %s dev wg0
 $ORBIT_DOCKER exec wg-easy ip route replace %s dev wg0
-sqlite3 %s/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = %s WHERE name = 'wg0';" || true
 SH,
             $this->dockerShellPrefix(),
             escapeshellarg($serverAddress),
             escapeshellarg($wireguardCidr),
-            $this->statePathForShell(),
-            $this->sqliteString($wireguardCidr),
         ));
 
         if (! $result->successful()) {
@@ -261,6 +220,7 @@ SH,
             );
         }
 
+        $this->updateWgEasyInterface($wireguardCidr);
         $this->updateWgEasyUserConfig($publicHost, '["'.$dnsIp.'"]', 25);
         $this->updateWgEasyGeneralSetupStep(0);
     }
@@ -362,16 +322,56 @@ YAML;
         return 'if docker ps >/dev/null 2>&1; then ORBIT_DOCKER=docker; else ORBIT_DOCKER="sudo docker"; fi';
     }
 
-    private function sqliteString(string $value): string
-    {
-        return "'".str_replace("'", "''", $value)."'";
-    }
-
     private function ipv6For(string $ipv4): string
     {
         $lastOctet = (int) substr(strrchr($ipv4, '.') ?: '.0', 1);
 
         return 'fdcc:ad94:bacf:61a4::cafe:'.dechex($lastOctet);
+    }
+
+    private function deleteWgEasyPeer(string $name): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_DELETE_PEER,
+            commandOptions: [
+                'name' => $name,
+            ],
+            failureMessage: 'Failed to delete wg-easy peer.',
+            successfulErrorCodes: ['peer_not_found'],
+        );
+    }
+
+    /**
+     * @param  array{name: string, private_key: string, public_key: string, address: string, pre_shared_key: string}  $peer
+     */
+    private function upsertWgEasyPeer(array $peer): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_UPSERT_PEER,
+            commandOptions: [
+                'name' => $peer['name'],
+                'ipv4' => $peer['address'],
+                'ipv6' => $this->ipv6For($peer['address']),
+                'private-key' => $peer['private_key'],
+                'public-key' => $peer['public_key'],
+                'pre-shared-key' => $peer['pre_shared_key'],
+            ],
+            failureMessage: 'Failed to configure wg-easy peer.',
+            transportOptions: [
+                'redact_command_options' => ['private-key', 'pre-shared-key'],
+            ],
+        );
+    }
+
+    private function updateWgEasyInterface(string $wireguardCidr): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_UPDATE_INTERFACE,
+            commandOptions: [
+                'ipv4-cidr' => $wireguardCidr,
+            ],
+            failureMessage: 'Failed to update wg-easy interface configuration.',
+        );
     }
 
     private function updateWgEasyUserConfig(string $host, string $defaultDns, int $defaultPersistentKeepalive): void
@@ -409,9 +409,22 @@ YAML;
 
     /**
      * @param  array<string, bool|float|int|string>  $commandOptions
+     * @param  array{
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
+     * @param  list<string>  $successfulErrorCodes
      */
-    private function runWgEasyStateAction(string $action, array $commandOptions, string $failureMessage): void
-    {
+    private function runWgEasyStateAction(
+        string $action,
+        array $commandOptions,
+        string $failureMessage,
+        array $transportOptions = [],
+        array $successfulErrorCodes = [],
+    ): void {
+        if (! $this->hasOperationTokenSecret()) {
+            return;
+        }
+
         $result = $this->localExecutor()->runInternal(
             node: $this->vpnNode(),
             commandName: self::WG_EASY_STATE_COMMAND,
@@ -425,21 +438,34 @@ YAML;
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => (string) Str::uuid(),
                 ],
+                ...$transportOptions,
             ],
         );
 
-        $this->assertWgEasyStateSucceeded($result, $failureMessage);
+        $this->assertWgEasyStateSucceeded($result, $failureMessage, $successfulErrorCodes);
     }
 
-    private function assertWgEasyStateSucceeded(RemoteShellResult $result, string $failureMessage): void
-    {
+    /**
+     * @param  list<string>  $successfulErrorCodes
+     */
+    private function assertWgEasyStateSucceeded(
+        RemoteShellResult $result,
+        string $failureMessage,
+        array $successfulErrorCodes = [],
+    ): void {
         $envelope = $this->wgEasyStateEnvelope($result, $failureMessage);
 
         if ($result->successful() && ($envelope['ok'] ?? null) === true) {
             return;
         }
 
-        throw new RuntimeException($this->wgEasyStateFailureMessage($failureMessage, $envelope));
+        $code = $this->wgEasyStateFailureCode($envelope);
+
+        if ($code !== null && in_array($code, $successfulErrorCodes, true)) {
+            return;
+        }
+
+        throw $this->wgEasyStateFailure($failureMessage, $code);
     }
 
     /**
@@ -450,11 +476,11 @@ YAML;
         try {
             $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            throw new RuntimeException($failureMessage);
+            throw new WgEasyStateInstallerFailed($failureMessage);
         }
 
         if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
-            throw new RuntimeException($failureMessage);
+            throw new WgEasyStateInstallerFailed($failureMessage);
         }
 
         return $decoded;
@@ -463,16 +489,22 @@ YAML;
     /**
      * @param  array<string, mixed>  $envelope
      */
-    private function wgEasyStateFailureMessage(string $failureMessage, array $envelope): string
+    private function wgEasyStateFailureCode(array $envelope): ?string
     {
         $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
-        $code = $this->safeWgEasyStateErrorCode($error['code'] ?? null);
 
+        return $this->safeWgEasyStateErrorCode($error['code'] ?? null);
+    }
+
+    private function wgEasyStateFailure(string $failureMessage, ?string $code): WgEasyStateInstallerFailed
+    {
         if ($code === null) {
-            return $failureMessage;
+            return new WgEasyStateInstallerFailed($failureMessage);
         }
 
-        return "{$failureMessage} Remote error code: {$code}.";
+        return new WgEasyStateInstallerFailed($failureMessage, [
+            'wg_easy_state_error_code' => $code,
+        ]);
     }
 
     private function safeWgEasyStateErrorCode(mixed $value): ?string
@@ -491,6 +523,13 @@ YAML;
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
+    private function hasOperationTokenSecret(): bool
+    {
+        $secret = config('orbit.operation_token_secret');
+
+        return is_string($secret) && trim($secret) !== '';
+    }
+
     private function localExecutor(): RemoteLocalExecutor
     {
         return $this->localExecutor ?? app(RemoteLocalExecutor::class);
@@ -504,5 +543,16 @@ YAML;
     private function vpnNodeResolver(): VpnNodeResolver
     {
         return $this->vpnNodeResolver ?? app(VpnNodeResolver::class);
+    }
+}
+
+final class WgEasyStateInstallerFailed extends RuntimeException
+{
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public function __construct(string $message, public readonly array $meta = [])
+    {
+        parent::__construct($message);
     }
 }

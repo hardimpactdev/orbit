@@ -604,6 +604,54 @@ describe(RemoteLocalExecutor::class, function (): void {
         ],
     ]);
 
+    it('redacts requested command options in dispatch audit rows while dispatching the real values', function (): void {
+        $passwordHash = '$argon2id$v=19$m=65536,t=3,p=4$hash$hash';
+        $privateKey = 'peer-private-key-probe';
+        $preSharedKey = 'peer-pre-shared-key-probe';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "{\"ok\":true}\n", stderr: '', durationMs: 13),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:wg-easy:state',
+            arguments: [],
+            commandOptions: [
+                'action' => 'upsert-peer',
+                'password-hash' => $passwordHash,
+                'private-key' => $privateKey,
+                'public-key' => 'peer-public-key-probe',
+                'pre-shared-key' => $preSharedKey,
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                'redact_command_options' => ['password-hash', 'private-key', 'pre-shared-key'],
+            ],
+        );
+
+        $script = $transport->calls[0]['script'];
+        $dispatchProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[0]);
+
+        expect($script)->toContain("--password-hash='{$passwordHash}'")
+            ->and($script)->toContain("--private-key='{$privateKey}'")
+            ->and($script)->toContain("--pre-shared-key='{$preSharedKey}'")
+            ->and($transport->calls[0]['options'])->toBe(['timeout' => 30])
+            ->and($dispatchProperties['command_options'])->toMatchArray([
+                'action' => 'upsert-peer',
+                'password-hash' => '<redacted>',
+                'private-key' => '<redacted>',
+                'public-key' => 'peer-public-key-probe',
+                'pre-shared-key' => '<redacted>',
+            ])
+            ->and($dispatchProperties['command_line'])->toContain('--password-hash=<redacted>')
+            ->and($dispatchProperties['command_line'])->toContain('--private-key=<redacted>')
+            ->and($dispatchProperties['command_line'])->toContain('--pre-shared-key=<redacted>')
+            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))->not->toContain($passwordHash)
+            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))->not->toContain($privateKey)
+            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))->not->toContain($preSharedKey);
+    });
+
     it('suppresses generic transport exception messages when output redaction is requested', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException('transport leaked api_token=poly-token-secret'),

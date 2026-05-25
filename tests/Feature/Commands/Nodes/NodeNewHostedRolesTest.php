@@ -214,12 +214,14 @@ it('creates an app-development hosted role with tld settings', function (): void
     $commands = implode("\n", $this->processCommands);
 
     expect($commands)->toContain('99-orbit-hardening.conf')
-        ->toContain('clients_table')
         ->toContain('wg set wg0 peer')
         ->toContain('/etc/wireguard/wg-orbit.conf')
         ->toContain('ping -c 1 -W 2')
         ->toContain('PermitRootLogin no')
-        ->toContain('AllowUsers');
+        ->toContain('AllowUsers')
+        ->not->toContain('clients_table')
+        ->not->toContain('sqlite3')
+        ->not->toContain('sudo sqlite3');
 });
 
 it('pins the host key before provisioning and persists the canonical steady-state user', function (): void {
