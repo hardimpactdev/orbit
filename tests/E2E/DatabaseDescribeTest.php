@@ -6,12 +6,14 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
+require_once __DIR__.'/Support/SqliteDatabaseFixture.php';
+
 it('describes a table for a database connection from the control node through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     $slug = 'e2e-db-desc-'.strtolower(bin2hex(random_bytes(3)));
-    $dbPath = '/tmp/'.$slug.'.sqlite';
+    $dbPath = "/home/orbit/{$slug}.sqlite";
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
@@ -28,15 +30,9 @@ it('describes a table for a database connection from the control node through th
         );
         e2eGrantNodeAccess($topology);
 
-        // Create a SQLite file with a table on the dev app node
-        $topology->ssh(
-            'dev',
-            sprintf(
-                'sqlite3 %s "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"',
-                escapeshellarg($dbPath),
-            ),
-            timeoutSeconds: 30,
-        );
+        e2eCreateSqliteDatabaseFixture($topology, 'dev', $dbPath, [
+            'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);',
+        ]);
 
         // Register the connection on the gateway pointing at the dev node
         $slugValue = var_export($slug, true);
