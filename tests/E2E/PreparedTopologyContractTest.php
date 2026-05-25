@@ -119,10 +119,6 @@ function expectPreparedControlTopology(E2ETopologyLease $topology, E2EConfig $co
     $key = $topology->sshKeyPair();
 
     expectPreparedOrbitCli($control, $config->controlUser, $key);
-
-    $controlNode = readPreparedNodeFromControl($control, $config->controlUser, $key, 'control-1');
-
-    expect($controlNode)->toBeNull();
 }
 
 function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -139,11 +135,9 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
 
     expectPreparedOrbitCli($gateway, 'orbit', $key);
 
-    $gatewaySettings = readPreparedGatewaySettings($control, $config->controlUser, $key);
+    $gatewayUrl = readPreparedClientGatewayUrl($control, $config->controlUser, $key);
 
-    expect($gatewaySettings['gateway_url'])->toBe(expectedPreparedGatewayUrl($topology))
-        ->and($gatewaySettings['gateway_wg_ip'])->toBe('10.6.0.2')
-        ->and($gatewaySettings['ca_pem_path'])->toContain('storage/app/orbit/gateway-ca/orbit.crt');
+    expect($gatewayUrl)->toBe(expectedPreparedGatewayUrl($topology));
 
     E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
     expectPreparedGatewayCertificateKeysReadable($gateway, $key);
@@ -338,65 +332,16 @@ function preparedOrbitTinkerCommand(string $orbitPath, string $php): string
     return 'cd '.escapeshellarg($orbitPath).' && orbit tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));");
 }
 
-/**
- * @return array<string, mixed>|null
- */
-function readPreparedNodeFromControl(E2EInstance $control, string $controlUser, SshKeyPair $key, string $name): ?array
+function readPreparedClientGatewayUrl(E2EInstance $control, string $controlUser, SshKeyPair $key): string
 {
-    $nameValue = var_export($name, true);
-
-    $php = <<<PHP
-\$node = \\App\\Models\\Node::query()->where('name', {$nameValue})->first();
-echo json_encode(\$node?->only([
-    'name',
-    'role',
-    'environment',
-    'tld',
-    'host',
-    'wireguard_address',
-    'gateway_endpoint',
-        'user',
-    ]), JSON_THROW_ON_ERROR);
-PHP;
-
     $result = E2ECommand::ssh(
         $control,
         $controlUser,
         $key,
-        'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && orbit tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg("/home/{$controlUser}/orbit/apps/cli")." && grep -E '^ORBIT_GATEWAY_URL=' .env | tail -n 1 | cut -d= -f2-",
     );
 
-    /** @var array<string, mixed>|null $node */
-    $node = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-
-    return $node;
-}
-
-/**
- * @return array{gateway_url: string|null, gateway_wg_ip: string|null, ca_pem_path: string|null}
- */
-function readPreparedGatewaySettings(E2EInstance $control, string $controlUser, SshKeyPair $key): array
-{
-    $php = <<<'PHP'
-$settings = \App\Models\LocalGatewaySettings::current();
-echo json_encode([
-    'gateway_url' => $settings->gateway_url,
-    'gateway_wg_ip' => $settings->gateway_wg_ip,
-    'ca_pem_path' => $settings->ca_pem_path,
-], JSON_THROW_ON_ERROR);
-PHP;
-
-    $result = E2ECommand::ssh(
-        $control,
-        $controlUser,
-        $key,
-        'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && orbit tinker --execute='.escapeshellarg($php),
-    );
-
-    /** @var array{gateway_url: string|null, gateway_wg_ip: string|null, ca_pem_path: string|null} $settings */
-    $settings = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-
-    return $settings;
+    return trim($result->output());
 }
 
 /**
@@ -405,10 +350,10 @@ PHP;
 function expectedPreparedGatewayUrl(E2ETopologyLease $topology): string
 {
     if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
-        return 'https://gateway';
+        return 'http://gateway';
     }
 
-    return 'https://'.$topology->gatewayApiIp();
+    return 'http://'.$topology->gatewayApiIp();
 }
 
 function expectedPreparedGatewayEndpoint(): string

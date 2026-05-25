@@ -67,17 +67,18 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
         && str_contains($process->command, "'caddy:2-alpine'"));
 });
 
-it('installs a Docker-first orbit launcher without a host PHP fallback', function (): void {
+it('keeps the Docker topology runtime image source-less without a baked orbit launcher', function (): void {
     $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
-        ->toContain('/usr/local/bin/orbit')
-        ->toContain('sudo docker exec')
-        ->toContain('sudo docker network connect')
-        ->toContain('--env "ORBIT_HOST_CWD=$PWD"')
-        ->toContain('--env "ORBIT_SOURCE_PATH=$PWD"')
-        ->toContain('--env "ORBIT_RUNTIME_CONTAINER=$runtime_container"')
-        ->toContain('${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}')
+        ->toContain('LABEL org.orbit.e2e.source="prepared-checkout"')
+        ->not->toContain('> /usr/local/bin/orbit \\')
+        ->not->toContain('sudo docker exec')
+        ->not->toContain('sudo docker network connect')
+        ->not->toContain('--env "ORBIT_HOST_CWD=$PWD"')
+        ->not->toContain('--env "ORBIT_SOURCE_PATH=$PWD"')
+        ->not->toContain('--env "ORBIT_RUNTIME_CONTAINER=$runtime_container"')
+        ->not->toContain('${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}')
         ->not->toContain('exec php "$PWD/artisan" "$@"')
         ->not->toContain('exec php "$HOME/orbit/artisan" "$@"');
 });

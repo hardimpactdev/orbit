@@ -62,6 +62,19 @@ Prepared Docker topologies model the target runtime contract:
 - topology host images use an Ubuntu apt substrate so host prerequisite
   packages, including the PHP 8.4 CLI baseline, mirror the installer path used
   on managed Ubuntu nodes;
+- topology host images do not bake an Orbit source tree. Docker topology
+  preparation streams the current checkout into `/home/control/orbit` on the
+  operator node and `/home/orbit/orbit` on gateway, app, ingress, and agent
+  nodes, then links `/usr/local/bin/orbit` to the checkout launcher at
+  `~/orbit/bin/orbit`;
+- Docker topology preparation installs Composer dependencies per role: gateway
+  nodes use `apps/gateway` when that app exists and otherwise the current root
+  app until the gateway relocation lands; non-gateway operator, workload,
+  ingress, and agent nodes install `apps/cli`;
+- after the gateway API is reachable, topology preparation seeds
+  `apps/cli/.env` on non-gateway nodes with the prepared gateway HTTP endpoint
+  (`http://gateway` in DNS-alias mode, otherwise `http://10.6.0.2`) so public
+  CLI commands use the client artifact instead of the legacy root app registry;
 - host launcher -> role-aware artifact (`apps/cli/orbit` on non-gateway nodes
   or `apps/gateway/artisan` on the gateway) -> gateway `orbit-caddy` -> gateway
   `orbit-runtime`;

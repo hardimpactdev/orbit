@@ -12,6 +12,7 @@ use App\Console\Commands\E2EReapDockerCommand;
 use App\Console\Commands\E2EReapHcloudCommand;
 use App\Console\Commands\E2EReapIncusCommand;
 use App\Console\Commands\E2ETestCommand;
+use App\E2E\Support\E2ECurrentCheckout;
 use Symfony\Component\Process\Process;
 
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
@@ -277,15 +278,19 @@ it('keeps local composer dependencies in the docker topology build context', fun
     expect(in_array('vendor', $ignoredPaths, true))->toBeFalse();
 });
 
-it('removes persisted orbit certificate material from runtime image worktrees before install', function (): void {
+it('keeps persisted orbit certificate material out of source-less docker topology preparation', function (): void {
     $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
-        ->toContain('cp -a /opt/orbit-source/. /home/control/orbit/')
-        ->toContain('cp -a /opt/orbit-source/. /home/orbit/orbit/')
-        ->toContain('rm -rf /opt/orbit-source/storage/app/orbit/ca /opt/orbit-source/storage/app/orbit/certs /opt/orbit-source/storage/app/orbit/keys')
-        ->toContain('rm -rf /home/control/orbit/storage/app/orbit/ca /home/control/orbit/storage/app/orbit/certs /home/control/orbit/storage/app/orbit/keys')
-        ->toContain('rm -rf /home/orbit/orbit/storage/app/orbit/ca /home/orbit/orbit/storage/app/orbit/certs /home/orbit/orbit/storage/app/orbit/keys');
+        ->toContain('LABEL org.orbit.e2e.source="prepared-checkout"')
+        ->not->toContain('/opt/orbit-source')
+        ->not->toContain('cp -a /opt/orbit-source/. /home/control/orbit/')
+        ->not->toContain('cp -a /opt/orbit-source/. /home/orbit/orbit/');
+
+    expect(E2ECurrentCheckout::archiveExcludePatterns())
+        ->toContain('./storage/app/orbit/ca/*')
+        ->toContain('./storage/app/orbit/certs/*')
+        ->toContain('./storage/app/orbit/keys/*');
 });
 
 it('keeps the docker topology host image free of host Composer dependencies', function (): void {
