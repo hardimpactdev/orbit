@@ -60,7 +60,7 @@ final class E2ECurrentCheckout
     public static function install(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom = null, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null): string
     {
         if (self::checkoutCacheEnabled()) {
-            return self::installFromCachedBase($instance, $user, $keyPair, $seedFrom, $timer, $afterBaseInstall);
+            return self::installFromCachedBase($instance, $user, $keyPair, $seedFrom, $timer, $afterBaseInstall, $afterInstall);
         }
 
         $remotePath = "/home/{$user}/orbit-current";
@@ -69,6 +69,7 @@ final class E2ECurrentCheckout
         try {
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
             self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer);
+            self::activateCurrentCheckout($instance, $remotePath);
             $afterInstall?->__invoke($remotePath);
 
             return $remotePath;
@@ -96,6 +97,38 @@ final class E2ECurrentCheckout
         self::$nowResolver = $resolver !== null ? \Closure::fromCallable($resolver) : null;
     }
 
+    public static function orbitWrapperScript(string $checkout, bool $dockerRuntime): string
+    {
+        if ($dockerRuntime) {
+            return implode("\n", [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'runtime_container="${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}"',
+                'runtime_workdir="${ORBIT_HOST_CWD:-$PWD}"',
+                'env_args=(',
+                '    --env "ORBIT_HOST_CWD=${runtime_workdir}"',
+                '    --env '.escapeshellarg("ORBIT_SOURCE_PATH={$checkout}"),
+                ')',
+                'if [ -n "${ORBIT_IS_GATEWAY:-}" ]; then',
+                '    env_args+=(--env "ORBIT_IS_GATEWAY=${ORBIT_IS_GATEWAY}")',
+                'fi',
+                'if [ -n "${ORBIT_E2E_DOCKER_NETWORK:-}" ]; then',
+                '    sudo docker network connect "${ORBIT_E2E_DOCKER_NETWORK}" "${runtime_container}" >/dev/null 2>&1 || true',
+                'fi',
+                'exec sudo docker exec \\',
+                '    "${env_args[@]}" \\',
+                '    --workdir "${runtime_workdir}" \\',
+                '    "${runtime_container}" \\',
+                '    php '.escapeshellarg("{$checkout}/artisan").' "$@"',
+                '',
+            ]);
+        }
+
+        $php = 'p'.'hp';
+
+        return "#!/usr/bin/env bash\nset -euo pipefail\nexec {$php} ".escapeshellarg("{$checkout}/artisan").' "$@"'."\n";
+    }
+
     private static function checkoutCacheEnabled(): bool
     {
         $value = getenv('ORBIT_E2E_CHECKOUT_CACHE');
@@ -104,7 +137,7 @@ final class E2ECurrentCheckout
             && in_array(strtolower($value), ['1', 'true', 'yes', 'process'], true);
     }
 
-    private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null): string
+    private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null): string
     {
         $cacheKey = implode('|', [$instance->name(), $user, $seedFrom ?? '']);
         $basePath = "/home/{$user}/orbit-current-base-".substr(sha1($cacheKey), 0, 10);
@@ -116,6 +149,7 @@ final class E2ECurrentCheckout
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
 
             self::runInstallPhases($instance, $user, $keyPair, $basePath, $seedFrom, $timer);
+            self::activateCurrentCheckout($instance, $basePath);
             $afterBaseInstall?->__invoke($basePath);
 
             self::$cachedBasePaths[$cacheKey] = $basePath;
@@ -139,7 +173,37 @@ final class E2ECurrentCheckout
             $cloneCheckout();
         }
 
+        self::activateCurrentCheckout($instance, $remotePath);
+        $afterInstall?->__invoke($remotePath);
+
         return $remotePath;
+    }
+
+    private static function activateCurrentCheckout(E2EInstance $instance, string $remotePath): void
+    {
+        if (! self::usesDockerRuntime($instance)) {
+            return;
+        }
+
+        $tmpScript = tempnam(sys_get_temp_dir(), 'orbit-current-');
+
+        if (! is_string($tmpScript)) {
+            throw new RuntimeException('Could not create temporary current-checkout orbit wrapper.');
+        }
+
+        try {
+            if (file_put_contents($tmpScript, self::orbitWrapperScript($remotePath, dockerRuntime: true)) === false) {
+                throw new RuntimeException("Could not write current-checkout orbit wrapper to {$tmpScript}.");
+            }
+
+            if (! chmod($tmpScript, 0755)) {
+                throw new RuntimeException("Could not make current-checkout orbit wrapper executable at {$tmpScript}.");
+            }
+
+            $instance->copyFileToInstance($tmpScript, '/usr/local/bin/orbit');
+        } finally {
+            @unlink($tmpScript);
+        }
     }
 
     private static function runInstallPhases(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?string $seedFrom, ?E2EPhaseTimer $timer): void

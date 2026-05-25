@@ -61,7 +61,7 @@ it('shows a registered tool from gateway intent as human output', function (): v
     }
 })->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
-it('returns tool.not_found error for unknown tool name in the gateway registry', function (): void {
+it('returns tool.not_found error for an unregistered supported tool name in the gateway registry', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
@@ -69,7 +69,7 @@ it('returns tool.not_found error for unknown tool name in the gateway registry',
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show redis --node=app-dev-1 --json',
+                'cd %s && orbit tool:show postgres --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,

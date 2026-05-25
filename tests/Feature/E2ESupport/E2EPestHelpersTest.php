@@ -33,9 +33,11 @@ it('builds provider aware current checkout orbit wrappers', function (): void {
     expect($docker)
         ->toContain('sudo docker exec')
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit-current')
-        ->toContain("--workdir '/home/orbit/orbit-current'")
+        ->toContain('ORBIT_IS_GATEWAY=${ORBIT_IS_GATEWAY}')
+        ->toContain('runtime_workdir="${ORBIT_HOST_CWD:-$PWD}"')
+        ->toContain('--workdir "${runtime_workdir}"')
         ->not->toContain('exec php')
-        ->not->toContain('php artisan')
+        ->toContain("php '/home/orbit/orbit-current/artisan' \"\$@\"")
         ->and($incus)
         ->toContain("exec php '/home/orbit/orbit-current/artisan'")
         ->not->toContain('sudo docker exec');
@@ -398,6 +400,42 @@ it('uses lease gateway ip for non dns-alias gateway settings', function (): void
     try {
         expect(e2eGatewayApiUrl($harness))->toBe('https://10.61.0.2')
             ->and(e2eGatewayWireGuardIp($harness))->toBe('10.61.0.2');
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
+            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+    }
+});
+
+it('seeds current-checkout gateway settings for control callers', function (): void {
+    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+
+    $commands = [];
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $harness = new E2ETopologyHarness(new E2ETopologyLease(
+        kind: E2ETopologyKind::ControlGatewayDev,
+        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
+        dev: e2ePestFakeInstanceWithIp($commands, 'dev', '10.61.0.4'),
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+        gatewayApiIp: '10.61.0.2',
+    ));
+    $harness->setCheckouts(['control' => '/home/control/orbit-current']);
+
+    try {
+        e2eConfigureCurrentCheckoutGatewaySettings($harness);
+
+        expect($commands)->toHaveCount(1)
+            ->and($commands[0])->toContain("cd '/home/control/orbit-current' && orbit tinker --execute=")
+            ->and($commands[0])->toContain('LocalGatewaySettings::current()')
+            ->and($commands[0])->toContain('gateway_url')
+            ->and($commands[0])->toContain('https://10.61.0.2')
+            ->and($commands[0])->toContain('gateway_wg_ip')
+            ->and($commands[0])->toContain('10.61.0.2')
+            ->and($commands[0])->not->toContain("cd '/home/control/orbit' &&");
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')

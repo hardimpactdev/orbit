@@ -104,6 +104,23 @@ it('runs Docker gateway api shim commands directly inside orbit runtime', functi
         ->not->toContain('sudo -iu orbit bash -lc');
 });
 
+it('uses local http upstream for wildcard or empty gateway api binds', function (string $bindAddress): void {
+    $reflection = new ReflectionClass(E2EGatewayApi::class);
+    $method = $reflection->getMethod('tlsServerScript');
+    $method->setAccessible(true);
+
+    $script = $method->invoke(null, '/home/orbit/orbit', '10.6.0.2', $bindAddress, 'gateway', [], true);
+
+    expect($script)
+        ->toContain("\$httpUpstream = '127.0.0.1';")
+        ->toContain('function http_upstream(): string')
+        ->toContain("'tcp://'.http_upstream().':80'")
+        ->not->toContain('tcp://:80');
+})->with([
+    'wildcard bind' => '0.0.0.0',
+    'empty bind' => '',
+]);
+
 it('forwards node grant permissions through the gateway api shim', function (): void {
     $script = gatewayTlsServerScript();
 
@@ -192,7 +209,11 @@ it('starts Docker gateway API support through runtime container commands without
 
     $httpStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
-        && str_contains($command, 'orbit serve --host='));
+        && str_contains($command, 'php -d display_errors=0 -S'));
+    $httpRouterWrite = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
+        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
+        && str_contains($command, 'cat >')
+        && str_contains($command, '/tmp/orbit-docker-gateway-api-http-router.php'));
     $tlsWrite = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
         && str_contains($command, 'cat >')
@@ -211,12 +232,11 @@ it('starts Docker gateway API support through runtime container commands without
 
     expect($setup)
         ->toContain('orbit tinker --execute=')
-        ->toContain('orbit serve --host=')
+        ->toContain('php -d display_errors=0 -S')
         ->toContain('sudo docker exec --detach')
         ->toContain("'orbit-e2e-run123-gateway-orbit-runtime'")
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
         ->not->toContain('php artisan')
-        ->not->toContain('php -S')
         ->not->toContain('nohup php')
         ->not->toContain('php -r')
         ->not->toContain('systemctl stop caddy');
@@ -236,7 +256,11 @@ it('starts Docker gateway API support through runtime container commands without
         ->toBeLessThan(array_search($tlsStart, $commands, strict: true));
 
     expect($httpStart)->toBeString()
-        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit');
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
+
+    expect($httpRouterWrite)->toBeString()
+        ->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
 
     expect($tlsWrite)->toBeString()
         ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
@@ -389,10 +413,11 @@ it('starts docker gateway api through orbit-runtime without host php-fpm or cadd
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain('orbit serve --host=')
+        ->toContain('php -d display_errors=0 -S')
         ->toContain('sudo docker exec --detach')
         ->toContain("'orbit-e2e-run123-gateway-orbit-runtime'")
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->not->toContain('php artisan')
         ->not->toContain('php-fpm')
         ->not->toContain('php8.5-fpm')
         ->not->toContain('fpm-fcgi');
@@ -405,7 +430,23 @@ it('maps configured docker peer ips to canonical wireguard identities in the gat
     ]);
 
     expect(gatewayCanonicalPeerIp($script, '10.61.42.4'))->toBe('10.6.0.4')
-        ->and($script)->toContain("\$headers['x-orbit-e2e-wireguard-ip'] = canonical_peer_ip(\$clientIp);");
+        ->and($script)->toContain('$identity = canonical_peer_ip($clientIp);')
+        ->and($script)->toContain("\$headers['x-orbit-e2e-wireguard-ip'] = \$identity;")
+        ->and($script)->not->toContain("isset(\$headers['x-orbit-e2e-wireguard-ip'])");
+});
+
+it('maps run-scoped docker peer ips to canonical wireguard identities in the gateway tls proxy', function (): void {
+    expect(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.24.0.3'))->toBe('10.6.0.3')
+        ->and(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.31.0.4'))->toBe('10.6.0.4');
+});
+
+it('maps ipv4-mapped docker peer ips to canonical wireguard identities in the gateway tls proxy', function (): void {
+    $script = gatewayTlsServerScript(peerIdentityMap: [
+        '10.61.42.3' => '10.6.0.3',
+    ]);
+
+    expect(gatewayCanonicalPeerIp($script, '::ffff:10.61.42.3'))->toBe('10.6.0.3')
+        ->and($script)->toContain('function normalize_peer_ip(string $peerIp): string');
 });
 
 it('forwards raw peer ips in the default gateway tls proxy mode', function (): void {

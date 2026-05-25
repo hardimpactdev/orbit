@@ -33,8 +33,6 @@ it('lists tables for a database connection from the control node through the gat
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        e2eInstallCurrentCheckoutOrbitWrapper($topology, 'dev');
-
         e2eRestartGatewayApi($topology, 'database-tables');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),

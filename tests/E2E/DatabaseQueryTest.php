@@ -17,8 +17,6 @@ it('executes a database query from the control node through the gateway api', fu
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        e2eInstallCurrentCheckoutOrbitWrapper($topology, 'dev');
-
         e2eRestartGatewayApi($topology, 'database-query');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),

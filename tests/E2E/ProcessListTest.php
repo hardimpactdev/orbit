@@ -29,9 +29,24 @@ foreach (['control-1', 'app-dev-1'] as $name) {
 \Illuminate\Support\Facades\DB::table('node_access')->insert([
     'consumer_node_id' => $nodes->get('control-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
+    'permissions' => json_encode(['process:read'], JSON_THROW_ON_ERROR),
+    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
+
+\App\Models\NodeRoleAssignment::query()->updateOrCreate(
+    [
+        'node_id' => $nodes->get('app-dev-1'),
+        'role' => 'app-development',
+    ],
+    [
+        'status' => 'active',
+        'settings' => [],
+        'last_error' => null,
+        'converged_at' => now(),
+    ],
+);
 
 $app = \App\Models\App::query()->create([
     'name' => 'docs',

@@ -446,6 +446,11 @@ it('installs the current checkout on Docker topology nodes through the orbit lau
         $commands,
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'control' 'orbit-e2e-run123-control'"),
     )));
+    $wrapperCopyCommands = array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, 'docker cp ')
+            && str_contains($command, "'orbit-e2e-run123-control:/usr/local/bin/orbit'"),
+    ));
 
     expect($nodeInstallCommands)
         ->toContain('orbit key:generate --force --no-interaction --ansi')
@@ -454,7 +459,8 @@ it('installs the current checkout on Docker topology nodes through the orbit lau
         ->not->toContain('composer install')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
-        ->not->toContain('php -S');
+        ->not->toContain('php -S')
+        ->and($wrapperCopyCommands)->toHaveCount(1);
 });
 
 it('refreshes Docker gateway checkout host keys through the orbit launcher', function (): void {
@@ -484,12 +490,24 @@ it('refreshes Docker gateway checkout host keys through the orbit launcher', fun
         $commands,
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'"),
     )));
+    $wrapperCopyCommandIndex = array_find_key(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, 'docker cp ')
+            && str_contains($command, "'orbit-e2e-run123-gateway:/usr/local/bin/orbit'"),
+    );
+    $hostKeyRefreshCommandIndex = array_find_key(
+        $commands,
+        fn (string $command): bool => str_contains($command, 'orbit orbit:internal:pin-node-host-keys --json'),
+    );
 
     expect($gatewayInstallCommands)
         ->toContain('orbit orbit:internal:pin-node-host-keys --json')
         ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
         ->not->toContain('composer install')
-        ->not->toContain('composer dump-autoload');
+        ->not->toContain('composer dump-autoload')
+        ->and($wrapperCopyCommandIndex)->toBeInt()
+        ->and($hostKeyRefreshCommandIndex)->toBeInt()
+        ->and($wrapperCopyCommandIndex)->toBeLessThan($hostKeyRefreshCommandIndex);
 });
 
 it('shares one 600 second timeout budget across split install phases', function (): void {

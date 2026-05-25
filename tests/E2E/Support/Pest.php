@@ -354,6 +354,7 @@ function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
             certSans: ['10.6.0.2'],
             peerIdentityMap: e2eDockerDnsAliasPeerIdentityMap($topology),
         );
+        e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable($topology);
 
         return;
     }
@@ -364,6 +365,7 @@ function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
         $topology->checkout('gateway'),
         gatewayIp: $gatewayApiIp,
     );
+    e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable($topology);
 }
 
 function e2eGatewayApiUrl(E2ETopologyHarness $topology): string
@@ -382,6 +384,38 @@ function e2eGatewayWireGuardIp(E2ETopologyHarness $topology): string
     }
 
     return $topology->lease()->gatewayApiIp();
+}
+
+function e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable(E2ETopologyHarness $topology): void
+{
+    if (! array_key_exists('control', $topology->checkouts())) {
+        return;
+    }
+
+    e2eConfigureCurrentCheckoutGatewaySettings($topology);
+}
+
+function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology, string $role = 'control'): void
+{
+    $checkout = escapeshellarg($topology->checkout($role));
+    $gatewayUrlValue = var_export(e2eGatewayApiUrl($topology), true);
+    $gatewayIpValue = var_export(e2eGatewayWireGuardIp($topology), true);
+
+    $php = <<<PHP
+\$settings = \\App\\Models\\LocalGatewaySettings::current();
+\$settings->fill([
+    'gateway_url' => {$gatewayUrlValue},
+    'gateway_wg_ip' => {$gatewayIpValue},
+]);
+\$settings->save();
+echo 'configured';
+PHP;
+
+    $topology->ssh(
+        $role,
+        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($php),
+        timeoutSeconds: 120,
+    );
 }
 
 /**
@@ -489,44 +523,7 @@ function e2ePutRuntimeFile(E2ETopologyHarness $topology, string $role, string $p
 
 function e2eOrbitWrapperScript(string $checkout, bool $dockerRuntime): string
 {
-    if ($dockerRuntime) {
-        return implode("\n", [
-            '#!/usr/bin/env bash',
-            'set -euo pipefail',
-            'runtime_container="${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}"',
-            'if [ -n "${ORBIT_E2E_DOCKER_NETWORK:-}" ]; then',
-            '    sudo docker network connect "${ORBIT_E2E_DOCKER_NETWORK}" "${runtime_container}" >/dev/null 2>&1 || true',
-            'fi',
-            'exec sudo docker exec \\',
-            '    --env "ORBIT_HOST_CWD=$PWD" \\',
-            '    --env '.escapeshellarg("ORBIT_SOURCE_PATH={$checkout}").' \\',
-            '    --workdir '.escapeshellarg($checkout).' \\',
-            '    "${runtime_container}" \\',
-            '    orbit "$@"',
-            '',
-        ]);
-    }
-
-    $php = 'p'.'hp';
-
-    return "#!/usr/bin/env bash\nset -euo pipefail\nexec {$php} ".escapeshellarg("{$checkout}/artisan").' "$@"'."\n";
-}
-
-function e2eInstallCurrentCheckoutOrbitWrapper(E2ETopologyHarness $topology, string $role): void
-{
-    $tmpScript = tempnam(sys_get_temp_dir(), "orbit-{$role}-");
-
-    if (! is_string($tmpScript)) {
-        throw new RuntimeException("Could not create temporary orbit wrapper for role [{$role}].");
-    }
-
-    try {
-        file_put_contents($tmpScript, e2eOrbitWrapperScript($topology->checkout($role), e2eRoleUsesDockerRuntime($topology, $role)));
-        chmod($tmpScript, 0755);
-        $topology->instance($role)->copyFileToInstance($tmpScript, '/usr/local/bin/orbit');
-    } finally {
-        @unlink($tmpScript);
-    }
+    return E2ECurrentCheckout::orbitWrapperScript($checkout, $dockerRuntime);
 }
 
 function e2ePhpServerCommand(int $port, string $routerPath, string $logPath, string $pidPath): string
@@ -598,11 +595,30 @@ foreach ([{$consumerValue}, {$servingValue}] as \$name) {
     }
 }
 
+\$servingName = {$servingValue};
+\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-production' : (str_contains(\$servingName, 'app-dev') ? 'app-development' : null);
+
+if (\$servingRole !== null) {
+    \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+        [
+            'node_id' => \$nodes->get({$servingValue}),
+            'role' => \$servingRole,
+        ],
+        [
+            'status' => 'active',
+            'settings' => [],
+            'last_error' => null,
+            'converged_at' => now(),
+        ],
+    );
+}
+
 \\Illuminate\\Support\\Facades\\DB::table('node_access')->updateOrInsert([
     'consumer_node_id' => \$nodes->get({$consumerValue}),
     'serving_node_id' => \$nodes->get({$servingValue}),
 ], [
     'permissions' => json_encode(['*']),
+    'custom_permissions' => json_encode([]),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -633,11 +649,30 @@ foreach ([{$consumerValue}, {$servingValue}] as \$name) {
     }
 }
 
+\$servingName = {$servingValue};
+\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-production' : (str_contains(\$servingName, 'app-dev') ? 'app-development' : null);
+
+if (\$servingRole !== null) {
+    \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+        [
+            'node_id' => \$nodes->get({$servingValue}),
+            'role' => \$servingRole,
+        ],
+        [
+            'status' => 'active',
+            'settings' => [],
+            'last_error' => null,
+            'converged_at' => now(),
+        ],
+    );
+}
+
 \\Illuminate\\Support\\Facades\\DB::table('node_access')->updateOrInsert([
     'consumer_node_id' => \$nodes->get({$consumerValue}),
     'serving_node_id' => \$nodes->get({$servingValue}),
 ], [
     'permissions' => json_encode(['*']),
+    'custom_permissions' => json_encode([]),
     'created_at' => now(),
     'updated_at' => now(),
 ]);

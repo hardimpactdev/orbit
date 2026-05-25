@@ -19,8 +19,6 @@ it('shows the schema for a database connection from the control node through the
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        e2eInstallCurrentCheckoutOrbitWrapper($topology, 'dev');
-
         e2eRestartGatewayApi($topology, 'database-schema');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('control'),

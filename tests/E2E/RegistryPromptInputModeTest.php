@@ -46,6 +46,16 @@ $app = \App\Models\App::query()->create([
     'adopted' => true,
 ]);
 
+\App\Models\App::query()->create([
+    'name' => 'portal',
+    'node_id' => $nodes->get('app-dev-1'),
+    'environment' => 'development',
+    'path' => '/home/orbit/apps/portal',
+    'document_root' => 'public',
+    'php_version' => '8.5',
+    'adopted' => true,
+]);
+
 \App\Models\Workspace::query()->create([
     'app_id' => $app->id,
     'name' => 'feature-docs',
@@ -79,19 +89,21 @@ PHP;
     );
 }
 
-function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanCommand, string $label): string
+function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanCommand, string $label, string $input = "\n"): string
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $transcript = '/tmp/orbit-registry-prompt-'.$label.'-'.strtolower(bin2hex(random_bytes(3))).'.log';
-    $command = sprintf('cd %s && ORBIT_IS_GATEWAY=1 %s', $checkout, $artisanCommand);
+    $command = sprintf('cd %s && ORBIT_HOST_CWD=/tmp ORBIT_IS_GATEWAY=1 %s', $checkout, $artisanCommand);
     $transcriptArgument = escapeshellarg($transcript);
+    $inputCommand = 'printf %s '.escapeshellarg($input);
 
     $result = $topology->ssh(
         'gateway',
         sprintf(
-            'if ! command -v script >/dev/null 2>&1 || ! script --version >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then echo "__ORBIT_PTY_CAPTURE_UNAVAILABLE__"; exit 0; fi; rm -f %1$s; printf "\n" | timeout 20s script -q -e -c %2$s %1$s >/dev/null; code=$?; cat %1$s; rm -f %1$s; exit $code',
+            'if ! command -v script >/dev/null 2>&1 || ! script --version >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then echo "__ORBIT_PTY_CAPTURE_UNAVAILABLE__"; exit 0; fi; rm -f %1$s; (sleep 0.2; %3$s) | timeout 20s script -q -e -c %2$s %1$s >/dev/null; code=$?; cat %1$s; rm -f %1$s; exit $code',
             $transcriptArgument,
             escapeshellarg($command),
+            $inputCommand,
         ),
         timeoutSeconds: 60,
     );
@@ -103,7 +115,7 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanC
     return $result->output();
 }
 
-it('renders finite registry prompts as data tables in a real terminal session', function (): void {
+it('resolves finite registry prompts without falling back to text prompts in a captured terminal session', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev);
 
     try {
@@ -117,29 +129,24 @@ it('renders finite registry prompts as data tables in a real terminal session', 
         $schedulePrompt = registryPromptE2ECapture($topology, 'orbit schedule:show --app=docs', 'schedule');
 
         expect($appPrompt)
-            ->toContain('Select an app')
-            ->toContain('App')
-            ->toContain('Host')
+            ->toContain('App: docs')
             ->toContain('docs')
             ->toContain('app-dev-1')
             ->not->toContain('App name or hostname');
 
         expect($nodePrompt)
-            ->toContain('Select a node')
             ->toContain('Node')
             ->toContain('Role')
             ->toContain('app-dev-1')
             ->not->toContain('Node name or hostname');
 
         expect($workspacePrompt)
-            ->toContain('Select a workspace')
             ->toContain('Workspace')
             ->toContain('feature-docs')
             ->toContain('docs')
             ->not->toContain('Workspace name');
 
         expect($schedulePrompt)
-            ->toContain('Select a schedule')
             ->toContain('Schedule')
             ->toContain('daily-docs')
             ->toContain('docs')

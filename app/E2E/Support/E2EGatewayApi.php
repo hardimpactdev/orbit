@@ -243,7 +243,9 @@ PHP;
         $dockerTopologyModeEnv = self::dockerTopologyModeEnvCommand();
         $runtimeContainer = escapeshellarg(self::runtimeContainerName($gateway));
         $scriptPath = "/tmp/orbit-{$label}-tls.php";
+        $httpRouterPath = "/tmp/orbit-{$label}-http-router.php";
         $scriptPathArgument = escapeshellarg($scriptPath);
+        $httpRouterPathArgument = escapeshellarg($httpRouterPath);
 
         $certificateCommand = "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';");
 
@@ -276,12 +278,24 @@ PHP;
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'sudo docker exec --detach --env %s --env %s --workdir %s %s orbit serve --host=%s --port=80 --tries=1 --no-reload --quiet',
+                'sudo docker exec --workdir %s %s sh -lc %s',
+                $orbitPathArgument,
+                $runtimeContainer,
+                escapeshellarg("cat > {$httpRouterPathArgument} <<'PHP'\n".self::httpRouterScript($orbitPath)."\nPHP"),
+            ),
+            'Could not write gateway HTTP test router in runtime container',
+        );
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'sudo docker exec --detach --env %s --env %s --workdir %s %s php -d display_errors=0 -S %s:80 -t public %s',
                 escapeshellarg("VIEW_COMPILED_PATH={$orbitPath}/storage/framework/views"),
                 escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
                 $orbitPathArgument,
                 $runtimeContainer,
                 escapeshellarg($bindAddress),
+                $httpRouterPathArgument,
             ),
             'Could not start gateway HTTP API',
         );
@@ -408,7 +422,7 @@ PHP;
      */
     private static function tlsServerScript(string $orbitPath, string $wireguardIdentity, string $bindAddress, string $certKey, array $peerIdentityMap = [], bool $dockerRuntime = false): string
     {
-        $httpUpstream = $bindAddress === '0.0.0.0' ? '127.0.0.1' : $bindAddress;
+        $httpUpstream = self::httpUpstreamForBindAddress($bindAddress);
         $runOrbitCommand = $dockerRuntime
             ? "exec(\$script.' 2>&1', \$output, \$exitCode);"
             : "exec('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', \$output, \$exitCode);";
@@ -461,19 +475,63 @@ PHP;
 
             $host = preg_replace('/:\d+$/', '', $peer);
 
-            return is_string($host) && filter_var($host, FILTER_VALIDATE_IP) !== false ? $host : null;
+            if (! is_string($host)) {
+                return null;
+            }
+
+            $host = normalize_peer_ip($host);
+
+            return filter_var($host, FILTER_VALIDATE_IP) !== false ? $host : null;
+        }
+
+        function normalize_peer_ip(string $peerIp): string
+        {
+            $peerIp = trim($peerIp, '[]');
+
+            return str_starts_with(strtolower($peerIp), '::ffff:')
+                ? substr($peerIp, 7)
+                : $peerIp;
         }
 
         function canonical_peer_ip(string $peerIp): string
         {
             global $peerIdentityMap;
 
-            return is_string($peerIdentityMap[$peerIp] ?? null) ? $peerIdentityMap[$peerIp] : $peerIp;
+            $peerIp = normalize_peer_ip($peerIp);
+
+            if (is_string($peerIdentityMap[$peerIp] ?? null)) {
+                return $peerIdentityMap[$peerIp];
+            }
+
+            if (preg_match('/^10\.\d+\.0\.(?<host>\d+)$/', $peerIp, $matches) === 1) {
+                return match ((int) $matches['host']) {
+                    2 => '10.6.0.2',
+                    3 => '10.6.0.3',
+                    4 => '10.6.0.4',
+                    5 => '10.6.0.5',
+                    6 => '10.6.0.6',
+                    7 => '10.6.0.7',
+                    8 => '10.6.0.8',
+                    9 => '10.6.0.9',
+                    default => $peerIp,
+                };
+            }
+
+            return $peerIp;
+        }
+
+        function http_upstream(): string
+        {
+            global $httpUpstream;
+
+            $upstream = is_string($httpUpstream) ? trim($httpUpstream) : '';
+
+            return $upstream === '' || $upstream === '0.0.0.0' ? '127.0.0.1' : $upstream;
         }
 
         function proxy_to_laravel($connection, string $requestLine, array $headers, string $body): void
         {
-            global $httpUpstream, $wireguardIdentity;
+            global $wireguardIdentity;
 
             $parts = explode(' ', trim($requestLine), 3);
 
@@ -483,7 +541,7 @@ PHP;
                 return;
             }
 
-            $upstream = @stream_socket_client("tcp://{$httpUpstream}:80", $errno, $errstr, 5);
+            $upstream = @stream_socket_client('tcp://'.http_upstream().':80', $errno, $errstr, 5);
 
             if ($upstream === false) {
                 respond($connection, 502, json_encode([
@@ -507,7 +565,8 @@ PHP;
             $clientIp = peer_ip($connection);
 
             if ($clientIp !== null) {
-                $headers['x-orbit-e2e-wireguard-ip'] = canonical_peer_ip($clientIp);
+                $identity = canonical_peer_ip($clientIp);
+                $headers['x-orbit-e2e-wireguard-ip'] = $identity;
             }
 
             fwrite($upstream, "{$parts[0]} {$parts[1]} {$parts[2]}\r\n");
@@ -1539,6 +1598,15 @@ PHP;
             [$runOrbitCommand, $streamOrbitCommand],
             $script,
         );
+    }
+
+    private static function httpUpstreamForBindAddress(string $bindAddress): string
+    {
+        $bindAddress = trim($bindAddress);
+
+        return $bindAddress === '' || $bindAddress === '0.0.0.0'
+            ? '127.0.0.1'
+            : $bindAddress;
     }
 
     private static function isDockerTopology(E2EInstance $instance): bool
