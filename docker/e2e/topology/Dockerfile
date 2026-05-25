@@ -26,7 +26,7 @@ RUN apt-get update \
         sudo \
     && update-alternatives --set php /usr/bin/php8.4 \
     && php --version | grep -q '^PHP 8.4.' \
-    && php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }' \
+    && php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }' \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
 

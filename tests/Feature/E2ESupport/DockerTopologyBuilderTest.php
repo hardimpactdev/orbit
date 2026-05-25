@@ -27,6 +27,7 @@ it('defines the Docker topology host PHP 8.4 CLI baseline without ad hoc helper 
         ->toContain('update-alternatives --set php /usr/bin/php8.4')
         ->toContain('php --version')
         ->toContain('PHP 8.4.')
+        ->toContain('["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"]')
         ->toContain('pdo_sqlite')
         ->toContain('openssl')
         ->toContain('curl')

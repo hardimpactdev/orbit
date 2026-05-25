@@ -219,7 +219,7 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
             'command -v docker',
             'command -v php',
             'php --version | grep -q "^PHP 8[.]4[.]"',
-            'php -r \'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }\'',
+            'php -r \'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }\'',
             '! command -v python3',
             '! command -v sqlite3',
             '! command -v composer',
