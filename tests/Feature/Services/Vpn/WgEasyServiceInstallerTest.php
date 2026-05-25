@@ -263,6 +263,57 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         ->and($runtimeScript)->toContain('preshared-key');
 });
 
+it('does not leak peer secrets from transport exception messages during peer upsert', function (): void {
+    Process::fake();
+
+    $privateKey = 'SENTINEL-PRIVKEY-XYZ';
+    $preSharedKey = 'SENTINEL-PSK-ABC';
+    $transport = new WgEasyServiceInstallerStateTransport(
+        static function (Node $node, string $script, array $options): RemoteShellResult {
+            if (str_contains($script, "--action='upsert-peer'")) {
+                throw new RuntimeException("transport failed while running {$script}");
+            }
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                stderr: '',
+                durationMs: 1,
+            );
+        },
+    );
+    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+
+    try {
+        wgEasyServiceInstaller($this->workdir, $this->statePath)->configurePeers([
+            [
+                'name' => 'gateway-1',
+                'private_key' => $privateKey,
+                'public_key' => 'gateway-public',
+                'pre_shared_key' => $preSharedKey,
+                'address' => '10.6.0.2',
+            ],
+        ]);
+
+        $this->fail('Expected wg-easy peer upsert transport failure.');
+    } catch (RuntimeException $exception) {
+        $completed = wgEasyServiceInstallerLocalExecutorCompletedProperties();
+        $failed = array_values(array_filter(
+            $completed,
+            fn (array $properties): bool => ($properties['status'] ?? null) === 'failed',
+        ));
+
+        expect($exception->getMessage())->not->toContain($privateKey)
+            ->and($exception->getMessage())->not->toContain($preSharedKey)
+            ->and($completed)->toHaveCount(2)
+            ->and($failed)->toHaveCount(1)
+            ->and($failed[0]['exception_message'])->toContain('--private-key=<redacted>')
+            ->and($failed[0]['exception_message'])->toContain('--pre-shared-key=<redacted>')
+            ->and($failed[0]['exception_message'])->not->toContain($privateKey)
+            ->and($failed[0]['exception_message'])->not->toContain($preSharedKey);
+    }
+});
+
 it('converges the runtime server address and routes supported database updates through the local executor', function (): void {
     $serverAddressScript = null;
 
@@ -448,6 +499,20 @@ function wgEasyServiceInstallerLocalExecutorDispatchingProperties(): array
     return DB::table('activity_log')
         ->where('log_name', 'local_executor')
         ->where('event', 'local_executor.dispatching')
+        ->orderBy('id')
+        ->get()
+        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->all();
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function wgEasyServiceInstallerLocalExecutorCompletedProperties(): array
+{
+    return DB::table('activity_log')
+        ->where('log_name', 'local_executor')
+        ->where('event', 'local_executor.completed')
         ->orderBy('id')
         ->get()
         ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))

@@ -252,6 +252,61 @@ it('does not leak backend password action values from wg-easy state failures', f
     'session password update' => ['update-session-password', 'Could not rotate VPN web UI sessions.', 'session_password_not_found'],
 ]);
 
+it('does not leak password action values from transport exception messages or metadata', function (): void {
+    $hash = 'SENTINEL-PASSWORD-HASH-EXCEPTION';
+    $newPassword = 'SENTINEL-PASSWORD-ACTION-INPUT';
+    $transport = new WgEasyVpnBackendStateTransport(
+        static function (Node $node, string $script, array $options) use ($hash): RemoteShellResult {
+            if (str_contains($script, "--action='update-user-password'")) {
+                $metadata = ['script' => $script, 'password-hash' => $hash];
+
+                throw new class("transport failed while running {$script}", $metadata) extends RuntimeException
+                {
+                    /**
+                     * @param  array<string, mixed>  $meta
+                     */
+                    public function __construct(string $message, public readonly array $meta)
+                    {
+                        parent::__construct($message);
+                    }
+                };
+            }
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                stderr: '',
+                durationMs: 1,
+            );
+        },
+    );
+
+    try {
+        wgEasyVpnBackendReadyForPasswordRotation($transport, $hash)
+            ->changeWebUiPassword($newPassword);
+
+        $this->fail('Expected backend wg-easy password transport failure.');
+    } catch (RuntimeException $exception) {
+        $probe = wgEasyVpnBackendExceptionProbe($exception);
+        $meta = wgEasyVpnBackendExceptionMeta($exception);
+        $completed = wgEasyVpnBackendLocalExecutorCompletedProperties();
+        $failed = array_values(array_filter(
+            $completed,
+            fn (array $properties): bool => ($properties['status'] ?? null) === 'failed',
+        ));
+
+        expect($exception->getMessage())->toBe('Remote local executor transport failed: <suppressed>')
+            ->and($probe)->not->toContain($newPassword)
+            ->and($probe)->not->toContain($hash)
+            ->and($meta)->not->toBeEmpty()
+            ->and(json_encode($meta, JSON_THROW_ON_ERROR))->not->toContain($hash)
+            ->and($failed)->toHaveCount(1)
+            ->and($failed[0]['exception_message'])->toBe('<suppressed>')
+            ->and(json_encode($failed, JSON_THROW_ON_ERROR))->not->toContain($hash)
+            ->and(json_encode($completed, JSON_THROW_ON_ERROR))->not->toContain($newPassword);
+    }
+});
+
 it('raises a generic exception when backend wg-easy state output is not parseable JSON', function (): void {
     $secret = 'secret-token-probe-XYZ';
     $transport = new WgEasyVpnBackendStateTransport(new RemoteShellResult(
@@ -344,8 +399,10 @@ it('only exposes whitelisted backend wg-easy state error codes in exception meta
     'unknown code' => ['secret-token-probe-XYZ', null],
 ]);
 
-function wgEasyVpnBackendReadyForPasswordRotation(WgEasyVpnBackendStateTransport $transport): WgEasyVpnBackend
-{
+function wgEasyVpnBackendReadyForPasswordRotation(
+    WgEasyVpnBackendStateTransport $transport,
+    string $hash = '$argon2id$v=19$m=65536,t=3,p=4$hash$hash',
+): WgEasyVpnBackend {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
@@ -366,9 +423,9 @@ function wgEasyVpnBackendReadyForPasswordRotation(WgEasyVpnBackendStateTransport
         'http://127.0.0.1:51821/api/client' => Http::response([], 200),
     ]);
 
-    Process::fake(function ($process) {
+    Process::fake(function ($process) use ($hash) {
         if (str_contains((string) $process->command, 'docker exec -i -w /app/server wg-easy node')) {
-            return Process::result('$argon2id$v=19$m=65536,t=3,p=4$hash$hash');
+            return Process::result($hash);
         }
 
         return Process::result();
