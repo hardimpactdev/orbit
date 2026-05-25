@@ -2,12 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Vpn\ArrayVpnBackend;
 use App\Services\Vpn\VpnBackend;
+use App\Services\Vpn\WgEasyVpnBackend;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationTokenSigner;
 
 uses(RefreshDatabase::class);
 
@@ -55,12 +68,29 @@ it('requires password and force in json mode', function (): void {
         ]);
 });
 
-it('rotates the wg-easy backend password through argon2 and sqlite without argv secrets', function (): void {
-    vpnLocalNode('gateway');
+it('rotates the wg-easy backend password through argon2 and local executor without argv secrets', function (): void {
+    $node = vpnLocalNode('gateway');
 
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+
+    config()->set('orbit.operation_token_secret', 'gateway-secret');
+    config()->set('orbit.operation_token_ttl_seconds', 120);
     config()->set('services.wg_easy.username', 'orbit');
     config()->set('services.wg_easy.password', 'current-secret-password');
-    config()->set('services.wg_easy.database_path', '/home/orbit/.wg-easy/wg-easy.db');
+
+    $hash = '$argon2id$v=19$m=65536,t=3,p=4$hash$hash';
+    $transport = new VpnWebUiChangePasswordLocalExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        stderr: '',
+        durationMs: 1,
+    ));
+
+    app()->instance(RemoteLocalExecutor::class, vpnWebUiChangePasswordLocalExecutor($transport));
+    app()->forgetInstance(WgEasyVpnBackend::class);
 
     Http::fake([
         'http://127.0.0.1:51821/api/session' => Http::response(['status' => 'success'], 200, [
@@ -69,11 +99,11 @@ it('rotates the wg-easy backend password through argon2 and sqlite without argv 
         'http://127.0.0.1:51821/api/client' => Http::response([], 200),
     ]);
 
-    Process::fake(function ($process) {
+    Process::fake(function ($process) use ($hash) {
         $command = (string) $process->command;
 
         if (str_contains($command, 'docker exec -i -w /app/server wg-easy node')) {
-            return Process::result('$argon2id$v=19$m=65536,t=3,p=4$hash$hash');
+            return Process::result($hash);
         }
 
         return Process::result();
@@ -98,13 +128,71 @@ it('rotates the wg-easy backend password through argon2 and sqlite without argv 
             && $process->input === $newPassword;
     });
 
-    Process::assertRan(function ($process): bool {
-        $command = (string) $process->command;
+    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'sqlite3'));
 
-        return str_contains($command, 'sqlite3')
-            && str_contains($command, 'wg-easy.db')
-            && ! str_contains($command, 'UPDATE users_table')
-            && is_string($process->input)
-            && str_contains($process->input, 'UPDATE users_table SET password');
-    });
+    $scripts = array_column($transport->calls, 'script');
+
+    expect($scripts)->toHaveCount(3)
+        ->and($scripts[0])->toContain("--action='ensure-writable'")
+        ->and($scripts[1])->toContain("--action='update-user-password'")
+        ->and($scripts[1])->toContain("--password-hash='{$hash}'")
+        ->and($scripts[2])->toContain("--action='update-session-password'")
+        ->and($scripts[2])->toContain("--password-hash='{$hash}'");
+
+    foreach ($scripts as $script) {
+        expect($script)->toContain('internal:wg-easy:state')
+            ->and($script)->toContain('--operation-token=')
+            ->and($script)->not->toContain('sqlite3')
+            ->and($script)->not->toContain('sudo sqlite3')
+            ->and($script)->not->toContain($newPassword);
+    }
 });
+
+function vpnWebUiChangePasswordLocalExecutor(VpnWebUiChangePasswordLocalExecutorTransport $transport): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+    );
+}
+
+final class VpnWebUiChangePasswordLocalExecutorTransport implements RemoteExecutor
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
+
+    public function __construct(
+        private readonly RemoteShellResult $result,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    #[Override]
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->calls[] = [
+            'node' => $node,
+            'script' => $script,
+            'options' => $options,
+        ];
+
+        return $this->result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    #[Override]
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('The recording transport does not start processes.');
+    }
+}
