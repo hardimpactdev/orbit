@@ -14,6 +14,7 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
@@ -234,6 +235,23 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
             ->and($script)->not->toContain('clients_table');
     }
 
+    $dispatching = wgEasyServiceInstallerLocalExecutorDispatchingProperties();
+    $upsertLogs = [$dispatching[1], $dispatching[3]];
+
+    expect($dispatching)->toHaveCount(4)
+        ->and($dispatching[1]['command_options']['private-key'])->toBe('<redacted>')
+        ->and($dispatching[1]['command_options']['pre-shared-key'])->toBe('<redacted>')
+        ->and($dispatching[1]['command_line'])->toContain('--private-key=<redacted>')
+        ->and($dispatching[1]['command_line'])->toContain('--pre-shared-key=<redacted>')
+        ->and($dispatching[3]['command_options']['private-key'])->toBe('<redacted>')
+        ->and($dispatching[3]['command_options']['pre-shared-key'])->toBe('<redacted>')
+        ->and($dispatching[3]['command_line'])->toContain('--private-key=<redacted>')
+        ->and($dispatching[3]['command_line'])->toContain('--pre-shared-key=<redacted>')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('gateway-private')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('gateway-psk')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('control-private')
+        ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('control-psk');
+
     expect($runtimeScript)->toContain('ORBIT_DOCKER="sudo docker"')
         ->and($runtimeScript)->toContain('gateway-public')
         ->and($runtimeScript)->toContain('gateway-psk')
@@ -420,6 +438,20 @@ function wgEasyServiceInstallerExceptionMeta(Throwable $exception): array
     $meta = $exception->meta;
 
     return is_array($meta) ? $meta : [];
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function wgEasyServiceInstallerLocalExecutorDispatchingProperties(): array
+{
+    return DB::table('activity_log')
+        ->where('log_name', 'local_executor')
+        ->where('event', 'local_executor.dispatching')
+        ->orderBy('id')
+        ->get()
+        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->all();
 }
 
 function wgEasyServiceInstaller(string $rootPath, ?string $statePath = null): WgEasyServiceInstaller

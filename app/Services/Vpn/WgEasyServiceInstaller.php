@@ -357,6 +357,9 @@ YAML;
                 'pre-shared-key' => $peer['pre_shared_key'],
             ],
             failureMessage: 'Failed to configure wg-easy peer.',
+            transportOptions: [
+                'redact_command_options' => ['private-key', 'pre-shared-key'],
+            ],
         );
     }
 
@@ -406,12 +409,16 @@ YAML;
 
     /**
      * @param  array<string, bool|float|int|string>  $commandOptions
+     * @param  array{
+     *     redact_command_options?: list<string>,
+     * }  $transportOptions
      * @param  list<string>  $successfulErrorCodes
      */
     private function runWgEasyStateAction(
         string $action,
         array $commandOptions,
         string $failureMessage,
+        array $transportOptions = [],
         array $successfulErrorCodes = [],
     ): void {
         if (! $this->hasOperationTokenSecret()) {
@@ -431,6 +438,7 @@ YAML;
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => (string) Str::uuid(),
                 ],
+                ...$transportOptions,
             ],
         );
 

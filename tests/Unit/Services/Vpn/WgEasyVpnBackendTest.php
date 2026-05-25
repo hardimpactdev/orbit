@@ -169,9 +169,18 @@ it('routes password and session secret updates through wg-easy state actions wit
 
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'sqlite3'));
 
+    $dispatching = wgEasyVpnBackendLocalExecutorDispatchingProperties();
     $completed = wgEasyVpnBackendLocalExecutorCompletedProperties();
+    $passwordActionLogs = [$dispatching[1], $dispatching[2]];
 
-    expect($completed)->toHaveCount(3)
+    expect($dispatching)->toHaveCount(3)
+        ->and($dispatching[1]['command_options']['password-hash'])->toBe('<redacted>')
+        ->and($dispatching[1]['command_line'])->toContain('--password-hash=<redacted>')
+        ->and($dispatching[2]['command_options']['password-hash'])->toBe('<redacted>')
+        ->and($dispatching[2]['command_line'])->toContain('--password-hash=<redacted>')
+        ->and(json_encode($passwordActionLogs, JSON_THROW_ON_ERROR))->not->toContain($hash)
+        ->and(json_encode($passwordActionLogs, JSON_THROW_ON_ERROR))->not->toContain('new-secret-password')
+        ->and($completed)->toHaveCount(3)
         ->and($completed[1]['stdout_summary'])->toBe('<suppressed>')
         ->and($completed[1]['stderr_summary'])->toBe('<suppressed>')
         ->and($completed[2]['stdout_summary'])->toBe('<suppressed>')
@@ -395,6 +404,20 @@ function wgEasyVpnBackendExceptionProbe(Throwable $exception): string
         'metadata' => wgEasyVpnBackendExceptionMeta($exception),
         'trace' => $exception->getTraceAsString(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function wgEasyVpnBackendLocalExecutorDispatchingProperties(): array
+{
+    return DB::table('activity_log')
+        ->where('log_name', 'local_executor')
+        ->where('event', 'local_executor.dispatching')
+        ->orderBy('id')
+        ->get()
+        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->all();
 }
 
 /**

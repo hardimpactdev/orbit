@@ -324,6 +324,7 @@ JS;
             transportOptions: [
                 'redact_stdout' => true,
                 'redact_stderr' => true,
+                'redact_command_options' => ['password-hash'],
             ],
         );
     }
@@ -341,6 +342,7 @@ JS;
             transportOptions: [
                 'redact_stdout' => true,
                 'redact_stderr' => true,
+                'redact_command_options' => ['password-hash'],
             ],
         );
     }
@@ -359,6 +361,7 @@ JS;
      * @param  array{
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
      * }  $transportOptions
      */
     private function runWgEasyStateAction(
