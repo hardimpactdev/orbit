@@ -32,7 +32,7 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
             stdout: json_encode(JsonEnvelope::success([
                 'adapter' => 'polyscope',
                 'update' => 'workspace-branch',
-                'workspace_id' => 42,
+                'workspace_id' => 'wt-1',
                 'branch' => 'cta',
                 'updated' => true,
             ]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
@@ -46,7 +46,7 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
         localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
     ))->align(
         node: $node,
-        workspaceId: '42',
+        workspaceId: 'wt-1',
         path: '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
         name: 'cta',
     );
@@ -70,7 +70,7 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
     expect($localScript)->toContain('internal:workspace-adapter:update')
         ->and($localScript)->toContain("--adapter='polyscope'")
         ->and($localScript)->toContain("--update='workspace-branch'")
-        ->and($localScript)->toContain("--workspace-id='42'")
+        ->and($localScript)->toContain("--workspace-id='wt-1'")
         ->and($localScript)->toContain("--branch='cta'")
         ->and($localScript)->toContain('--operation-token=')
         ->and($localScript)->not->toContain('python3')
@@ -94,7 +94,7 @@ it('does not leak host branch rename output when a Polyscope branch cannot be al
             localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
         ))->align(
             node: $node,
-            workspaceId: '42',
+            workspaceId: 'wt-1',
             path: '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
             name: 'cta',
         );
@@ -137,7 +137,7 @@ it('does not leak local executor output when Polyscope adapter metadata cannot b
             localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
         ))->align(
             node: $node,
-            workspaceId: '42',
+            workspaceId: 'wt-1',
             path: '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
             name: 'cta',
         );

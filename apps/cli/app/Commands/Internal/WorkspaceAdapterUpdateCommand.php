@@ -17,6 +17,8 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
 
     private const string UpdateWorkspaceBranch = 'workspace-branch';
 
+    private const int MaxWorkspaceIdLength = 255;
+
     private const int MaxBranchLength = 255;
 
     protected $signature = 'internal:workspace-adapter:update
@@ -80,7 +82,7 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
         return $this->updateWorkspaceBranch($workspaceId, $branch);
     }
 
-    private function updateWorkspaceBranch(int $workspaceId, string $branch): int
+    private function updateWorkspaceBranch(string $workspaceId, string $branch): int
     {
         $database = $this->openWritablePolyscopeDatabase();
 
@@ -96,7 +98,7 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
                 where id = :workspace_id
                 SQL);
             $statement->bindValue(':branch', $branch, PDO::PARAM_STR);
-            $statement->bindValue(':workspace_id', $workspaceId, PDO::PARAM_INT);
+            $statement->bindValue(':workspace_id', $workspaceId, PDO::PARAM_STR);
             $statement->execute();
         } catch (PDOException) {
             return $this->renderFailure(
@@ -206,35 +208,23 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
         );
     }
 
-    private function workspaceIdValue(mixed $value): ?int
+    private function workspaceIdValue(mixed $value): ?string
     {
-        if (is_int($value)) {
-            return $value > 0 ? $value : null;
+        if (! is_string($value)) {
+            return null;
         }
 
-        if (! is_string($value)) {
+        if (str_contains($value, "\0") || str_contains($value, "\n") || str_contains($value, "\r")) {
             return null;
         }
 
         $value = trim($value);
 
-        if ($value === '' || ! ctype_digit($value)) {
+        if ($value === '' || strlen($value) > self::MaxWorkspaceIdLength) {
             return null;
         }
 
-        if (
-            strlen($value) > strlen((string) PHP_INT_MAX)
-            || (
-                strlen($value) === strlen((string) PHP_INT_MAX)
-                && strcmp($value, (string) PHP_INT_MAX) > 0
-            )
-        ) {
-            return null;
-        }
-
-        $id = (int) $value;
-
-        return $id > 0 ? $id : null;
+        return $value;
     }
 
     private function branchValue(mixed $value): ?string

@@ -28,7 +28,7 @@ describe('internal workspace adapter update command', function (): void {
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, [
             '--adapter' => 'evil',
             '--update' => 'workspace-branch',
-            '--workspace-id' => '42',
+            '--workspace-id' => 'poly-worktree-1',
             '--branch' => 'feature-docs',
             '--json' => true,
         ]);
@@ -44,7 +44,7 @@ describe('internal workspace adapter update command', function (): void {
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, [
             '--adapter' => 'polyscope',
             '--update' => 'workspace-branch',
-            '--workspace-id' => '42',
+            '--workspace-id' => 'poly-worktree-1',
             '--branch' => 'feature-docs',
             '--operation-token' => 'not-a-token',
             '--json' => true,
@@ -99,9 +99,11 @@ describe('internal workspace adapter update command', function (): void {
     })->with([
         'missing' => [['--workspace-id' => null]],
         'empty' => [['--workspace-id' => '']],
-        'non numeric' => [['--workspace-id' => 'eda4dbca']],
-        'negative' => [['--workspace-id' => '-1']],
-        'zero' => [['--workspace-id' => '0']],
+        'blank' => [['--workspace-id' => '   ']],
+        'null byte' => [['--workspace-id' => "poly\0worktree"]],
+        'newline' => [['--workspace-id' => "poly\nworktree"]],
+        'carriage return' => [['--workspace-id' => "poly\rworktree"]],
+        'too long' => [['--workspace-id' => str_repeat('a', 256)]],
     ]);
 
     it('rejects invalid branch values', function (array $parameters): void {
@@ -126,33 +128,36 @@ describe('internal workspace adapter update command', function (): void {
         'too long' => [['--branch' => str_repeat('a', 256)]],
     ]);
 
-    it('updates the Polyscope workspace branch in the fixture database', function (): void {
-        createPolyscopeWorkspaceUpdateDatabase("{$this->workspaceAdapterUpdateTemp}/polyscope.db");
+    it('updates the Polyscope workspace branch for text workspace ids in the fixture database', function (string $workspaceId): void {
+        createPolyscopeWorkspaceUpdateDatabase("{$this->workspaceAdapterUpdateTemp}/polyscope.db", $workspaceId);
 
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions([
-            '--workspace-id' => '42',
+            '--workspace-id' => $workspaceId,
             '--branch' => 'feature-docs',
         ]));
 
-        $row = workspaceAdapterUpdateDatabaseRow("{$this->workspaceAdapterUpdateTemp}/polyscope.db", 42);
+        $row = workspaceAdapterUpdateDatabaseRow("{$this->workspaceAdapterUpdateTemp}/polyscope.db", $workspaceId);
 
         expect($exitCode)->toBe(0)
             ->and($output)->toBe(json_encode(
                 JsonEnvelope::success([
                     'adapter' => 'polyscope',
                     'update' => 'workspace-branch',
-                    'workspace_id' => 42,
+                    'workspace_id' => $workspaceId,
                     'branch' => 'feature-docs',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
             ->and($row)->toMatchArray([
-                'id' => 42,
+                'id' => $workspaceId,
                 'branch' => 'feature-docs',
                 'branch_renamed' => 1,
             ]);
-    });
+    })->with([
+        'lookup fixture id' => ['poly-worktree-1'],
+        'sdk fixture id' => ['wt-1'],
+    ]);
 
     it('returns a failure envelope when the Polyscope database is missing', function (): void {
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions());
@@ -185,14 +190,14 @@ describe('internal workspace adapter update command', function (): void {
         createPolyscopeWorkspaceUpdateDatabase("{$this->workspaceAdapterUpdateTemp}/polyscope.db");
 
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions([
-            '--workspace-id' => '404',
+            '--workspace-id' => 'missing-worktree-404',
         ]));
 
         expect($exitCode)->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
                 'workspace_not_found',
                 'Polyscope workspace was not found.',
-                ['adapter' => 'polyscope', 'workspace_id' => 404],
+                ['adapter' => 'polyscope', 'workspace_id' => 'missing-worktree-404'],
             ));
     });
 
@@ -260,7 +265,7 @@ function validWorkspaceAdapterUpdateOptions(array $overrides = []): array
     return [
         '--adapter' => 'polyscope',
         '--update' => 'workspace-branch',
-        '--workspace-id' => '42',
+        '--workspace-id' => 'poly-worktree-1',
         '--branch' => 'feature-docs',
         '--operation-token' => workspaceAdapterUpdateSignedOperationToken(),
         '--json' => true,
@@ -285,11 +290,15 @@ function runWorkspaceAdapterUpdateCommand(object $test, array $parameters = []):
     return [$exitCode, trim(app(Kernel::class)->output())];
 }
 
-function createPolyscopeWorkspaceUpdateDatabase(string $path): void
+function createPolyscopeWorkspaceUpdateDatabase(string $path, string $workspaceId = 'poly-worktree-1'): void
 {
     $pdo = createWritableWorkspaceAdapterUpdateDatabase($path);
-    $pdo->exec('create table worktrees (id integer primary key, branch text not null, branch_renamed integer not null default 0)');
-    $pdo->exec("insert into worktrees (id, branch, branch_renamed) values (42, 'main', 0)");
+    $pdo->exec('create table worktrees (id text primary key, branch text not null, branch_renamed integer not null default 0)');
+
+    $statement = $pdo->prepare('insert into worktrees (id, branch, branch_renamed) values (:id, :branch, 0)');
+    $statement->bindValue(':id', $workspaceId, PDO::PARAM_STR);
+    $statement->bindValue(':branch', 'main', PDO::PARAM_STR);
+    $statement->execute();
 }
 
 function createEmptyWorkspaceAdapterUpdateDatabase(string $path): void
@@ -307,13 +316,13 @@ function createWritableWorkspaceAdapterUpdateDatabase(string $path): PDO
 }
 
 /**
- * @return array{id: int, branch: string, branch_renamed: int}
+ * @return array{id: string, branch: string, branch_renamed: int}
  */
-function workspaceAdapterUpdateDatabaseRow(string $path, int $id): array
+function workspaceAdapterUpdateDatabaseRow(string $path, string $id): array
 {
     $pdo = createWritableWorkspaceAdapterUpdateDatabase($path);
     $statement = $pdo->prepare('select id, branch, branch_renamed from worktrees where id = :id');
-    $statement->bindValue(':id', $id, PDO::PARAM_INT);
+    $statement->bindValue(':id', $id, PDO::PARAM_STR);
     $statement->execute();
 
     $row = $statement->fetch();
