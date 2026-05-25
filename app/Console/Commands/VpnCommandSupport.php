@@ -9,10 +9,10 @@ use App\Concerns\LogsCommandActivity;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
 use App\Exceptions\PromptAborted;
+use App\Services\RemoteShell\RemoteOrbitRuntimeExecutor;
 use App\Services\Vpn\ActiveVpnNodeUnavailable;
 use App\Services\Vpn\FileVpnBackend;
 use App\Services\Vpn\VpnBackend;
@@ -32,6 +32,12 @@ abstract class VpnCommandSupport extends Command implements Loggable
     use WithStepTree;
 
     private const string VPN_RUNTIME_SSH_UNAVAILABLE = 'vpn_runtime_ssh_unavailable';
+
+    public function __construct(
+        private readonly RemoteOrbitRuntimeExecutor $gatewayRuntimeExecutor,
+    ) {
+        parent::__construct();
+    }
 
     protected ?string $activityClientName = null;
 
@@ -84,7 +90,7 @@ abstract class VpnCommandSupport extends Command implements Loggable
         $script = $this->gatewayScript($command, $arguments, $options);
 
         try {
-            $result = app(RemoteShell::class)->run($vpnNode, $script, [
+            $result = $this->gatewayRuntimeExecutor->run($vpnNode, $script, [
                 'cwd' => $vpnNode->orbit_path ?: '/home/orbit/orbit',
                 'timeout' => 120,
             ]);
@@ -113,7 +119,7 @@ abstract class VpnCommandSupport extends Command implements Loggable
      */
     protected function gatewayScript(string $command, array $arguments, array $options): string
     {
-        $parts = ['php', 'artisan', $command];
+        $parts = ['artisan', $command];
 
         foreach ($arguments as $argument) {
             $parts[] = escapeshellarg((string) $argument);
