@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 LABEL org.orbit.e2e.substrate="docker-first"
 
@@ -6,14 +6,27 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        bash \
         ca-certificates \
+        software-properties-common \
+    && add-apt-repository ppa:ondrej/php -y \
+    && apt-get purge -y --auto-remove software-properties-common \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
         curl \
         docker.io \
         git \
         openssh-client \
         openssh-server \
+        php8.4-cli \
+        php8.4-mbstring \
+        php8.4-curl \
+        php8.4-sqlite3 \
+        php8.4-xml \
         sudo \
+    && update-alternatives --set php /usr/bin/php8.4 \
+    && php --version | grep -q '^PHP 8.4.' \
+    && php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }' \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
 

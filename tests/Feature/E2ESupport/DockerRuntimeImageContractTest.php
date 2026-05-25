@@ -179,7 +179,7 @@ it('does not ship persisted orbit certificate material in the runtime image', fu
         ->toContain('OK');
 });
 
-it('provides Docker CLI but not host PHP runtime tools in the topology image', function (): void {
+it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in the topology image', function (): void {
     $availability = new Process([
         'docker',
         'image',
@@ -217,7 +217,11 @@ it('provides Docker CLI but not host PHP runtime tools in the topology image', f
         '-c',
         implode(' && ', [
             'command -v docker',
-            '! command -v php',
+            'command -v php',
+            'php --version | grep -q "^PHP 8[.]4[.]"',
+            'php -r \'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }\'',
+            '! command -v python3',
+            '! command -v sqlite3',
             '! command -v composer',
             '! command -v caddy',
             '! command -v php-fpm',
