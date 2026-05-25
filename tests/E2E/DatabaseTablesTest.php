@@ -6,12 +6,28 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
+require_once __DIR__.'/Support/SqliteDatabaseFixture.php';
+
+it('keeps database E2E SQLite fixture setup off the host sqlite3 binary', function (): void {
+    $sources = [
+        __DIR__.'/DatabaseTablesTest.php',
+        __DIR__.'/DatabaseSchemaTest.php',
+        __DIR__.'/DatabaseDescribeTest.php',
+    ];
+
+    foreach ($sources as $source) {
+        $contents = file_get_contents($source);
+
+        expect($contents)->not->toMatch('/->ssh\(\s*[\'"]dev[\'"][\s\S]*sqlite3/');
+    }
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+
 it('lists tables for a database connection from the control node through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     $slug = 'e2e-db-tables-'.strtolower(bin2hex(random_bytes(3)));
-    $dbPath = '/tmp/'.$slug.'.sqlite';
+    $dbPath = "/home/orbit/{$slug}.sqlite";
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
@@ -28,15 +44,9 @@ it('lists tables for a database connection from the control node through the gat
         );
         e2eGrantNodeAccess($topology);
 
-        // Create a SQLite file with a table on the dev app node
-        $topology->ssh(
-            'dev',
-            sprintf(
-                'sqlite3 %s "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"',
-                escapeshellarg($dbPath),
-            ),
-            timeoutSeconds: 30,
-        );
+        e2eCreateSqliteDatabaseFixture($topology, 'dev', $dbPath, [
+            'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);',
+        ]);
 
         // Register the connection on the gateway pointing at the dev node
         $slugValue = var_export($slug, true);
