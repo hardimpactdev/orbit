@@ -59,6 +59,9 @@ real VM, network, OS, or installer semantics.
 
 Prepared Docker topologies model the target runtime contract:
 
+- topology host images use an Ubuntu apt substrate so host prerequisite
+  packages, including the PHP 8.4 CLI baseline, mirror the installer path used
+  on managed Ubuntu nodes;
 - host launcher -> role-aware artifact (`apps/cli/orbit` on non-gateway nodes
   or `apps/gateway/artisan` on the gateway) -> gateway `orbit-caddy` -> gateway
   `orbit-runtime`;

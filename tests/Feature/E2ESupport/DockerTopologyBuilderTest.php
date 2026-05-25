@@ -11,6 +11,33 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
 });
 
+it('defines the Docker topology host PHP 8.4 CLI baseline without ad hoc helper binaries', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+
+    expect($dockerfile)
+        ->toContain('FROM ubuntu:24.04')
+        ->toContain('software-properties-common')
+        ->toContain('add-apt-repository ppa:ondrej/php -y')
+        ->toContain('apt-get purge -y --auto-remove software-properties-common')
+        ->toContain('php8.4-cli')
+        ->toContain('php8.4-mbstring')
+        ->toContain('php8.4-curl')
+        ->toContain('php8.4-sqlite3')
+        ->toContain('php8.4-xml')
+        ->toContain('update-alternatives --set php /usr/bin/php8.4')
+        ->toContain('php --version')
+        ->toContain('PHP 8.4.')
+        ->toContain('["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"]')
+        ->toContain('pdo_sqlite')
+        ->toContain('openssl')
+        ->toContain('curl')
+        ->toContain('mbstring')
+        ->toContain('json')
+        ->not->toContain('python3');
+
+    expect(preg_match('/(?:^|\s)sqlite3(?:\s|\\\\|$)/m', $dockerfile))->toBe(0);
+});
+
 it('starts Docker build topology nodes with the host Docker socket and runtime container context', function (): void {
     $commands = [];
 
