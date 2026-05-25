@@ -140,6 +140,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
+        workspaceSetupConfigureLocalExecutor($topology);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-setup-opencode');
@@ -351,36 +352,93 @@ PHP;
 
 function workspaceSetupWriteOpenCodeDatabase(E2ETopologyHarness $topology, string $workspaceName, string $workspacePath): void
 {
-    $script = <<<'PY'
-import pathlib, sqlite3
-db = pathlib.Path.home() / ".local/share/opencode/opencode.db"
-db.parent.mkdir(parents=True, exist_ok=True)
-conn = sqlite3.connect(db)
-try:
-    conn.execute("create table if not exists project (id text primary key, worktree text not null)")
-    conn.execute("create table if not exists workspace (id text primary key, type text not null, name text not null, branch text, directory text, extra text, project_id text not null)")
-    conn.execute("delete from workspace where id in ('wrk_docs', 'wrk_stale')")
-    conn.execute("delete from project where id in ('proj_docs', 'proj_api')")
-    conn.execute("insert into project (id, worktree) values ('proj_docs', '/home/orbit/apps/docs')")
-    conn.execute("insert into project (id, worktree) values ('proj_api', '/home/orbit/apps/api')")
-    conn.execute(
-        "insert into workspace (id, type, name, branch, directory, extra, project_id) values (?, 'worktree', ?, ?, ?, null, 'proj_docs')",
-        ('wrk_docs', WORKSPACE_NAME, WORKSPACE_NAME, WORKSPACE_PATH),
-    )
-    conn.commit()
-finally:
-    conn.close()
-PY;
+    $script = <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+$workspaceName = __WORKSPACE_NAME__;
+$workspacePath = __WORKSPACE_PATH__;
+$home = getenv('HOME');
+
+if (! is_string($home) || $home === '') {
+    throw new RuntimeException('Could not resolve HOME for OpenCode database setup.');
+}
+
+$databasePath = rtrim($home, '/').'/.local/share/opencode/opencode.db';
+$databaseDirectory = dirname($databasePath);
+
+if (! is_dir($databaseDirectory) && ! mkdir($databaseDirectory, 0775, true) && ! is_dir($databaseDirectory)) {
+    throw new RuntimeException("Could not create OpenCode database directory [{$databaseDirectory}].");
+}
+
+$pdo = new PDO('sqlite:'.$databasePath);
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+$pdo->exec('create table if not exists project (id text primary key, worktree text not null)');
+$pdo->exec('create table if not exists workspace (id text primary key, type text not null, name text not null, branch text, directory text, extra text, project_id text not null)');
+$pdo->exec("delete from workspace where id in ('wrk_docs', 'wrk_stale')");
+$pdo->exec("delete from project where id in ('proj_docs', 'proj_api')");
+
+$insertProject = $pdo->prepare('insert into project (id, worktree) values (:id, :worktree)');
+$insertProject->execute(['id' => 'proj_docs', 'worktree' => '/home/orbit/apps/docs']);
+$insertProject->execute(['id' => 'proj_api', 'worktree' => '/home/orbit/apps/api']);
+
+$insertWorkspace = $pdo->prepare("insert into workspace (id, type, name, branch, directory, extra, project_id) values (:id, 'worktree', :name, :branch, :directory, null, 'proj_docs')");
+$insertWorkspace->execute([
+    'id' => 'wrk_docs',
+    'name' => $workspaceName,
+    'branch' => $workspaceName,
+    'directory' => $workspacePath,
+]);
+PHP;
 
     $script = str_replace(
-        ['WORKSPACE_NAME', 'WORKSPACE_PATH'],
+        ['__WORKSPACE_NAME__', '__WORKSPACE_PATH__'],
         [var_export($workspaceName, true), var_export($workspacePath, true)],
         $script,
     );
 
     $topology->ssh(
         'dev',
-        'python3 - <<'.escapeshellarg('PY').PHP_EOL.$script.PHP_EOL.'PY',
+        'php <<'.escapeshellarg('PHP').PHP_EOL.$script.PHP_EOL.'PHP',
         timeoutSeconds: 120,
+    );
+}
+
+function workspaceSetupConfigureLocalExecutor(E2ETopologyHarness $topology): void
+{
+    $secret = 'orbit-e2e-workspace-adapter-secret';
+
+    $topology->ssh(
+        'gateway',
+        sprintf(
+            <<<'SH'
+cd %1$s
+touch .env
+grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_OPERATION_TOKEN_TTL_SECONDS)=' .env > .env.tmp || true
+mv .env.tmp .env
+printf 'ORBIT_OPERATION_TOKEN_SECRET=%2$s\nORBIT_OPERATION_TOKEN_TTL_SECONDS=120\n' >> .env
+SH,
+            escapeshellarg($topology->checkout('gateway')),
+            $secret,
+        ),
+        timeoutSeconds: 60,
+    );
+
+    $topology->ssh(
+        'dev',
+        sprintf(
+            <<<'SH'
+cd %1$s/apps/cli
+touch .env
+grep -Ev '^(ORBIT_EXECUTOR_SECRET|ORBIT_NODE_IDENTITY)=' .env > .env.tmp || true
+mv .env.tmp .env
+printf 'ORBIT_EXECUTOR_SECRET=%2$s\nORBIT_NODE_IDENTITY=app-dev-1\n' >> .env
+SH,
+            escapeshellarg($topology->checkout('dev')),
+            $secret,
+        ),
+        timeoutSeconds: 60,
     );
 }

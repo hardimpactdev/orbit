@@ -428,7 +428,7 @@ it('regenerates empty app keys while preparing remote checkout env files', funct
         ->toContain("grep -Eq '^APP_KEY=base64:.+' .env");
 });
 
-it('installs the current checkout on Docker topology nodes through the orbit launcher', function (): void {
+it('installs the current checkout on Docker topology nodes through the runtime container', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -453,17 +453,100 @@ it('installs the current checkout on Docker topology nodes through the orbit lau
     ));
 
     expect($nodeInstallCommands)
-        ->toContain('orbit key:generate --force --no-interaction --ansi')
-        ->toContain('orbit migrate --force --ansi')
+        ->toContain('sudo docker exec --env')
+        ->toContain('orbit-e2e-run123-control-orbit-runtime')
+        ->toContain('key:generate --force --no-interaction --ansi')
+        ->toContain('migrate --force --ansi')
+        ->toContain('/home/control/orbit/apps/cli/vendor')
+        ->toContain('rm -rf apps/cli/vendor')
+        ->toContain('ln -s')
+        ->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader')
+        ->toContain('/home/control/orbit/apps/cli/.env')
+        ->toContain('apps/cli/.env')
         ->not->toContain('composer dump-autoload')
-        ->not->toContain('composer install')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
         ->not->toContain('php -S')
         ->and($wrapperCopyCommands)->toHaveCount(1);
 });
 
-it('refreshes Docker gateway checkout host keys through the orbit launcher', function (): void {
+it('skips root app bootstrapping for Docker host launcher checkout nodes', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run123-dev', 'orbit-e2e-run123');
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+
+    E2ECurrentCheckout::install(
+        $instance,
+        'orbit',
+        $key,
+        seedFrom: '/home/orbit/orbit',
+        executorNodeIdentity: 'app-dev-1',
+        hostLauncher: true,
+    );
+
+    $nodeInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-dev'"),
+    )));
+
+    expect($nodeInstallCommands)
+        ->toContain('/home/orbit/orbit/apps/cli/vendor')
+        ->toContain('rm -rf apps/cli/vendor')
+        ->toContain('apps/cli/.env')
+        ->not->toContain('key:generate')
+        ->not->toContain('migrate --force')
+        ->not->toContain('composer install');
+});
+
+it('keeps Docker control checkouts on the runtime wrapper while app roles use the host launcher', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $host = new DockerHost(E2EConfig::fromEnvironment());
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $topology = new E2ETopologyLease(
+        kind: E2ETopologyKind::ControlGatewayDev,
+        control: new DockerInstance($host, 'orbit-e2e-run123-control', 'orbit-e2e-run123'),
+        gateway: new DockerInstance($host, 'orbit-e2e-run123-gateway', 'orbit-e2e-run123'),
+        dev: new DockerInstance($host, 'orbit-e2e-run123-dev', 'orbit-e2e-run123'),
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+    );
+
+    E2ECurrentCheckout::installOnTopology($topology, roles: ['control', 'dev']);
+
+    $controlInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'control' 'orbit-e2e-run123-control'"),
+    )));
+    $devInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-dev'"),
+    )));
+
+    expect($controlInstallCommands)
+        ->toContain('key:generate')
+        ->toContain('migrate --force')
+        ->and($devInstallCommands)
+        ->not->toContain('key:generate')
+        ->not->toContain('migrate --force')
+        ->toContain('/home/orbit/orbit/apps/cli/vendor');
+});
+
+it('refreshes Docker gateway checkout host keys through the runtime container', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -497,13 +580,15 @@ it('refreshes Docker gateway checkout host keys through the orbit launcher', fun
     );
     $hostKeyRefreshCommandIndex = array_find_key(
         $commands,
-        fn (string $command): bool => str_contains($command, 'orbit orbit:internal:pin-node-host-keys --json'),
+        fn (string $command): bool => str_contains($command, 'orbit:internal:pin-node-host-keys --json'),
     );
 
     expect($gatewayInstallCommands)
-        ->toContain('orbit orbit:internal:pin-node-host-keys --json')
+        ->toContain('sudo docker exec --env')
+        ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
+        ->toContain('orbit:internal:pin-node-host-keys --json')
+        ->not->toContain('orbit orbit:internal:pin-node-host-keys --json')
         ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
-        ->not->toContain('composer install')
         ->not->toContain('composer dump-autoload')
         ->and($wrapperCopyCommandIndex)->toBeInt()
         ->and($hostKeyRefreshCommandIndex)->toBeInt()

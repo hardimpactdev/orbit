@@ -104,9 +104,9 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
 
     expect($setup)
         ->toContain('orbit tinker --execute=')
-        ->toContain('orbit serve --host=')
+        ->toContain('php -d display_errors=0 -S')
+        ->not->toContain('orbit serve --host=')
         ->not->toContain('php artisan')
-        ->not->toContain('php -S')
         ->not->toContain('nohup php')
         ->not->toContain('php -r')
         ->not->toContain('systemctl stop caddy');

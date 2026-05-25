@@ -397,9 +397,19 @@ function e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable(E2ETopologyHarnes
 
 function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology, string $role = 'control'): void
 {
+    if (e2eRoleUsesDockerHostLauncher($topology, $role)) {
+        e2eConfigureCurrentCheckoutCliGatewaySettings($topology, $role);
+
+        return;
+    }
+
+    $caPemPath = e2eRoleUsesDockerRuntime($topology, $role)
+        ? e2eInstallCurrentCheckoutGatewayCa($topology, $role)
+        : null;
     $checkout = escapeshellarg($topology->checkout($role));
     $gatewayUrlValue = var_export(e2eGatewayApiUrl($topology), true);
     $gatewayIpValue = var_export(e2eGatewayWireGuardIp($topology), true);
+    $caPemPathValue = var_export($caPemPath, true);
 
     $php = <<<PHP
 \$settings = \\App\\Models\\LocalGatewaySettings::current();
@@ -407,6 +417,9 @@ function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology
     'gateway_url' => {$gatewayUrlValue},
     'gateway_wg_ip' => {$gatewayIpValue},
 ]);
+if ({$caPemPathValue} !== null) {
+    \$settings->ca_pem_path = {$caPemPathValue};
+}
 \$settings->save();
 echo 'configured';
 PHP;
@@ -416,6 +429,55 @@ PHP;
         "cd {$checkout} && orbit tinker --execute=".escapeshellarg($php),
         timeoutSeconds: 120,
     );
+}
+
+function e2eConfigureCurrentCheckoutCliGatewaySettings(E2ETopologyHarness $topology, string $role): void
+{
+    $checkout = escapeshellarg($topology->checkout($role).'/apps/cli');
+    $gatewayUrl = e2eGatewayCliUrl($topology);
+
+    $command = implode(' && ', [
+        "cd {$checkout}",
+        'touch .env',
+        "grep -Ev '^(ORBIT_GATEWAY_URL|ORBIT_GATEWAY_IDENTITY)=' .env > .env.tmp || true",
+        'mv .env.tmp .env',
+        sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg($gatewayUrl)),
+    ]);
+
+    $topology->ssh($role, $command, timeoutSeconds: 120);
+}
+
+function e2eInstallCurrentCheckoutGatewayCa(E2ETopologyHarness $topology, string $role): string
+{
+    $caPemPath = $topology->checkout($role).'/storage/app/orbit/ca/root.crt';
+    $gatewayCaPath = $topology->checkout('gateway').'/storage/app/orbit/ca/root.crt';
+    $rootCert = $topology->ssh(
+        'gateway',
+        'cat '.escapeshellarg($gatewayCaPath),
+        timeoutSeconds: 120,
+    )->output();
+
+    $topology->ssh(
+        $role,
+        sprintf(
+            'mkdir -p %s && printf %%s %s > %s',
+            escapeshellarg(dirname($caPemPath)),
+            escapeshellarg($rootCert),
+            escapeshellarg($caPemPath),
+        ),
+        timeoutSeconds: 120,
+    );
+
+    return $caPemPath;
+}
+
+function e2eGatewayCliUrl(E2ETopologyHarness $topology): string
+{
+    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+        return 'http://gateway';
+    }
+
+    return 'http://'.$topology->lease()->gatewayApiIp();
 }
 
 /**
@@ -473,6 +535,12 @@ function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): b
     return $topology->instance($role) instanceof DockerInstance;
 }
 
+function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $role): bool
+{
+    return e2eRoleUsesDockerRuntime($topology, $role)
+        && in_array($role, ['dev', 'prod', 'agent', 'ingress'], true);
+}
+
 function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string
 {
     return $topology->instance($role)->name().'-orbit-runtime';
@@ -521,9 +589,9 @@ function e2ePutRuntimeFile(E2ETopologyHarness $topology, string $role, string $p
     );
 }
 
-function e2eOrbitWrapperScript(string $checkout, bool $dockerRuntime): string
+function e2eOrbitWrapperScript(string $checkout, bool $dockerRuntime, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
 {
-    return E2ECurrentCheckout::orbitWrapperScript($checkout, $dockerRuntime);
+    return E2ECurrentCheckout::orbitWrapperScript($checkout, $dockerRuntime, $executorNodeIdentity, $hostLauncher);
 }
 
 function e2ePhpServerCommand(int $port, string $routerPath, string $logPath, string $pidPath): string

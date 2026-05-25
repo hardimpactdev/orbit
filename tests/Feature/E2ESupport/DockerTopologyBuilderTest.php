@@ -359,9 +359,9 @@ it('does not use host PHP or host Caddy paths while building Docker gateway topo
 
     expect($setup)
         ->toContain('orbit tinker --execute=')
-        ->toContain('orbit serve --host=')
+        ->toContain('php -d display_errors=0 -S')
+        ->not->toContain('orbit serve --host=')
         ->not->toContain('php artisan')
-        ->not->toContain('php -S')
         ->not->toContain('nohup php')
         ->not->toContain('php -r')
         ->not->toContain('systemctl stop caddy');
@@ -468,7 +468,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *cat*" => Process::result(),
         "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi'" => Process::result(),
         "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *sudo docker exec*id_ed25519*" => Process::result(),
-        "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *orbit serve*" => Process::result(),
+        "docker exec 'orbit-e2e-build-operator_gateway-gateway' sh -lc *php -d display_errors=0 -S*" => Process::result(),
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *curl*" => Process::result(),
         "docker exec --user 'control' 'orbit-e2e-build-operator_gateway-control' sh -lc *tinker*" => Process::result(),
         'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
@@ -519,7 +519,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker exec --detach *orbit-scheduler' => Process::result(),
         'docker exec --user *doctor*--family=schedule*' => Process::result(),
         'docker exec *tinker*' => Process::result(),
-        'docker exec *orbit serve*' => Process::result(),
+        'docker exec *php -d display_errors=0 -S*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
         'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
@@ -599,7 +599,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         'docker exec --detach *orbit-scheduler' => Process::result(),
         'docker exec --user *doctor*--family=schedule*' => Process::result(),
         'docker exec *tinker*' => Process::result(),
-        'docker exec *orbit serve*' => Process::result(),
+        'docker exec *php -d display_errors=0 -S*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
         'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
@@ -657,7 +657,7 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         'docker exec --detach *orbit-scheduler' => Process::result(),
         'docker exec --user *doctor*--family=schedule*' => Process::result(),
         'docker exec *tinker*' => Process::result(),
-        'docker exec *orbit serve*' => Process::result(),
+        'docker exec *php -d display_errors=0 -S*' => Process::result(),
         'docker exec --user *curl*' => Process::result(),
         'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
