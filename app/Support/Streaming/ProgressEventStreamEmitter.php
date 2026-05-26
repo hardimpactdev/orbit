@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Support\Streaming;
 
-final class ProgressEventStreamEmitter
+final readonly class ProgressEventStreamEmitter
 {
     public function __construct(
-        private readonly string $sapi = PHP_SAPI,
+        private string $sapi = PHP_SAPI,
     ) {}
 
     /**

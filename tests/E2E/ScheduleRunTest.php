@@ -6,7 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
-it('runs a schedule from the control node through the gateway api and records history', function (): void {
+it('runs a schedule from the operator node through the gateway api and records history', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 

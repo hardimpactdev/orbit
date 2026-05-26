@@ -300,23 +300,23 @@ final readonly class DeployManager
     {
         $normalized = preg_replace('/[\'"].*?[\'"]/', '', $command);
 
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php-fpm\b/', $normalized) === 1) {
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php-fpm\b/', (string) $normalized) === 1) {
             return false;
         }
 
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\d+\.\d+-fpm\b/', $normalized) === 1) {
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\d+\.\d+-fpm\b/', (string) $normalized) === 1) {
             return false;
         }
 
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\s/', $normalized) === 1) {
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\s/', (string) $normalized) === 1) {
             return true;
         }
 
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*composer\s/', $normalized) === 1) {
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*composer\s/', (string) $normalized) === 1) {
             return true;
         }
 
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*artisan\b/', $normalized) === 1) {
+        if (preg_match('/(?:^|\s|&&|\|\||;)\s*artisan\b/', (string) $normalized) === 1) {
             return true;
         }
 

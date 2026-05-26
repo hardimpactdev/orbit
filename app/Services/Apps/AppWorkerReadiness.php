@@ -16,11 +16,11 @@ final readonly class AppWorkerReadiness
      * independent piece of evidence; the service only reports ready when
      * every required token is present.
      */
-    public const InstalledToken = 'octane:installed';
+    public const string InstalledToken = 'octane:installed';
 
-    public const WorkerFileToken = 'frankenphp-worker-file:present';
+    public const string WorkerFileToken = 'frankenphp-worker-file:present';
 
-    public const ConfiguredToken = 'frankenphp:configured';
+    public const string ConfiguredToken = 'frankenphp:configured';
 
     public function __construct(
         private RemoteShell $remoteShell,

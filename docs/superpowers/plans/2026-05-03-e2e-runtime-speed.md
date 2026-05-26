@@ -30,7 +30,7 @@ If memory becomes the real bottleneck, reduce memory only after timing data show
 
 Relevant files:
 
-- `TESTING.md` documents `ORBIT_E2E_INCUS_HOSTS`, `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, `ORBIT_E2E_TOPOLOGY_STRATEGY`, and `ORBIT_E2E_TOPOLOGY_RESET`.
+- `TESTING.md` documents `ORBIT_E2E_INCUS_HOSTS`, `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, and `ORBIT_E2E_TOPOLOGY_RESET`.
 - `tests/E2E/Support/E2EConfig.php` has one global `cpus`/`memory` pair used by runtime providers and image preparation.
 - `tests/E2E/Support/IncusHostPool.php` chooses the first host that has templates; it does not enforce capacity.
 - `tests/E2E/Support/IncusTopologyTemplate.php` copies, starts, and waits for topology roles sequentially.
@@ -463,4 +463,3 @@ vendor/bin/pint --dirty --format agent
 - `composer test:e2e:features:parallel` exists and is documented as opt-in.
 - Timing output shows phase-level duration before and after optimizations.
 - In-memory Pest remains the default fast lane; ephemeral VM Pest E2E remains opt-in.
-

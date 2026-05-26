@@ -420,7 +420,7 @@ class NodeRevokeCommand extends Command
     private function confirmationMessage(string $consumerName, string $servingName, bool $isSelfLockout): string
     {
         if ($isSelfLockout) {
-            return 'Revoke this control node\'s gateway access? This machine will lose Orbit gateway access.';
+            return 'Revoke this operator node\'s gateway access? This machine will lose Orbit gateway access.';
         }
 
         return "Revoke access from '{$consumerName}' to '{$servingName}'? This cannot be undone.";

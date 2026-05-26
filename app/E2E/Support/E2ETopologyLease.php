@@ -81,6 +81,7 @@ final class E2ETopologyLease
     public function instance(string $role): ?E2EInstance
     {
         return match ($role) {
+            'operator' => $this->control,
             'control' => $this->control,
             'gateway' => $this->gateway,
             'dev' => $this->dev,
@@ -142,13 +143,13 @@ final class E2ETopologyLease
 
     public function reset(): void
     {
-        $strategy = getenv('ORBIT_E2E_TOPOLOGY_RESET');
-        $strategy = is_string($strategy) && $strategy !== '' ? $strategy : 'fresh-clone';
+        $resetMode = getenv('ORBIT_E2E_TOPOLOGY_RESET');
+        $resetMode = is_string($resetMode) && $resetMode !== '' ? $resetMode : 'fresh-clone';
 
         $timer = new E2EPhaseTimer;
 
         try {
-            if (in_array($strategy, ['snapshot-restore', 'stateful-restore'], true) && $this->snapshotReset !== null) {
+            if (in_array($resetMode, ['snapshot-restore', 'stateful-restore'], true) && $this->snapshotReset !== null) {
                 ($this->snapshotReset)($timer);
                 $this->cleaned = false;
 
@@ -159,7 +160,7 @@ final class E2ETopologyLease
             $payload = ($this->rebuild)($timer);
             $instances = $payload['instances'];
 
-            $this->control = $instances['control'];
+            $this->control = $instances['operator'] ?? $instances['control'];
             $this->gateway = $instances['gateway'] ?? null;
             $this->dev = $instances['dev'] ?? null;
             $this->prod = $instances['prod'] ?? null;
@@ -179,7 +180,7 @@ final class E2ETopologyLease
      */
     public function instanceNames(): array
     {
-        return array_values(array_filter([
+        return array_values(array_unique(array_filter([
             $this->control->name(),
             $this->gateway?->name(),
             $this->dev?->name(),
@@ -190,7 +191,7 @@ final class E2ETopologyLease
                 static fn (E2EInstance $instance): string => $instance->name(),
                 array_values($this->additionalInstances),
             ),
-        ]));
+        ])));
     }
 
     /**
@@ -199,7 +200,7 @@ final class E2ETopologyLease
     private function allInstances(): array
     {
         return [
-            'control' => $this->control,
+            'operator' => $this->control,
             'gateway' => $this->gateway,
             'dev' => $this->dev,
             'prod' => $this->prod,
@@ -215,6 +216,6 @@ final class E2ETopologyLease
      */
     private function additionalInstancesFrom(array $instances): array
     {
-        return array_diff_key($instances, array_flip(['control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
+        return array_diff_key($instances, array_flip(['operator', 'control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
     }
 }

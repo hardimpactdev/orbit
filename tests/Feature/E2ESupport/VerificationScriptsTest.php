@@ -156,7 +156,7 @@ it('documents the e2e docker benchmark protocol', function (): void {
 
     expect($testing)
         ->toContain('## E2E Docker lane - benchmark protocol')
-        ->toContain('ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \\')
+        ->toContain('ORBIT_E2E_TIMINGS=1 \\')
         ->toContain('composer test:e2e:docker:canary \\')
         ->toContain('2>&1 | tee /tmp/e2e-canary.log | awk -f bin/e2e-timings.awk')
         ->toContain('composer test:e2e:docker \\')
@@ -347,7 +347,7 @@ it('installs Docker via docker.com and host PHP through the Ubuntu PPA package p
         ->toContain('docker.gpg')
         ->toContain('docker-ce')
         ->toContain('ppa:ondrej/php')
-        ->toContain('php8.4-cli')
+        ->toContain('php8.5-cli')
         ->not->toContain('packages.sury.org/php')
         ->not->toContain('sury-php.gpg')
         ->not->toContain('ppa.launchpadcontent.net')
@@ -411,8 +411,8 @@ it('does not install the SQLite CLI while providing host PHP SQLite support for 
     $script = file_get_contents(base_path('bin/install-orbit'));
 
     expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
-        ->and($script)->not->toContain('php8.5-sqlite3')
-        ->and($script)->toContain('php8.4-sqlite3')
+        ->and($script)->not->toContain('php8.4-sqlite3')
+        ->and($script)->toContain('php8.5-sqlite3')
         ->and($script)->toContain('orbit-runtime:current');
 });
 

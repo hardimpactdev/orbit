@@ -33,21 +33,21 @@ function incusHostTestConfig(string $incusStoragePool = '', string $host = 'beas
         memory: '2GiB',
         topologyCpus: '1',
         topologyMemory: '2GiB',
+        topologyRootSize: '16GiB',
         topologyStateSize: '4GiB',
         incusStoragePool: $incusStoragePool,
-        incusMaxVmsPerHost: 4,
         dockerHosts: ['local'],
-        dockerMaxContainersPerHost: 8,
         keep: false,
     );
 }
 
-function incusHostTestProcessResult(string $output = ''): ProcessResult
+function incusHostTestProcessResult(string $output = '', int $exitCode = 0): ProcessResult
 {
     $result = m::mock(ProcessResult::class);
-    $result->shouldReceive('successful')->andReturn(true);
+    $result->shouldReceive('successful')->andReturn($exitCode === 0);
     $result->shouldReceive('output')->andReturn($output);
     $result->shouldReceive('errorOutput')->andReturn('');
+    $result->shouldReceive('exitCode')->andReturn($exitCode);
 
     return $result;
 }
@@ -86,6 +86,15 @@ it('adds configured storage pool to launch and copy commands', function (): void
 
     expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-control' --vm --storage 'orbit-e2e' >/dev/null")
         ->and($commands[1])->toContain("incus copy 'orbit-template-control/clean-control' 'orbit-e2e-run-control' --storage 'orbit-e2e'");
+});
+
+it('sets the configured root disk size when launching topology instances', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+
+    $host->launchTopologyInstance('orbit-blank-ubuntu-26.04', 'orbit-template-control');
+
+    expect($commands[0])->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-control' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
 });
 
 it('uses incus snapshot restore and supports stateful restore', function (): void {
@@ -259,6 +268,103 @@ it('allows remote checkout archive copies to use ssh agent identities', function
         ->and($scpCommand)->toContain("'beast':")
         ->and($commands[0])->toContain("incus file push '/tmp/orbit-current-transfer-")
         ->and($commands[1])->toContain("rm -f '/tmp/orbit-current-transfer-");
+});
+
+it('stages local Docker image archives in the pushed provisioning bundle when available on the Incus host', function (): void {
+    $localBundle = sys_get_temp_dir().'/orbit-incus-local-bundle-'.bin2hex(random_bytes(4));
+    $remoteStage = sys_get_temp_dir().'/orbit-incus-remote-stage-'.bin2hex(random_bytes(4));
+    mkdir($localBundle, 0755, true);
+    file_put_contents("{$localBundle}/orbit-source.tar.gz", 'source');
+
+    $commands = [];
+    $host = new class(incusHostTestConfig(host: 'localhost'), $commands, $remoteStage) extends IncusHost
+    {
+        /** @var list<string> */
+        private array $commands;
+
+        /**
+         * @param  list<string>  $commands
+         */
+        public function __construct(E2EConfig $config, array &$commands, private string $remoteStage)
+        {
+            parent::__construct($config);
+            $this->commands = &$commands;
+        }
+
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'mktemp -d')) {
+                mkdir($this->remoteStage, 0755, true);
+
+                return incusHostTestProcessResult($this->remoteStage."\n");
+            }
+
+            return incusHostTestProcessResult();
+        }
+    };
+
+    try {
+        $remoteBundle = $host->pushBundle($localBundle);
+    } finally {
+        (new Symfony\Component\Process\Process(['rm', '-rf', $localBundle, $remoteStage]))->run();
+    }
+
+    expect($remoteBundle)->toBe("{$remoteStage}/orbit-e2e-bundle")
+        ->and($commands)->toContain('mktemp -d /tmp/orbit-e2e-stage-XXXXXX')
+        ->and(implode("\n", $commands))->toContain("docker image inspect 'orbit-runtime:current'")
+        ->and(implode("\n", $commands))->toContain("docker save 'orbit-runtime:current'")
+        ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/orbit-runtime-current.tar'")
+        ->and(implode("\n", $commands))->toContain("docker image inspect 'caddy:2-alpine'")
+        ->and(implode("\n", $commands))->toContain("docker save 'caddy:2-alpine'")
+        ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/caddy-2-alpine.tar'")
+        ->and(implode("\n", $commands))->toContain("docker image inspect '4km3/dnsmasq:latest'")
+        ->and(implode("\n", $commands))->toContain("docker save '4km3/dnsmasq:latest'")
+        ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/dnsmasq-latest.tar'");
+});
+
+it('passes staged Docker image archives to the in-guest provisioner when present', function (): void {
+    $commands = [];
+    $host = new class(incusHostTestConfig(), $commands) extends IncusHost
+    {
+        /** @var list<string> */
+        private array $commands;
+
+        /**
+         * @param  list<string>  $commands
+         */
+        public function __construct(E2EConfig $config, array &$commands)
+        {
+            parent::__construct($config);
+            $this->commands = &$commands;
+        }
+
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, '/composer-cache')) {
+                return incusHostTestProcessResult(exitCode: 1);
+            }
+
+            return incusHostTestProcessResult();
+        }
+    };
+
+    $host->provisionInstance('orbit-e2e-run-control', 'control', '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle', 'orbit');
+
+    $commandOutput = implode("\n", $commands);
+
+    expect($commandOutput)
+        ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/orbit-runtime-current.tar'")
+        ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/caddy-2-alpine.tar'")
+        ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/dnsmasq-latest.tar'")
+        ->toContain("incus file push -r -p '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle' 'orbit-e2e-run-control/var/tmp/'")
+        ->toContain('--runtime-image-archive=/var/tmp/orbit-e2e-bundle/orbit-runtime-current.tar')
+        ->toContain('--caddy-image-archive=/var/tmp/orbit-e2e-bundle/caddy-2-alpine.tar')
+        ->toContain('--dnsmasq-image-archive=/var/tmp/orbit-e2e-bundle/dnsmasq-latest.tar')
+        ->toContain('--operator-user=');
 });
 
 it('can restore snapshots concurrently', function (): void {

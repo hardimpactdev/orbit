@@ -6,6 +6,7 @@ use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
@@ -19,12 +20,14 @@ it('uses operator topology names while preserving control aliases', function ():
         ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator_gateway')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
+        ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
         ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
         ->and(E2ETopologyKind::ControlGateway)->toBe(E2ETopologyKind::OperatorGateway)
         ->and(E2ETopologyKind::ControlGatewayDev)->toBe(E2ETopologyKind::OperatorGatewayAppdev)
         ->and(E2ETopologyKind::ControlGatewayDevProd)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
         ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())->toContain('e2e-feature-control-gateway-dev');
 });
@@ -35,8 +38,8 @@ it('supports operator aliases on the topology harness and lease', function (): v
     $lease = fakeTopologyLease($operator, $gateway);
 
     $harness = new E2ETopologyHarness($lease, [
-        'operator' => '/home/control/orbit-current',
-        'control' => '/home/control/orbit-current',
+        'operator' => '/home/orbit/orbit-current',
+        'control' => '/home/orbit/orbit-current',
         'gateway' => '/home/orbit/orbit-current',
     ]);
 
@@ -44,19 +47,23 @@ it('supports operator aliases on the topology harness and lease', function (): v
         ->and($lease->control())->toBe($operator)
         ->and($harness->instance('operator'))->toBe($operator)
         ->and($harness->instance('control'))->toBe($operator)
-        ->and($harness->checkout('operator'))->toBe('/home/control/orbit-current')
-        ->and($harness->checkout('control'))->toBe('/home/control/orbit-current');
+        ->and($harness->checkout('operator'))->toBe('/home/orbit/orbit-current')
+        ->and($harness->checkout('control'))->toBe('/home/orbit/orbit-current');
+
+    $harness->setCheckouts(['operator' => '/home/orbit/orbit-next']);
+
+    expect($harness->checkout('control'))->toBe('/home/orbit/orbit-next');
 });
 
 it('uses operator topology names for docker images while preserving control role fixtures', function (): void {
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
     expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdev, 'control'))
-        ->toBe('orbit-e2e-topology:operator_gateway_app-dev-control-current')
+        ->toBe('orbit-e2e-topology:'.E2ETopologyArtifactNamespace::dockerImageSlug('operator_gateway_app-dev-operator-dns-alias').'-current')
         ->and($provider->imageNameFor(E2ETopologyKind::OperatorGatewayAppdevAppprod, 'gateway'))
-        ->toBe('orbit-e2e-topology:operator_gateway_app-dev_app-prod-gateway-current')
+        ->toBe('orbit-e2e-topology:'.E2ETopologyArtifactNamespace::dockerImageSlug('operator_gateway_app-dev_app-prod-gateway-dns-alias').'-current')
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdev))
-        ->toBe(['control', 'gateway', 'dev']);
+        ->toBe(['operator', 'gateway', 'dev']);
 });
 
 function fakeTopologyLease(E2EInstance $operator, ?E2EInstance $gateway = null): E2ETopologyLease
@@ -68,7 +75,7 @@ function fakeTopologyLease(E2EInstance $operator, ?E2EInstance $gateway = null):
         dev: null,
         prod: null,
         sshKeyPair: new SshKeyPair('/dev/null', '/dev/null'),
-        rebuild: fn () => ['instances' => ['control' => $operator, 'gateway' => $gateway], 'snapshotReset' => null],
+        rebuild: fn () => ['instances' => ['operator' => $operator, 'gateway' => $gateway], 'snapshotReset' => null],
     );
 }
 

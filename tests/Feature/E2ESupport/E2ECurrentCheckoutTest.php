@@ -33,7 +33,7 @@ function currentCheckoutProcessResult(bool $successful = true): ProcessResult
     return $result;
 }
 
-function currentCheckoutFakeInstance(array &$commands, string $name = 'fake-control', ?array &$timeouts = null): E2EInstance
+function currentCheckoutFakeInstance(array &$commands, string $name = 'fake-operator', ?array &$timeouts = null): E2EInstance
 {
     return new class($commands, $name, $timeouts) implements E2EInstance
     {
@@ -97,20 +97,20 @@ it('reuses prepared vendor packages while rebuilding checkout local autoload fil
     $instance = currentCheckoutFakeInstance($commands);
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    E2ECurrentCheckout::install($instance, 'control', $key);
+    E2ECurrentCheckout::install($instance, 'orbit', $key);
 
     $commandOutput = implode("\n", $commands);
 
-    expect($commandOutput)->toContain("cmp -s '/home/control/orbit/composer.lock' composer.lock")
-        ->and($commandOutput)->toContain("[ -d '/home/control/orbit/vendor/laravel/boost' ]")
-        ->and($commandOutput)->toContain("[ -d '/home/control/orbit/vendor/composer' ]")
+    expect($commandOutput)->toContain("cmp -s '/home/orbit/orbit/composer.lock' composer.lock")
+        ->and($commandOutput)->toContain("[ -d '/home/orbit/orbit/vendor/composer' ]")
         ->and($commandOutput)->toContain('rm -rf vendor')
-        ->and($commandOutput)->toContain("find '/home/control/orbit/vendor' -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} vendor/ \\;")
-        ->and($commandOutput)->toContain("cp -a '/home/control/orbit/vendor/composer' vendor/composer")
-        ->and($commandOutput)->toContain("cp '/home/control/orbit/vendor/autoload.php' vendor/autoload.php")
-        ->and($commandOutput)->toContain('composer dump-autoload --no-interaction --optimize')
-        ->and($commandOutput)->not->toContain("ln -s '/home/control/orbit/vendor' vendor")
-        ->and($commandOutput)->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader');
+        ->and($commandOutput)->toContain("find '/home/orbit/orbit/vendor' -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} vendor/ \\;")
+        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/vendor/composer' vendor/composer")
+        ->and($commandOutput)->toContain("cp '/home/orbit/orbit/vendor/autoload.php' vendor/autoload.php")
+        ->and($commandOutput)->toContain('if command -v composer >/dev/null 2>&1; then composer dump-autoload --no-interaction --optimize; fi')
+        ->and($commandOutput)->not->toContain("ln -s '/home/orbit/orbit/vendor' vendor")
+        ->and($commandOutput)->toContain('elif command -v composer >/dev/null 2>&1; then composer install --no-interaction --prefer-dist --optimize-autoloader')
+        ->and($commandOutput)->toContain('Composer is not installed and prepared vendor dependencies could not be reused.');
 });
 
 it('can seed the current checkout from prepared topology state', function (): void {
@@ -122,13 +122,13 @@ it('can seed the current checkout from prepared topology state', function (): vo
     $instance = currentCheckoutFakeInstance($commands);
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+    E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
     $commandOutput = implode("\n", $commands);
 
-    expect($commandOutput)->toContain("cp '/home/control/orbit/.env' .env")
-        ->and($commandOutput)->toContain("cp '/home/control/orbit/database/database.sqlite' database/database.sqlite")
-        ->and($commandOutput)->toContain("cp -a '/home/control/orbit/storage/app' storage/app");
+    expect($commandOutput)->toContain("cp '/home/orbit/orbit/.env' .env")
+        ->and($commandOutput)->toContain("cp '/home/orbit/orbit/database/database.sqlite' database/database.sqlite")
+        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/storage/app' storage/app");
 });
 
 it('records checkout phase timings while installing the current checkout', function (): void {
@@ -141,7 +141,7 @@ it('records checkout phase timings while installing the current checkout', funct
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $timer = new E2EPhaseTimer;
 
-    E2ECurrentCheckout::install($instance, 'control', $key, timer: $timer);
+    E2ECurrentCheckout::install($instance, 'orbit', $key, timer: $timer);
 
     expect(array_column($timer->events(), 'name'))->toBe([
         'checkout.archive',
@@ -180,7 +180,7 @@ it('does not record archive timing for shared archive cache hits', function (): 
     $timer = new E2EPhaseTimer;
 
     try {
-        E2ECurrentCheckout::install(currentCheckoutFakeInstance($controlCommands, 'control'), 'control', $key, seedFrom: '/home/control/orbit', timer: $timer);
+        E2ECurrentCheckout::install(currentCheckoutFakeInstance($controlCommands, 'operator'), 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
         E2ECurrentCheckout::install(currentCheckoutFakeInstance($gatewayCommands, 'gateway'), 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
 
         expect($tarBuilds)->toBe(1)
@@ -221,7 +221,7 @@ it('makes the checkout archive readable before copying it into an instance', fun
 
         public function name(): string
         {
-            return 'fake-control';
+            return 'fake-operator';
         }
 
         public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
@@ -253,7 +253,7 @@ it('makes the checkout archive readable before copying it into an instance', fun
         public function delete(): void {}
     };
 
-    E2ECurrentCheckout::install($instance, 'control', $key);
+    E2ECurrentCheckout::install($instance, 'orbit', $key);
 
     expect($copiedMode)->toBe('644');
 });
@@ -286,7 +286,7 @@ it('excludes persisted orbit certificate material from checkout archive manifest
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
     try {
-        E2ECurrentCheckout::install($instance, 'control', $key);
+        E2ECurrentCheckout::install($instance, 'orbit', $key);
 
         expect($manifestEntries)->not->toContain('storage/app/orbit/ca/e2e-test-certificate.pem');
     } finally {
@@ -321,7 +321,7 @@ it('builds checkout archives from tracked and unignored files only', function ()
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
     try {
-        E2ECurrentCheckout::install($instance, 'control', $key);
+        E2ECurrentCheckout::install($instance, 'orbit', $key);
 
         expect($manifestEntries)
             ->toContain(basename($includedPath))
@@ -380,35 +380,33 @@ it('runs the runtime-state phase from inside the remote checkout directory', fun
     $instance = currentCheckoutFakeInstance($commands);
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+    E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
-    expect($commands[3])->toStartWith("cd '/home/control/orbit-current' && ")
-        ->and($commands[3])->toContain("cp '/home/control/orbit/.env' .env");
+    expect($commands[3])->toStartWith("cd '/home/orbit/orbit-current' && ")
+        ->and($commands[3])->toContain("cp '/home/orbit/orbit/.env' .env");
 });
 
-it('persists dns-alias topology mode into remote checkout env files', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
-
-    Process::fake([
-        'COPYFILE_DISABLE=1 tar *' => Process::result(),
-    ]);
-
+it('marks Docker topology checkout env files with the Docker provider', function (): void {
     $commands = [];
-    $instance = currentCheckoutFakeInstance($commands);
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run123-operator', 'orbit-e2e-run123');
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    try {
-        E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+    E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
-        expect($commands[3])
-            ->toContain("grep -Ev '^(ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env")
-            ->toContain('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
-    } finally {
-        $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
-    }
+    $nodeInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-operator'"),
+    )));
+
+    expect($nodeInstallCommands)
+        ->toContain('ORBIT_E2E_TOPOLOGY_PROVIDER')
+        ->toContain('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 });
 
 it('regenerates empty app keys while preparing remote checkout env files', function (): void {
@@ -420,7 +418,7 @@ it('regenerates empty app keys while preparing remote checkout env files', funct
     $instance = currentCheckoutFakeInstance($commands);
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+    E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
     expect($commands[3])
         ->toContain("grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env")
@@ -437,32 +435,39 @@ it('installs the current checkout on Docker topology nodes through the runtime c
         return Process::result();
     });
 
-    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run123-control', 'orbit-e2e-run123');
+    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run123-operator', 'orbit-e2e-run123');
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+    E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
     $nodeInstallCommands = implode("\n", array_values(array_filter(
         $commands,
-        fn (string $command): bool => str_starts_with($command, "docker exec --user 'control' 'orbit-e2e-run123-control'"),
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-operator'"),
     )));
     $wrapperCopyCommands = array_values(array_filter(
         $commands,
         fn (string $command): bool => str_starts_with($command, 'docker cp ')
-            && str_contains($command, "'orbit-e2e-run123-control:/usr/local/bin/orbit'"),
+            && str_contains($command, "'orbit-e2e-run123-operator:/usr/local/bin/orbit'"),
     ));
 
     expect($nodeInstallCommands)
         ->toContain('sudo docker exec --env')
-        ->toContain('orbit-e2e-run123-control-orbit-runtime')
+        ->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->toContain('key:generate --force --no-interaction --ansi')
         ->toContain('migrate --force --ansi')
-        ->toContain('/home/control/orbit/apps/cli/vendor')
+        ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('rm -rf apps/cli/vendor')
         ->toContain('ln -s')
-        ->toContain('composer install --no-interaction --prefer-dist --optimize-autoloader')
-        ->toContain('/home/control/orbit/apps/cli/.env')
+        ->toContain('COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache')
+        ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress')
+        ->toContain('/home/orbit/orbit/apps/cli/.env')
         ->toContain('apps/cli/.env')
+        ->toContain('LocalGatewaySettings::current()')
+        ->toContain('http://gateway/api/ca/root')
+        ->toContain('https://gateway')
+        ->toContain('ca_sha256')
+        ->toContain('ca_pem_path')
+        ->not->toContain('orbit list --raw 2>/dev/null | grep -qx')
         ->not->toContain('composer dump-autoload')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
@@ -505,7 +510,7 @@ it('skips root app bootstrapping for Docker host launcher checkout nodes', funct
         ->not->toContain('composer install');
 });
 
-it('keeps Docker control checkouts on the runtime wrapper while app roles use the host launcher', function (): void {
+it('keeps Docker operator checkouts on the runtime wrapper while app roles use the host launcher', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -517,8 +522,8 @@ it('keeps Docker control checkouts on the runtime wrapper while app roles use th
     $host = new DockerHost(E2EConfig::fromEnvironment());
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: new DockerInstance($host, 'orbit-e2e-run123-control', 'orbit-e2e-run123'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        control: new DockerInstance($host, 'orbit-e2e-run123-operator', 'orbit-e2e-run123'),
         gateway: new DockerInstance($host, 'orbit-e2e-run123-gateway', 'orbit-e2e-run123'),
         dev: new DockerInstance($host, 'orbit-e2e-run123-dev', 'orbit-e2e-run123'),
         prod: null,
@@ -526,18 +531,18 @@ it('keeps Docker control checkouts on the runtime wrapper while app roles use th
         rebuild: fn () => throw new RuntimeException('not expected'),
     );
 
-    E2ECurrentCheckout::installOnTopology($topology, roles: ['control', 'dev']);
+    E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'dev']);
 
-    $controlInstallCommands = implode("\n", array_values(array_filter(
+    $operatorInstallCommands = implode("\n", array_values(array_filter(
         $commands,
-        fn (string $command): bool => str_starts_with($command, "docker exec --user 'control' 'orbit-e2e-run123-control'"),
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-operator'"),
     )));
     $devInstallCommands = implode("\n", array_values(array_filter(
         $commands,
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-dev'"),
     )));
 
-    expect($controlInstallCommands)
+    expect($operatorInstallCommands)
         ->toContain('key:generate')
         ->toContain('migrate --force')
         ->and($devInstallCommands)
@@ -559,7 +564,7 @@ it('refreshes Docker gateway checkout host keys through the runtime container', 
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
         kind: E2ETopologyKind::ControlGateway,
-        control: new DockerInstance($host, 'orbit-e2e-run123-control', 'orbit-e2e-run123'),
+        control: new DockerInstance($host, 'orbit-e2e-run123-operator', 'orbit-e2e-run123'),
         gateway: new DockerInstance($host, 'orbit-e2e-run123-gateway', 'orbit-e2e-run123'),
         dev: null,
         prod: null,
@@ -610,7 +615,7 @@ it('shares one 600 second timeout budget across split install phases', function 
         return array_shift($times) ?? 1450.0;
     });
 
-    E2ECurrentCheckout::install($instance, 'control', $key);
+    E2ECurrentCheckout::install($instance, 'orbit', $key);
 
     expect($timeouts)->toBe([
         600,
@@ -633,25 +638,25 @@ it('can cache the checkout install and clone isolated runtime paths', function (
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
     try {
-        $firstPath = E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
-        $secondPath = E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+        $firstPath = E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
+        $secondPath = E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
         $commandOutput = implode("\n", $commands);
 
-        expect($firstPath)->toStartWith('/home/control/orbit-current-')
-            ->and($secondPath)->toStartWith('/home/control/orbit-current-')
+        expect($firstPath)->toStartWith('/home/orbit/orbit-current-')
+            ->and($secondPath)->toStartWith('/home/orbit/orbit-current-')
             ->and($secondPath)->not->toBe($firstPath)
             ->and(substr_count($commandOutput, 'tar --warning=no-unknown-keyword'))->toBe(1)
             ->and($commandOutput)->toContain('! -name vendor ! -name database ! -name storage ! -name .env -exec sh -c')
             ->and($commandOutput)->toContain('cp -al "$path" "$target"/')
             ->and($commandOutput)->toContain('cp -a --reflink=always')
-            ->and($commandOutput)->toContain("ln -s '/home/control/orbit-current-base-")
+            ->and($commandOutput)->toContain("ln -s '/home/orbit/orbit-current-base-")
             ->and($commandOutput)->toContain("/vendor' '{$firstPath}/vendor")
             ->and($commandOutput)->toContain("/vendor' '{$secondPath}/vendor")
             ->and($commandOutput)->not->toContain('chmod -R a-w')
             ->and($commandOutput)->toContain('! -name composer ! -name autoload.php -exec ln -s {} vendor/')
             ->and(substr_count($commandOutput, 'copy '))->toBe(1)
-            ->and($commandOutput)->not->toMatch("/cp -al '\\/home\\/control\\/orbit-current-base-[0-9a-f]+' '\\/home\\/control\\/orbit-current-[^']+'/")
+            ->and($commandOutput)->not->toMatch("/cp -al '\\/home\\/orbit\\/orbit-current-base-[0-9a-f]+' '\\/home\\/orbit\\/orbit-current-[^']+'/")
             ->and($commandOutput)->not->toContain("/storage' '{$firstPath}/storage")
             ->and($commandOutput)->not->toContain("/storage' '{$secondPath}/storage")
             ->and($commandOutput)->toContain("/storage/app' '{$firstPath}/storage/app")
@@ -691,9 +696,9 @@ it('reuses the shared checkout archive after flushing in-process checkout state'
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
     try {
-        E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+        E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
         E2ECurrentCheckout::flushCache();
-        E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit');
+        E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
         expect($tarBuilds)->toBe(1)
             ->and(substr_count(implode("\n", $commands), 'copy '))->toBe(2);
@@ -734,8 +739,8 @@ it('only records clone timing when reusing a cached base checkout', function ():
     $timer = new E2EPhaseTimer;
 
     try {
-        E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit', timer: $timer);
-        E2ECurrentCheckout::install($instance, 'control', $key, seedFrom: '/home/control/orbit', timer: $timer);
+        E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
+        E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
 
         expect(array_column($timer->events(), 'name'))->toBe([
             'checkout.archive',
@@ -790,14 +795,14 @@ it('can install the current checkout on selected topology roles', function (): v
     $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['control', 'gateway', 'dev', 'prod', 'agent']);
 
     expect($paths)->toBe([
-        'control' => '/home/control/orbit-current',
+        'control' => '/home/orbit/orbit-current',
         'gateway' => '/home/orbit/orbit-current',
         'dev' => '/home/orbit/orbit-current',
         'prod' => '/home/orbit/orbit-current',
         'agent' => '/home/orbit/orbit-current',
     ]);
 
-    expect(implode("\n", $controlCommands))->toContain("cp '/home/control/orbit/.env' .env");
+    expect(implode("\n", $controlCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
     expect(implode("\n", $gatewayCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
     expect(implode("\n", $gatewayCommands))->toContain('php artisan orbit:internal:pin-node-host-keys --json');
     expect(implode("\n", $devCommands))->toContain("cp '/home/orbit/orbit/.env' .env");

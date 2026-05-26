@@ -6,6 +6,9 @@ TARGET_DIR="${ORBIT_INSTALL_PATH:-$HOME/orbit}"
 REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
 BRANCH="${ORBIT_BRANCH:-main}"
 SOURCE_ARCHIVE=""
+RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"
+CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"
+DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
@@ -21,15 +24,21 @@ usage: bin/install-orbit [options]
 Install the Orbit CLI and its Docker-first runtime prerequisites on the
 current host. The installer prepares host PHP CLI for the CLI/local-executor
 artifact, Docker, the Orbit source checkout, the orbit-runtime and orbit-caddy
-container images, starts the orbit-runtime container, and runs migrations
-inside the container. No host Composer, host Caddy, or host PHP-FPM is
-installed.
+container images, runs migrations inside a disposable orbit-runtime container,
+and starts the long-running orbit-runtime container. No host Composer, host
+Caddy, or host PHP-FPM is installed.
 
 Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
   --repo=URL                   Git repository to clone when no source archive is provided.
   --branch=NAME                Git branch to clone or update. Defaults to "main".
   --source-archive=PATH        Extract this Orbit source tarball instead of cloning.
+  --runtime-image-archive=PATH Load orbit-runtime:current from this Docker
+                               image archive before building from source.
+  --caddy-image-archive=PATH   Load caddy:2-alpine from this Docker image
+                               archive before falling back to Docker Hub.
+  --dnsmasq-image-archive=PATH Load 4km3/dnsmasq:latest from this Docker
+                               image archive for gateway DNS bootstrap.
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
   --skip-prerequisites         Skip Docker / package prerequisite installation.
@@ -37,15 +46,16 @@ Options:
                                contain runtime packages.
   --gateway                    Start orbit-runtime with ORBIT_IS_GATEWAY=1 so
                                the gateway API HTTP listener is brought up
-                               alongside the scheduler. Pass on first-gateway
-                               provisioning.
+                               alongside the scheduler and trusts the
+                               orbit-caddy-owned WireGuard peer header. Pass
+                               on first-gateway provisioning.
   --no-sudo                    Run package and symlink commands without sudo.
   --verbose                    Stream underlying command output.
   -h, --help                   Show this help text.
 
-The installer is intentionally local-host only. A new control node runs it
+The installer is intentionally local-host only. A new operator node runs it
 before invoking Orbit. Gateway and app roles are provisioned by node:new from a
-configured control node.
+configured operator node.
 HELP
 }
 
@@ -134,9 +144,9 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Bootstrap Orbit runtime in the container\n'
     printf '  │\n'
-    printf '  ○  Start orbit-runtime container\n'
-    printf '  │\n'
     printf '  ○  Run migrations inside orbit-runtime\n'
+    printf '  │\n'
+    printf '  ○  Start orbit-runtime container\n'
     printf '  │\n'
     printf '  ○  Align orbit checkout ownership\n'
     printf '  │\n'
@@ -191,6 +201,15 @@ parse_args() {
             --source-archive=*)
                 SOURCE_ARCHIVE="${1#*=}"
                 ;;
+            --runtime-image-archive=*)
+                RUNTIME_IMAGE_ARCHIVE="${1#*=}"
+                ;;
+            --caddy-image-archive=*)
+                CADDY_IMAGE_ARCHIVE="${1#*=}"
+                ;;
+            --dnsmasq-image-archive=*)
+                DNSMASQ_IMAGE_ARCHIVE="${1#*=}"
+                ;;
             --bin=*)
                 LINK_PATH="${1#*=}"
                 ;;
@@ -222,6 +241,18 @@ parse_args() {
 validate_args() {
     [ -n "$TARGET_DIR" ] || fail validation_failed "--path is required"
     [ -n "$LINK_PATH" ] || fail validation_failed "--bin is required"
+
+    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ] && [ ! -f "$RUNTIME_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "runtime image archive not found: $RUNTIME_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$CADDY_IMAGE_ARCHIVE" ] && [ ! -f "$CADDY_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "caddy image archive not found: $CADDY_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ] && [ ! -f "$DNSMASQ_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "dnsmasq image archive not found: $DNSMASQ_IMAGE_ARCHIVE"
+    fi
 }
 
 wait_for_cloud_init() {
@@ -239,7 +270,7 @@ host_php_is_ready() {
 
     version="$(php --version 2>/dev/null | head -n 1 || true)"
 
-    [[ "$version" == PHP\ 8.4.* ]] || return 1
+    [[ "$version" == PHP\ 8.5.* ]] || return 1
 
     php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { exit(1); } }' >/dev/null 2>&1
 }
@@ -251,8 +282,8 @@ verify_host_php_baseline() {
 
     version="$(php --version 2>/dev/null | head -n 1 || true)"
 
-    if [[ "$version" != PHP\ 8.4.* ]]; then
-        fail validation_failed "host php must resolve to PHP 8.4.x after prerequisite installation; got: ${version:-missing}"
+    if [[ "$version" != PHP\ 8.5.* ]]; then
+        fail validation_failed "host php must resolve to PHP 8.5.x after prerequisite installation; got: ${version:-missing}"
     fi
 
     if ! php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }' >/dev/null 2>&1; then
@@ -277,11 +308,11 @@ ubuntu_requires_ondrej_php_ppa() {
 
 install_host_php_ubuntu() {
     if host_php_is_ready; then
-        printf 'orbit-install: host PHP 8.4 CLI baseline already present\n'
+        printf 'orbit-install: host PHP 8.5 CLI baseline already present\n'
         return
     fi
 
-    printf 'orbit-install: installing host PHP 8.4 CLI baseline\n'
+    printf 'orbit-install: installing host PHP 8.5 CLI baseline\n'
 
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
 
@@ -289,18 +320,18 @@ install_host_php_ubuntu() {
         sudo_run add-apt-repository ppa:ondrej/php -y
         sudo_run apt-get update
     else
-        printf 'orbit-install: using Ubuntu package repositories for PHP 8.4 CLI baseline\n'
+        printf 'orbit-install: using Ubuntu package repositories for PHP 8.5 CLI baseline\n'
     fi
 
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        php8.4-cli \
-        php8.4-mbstring \
-        php8.4-curl \
-        php8.4-sqlite3 \
-        php8.4-xml
+        php8.5-cli \
+        php8.5-mbstring \
+        php8.5-curl \
+        php8.5-sqlite3 \
+        php8.5-xml
 
-    if [ -x /usr/bin/php8.4 ]; then
-        sudo_run update-alternatives --set php /usr/bin/php8.4
+    if [ -x /usr/bin/php8.5 ]; then
+        sudo_run update-alternatives --set php /usr/bin/php8.5
     fi
 
     verify_host_php_baseline
@@ -400,22 +431,22 @@ brew_formula_installed() {
 
 install_host_php_macos() {
     if host_php_is_ready; then
-        printf 'orbit-install: host PHP 8.4 CLI baseline already present\n'
+        printf 'orbit-install: host PHP 8.5 CLI baseline already present\n'
         return
     fi
 
-    printf 'orbit-install: installing host PHP 8.4 CLI baseline\n'
+    printf 'orbit-install: installing host PHP 8.5 CLI baseline\n'
 
-    if brew_formula_installed php@8.4; then
-        printf 'orbit-install: Homebrew php@8.4 already installed; linking host php\n'
-    elif brew search --formula php@8.4 2>/dev/null | grep -qx php@8.4; then
-        run brew install php@8.4
+    if brew_formula_installed php@8.5; then
+        printf 'orbit-install: Homebrew php@8.5 already installed; linking host php\n'
+    elif brew search --formula php@8.5 2>/dev/null | grep -qx php@8.5; then
+        run brew install php@8.5
     else
         run brew install php
     fi
 
-    if brew_formula_installed php@8.4; then
-        run brew link --overwrite --force php@8.4
+    if brew_formula_installed php@8.5; then
+        run brew link --overwrite --force php@8.5
     fi
 
     verify_host_php_baseline
@@ -495,12 +526,149 @@ install_source() {
 build_runtime_images() {
     require_docker
 
+    ensure_runtime_image
+    ensure_caddy_image
+    ensure_dnsmasq_image
+}
+
+ensure_runtime_image() {
+    if docker_cli image inspect "orbit-runtime:current" >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ]; then
+        run docker_cli load -i "$RUNTIME_IMAGE_ARCHIVE"
+
+        if docker_cli image inspect "orbit-runtime:current" >/dev/null 2>&1; then
+            return
+        fi
+
+        fail validation_failed "runtime image archive did not load orbit-runtime:current: $RUNTIME_IMAGE_ARCHIVE"
+    fi
+
     run docker_cli build \
         -f "$TARGET_DIR/docker/orbit-runtime/Dockerfile" \
         -t "orbit-runtime:current" \
         "$TARGET_DIR"
+}
+
+ensure_caddy_image() {
+    if docker_cli image inspect "caddy:2-alpine" >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ -n "$CADDY_IMAGE_ARCHIVE" ]; then
+        run docker_cli load -i "$CADDY_IMAGE_ARCHIVE"
+
+        if docker_cli image inspect "caddy:2-alpine" >/dev/null 2>&1; then
+            return
+        fi
+
+        fail validation_failed "caddy image archive did not load caddy:2-alpine: $CADDY_IMAGE_ARCHIVE"
+    fi
 
     run docker_cli pull "caddy:2-alpine"
+}
+
+ensure_dnsmasq_image() {
+    if [ -z "$DNSMASQ_IMAGE_ARCHIVE" ]; then
+        return
+    fi
+
+    if docker_cli image inspect "4km3/dnsmasq:latest" >/dev/null 2>&1; then
+        return
+    fi
+
+    run docker_cli load -i "$DNSMASQ_IMAGE_ARCHIVE"
+
+    if docker_cli image inspect "4km3/dnsmasq:latest" >/dev/null 2>&1; then
+        return
+    fi
+
+    fail validation_failed "dnsmasq image archive did not load 4km3/dnsmasq:latest: $DNSMASQ_IMAGE_ARCHIVE"
+}
+
+read_env_var() {
+    local key="$1"
+    local value
+
+    [ -f "$TARGET_DIR/.env" ] || return 1
+
+    value="$(grep -E "^${key}=" "$TARGET_DIR/.env" | tail -n 1 | cut -d= -f2- || true)"
+
+    if [ -z "$value" ]; then
+        return 1
+    fi
+
+    printf '%s\n' "$value"
+}
+
+write_env_var() {
+    local key="$1"
+    local value="$2"
+
+    ensure_log_file
+
+    printf '%s' "$value" | php -r '
+$path = $argv[1];
+$key = $argv[2];
+$value = stream_get_contents(STDIN);
+$contents = file_exists($path) ? file_get_contents($path) : "";
+$line = "{$key}={$value}";
+
+if (preg_match("/^".preg_quote($key, "/")."=/m", $contents) === 1) {
+    $contents = preg_replace("/^".preg_quote($key, "/")."=.*$/m", $line, $contents);
+} else {
+    $contents = rtrim($contents).PHP_EOL.$line.PHP_EOL;
+}
+
+file_put_contents($path, $contents);
+' "$TARGET_DIR/.env" "$key" >>"$LOG_FILE" 2>&1
+}
+
+generate_operation_token_secret() {
+    php -r 'echo base64_encode(random_bytes(32));'
+}
+
+ensure_operation_token_secret() {
+    local secret
+
+    secret="${ORBIT_OPERATION_TOKEN_SECRET:-}"
+
+    if [ -z "$secret" ]; then
+        secret="$(read_env_var "ORBIT_OPERATION_TOKEN_SECRET" || true)"
+    fi
+
+    if [ -z "$secret" ]; then
+        secret="$(read_env_var "ORBIT_EXECUTOR_SECRET" || true)"
+    fi
+
+    if [ -z "$secret" ]; then
+        secret="$(generate_operation_token_secret)"
+    fi
+
+    write_env_var "ORBIT_OPERATION_TOKEN_SECRET" "$secret"
+    write_env_var "ORBIT_EXECUTOR_SECRET" "$secret"
+
+    export ORBIT_OPERATION_TOKEN_SECRET="$secret"
+    export ORBIT_EXECUTOR_SECRET="$secret"
+}
+
+ensure_node_identity() {
+    if [ -z "${ORBIT_NODE_IDENTITY:-}" ]; then
+        return
+    fi
+
+    write_env_var "ORBIT_NODE_IDENTITY" "$ORBIT_NODE_IDENTITY"
+}
+
+ensure_forward_install_image_archives_flag() {
+    if [ -z "$RUNTIME_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ]; then
+        return
+    fi
+
+    write_env_var "ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES" "1"
+    export ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES=1
 }
 
 bootstrap_runtime() {
@@ -516,9 +684,20 @@ bootstrap_runtime() {
         run touch "$TARGET_DIR/database/database.sqlite"
     fi
 
+    ensure_operation_token_secret
+    ensure_node_identity
+    ensure_forward_install_image_archives_flag
+
     run docker_cli run --rm \
         --pull never \
         -v "$TARGET_DIR":/opt/orbit \
+        orbit-runtime:current \
+        composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+    run docker_cli run --rm \
+        --pull never \
+        -v "$TARGET_DIR":/opt/orbit \
+        --workdir /opt/orbit/apps/cli \
         orbit-runtime:current \
         composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
@@ -566,7 +745,7 @@ start_runtime_container() {
 
     local gateway_env=()
     if [ "$GATEWAY_MODE" = "1" ]; then
-        gateway_env=(--env "ORBIT_IS_GATEWAY=1")
+        gateway_env=(--env "ORBIT_IS_GATEWAY=1" --env "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1")
     fi
 
     if docker_cli container inspect orbit-runtime >/dev/null 2>&1; then
@@ -574,6 +753,11 @@ start_runtime_container() {
 
         if [ "$GATEWAY_MODE" = "1" ] && ! container_env_contains "ORBIT_IS_GATEWAY=1"; then
             printf 'orbit-install: existing orbit-runtime container is missing ORBIT_IS_GATEWAY=1; recreating to enable the gateway API listener\n' >&2
+            needs_recreate=1
+        fi
+
+        if [ "$GATEWAY_MODE" = "1" ] && [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1"; then
+            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1; recreating to enable gateway proxy identity\n' >&2
             needs_recreate=1
         fi
 
@@ -617,11 +801,10 @@ start_runtime_container() {
 run_migrations_in_container() {
     require_docker
 
-    run docker_cli exec \
-        --env "ORBIT_HOST_CWD=$TARGET_DIR" \
-        --env "ORBIT_HOST_UID=$(id -u)" \
-        --env "ORBIT_HOST_GID=$(id -g)" \
-        orbit-runtime \
+    run docker_cli run --rm \
+        --pull never \
+        -v "$TARGET_DIR":/opt/orbit \
+        orbit-runtime:current \
         php /opt/orbit/artisan migrate --force --no-interaction
 }
 
@@ -704,12 +887,12 @@ main() {
     bootstrap_runtime
     complete_step
 
-    start_step "Start orbit-runtime container"
-    start_runtime_container
-    complete_step
-
     start_step "Run migrations inside orbit-runtime"
     run_migrations_in_container
+    complete_step
+
+    start_step "Start orbit-runtime container"
+    start_runtime_container
     complete_step
 
     start_step "Align orbit checkout ownership"

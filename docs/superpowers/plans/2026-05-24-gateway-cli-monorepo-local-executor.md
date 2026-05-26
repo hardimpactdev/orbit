@@ -792,7 +792,7 @@ recorded in Solo.
 
   ```bash
   composer e2e:prepare-docker-runtime -- --force
-  composer e2e:prepare-docker-topology -- --force client-gateway-appdev
+  composer e2e:prepare-docker-topology -- --force operator-gateway-appdev
   composer test:e2e:topology-contract
   ```
 
@@ -874,10 +874,10 @@ recorded in Solo.
 
   Run:
 
-  ```bash
-  composer e2e:prepare-docker-topology -- --force client-gateway-appdev
-  composer e2e:prepare-docker-topology -- --force client-gateway-appdev-ingress
-  ```
+	  ```bash
+	  composer e2e:prepare-docker-topology -- --force operator-gateway-appdev
+	  composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
+	  ```
 
 - [ ] **Step 3: Run topology contract**
 
@@ -957,8 +957,8 @@ Minimum final verification before marking this plan complete:
 composer docs-lint
 composer test
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force client-gateway-appdev
-composer e2e:prepare-docker-topology -- --force client-gateway-appdev-ingress
+composer e2e:prepare-docker-topology -- --force operator-gateway-appdev
+composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
 composer test:e2e:topology-contract
 composer test:e2e:docker
 composer test:e2e:incus

@@ -71,9 +71,7 @@ final readonly class AppRuntimeContainerManager
             }
 
             return AppRuntimeContainerApplyOutcome::Unchanged;
-        } catch (AppRuntimeImageUnavailableException $exception) {
-            throw $exception;
-        } catch (AppRuntimeContainerApplyException $exception) {
+        } catch (AppRuntimeImageUnavailableException|AppRuntimeContainerApplyException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
             throw new AppRuntimeContainerApplyException(

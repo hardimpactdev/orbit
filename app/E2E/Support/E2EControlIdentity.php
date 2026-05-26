@@ -6,13 +6,13 @@ namespace App\E2E\Support;
 
 final readonly class E2EControlIdentity
 {
-    public static function ensureOperator(E2EInstance $control, string $controlUser, SshKeyPair $key): void
+    public static function ensureOperator(E2EInstance $control, string $operatorUser, SshKeyPair $key): void
     {
-        self::ensure($control, $controlUser, $key);
+        self::ensure($control, $operatorUser, $key);
     }
 
-    #[\Deprecated(message: 'Migration alias. The legacy control fixture user remains in place for this E2E window.')]
-    public static function ensure(E2EInstance $control, string $controlUser, SshKeyPair $key): void
+    #[\Deprecated(message: 'Migration alias. The legacy control identity remains in place for this E2E window.')]
+    public static function ensure(E2EInstance $control, string $operatorUser, SshKeyPair $key): void
     {
         $php = <<<'PHP'
 \App\Models\Node::query()
@@ -23,9 +23,9 @@ PHP;
 
         E2ECommand::ssh(
             $control,
-            $controlUser,
+            $operatorUser,
             $key,
-            'cd '.escapeshellarg("/home/{$controlUser}/orbit").' && orbit tinker --execute='.escapeshellarg($php),
+            'cd '.escapeshellarg("/home/{$operatorUser}/orbit").' && php artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 60,
         );
     }

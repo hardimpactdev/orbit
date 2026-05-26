@@ -43,6 +43,8 @@ final class E2ETopologyCache
         $key = self::key($resolvedKind, $sshUsers, $withGatewayApi);
 
         if (! isset(self::$leases[$key])) {
+            self::evictUntilRoomFor($key);
+
             self::$leases[$key] = self::$resolver !== null
                 ? (self::$resolver)($kind, $sshUsers)
                 : $factory->require($kind);
@@ -99,5 +101,37 @@ final class E2ETopologyCache
         ksort($sshUsers);
 
         return $kind->value.':'.($withGatewayApi ? 'gateway-api' : 'no-gateway-api').':'.sha1(json_encode($sshUsers, JSON_THROW_ON_ERROR));
+    }
+
+    private static function evictUntilRoomFor(string $key): void
+    {
+        $limit = self::limit();
+
+        if ($limit === null || isset(self::$leases[$key])) {
+            return;
+        }
+
+        while (count(self::$leases) >= $limit) {
+            $lease = array_shift(self::$leases);
+
+            if ($lease instanceof E2ETopologyLease) {
+                $lease->cleanup();
+            }
+        }
+    }
+
+    private static function limit(): ?int
+    {
+        $value = getenv('ORBIT_E2E_TOPOLOGY_CACHE_LIMIT');
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        if (! ctype_digit($value)) {
+            return null;
+        }
+
+        return max(1, (int) $value);
     }
 }

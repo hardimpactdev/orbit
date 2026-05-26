@@ -150,7 +150,7 @@ PHP;
 }
 
 it('administers VPN clients through gateway execution and control SSH forwarding', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
+    $topology = e2eTopology(E2ETopologyKind::OperatorGateway)
         ->withCurrentCheckout(roles: ['control', 'gateway']);
     $backendPath = '/tmp/orbit-vpn-'.strtolower(bin2hex(random_bytes(3))).'.json';
     $gatewayCheckout = escapeshellarg($topology->checkout('gateway'));
@@ -257,4 +257,4 @@ it('administers VPN clients through gateway execution and control SSH forwarding
         $topology->ssh('gateway', 'rm -f '.escapeshellarg($backendPath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');

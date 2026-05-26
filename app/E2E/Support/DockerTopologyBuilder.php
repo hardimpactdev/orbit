@@ -10,7 +10,11 @@ use RuntimeException;
 
 final readonly class DockerTopologyBuilder
 {
-    private const string RuntimeImage = 'orbit-e2e-topology-runtime:current';
+    private const string ComposerCachePath = '/tmp/orbit-composer-cache';
+
+    private const string ComposerHomePath = '/tmp/orbit-composer-home';
+
+    private const string ComposerHelperImage = 'composer:2';
 
     public function __construct(
         private E2EConfig $config,
@@ -19,45 +23,65 @@ final readonly class DockerTopologyBuilder
     /**
      * @return list<array{role: string, container: string, image: string}>
      */
-    public function build(E2ETopologyKind $kind, string $mode = 'legacy-retarget'): array
+    public function build(E2ETopologyKind $kind, string $mode = 'dns-alias'): array
     {
-        $network = "{$this->config->instancePrefix}-build-{$kind->value}";
+        $network = E2ETopologyArtifactNamespace::dockerBuildName($this->config->instancePrefix, $kind);
         $roles = self::rolesFor($kind);
         $containers = [];
+        $runtimeDependencySources = [];
         $composerLockHash = $this->composerLockHash();
-        $certSanSet = $this->certSanSetForMode($mode);
+        $composerCacheVolume = $this->composerCacheVolume($composerLockHash);
 
         $this->mustRun(
-            sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::RuntimeImage)),
+            sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::runtimeImage())),
             'Docker topology runtime image is missing',
         );
-        $this->mustRun(
-            sprintf('docker image inspect %s >/dev/null', escapeshellarg(DockerTopologyProvider::runtimeSiblingImage())),
-            'Docker Orbit runtime image is missing',
-        );
+        if (array_any($roles, self::roleUsesRuntimeSibling(...))) {
+            $this->mustRun(
+                sprintf('docker image inspect %s >/dev/null', escapeshellarg(DockerTopologyProvider::runtimeSiblingImage())),
+                'Docker Orbit runtime image is missing',
+            );
+        }
+        if (array_any($roles, fn (string $role): bool => ! self::roleUsesRuntimeSibling($role))) {
+            $this->mustRun(
+                sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::composerHelperImage())),
+                'Docker Composer helper image is missing',
+            );
+        }
 
         try {
-            $this->mustRun(
-                sprintf('docker network create --subnet %s %s', escapeshellarg('10.6.0.0/16'), escapeshellarg($network)),
-                "Could not create Docker build network {$network}",
-            );
+            $networkPlan = $this->createNetwork($network);
+            $certSanSet = $this->certSanSetForMode($mode, $networkPlan);
 
             foreach ($roles as $role) {
                 $container = "{$network}-{$role}";
                 $containers[$role] = new DockerBuildInstance($container, $network);
 
-                $this->mustRun($this->runCommand($container, $network, $role, $this->containerIpForRole($role), $mode), "Could not start {$container}");
+                $this->mustRun($this->runCommand($container, $network, $role, $this->containerIpForRole($role, $networkPlan), $mode), "Could not start {$container}");
                 $this->syncCurrentCheckout($container, $role);
-                $this->mustRun($this->runtimeRunCommand($container, $network, $role), "Could not start {$this->runtimeContainerName($container)}");
-                $this->prepareRuntimeSource($container, $role);
-                $this->persistRuntimeSource($container, $role);
+                if (self::roleUsesRuntimeSibling($role)) {
+                    $this->mustRun($this->runtimeRunCommand($container, $network, $role, $composerCacheVolume), "Could not start {$this->runtimeContainerName($container)}");
+                } else {
+                    $this->mustRun($this->composerHelperRunCommand($container, $role, $composerCacheVolume), "Could not start {$this->composerHelperContainerName($container)}");
+                }
+
+                $dependencyKey = $this->runtimeDependencyKeyForRole($role);
+                $dependencySource = $runtimeDependencySources[$dependencyKey] ?? null;
+
+                $this->prepareRoleSource($container, $role, $dependencySource);
+
+                if ($dependencySource === null) {
+                    $runtimeDependencySources[$dependencyKey] = $this->dependencyContainerName($container, $role);
+                }
+
+                $this->persistRoleSource($container, $role);
                 $this->migrate($containers[$role], $role);
                 if ($role === 'gateway') {
                     $this->refreshRuntimeSource($container, $role);
                 }
             }
 
-            $this->seedTopology($kind, $containers, $mode);
+            $this->seedTopology($kind, $containers, $mode, $networkPlan);
 
             $manifest = [];
 
@@ -76,7 +100,7 @@ final readonly class DockerTopologyBuilder
                     continue;
                 }
 
-                $this->persistRuntimeSource($container, $role);
+                $this->persistRoleSource($container, $role);
                 $this->normalizePersistedRuntimeStateOwnership($container, $role);
 
                 $this->mustRun(
@@ -107,12 +131,39 @@ final readonly class DockerTopologyBuilder
             foreach (array_keys($containers) as $role) {
                 $this->run(sprintf(
                     'docker rm -f %s >/dev/null 2>&1 || true',
-                    implode(' ', array_map(escapeshellarg(...), $this->managedContainerNames("{$network}-{$role}"))),
+                    implode(' ', array_map(escapeshellarg(...), $this->managedContainerNames("{$network}-{$role}", $role))),
                 ), timeoutSeconds: 120);
             }
 
             $this->run(sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)), timeoutSeconds: 60);
         }
+    }
+
+    private function createNetwork(string $network): DockerTopologyNetworkPlan
+    {
+        $token = getenv('TEST_TOKEN');
+        $maxAttempts = is_string($token) && $token !== '' ? 16 : 224;
+        $lastError = null;
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $networkPlan = DockerTopologyNetworkPlan::fromEnvironment($network, $attempt);
+            $result = $this->run(
+                sprintf('docker network create --subnet %s %s', escapeshellarg($networkPlan->subnet()), escapeshellarg($network)),
+                timeoutSeconds: 60,
+            );
+
+            if ($result->successful()) {
+                return $networkPlan;
+            }
+
+            $lastError = trim($result->errorOutput().' '.$result->output());
+
+            if (! str_contains($lastError, 'Pool overlaps')) {
+                throw new RuntimeException("Could not create Docker build network {$network}: {$lastError}");
+            }
+        }
+
+        throw new RuntimeException("Could not create Docker build network {$network}: {$lastError}");
     }
 
     /**
@@ -121,27 +172,27 @@ final readonly class DockerTopologyBuilder
     public static function rolesFor(E2ETopologyKind $kind): array
     {
         return match ($kind) {
-            E2ETopologyKind::Operator => ['control'],
-            E2ETopologyKind::OperatorGateway => ['control', 'gateway'],
-            E2ETopologyKind::OperatorGatewayAppdev => ['control', 'gateway', 'dev'],
-            E2ETopologyKind::OperatorGatewayAppdevIngress => ['control', 'gateway', 'dev', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['control', 'gateway', 'dev', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevS3 => ['control', 'gateway', 'dev', 's3'],
-            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3 => ['control', 'gateway', 'dev', 'ingress', 'websocket', 's3'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['control', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
+            E2ETopologyKind::Operator => ['operator'],
+            E2ETopologyKind::OperatorGateway => ['operator', 'gateway'],
+            E2ETopologyKind::OperatorGatewayAppdev => ['operator', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['operator', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
         };
     }
 
-    public static function imageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'legacy-retarget'): string
+    public static function imageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'dns-alias'): string
+    {
+        $role = self::canonicalRole($role);
+
+        return self::imageNameForCanonicalRole($kind, $role, $mode);
+    }
+
+    private static function imageNameForCanonicalRole(E2ETopologyKind $kind, string $role, string $mode): string
     {
         $effectiveKind = self::imageKindFor($kind, $role);
-        $imageSlug = $effectiveKind->dockerImageSlug();
-
-        if ($mode === 'legacy-retarget') {
-            return "orbit-e2e-topology:{$imageSlug}-{$role}-current";
-        }
+        $imageSlug = E2ETopologyArtifactNamespace::dockerImageSlug($effectiveKind->dockerImageSlug());
 
         return "orbit-e2e-topology:{$imageSlug}-{$role}-{$mode}-current";
     }
@@ -156,9 +207,21 @@ final readonly class DockerTopologyBuilder
         return self::ownsImage($kind, $role);
     }
 
+    private static function roleUsesRuntimeSibling(string $role): bool
+    {
+        return $role === 'gateway';
+    }
+
     public static function ownsImage(E2ETopologyKind $kind, string $role): bool
     {
+        $role = self::canonicalRole($role);
+
         return self::imageKindFor($kind, $role) === $kind;
+    }
+
+    private static function canonicalRole(string $role): string
+    {
+        return $role === 'control' ? 'operator' : $role;
     }
 
     private function runCommand(string $container, string $network, string $role, string $ip, string $mode): string
@@ -166,21 +229,40 @@ final readonly class DockerTopologyBuilder
         $networkAlias = $mode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
+        $runtimeContainerEnv = self::roleUsesRuntimeSibling($role)
+            ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($container)}")
+            : '';
 
         return sprintf(
-            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --name %s --network %s%s --ip %s --volume %s --env %s --env %s %s',
+            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s --ip %s --volume %s --env %s%s %s',
+            $this->dockerSocketGroupAddOption(),
             escapeshellarg($container),
             escapeshellarg($network),
             $networkAlias,
             escapeshellarg($ip),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
-            escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($container)}"),
-            escapeshellarg(self::RuntimeImage),
+            $runtimeContainerEnv,
+            escapeshellarg(self::runtimeImage()),
         );
     }
 
-    private function runtimeRunCommand(string $nodeContainer, string $network, string $role): string
+    private function dockerSocketGroupAddOption(): string
+    {
+        return '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"';
+    }
+
+    public static function runtimeImage(): string
+    {
+        return E2ETopologyArtifactNamespace::dockerRuntimeImage('orbit-e2e-topology-runtime');
+    }
+
+    public static function composerHelperImage(): string
+    {
+        return self::ComposerHelperImage;
+    }
+
+    private function runtimeRunCommand(string $nodeContainer, string $network, string $role, string $composerCacheVolume): string
     {
         $orbitPath = $this->orbitPathForRole($role);
         $gatewayEnv = $role === 'gateway'
@@ -188,10 +270,11 @@ final readonly class DockerTopologyBuilder
             : '';
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --env %s --env %s --env %s%s --workdir %s %s tail -f /dev/null',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s%s --workdir %s %s tail -f /dev/null',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
+            escapeshellarg($this->composerCacheMount($composerCacheVolume)),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
@@ -201,40 +284,93 @@ final readonly class DockerTopologyBuilder
         );
     }
 
-    private function prepareRuntimeSource(string $nodeContainer, string $role): void
+    private function composerHelperRunCommand(string $nodeContainer, string $role, string $composerCacheVolume): string
     {
-        $runtimeContainer = $this->runtimeContainerName($nodeContainer);
+        $orbitPath = $this->orbitPathForRole($role);
+
+        return sprintf(
+            'docker run -d --name %s --network %s --mount %s --env %s --workdir %s %s tail -f /dev/null',
+            escapeshellarg($this->composerHelperContainerName($nodeContainer)),
+            escapeshellarg("container:{$nodeContainer}"),
+            escapeshellarg($this->composerCacheMount($composerCacheVolume)),
+            escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+            escapeshellarg($orbitPath),
+            escapeshellarg(self::composerHelperImage()),
+        );
+    }
+
+    private function composerCacheMount(string $composerCacheVolume): string
+    {
+        $hostCache = getenv('ORBIT_E2E_DOCKER_COMPOSER_CACHE');
+
+        if (is_string($hostCache) && trim($hostCache) !== '') {
+            return 'type=bind,src='.trim($hostCache).',dst='.self::ComposerCachePath;
+        }
+
+        return "type=volume,src={$composerCacheVolume},dst=".self::ComposerCachePath;
+    }
+
+    private function composerCacheVolume(string $composerLockHash): string
+    {
+        return "{$this->config->instancePrefix}-composer-cache-".substr($composerLockHash, 0, 16);
+    }
+
+    private function composerCacheReadOnly(): bool
+    {
+        $value = getenv('ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY');
+
+        return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
+    }
+
+    private function prepareDependencySource(string $nodeContainer, string $role, ?string $dependencySourceContainer = null): void
+    {
+        $dependencyContainer = $this->dependencyContainerName($nodeContainer, $role);
         $sourcePath = $this->orbitPathForRole($role);
 
         $this->mustRun(
             sprintf(
                 'docker exec %s sh -lc %s',
-                escapeshellarg($runtimeContainer),
+                escapeshellarg($dependencyContainer),
                 escapeshellarg('mkdir -p '.escapeshellarg(dirname($sourcePath))),
             ),
-            "Could not prepare runtime source parent for {$runtimeContainer}",
+            "Could not prepare dependency source parent for {$dependencyContainer}",
             timeoutSeconds: 120,
         );
         $this->mustRun(
-            $this->copyPathBetweenContainersCommand($nodeContainer, $runtimeContainer, dirname($sourcePath), basename($sourcePath)),
-            "Could not copy {$sourcePath} into {$runtimeContainer}",
+            $this->copyPathBetweenContainersCommand($nodeContainer, $dependencyContainer, dirname($sourcePath), basename($sourcePath)),
+            "Could not copy {$sourcePath} into {$dependencyContainer}",
             timeoutSeconds: 300,
         );
         $this->mustRun(
             sprintf(
                 'docker exec %s sh -lc %s',
-                escapeshellarg($runtimeContainer),
+                escapeshellarg($dependencyContainer),
                 escapeshellarg($this->prepareSyncedCheckoutCommand($role, chownSource: false)),
             ),
-            "Could not prepare synced checkout in {$runtimeContainer}",
+            "Could not prepare synced checkout in {$dependencyContainer}",
             timeoutSeconds: 120,
         );
 
+        if ($dependencySourceContainer !== null) {
+            $this->mustRun(
+                $this->runtimeDependencyReuseCommand($dependencySourceContainer, $dependencyContainer, $role),
+                "Could not reuse dependencies in {$dependencyContainer}",
+                timeoutSeconds: 300,
+            );
+
+            return;
+        }
+
         $this->mustRun(
-            $this->runtimeDependencyInstallCommand($runtimeContainer, $sourcePath, $role),
-            "Could not install runtime dependencies in {$runtimeContainer}",
-            timeoutSeconds: 600,
+            $this->runtimeDependencyInstallCommand($dependencyContainer, $sourcePath, $role),
+            "Could not install dependencies in {$dependencyContainer}",
+            timeoutSeconds: max(1200, $this->config->timeoutSeconds),
         );
+    }
+
+    private function prepareRoleSource(string $nodeContainer, string $role, ?string $dependencySourceContainer = null): void
+    {
+        $this->prepareDependencySource($nodeContainer, $role, $dependencySourceContainer);
     }
 
     private function persistRuntimeSource(string $nodeContainer, string $role): void
@@ -242,7 +378,7 @@ final readonly class DockerTopologyBuilder
         $sourcePath = $this->orbitPathForRole($role);
 
         $this->mustRun(
-            $this->copyPathContentsBetweenContainersCommand($this->runtimeContainerName($nodeContainer), $nodeContainer, $sourcePath),
+            $this->copyPathContentsBetweenContainersCommand($this->dependencyContainerName($nodeContainer, $role), $nodeContainer, $sourcePath),
             "Could not persist {$sourcePath} into {$nodeContainer}",
             timeoutSeconds: 300,
         );
@@ -255,6 +391,18 @@ final readonly class DockerTopologyBuilder
             "Could not prepare persisted checkout in {$nodeContainer}",
             timeoutSeconds: 120,
         );
+    }
+
+    private function persistRoleSource(string $nodeContainer, string $role): void
+    {
+        $this->persistRuntimeSource($nodeContainer, $role);
+    }
+
+    private function dependencyContainerName(string $nodeContainer, string $role): string
+    {
+        return self::roleUsesRuntimeSibling($role)
+            ? $this->runtimeContainerName($nodeContainer)
+            : $this->composerHelperContainerName($nodeContainer);
     }
 
     private function refreshRuntimeSource(string $nodeContainer, string $role): void
@@ -411,35 +559,106 @@ SH;
 
     private function runtimeDependencyInstallCommand(string $runtimeContainer, string $sourcePath, string $role): string
     {
+        $environment = [
+            "ORBIT_SOURCE_PATH={$sourcePath}",
+            'COMPOSER_CACHE_DIR='.self::ComposerCachePath,
+            'COMPOSER_HOME='.self::ComposerHomePath,
+            'COMPOSER_PROCESS_TIMEOUT=1200',
+            'COMPOSER_ALLOW_SUPERUSER=1',
+        ];
+
+        $environmentFlags = implode(' ', array_map(
+            fn (string $value): string => '--env '.escapeshellarg($value),
+            $environment,
+        ));
+
         return sprintf(
-            'docker exec --env %s --workdir %s %s sh -lc %s',
-            escapeshellarg("ORBIT_SOURCE_PATH={$sourcePath}"),
+            'docker exec %s --workdir %s %s sh -lc %s',
+            $environmentFlags,
             escapeshellarg($sourcePath),
             escapeshellarg($runtimeContainer),
             escapeshellarg($this->composerInstallCommandForRole($sourcePath, $role)),
         );
     }
 
+    private function runtimeDependencyReuseCommand(string $sourceRuntimeContainer, string $targetRuntimeContainer, string $role): string
+    {
+        $sourcePath = $this->orbitPathForRole($role);
+
+        return sprintf(
+            'docker exec %s tar -C %s -cf - vendor apps/cli/vendor | docker exec -i %s sh -lc %s',
+            escapeshellarg($sourceRuntimeContainer),
+            escapeshellarg($sourcePath),
+            escapeshellarg($targetRuntimeContainer),
+            escapeshellarg(sprintf(
+                'cd %s && rm -rf vendor apps/cli/vendor && tar -xf -',
+                escapeshellarg($sourcePath),
+            )),
+        );
+    }
+
     private function composerInstallCommandForRole(string $sourcePath, string $role): string
     {
-        $composerInstall = 'composer install --no-interaction --prefer-dist --optimize-autoloader';
+        $composerInstall = $this->composerConfigCommand().' && git config --global --add safe.directory '.escapeshellarg('*').' >/dev/null && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress';
+        $commands = [
+            sprintf('cd %s && %s', escapeshellarg($sourcePath), $composerInstall),
+        ];
 
-        if ($role !== 'gateway') {
-            return sprintf(
-                'cd %s && %s',
-                escapeshellarg("{$sourcePath}/apps/cli"),
+        if (is_file(base_path('apps/cli/composer.json'))) {
+            $commands[] = sprintf('cd %s && %s', escapeshellarg("{$sourcePath}/apps/cli"), $composerInstall);
+        }
+
+        if ($role === 'gateway') {
+            $commands[] = sprintf(
+                'if [ -f %s ]; then cd %s && %s; fi',
+                escapeshellarg("{$sourcePath}/apps/gateway/composer.json"),
+                escapeshellarg("{$sourcePath}/apps/gateway"),
                 $composerInstall,
             );
         }
 
+        return implode(' && ', $commands);
+    }
+
+    private function composerConfigCommand(): string
+    {
+        $config = [
+            'config' => [
+                'cache-dir' => self::ComposerCachePath,
+                'github-protocols' => ['https'],
+            ],
+        ];
+
+        if ($this->composerCacheReadOnly()) {
+            $config['config']['cache-read-only'] = true;
+        }
+
         return sprintf(
-            'if [ -f %s ]; then cd %s && %s; else cd %s && %s; fi',
-            escapeshellarg("{$sourcePath}/apps/gateway/composer.json"),
-            escapeshellarg("{$sourcePath}/apps/gateway"),
-            $composerInstall,
-            escapeshellarg($sourcePath),
-            $composerInstall,
+            'mkdir -p %s && printf %%s %s > %s',
+            escapeshellarg(self::ComposerHomePath),
+            escapeshellarg(json_encode($config, JSON_THROW_ON_ERROR)),
+            escapeshellarg(self::ComposerHomePath.'/config.json'),
         );
+    }
+
+    private function runtimeDependencyKeyForRole(string $role): string
+    {
+        if ($role === 'gateway' && is_file(base_path('apps/gateway/composer.json'))) {
+            return 'gateway';
+        }
+
+        return $this->runtimeDependencyPathForRole($role);
+    }
+
+    private function runtimeDependencyPathForRole(string $role): string
+    {
+        $sourcePath = $this->orbitPathForRole($role);
+
+        if ($role === 'gateway' && is_file(base_path('apps/gateway/composer.json'))) {
+            return "{$sourcePath}/apps/gateway";
+        }
+
+        return "{$sourcePath}/apps/cli";
     }
 
     private function copyPathBetweenContainersCommand(string $sourceContainer, string $targetContainer, string $parentPath, string $pathName): string
@@ -467,10 +686,6 @@ SH;
 
     private function migrate(DockerBuildInstance $instance, string $role): void
     {
-        if ($role !== 'gateway') {
-            return;
-        }
-
         $user = $this->userForRole($role);
         $path = $this->orbitPathForRole($role);
 
@@ -479,92 +694,146 @@ SH;
 
     private function orbitPathForRole(string $role): string
     {
-        return $role === 'control' ? '/home/control/orbit' : '/home/orbit/orbit';
+        return '/home/orbit/orbit';
     }
 
     private function userForRole(string $role): string
     {
-        return $role === 'control' ? 'control' : 'orbit';
+        return 'orbit';
     }
 
     /**
      * @param  array<string, DockerBuildInstance>  $containers
      */
-    private function seedTopology(E2ETopologyKind $kind, array $containers, string $mode): void
+    private function seedTopology(E2ETopologyKind $kind, array $containers, string $mode, DockerTopologyNetworkPlan $networkPlan): void
     {
-        $control = $containers['control'] ?? null;
+        $operator = $containers['operator'] ?? $containers['control'] ?? null;
         $gateway = $containers['gateway'] ?? null;
 
-        if ($control === null || $gateway === null) {
+        if ($operator === null || $gateway === null) {
             return;
         }
 
         $key = new SshKeyPair('/dev/null', '/dev/null');
+        $gatewayWireGuardAddress = $this->wireGuardAddressForRole('gateway', $networkPlan, $mode);
+        $operatorHost = $this->hostForRole('operator', $networkPlan, $mode);
+        $operatorWireGuardAddress = $this->wireGuardAddressForRole('operator', $networkPlan, $mode);
+        $gatewayEndpoint = $this->gatewayEndpoint($networkPlan, $mode);
+        $gatewayReachabilityHost = $mode === 'dns-alias'
+            ? 'gateway'
+            : $networkPlan->ipForRole('gateway');
 
-        E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install', timeoutSeconds: 120);
+        E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+            'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install --skip-wireguard-install',
+            $gatewayWireGuardAddress,
+        ), timeoutSeconds: 120);
         $this->refreshRuntimeSource($gateway->name(), 'gateway');
         $this->startGatewayScheduler($gateway);
         $this->waitForGatewayScheduleDoctor($gateway, $key);
         $this->refreshRuntimeSource($gateway->name(), 'gateway');
-        E2EGatewayApi::seedControlIdentity($gateway, '10.6.0.3', 'control');
+        E2EGatewayApi::seedOperatorIdentity($gateway, $operatorHost, 'orbit', $gatewayEndpoint, $operatorWireGuardAddress);
         $this->refreshRuntimeSource($gateway->name(), 'gateway');
         if ($mode === 'dns-alias') {
             E2EGatewayApi::start(
                 $gateway,
                 "docker-build-{$kind->value}",
-                wireguardIdentity: '10.6.0.2',
+                wireguardIdentity: $gatewayWireGuardAddress,
                 bindAddress: '0.0.0.0',
                 certKey: 'gateway',
-                certSans: ['10.6.0.2'],
+                certSans: [$gatewayWireGuardAddress, 'gateway'],
+                peerIdentityMap: $this->canonicalPeerIdentityMap($containers, $networkPlan),
             );
         } else {
-            E2EGatewayApi::start($gateway, "docker-build-{$kind->value}");
+            E2EGatewayApi::start($gateway, "docker-build-{$kind->value}", gatewayIp: $gatewayWireGuardAddress);
         }
         $this->persistRuntimeSource($gateway->name(), 'gateway');
 
-        E2EGatewayApi::waitForGatewayApi($control, 'control', $key);
-        $this->configureClientCliGateways($containers, $mode);
+        E2EGatewayApi::waitForGatewayApi($operator, 'orbit', $key, $gatewayReachabilityHost);
+        $this->configureClientCliGateways($containers, $mode, $networkPlan);
 
         $this->seedRemoteShellSshAccess($gateway, $containers);
         $this->seedRemoteShellAgentSshAccess($gateway, $containers);
-        $this->waitForManagedSshHostKeys($gateway, $containers, $mode);
+        $this->waitForManagedSshHostKeys($gateway, $containers, $networkPlan);
 
         if (isset($containers['dev'])) {
-            $host = $mode === 'dns-alias' ? 'dev' : '10.6.0.4';
-            $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
-            $hostKeyHost = $this->hostKeyHostOption('dev', $mode);
+            $host = $this->hostForRole('dev', $networkPlan, $mode);
+            $hostKeyHost = $this->hostKeyHostOption('dev', $networkPlan, $mode);
+            $wireGuardAddress = $this->wireGuardAddressForRole('dev', $networkPlan, $mode);
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.4 --tld=test --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
+                $host,
+                $hostKeyHost,
+                $wireGuardAddress,
+                $gatewayEndpoint,
+            ), timeoutSeconds: 120);
             $this->refreshRuntimeSource($gateway->name(), 'gateway');
             $this->seedAppdevDatabaseAndRedis($gateway, $key);
             $this->refreshRuntimeSource($gateway->name(), 'gateway');
         }
 
         if (isset($containers['ingress'])) {
-            $host = $mode === 'dns-alias' ? 'ingress' : '10.6.0.7';
-            $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
-            $hostKeyHost = $this->hostKeyHostOption('ingress', $mode);
+            $host = $this->hostForRole('ingress', $networkPlan, $mode);
+            $hostKeyHost = $this->hostKeyHostOption('ingress', $networkPlan, $mode);
+            $wireGuardAddress = $this->wireGuardAddressForRole('ingress', $networkPlan, $mode);
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node edge-1 --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.7 --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                $host,
+                $hostKeyHost,
+                $wireGuardAddress,
+                $gatewayEndpoint,
+            ), timeoutSeconds: 120);
             $this->refreshRuntimeSource($gateway->name(), 'gateway');
         }
 
         if (isset($containers['prod'])) {
-            $host = $mode === 'dns-alias' ? 'prod' : '10.6.0.5';
-            $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
-            $hostKeyHost = $this->hostKeyHostOption('prod', $mode);
-            $ingress = isset($containers['ingress']) ? ' --ingress-node=edge-1' : '';
+            $host = $this->hostForRole('prod', $networkPlan, $mode);
+            $hostKeyHost = $this->hostKeyHostOption('prod', $networkPlan, $mode);
+            $wireGuardAddress = $this->wireGuardAddressForRole('prod', $networkPlan, $mode);
+            $prodHostsIngress = E2EPreparedTopology::prodHostsIngressRole($kind) && ! isset($containers['ingress']);
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.5 --gateway-endpoint={$gatewayEndpoint} --user=orbit{$ingress}", timeoutSeconds: 120);
+            if ($prodHostsIngress) {
+                E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+                    'cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    $host,
+                    $hostKeyHost,
+                    $wireGuardAddress,
+                    $gatewayEndpoint,
+                ), timeoutSeconds: 120);
+                $this->refreshRuntimeSource($gateway->name(), 'gateway');
+            }
+
+            $ingressNode = match (true) {
+                isset($containers['ingress']) => 'edge-1',
+                $prodHostsIngress => 'app-prod-1',
+                default => null,
+            };
+            $ingress = $ingressNode !== null ? " --ingress-node={$ingressNode}" : '';
+
+            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                $host,
+                $hostKeyHost,
+                $wireGuardAddress,
+                $gatewayEndpoint,
+                $ingress,
+            ), timeoutSeconds: 120);
             $this->refreshRuntimeSource($gateway->name(), 'gateway');
         }
 
         if (isset($containers['agent'])) {
-            $host = $mode === 'dns-alias' ? 'agent' : '10.6.0.6';
-            $gatewayEndpoint = $mode === 'dns-alias' ? 'gateway' : '10.6.0.2';
-            $hostKeyHost = $this->hostKeyHostOption('agent', $mode);
+            $host = $this->hostForRole('agent', $networkPlan, $mode);
+            $hostKeyHost = $this->hostKeyHostOption('agent', $networkPlan, $mode);
+            $wireGuardAddress = $this->wireGuardAddressForRole('agent', $networkPlan, $mode);
 
-            E2ECommand::ssh($gateway, 'orbit', $key, "cd /home/orbit/orbit && orbit orbit:internal:bake-agent-node agent-1 --host={$host}{$hostKeyHost} --wireguard-address=10.6.0.6 --tld=agent --gateway-endpoint={$gatewayEndpoint} --user=orbit", timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+                'cd /home/orbit/orbit && orbit orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
+                $host,
+                $hostKeyHost,
+                $wireGuardAddress,
+                $gatewayEndpoint,
+            ), timeoutSeconds: 120);
             $this->refreshRuntimeSource($gateway->name(), 'gateway');
         }
     }
@@ -572,7 +841,7 @@ SH;
     /**
      * @param  array<string, DockerBuildInstance>  $containers
      */
-    private function configureClientCliGateways(array $containers, string $mode): void
+    private function configureClientCliGateways(array $containers, string $mode, DockerTopologyNetworkPlan $networkPlan): void
     {
         foreach ($containers as $role => $container) {
             if ($role === 'gateway') {
@@ -583,20 +852,19 @@ SH;
                 sprintf(
                     'docker exec %s sh -lc %s',
                     escapeshellarg($container->name()),
-                    escapeshellarg($this->configureClientCliGatewayCommand($role, $mode)),
+                    escapeshellarg($this->configureClientCliGatewayCommand($role, $mode, $networkPlan)),
                 ),
                 "Could not configure {$role} CLI gateway endpoint",
                 timeoutSeconds: 60,
             );
-            $this->refreshRuntimeSource($container->name(), $role);
         }
     }
 
-    private function configureClientCliGatewayCommand(string $role, string $mode): string
+    private function configureClientCliGatewayCommand(string $role, string $mode, DockerTopologyNetworkPlan $networkPlan): string
     {
         $sourcePath = $this->orbitPathForRole($role);
         $user = $this->userForRole($role);
-        $gatewayUrl = $mode === 'dns-alias' ? 'http://gateway' : 'http://10.6.0.2';
+        $gatewayUrl = 'http://'.$this->gatewayEndpoint($networkPlan, $mode);
 
         return implode(' && ', [
             sprintf('cd %s', escapeshellarg("{$sourcePath}/apps/cli")),
@@ -605,7 +873,60 @@ SH;
             'mv .env.tmp .env',
             sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg($gatewayUrl)),
             sprintf('chown %s:%s %s', escapeshellarg($user), escapeshellarg($user), escapeshellarg("{$sourcePath}/apps/cli/.env")),
+            sprintf('cd %s', escapeshellarg($sourcePath)),
+            'orbit tinker --execute='.escapeshellarg($this->clientGatewaySettingsPhp($mode, $networkPlan)),
         ]);
+    }
+
+    private function clientGatewaySettingsPhp(string $mode, DockerTopologyNetworkPlan $networkPlan): string
+    {
+        $gatewayIp = $this->wireGuardAddressForRole('gateway', $networkPlan, $mode);
+        $gatewayUrl = $mode === 'dns-alias'
+            ? 'https://gateway'
+            : "https://{$gatewayIp}";
+        $gatewayCaUrl = $mode === 'dns-alias'
+            ? 'http://gateway/api/ca/root'
+            : "http://{$gatewayIp}/api/ca/root";
+
+        return <<<PHP
+if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) {
+    \$rootCa = null;
+    \$response = @file_get_contents('{$gatewayCaUrl}', false, stream_context_create([
+        'http' => ['timeout' => 5],
+    ]));
+
+    if (is_string(\$response) && \$response !== '') {
+        \$decoded = json_decode(\$response, true);
+        \$rootCa = is_array(\$decoded)
+            ? (\$decoded['success']['data']['root_ca'] ?? \$decoded['data']['root_ca'] ?? null)
+            : \$response;
+    }
+
+    \$caSha256 = null;
+    \$caPemPath = null;
+
+    if (is_string(\$rootCa)
+        && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
+        && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
+        \$caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
+        \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
+        \$caSha256 = hash('sha256', \$rootCa);
+    }
+
+    \$settings = \\App\\Models\\LocalGatewaySettings::current();
+    \$settings->gateway_url = '{$gatewayUrl}';
+    \$settings->gateway_wg_ip = '{$gatewayIp}';
+
+    if (\$caSha256 !== null && \$caPemPath !== null) {
+        \$settings->ca_sha256 = \$caSha256;
+        \$settings->ca_pem_path = \$caPemPath;
+        \$settings->trusted_at = now();
+    }
+
+    \$settings->save();
+}
+PHP;
     }
 
     /**
@@ -717,7 +1038,7 @@ SH;
     /**
      * @param  array<string, DockerBuildInstance>  $containers
      */
-    private function waitForManagedSshHostKeys(DockerBuildInstance $gateway, array $containers, string $mode): void
+    private function waitForManagedSshHostKeys(DockerBuildInstance $gateway, array $containers, DockerTopologyNetworkPlan $networkPlan): void
     {
         $targets = [];
 
@@ -726,7 +1047,7 @@ SH;
                 continue;
             }
 
-            $targets[] = $this->containerIpForRole($role);
+            $targets[] = $this->containerIpForRole($role, $networkPlan);
         }
 
         if ($targets === []) {
@@ -758,35 +1079,65 @@ SH;
         );
     }
 
-    private function ipForRole(string $role): string
+    /**
+     * @param  array<string, DockerBuildInstance>  $containers
+     * @return array<string, string>
+     */
+    private function canonicalPeerIdentityMap(array $containers, DockerTopologyNetworkPlan $networkPlan): array
+    {
+        $map = [];
+
+        foreach (array_keys($containers) as $role) {
+            $map[$networkPlan->ipForRole($role)] = $this->canonicalWireGuardAddressForRole($role);
+        }
+
+        return $map;
+    }
+
+    private function hostForRole(string $role, DockerTopologyNetworkPlan $networkPlan, string $mode): string
+    {
+        return $mode === 'dns-alias'
+            ? $role
+            : $networkPlan->ipForRole($role);
+    }
+
+    private function hostKeyHostOption(string $role, DockerTopologyNetworkPlan $networkPlan, string $mode): string
+    {
+        return $mode === 'dns-alias'
+            ? ' --host-key-host='.$this->containerIpForRole($role, $networkPlan)
+            : '';
+    }
+
+    private function containerIpForRole(string $role, DockerTopologyNetworkPlan $networkPlan): string
+    {
+        return $networkPlan->ipForRole($role);
+    }
+
+    private function wireGuardAddressForRole(string $role, DockerTopologyNetworkPlan $networkPlan, string $mode): string
+    {
+        return $mode === 'dns-alias'
+            ? $this->canonicalWireGuardAddressForRole($role)
+            : $networkPlan->ipForRole($role);
+    }
+
+    private function gatewayEndpoint(DockerTopologyNetworkPlan $networkPlan, string $mode): string
+    {
+        return $mode === 'dns-alias'
+            ? 'gateway'
+            : $networkPlan->ipForRole('gateway');
+    }
+
+    private function canonicalWireGuardAddressForRole(string $role): string
     {
         return match ($role) {
             'gateway' => '10.6.0.2',
-            'control' => '10.6.0.3',
+            'operator', 'control' => '10.6.0.3',
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',
             'ingress' => '10.6.0.7',
-            'websocket' => '10.6.0.9',
-            's3' => '10.6.0.10',
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
-    }
-
-    private function hostKeyHostOption(string $role, string $mode): string
-    {
-        return $mode === 'dns-alias'
-            ? ' --host-key-host='.escapeshellarg($this->containerIpForRole($role))
-            : '';
-    }
-
-    private function containerIpForRole(string $role): string
-    {
-        if ($role === 'ingress') {
-            return '10.6.0.8';
-        }
-
-        return $this->ipForRole($role);
     }
 
     private function seedAppdevDatabaseAndRedis(DockerBuildInstance $gateway, SshKeyPair $key): void
@@ -802,28 +1153,51 @@ SH;
 
     private function composerLockHash(): string
     {
-        $path = base_path('composer.lock');
+        $paths = [
+            base_path('composer.lock'),
+            base_path('apps/cli/composer.lock'),
+            base_path('apps/gateway/composer.lock'),
+        ];
+        $context = hash_init('sha256');
+        $found = false;
 
-        return is_file($path) ? hash_file('sha256', $path) : 'missing';
+        foreach ($paths as $path) {
+            if (! is_file($path)) {
+                continue;
+            }
+
+            $found = true;
+            hash_update($context, $path);
+            hash_update($context, file_get_contents($path) ?: '');
+        }
+
+        return $found ? hash_final($context) : 'missing';
     }
 
-    private function certSanSetForMode(string $mode): string
+    private function certSanSetForMode(string $mode, DockerTopologyNetworkPlan $networkPlan): string
     {
         return $mode === 'dns-alias'
             ? 'DNS:gateway,IP:10.6.0.2'
-            : 'IP:10.6.0.2';
+            : "IP:{$networkPlan->ipForRole('gateway')}";
     }
 
     /**
      * @return list<string>
      */
-    private function managedContainerNames(string $nodeContainer): array
+    private function managedContainerNames(string $nodeContainer, string $role): array
     {
-        return [
-            $nodeContainer,
-            $this->runtimeContainerName($nodeContainer),
+        $names = [
             "{$nodeContainer}-orbit-caddy",
+            $nodeContainer,
         ];
+
+        if (self::roleUsesRuntimeSibling($role)) {
+            array_unshift($names, $this->runtimeContainerName($nodeContainer));
+        } else {
+            array_unshift($names, $this->composerHelperContainerName($nodeContainer));
+        }
+
+        return $names;
     }
 
     private function runtimeContainerName(string $nodeContainer): string
@@ -831,12 +1205,17 @@ SH;
         return "{$nodeContainer}-orbit-runtime";
     }
 
+    private function composerHelperContainerName(string $nodeContainer): string
+    {
+        return "{$nodeContainer}-composer";
+    }
+
     /**
      * @return list<string>
      */
     private function managedSshRoles(): array
     {
-        return ['dev', 'prod', 'ingress', 'websocket', 's3'];
+        return ['dev', 'prod', 'ingress'];
     }
 
     /**
@@ -844,13 +1223,7 @@ SH;
      */
     private function hasManagedSshRole(array $containers): bool
     {
-        foreach ($this->managedSshRoles() as $role) {
-            if (isset($containers[$role])) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($this->managedSshRoles(), fn (string $role): bool => isset($containers[$role]));
     }
 
     private function mustRun(string $command, string $message, ?int $timeoutSeconds = null): ProcessResult
@@ -945,9 +1318,9 @@ final readonly class DockerBuildInstance implements E2EInstance
         $this->run(sprintf(
             'docker rm -f %s >/dev/null 2>&1 || true',
             implode(' ', array_map(escapeshellarg(...), [
-                $this->name,
                 "{$this->name}-orbit-runtime",
                 "{$this->name}-orbit-caddy",
+                $this->name,
             ])),
         ), timeoutSeconds: 60);
     }

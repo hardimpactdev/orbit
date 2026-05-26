@@ -56,9 +56,11 @@ assignments. Supported platforms are tracked in
 
 Nodes may run the Orbit CLI as a stateless gateway client through the host
 `orbit` launcher, which dispatches to the role-aware artifact: host PHP
-`apps/cli/orbit` on non-gateway nodes. They do not own fleet state or run a
-local Orbit capability layer. They run workload services, call the gateway when
-a local command is invoked, and receive gateway-applied changes over SSH.
+`apps/cli/orbit` on non-gateway nodes. The CLI artifact owns native
+gateway-client commands and keeps root Artisan compatibility for commands that
+have not been ported to that artifact yet. Nodes do not own fleet state or run
+a local Orbit capability layer. They run workload services, call the gateway
+when a local command is invoked, and receive gateway-applied changes over SSH.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
@@ -254,7 +256,7 @@ These rules apply to all node commands and define the invariants the family enfo
   nodes.
 
 The node host contract is Docker-first. Managed nodes require Git, Docker
-Engine and CLI, the Orbit checkout, host PHP CLI for the CLI/local-executor
+Engine and CLI, the Orbit checkout, host PHP 8.5 CLI for the CLI/local-executor
 artifact, the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity
 material, and role-specific non-PHP host tools such as VitePlus on app nodes.
 Host Composer, host Caddy, and host PHP-FPM are not prerequisites or fallbacks.

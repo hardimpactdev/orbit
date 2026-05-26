@@ -51,10 +51,10 @@ it('creates a temporary hcloud docker host, runs docker e2e, and cleans up', fun
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'composer e2e:prepare-docker-hosts -- --force')
         && str_contains($process->command, 'operator_gateway')
-        && ($process->environment['ORBIT_E2E_DOCKER_HOSTS'] ?? null) === 'root@203.0.113.42');
+        && ($process->environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? null) === 'root@203.0.113.42:3:18');
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'composer test:e2e:docker')
-        && ($process->environment['ORBIT_E2E_DOCKER_HOSTS'] ?? null) === 'root@203.0.113.42'
+        && ($process->environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? null) === 'root@203.0.113.42:3:18'
         && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '3');
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'hcloud server delete'));

@@ -34,7 +34,7 @@ class E2ETestHcloudDockerCommand extends Command
         $kind = E2ETopologyKind::tryFromInput((string) $this->option('kind'));
 
         if ($kind === null) {
-            return $this->failCommand('Invalid --kind. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod. Legacy control topology names are accepted as aliases.');
+            return $this->failCommand('Invalid --kind. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod.');
         }
 
         $processes = (int) $this->option('processes');

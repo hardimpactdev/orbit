@@ -14,7 +14,7 @@ final readonly class E2EBaseProvisioner
     public function provision(E2ERun $run, string $suffix, string $role, ?string $controlUser = null): E2EInstance
     {
         if ($role !== 'control') {
-            throw new \RuntimeException("E2E direct provisioning only installs control nodes; got [{$role}].");
+            throw new \RuntimeException("E2E direct provisioning only installs operator nodes; got [{$role}].");
         }
 
         $instance = $run->launchBlank($suffix);

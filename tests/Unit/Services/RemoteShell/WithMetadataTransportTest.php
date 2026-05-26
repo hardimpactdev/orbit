@@ -75,3 +75,14 @@ it('keeps metadata in a shell-escaped prologue and preserves the user command bo
             && $result->output() === "ok\n";
     });
 });
+
+it('allows local executor operation id metadata', function (): void {
+    Process::fake(['*' => Process::result(output: "ok\n")]);
+    Process::preventStrayProcesses();
+
+    (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_OPERATION_ID"', [
+        'metadata' => ['ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000402'],
+    ]);
+
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_OPERATION_ID='));
+});

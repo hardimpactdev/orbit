@@ -67,9 +67,7 @@ final readonly class WorkspaceRuntimeContainerManager
             }
 
             return WorkspaceRuntimeContainerApplyOutcome::Unchanged;
-        } catch (WorkspaceRuntimeImageUnavailableException $exception) {
-            throw $exception;
-        } catch (WorkspaceRuntimeContainerApplyException $exception) {
+        } catch (WorkspaceRuntimeImageUnavailableException|WorkspaceRuntimeContainerApplyException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
             throw new WorkspaceRuntimeContainerApplyException(

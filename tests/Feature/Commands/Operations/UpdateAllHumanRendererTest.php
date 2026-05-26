@@ -344,7 +344,7 @@ it('has no json envelope in human mode', function (): void {
         ->assertSuccessful();
 });
 
-it('excludes control nodes from human output', function (): void {
+it('excludes legacy control identities from human output', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'mini',

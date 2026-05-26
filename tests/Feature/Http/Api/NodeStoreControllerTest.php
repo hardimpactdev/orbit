@@ -283,8 +283,11 @@ describe('NodeStoreController', function (): void {
     });
 
     it('provisions an app node for an authenticated control caller', function (): void {
+        config(['orbit.operation_token_secret' => 'node-store-controller-test-secret']);
+
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
+        assignStoreNodeRole($gatewayId, 'vpn');
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
@@ -322,6 +325,10 @@ describe('NodeStoreController', function (): void {
 
             if (str_contains($command, 'wg show wg0 public-key')) {
                 return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            if (str_contains($command, 'internal:wg-easy:state')) {
+                return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
             }
 
             return Process::result();

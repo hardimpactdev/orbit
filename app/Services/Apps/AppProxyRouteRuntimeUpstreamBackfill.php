@@ -23,7 +23,7 @@ use App\Services\Proxy\ProxyRouteRenderer;
  * Static apps are skipped (their routes have no runtime_upstream — they serve
  * via file_server / document_root and were never rendered with php_fastcgi).
  */
-final class AppProxyRouteRuntimeUpstreamBackfill
+final readonly class AppProxyRouteRuntimeUpstreamBackfill
 {
     public function __construct(
         private ?ProxyRouteRenderer $renderer = null,

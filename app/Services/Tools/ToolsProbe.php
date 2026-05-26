@@ -188,7 +188,7 @@ BASH;
             fn (string $image): bool => in_array($image, $images, true) && $catalog->isApprovedImage($image),
         ));
         $versions = array_values(array_map(
-            fn (string $image): string => $catalog->versionForImage($image),
+            $catalog->versionForImage(...),
             $observedImages,
         ));
 

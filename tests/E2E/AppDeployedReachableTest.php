@@ -17,7 +17,7 @@ pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 /**
  * Asserts that an `app:new --environment=production` + `deploy:run` workflow lands
  * a working application that responds with a 200 + marker string when
- * requested by hostname from the control node.
+ * requested by hostname from the operator node.
  *
  * Depends on the gateway DNS provisioning plan
  * (`docs/superpowers/plans/2026-05-16-gateway-dns-provisioning.md`).

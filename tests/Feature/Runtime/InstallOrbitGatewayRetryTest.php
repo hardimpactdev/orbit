@@ -198,6 +198,7 @@ describe('install-orbit gateway retry', function (): void {
         expect($rmCall)->not->toBeNull('expected docker rm -f orbit-runtime when retrying gateway mode against a non-gateway container')
             ->and($runCall)->not->toBeNull('expected docker run -d orbit-runtime to recreate the container in gateway mode')
             ->and($runCall)->toContain('--env ORBIT_IS_GATEWAY=1')
+            ->and($runCall)->toContain('--env ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
             ->and($runCall)->toContain("--env ORBIT_HOST_PATH={$targetDir}")
             ->and($runCall)->toContain('--mount type=bind,source=/etc/caddy,target=/etc/caddy')
             ->and($runCall)->toContain('--mount type=bind,source=/etc/orbit,target=/etc/orbit')
@@ -222,6 +223,7 @@ describe('install-orbit gateway retry', function (): void {
                     'ORBIT_SOURCE_PATH=/opt/orbit',
                     "ORBIT_HOST_PATH={$targetDir}",
                     'ORBIT_IS_GATEWAY=1',
+                    'ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1',
                 ],
             ],
         );
@@ -252,6 +254,7 @@ describe('install-orbit gateway retry', function (): void {
                     'ORBIT_SOURCE_PATH=/opt/orbit',
                     "ORBIT_HOST_PATH={$targetDir}",
                     'ORBIT_IS_GATEWAY=1',
+                    'ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1',
                 ],
             ],
         );
@@ -309,6 +312,7 @@ describe('install-orbit gateway retry', function (): void {
                     'ORBIT_SOURCE_PATH=/opt/orbit',
                     'ORBIT_HOST_PATH=/stale/host/path',
                     'ORBIT_IS_GATEWAY=1',
+                    'ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1',
                 ],
             ],
         );
@@ -324,6 +328,39 @@ describe('install-orbit gateway retry', function (): void {
         expect($rmCall)->not->toBeNull('stale host path requires recreate')
             ->and($runCall)->not->toBeNull('stale host path requires a fresh run')
             ->and($runCall)->toContain("--env ORBIT_HOST_PATH={$targetDir}")
-            ->and($runCall)->toContain('--env ORBIT_IS_GATEWAY=1');
+            ->and($runCall)->toContain('--env ORBIT_IS_GATEWAY=1')
+            ->and($runCall)->toContain('--env ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1');
+    });
+
+    it('recreates an existing gateway orbit-runtime container when the proxy identity header trust env is missing', function (): void {
+        $targetDir = installOrbitGatewayRetryTempPath().'/orbit';
+
+        $result = runStartRuntimeContainer(
+            targetDir: $targetDir,
+            gatewayMode: '1',
+            existingState: [
+                'exists' => true,
+                'running' => true,
+                'env' => [
+                    'ORBIT_SOURCE_PATH=/opt/orbit',
+                    "ORBIT_HOST_PATH={$targetDir}",
+                    'ORBIT_IS_GATEWAY=1',
+                ],
+            ],
+        );
+        $this->tempRoot = $result['temp_root'];
+
+        expect($result['exit_code'])->toBe(0, $result['error_output']);
+
+        $rmCall = collect($result['calls'])
+            ->first(fn (string $line): bool => str_starts_with($line, 'docker rm -f orbit-runtime'));
+
+        $runCall = collect($result['calls'])
+            ->first(fn (string $line): bool => str_starts_with($line, 'docker run -d'));
+
+        expect($rmCall)->not->toBeNull('gateway runtime must be recreated when proxy header trust env is missing')
+            ->and($runCall)->not->toBeNull('gateway runtime must be recreated when proxy header trust env is missing')
+            ->and($runCall)->toContain('--env ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
+            ->and($result['error_output'])->toContain('missing ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1');
     });
 });

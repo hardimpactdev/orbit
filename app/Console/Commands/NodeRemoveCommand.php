@@ -300,7 +300,7 @@ class NodeRemoveCommand extends Command
     private function confirmationMessage(string $name, bool $isSelfRemoval): string
     {
         if ($isSelfRemoval) {
-            return 'Remove this control node from the fleet? This machine will lose Orbit gateway access.';
+            return 'Remove this operator node from the fleet? This machine will lose Orbit gateway access.';
         }
 
         return "Remove node '{$name}'? This cannot be undone.";

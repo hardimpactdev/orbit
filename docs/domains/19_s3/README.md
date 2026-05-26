@@ -58,14 +58,10 @@ The S3 command domain coordinates state owned by other families:
 
 The S3 command domain does not own a state family in v1.
 
-## E2E Topologies
+## E2E Coverage
 
-Focused S3 E2E coverage uses two prepared topologies:
-
-- `client-gateway-appdev-s3` for private `s3.orbit` routing and credentials.
-- `client-gateway-appdev-ingress-websocket-s3` for public host publication
-  through ingress. This fixture also reserves compatible future websocket
-  placement without requiring the websocket role runtime to exist.
+Focused S3 E2E coverage is pending the S3 role runtime. Until that runtime
+exists, S3 behavior stays covered by in-memory command and service tests.
 
 ## Concepts
 

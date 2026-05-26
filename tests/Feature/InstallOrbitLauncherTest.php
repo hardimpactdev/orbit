@@ -36,6 +36,16 @@ describe('install-orbit role-aware launcher contract', function (): void {
             ->and($capture['args'])->toBe('[app:list]');
     });
 
+    it('dispatches local executor commands through the cli artifact even on gateway nodes', function (): void {
+        $capture = orbitLauncherProbe(isGateway: true, arguments: ['internal:wg-easy:state', '--json']);
+
+        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])->toBe('cli')
+            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
+            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('gateway-1')
+            ->and($capture['args'])->toBe('[internal:wg-easy:state][--json]');
+    });
+
     it('defaults unconfigured nodes to the non-gateway cli artifact', function (): void {
         $capture = orbitLauncherProbe(isGateway: null, arguments: ['node:doctor']);
 
@@ -62,6 +72,26 @@ describe('install-orbit role-aware launcher contract', function (): void {
         expect($launcher)
             ->toContain('ORBIT_REPO')
             ->toContain('/home/orbit/orbit');
+    });
+
+    it('fails clearly when the local CLI artifact dependencies are missing', function (): void {
+        $cli = File::get(base_path('apps/cli/orbit'));
+
+        expect($cli)
+            ->toContain("__DIR__.'/vendor/autoload.php'")
+            ->toContain('Orbit CLI dependencies are not installed')
+            ->not->toContain("__DIR__.'/../../autoload.php'");
+    });
+
+    it('keeps unported command compatibility inside the local CLI artifact', function (): void {
+        $cli = File::get(base_path('apps/cli/orbit'));
+
+        expect($cli)
+            ->toContain('fallbackToRootArtisanWhenCommandIsUnported')
+            ->toContain("dirname(__DIR__, 2).'/artisan'")
+            ->toContain('passthruCommand(PHP_BINARY')
+            ->toContain("'gateway:status'")
+            ->toContain("'internal:executor:verify'");
     });
 });
 
@@ -135,7 +165,12 @@ function orbitLauncherWriteGatewayEnvironment(string $repo, bool $isGateway): vo
 {
     $value = $isGateway ? 'true' : 'false';
 
-    File::put("{$repo}/.env", "ORBIT_IS_GATEWAY={$value}".PHP_EOL);
+    File::put("{$repo}/.env", implode(PHP_EOL, [
+        "ORBIT_IS_GATEWAY={$value}",
+        'ORBIT_EXECUTOR_SECRET=executor-secret',
+        'ORBIT_NODE_IDENTITY=gateway-1',
+        '',
+    ]));
 }
 
 function orbitLauncherWriteExecutable(string $path, string $contents): void
@@ -154,6 +189,8 @@ set -Eeuo pipefail
     printf 'ORBIT_REPO=%s\n' "${ORBIT_REPO:-}"
     printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
     printf 'ORBIT_HOST_CWD=%s\n' "${ORBIT_HOST_CWD:-}"
+    printf 'ORBIT_EXECUTOR_SECRET=%s\n' "${ORBIT_EXECUTOR_SECRET:-}"
+    printf 'ORBIT_NODE_IDENTITY=%s\n' "${ORBIT_NODE_IDENTITY:-}"
     printf 'args='
     for arg in "$@"; do
         printf '[%s]' "$arg"
@@ -177,6 +214,8 @@ fi
     printf 'ORBIT_REPO=%s\n' "${ORBIT_REPO:-}"
     printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
     printf 'ORBIT_HOST_CWD=%s\n' "${ORBIT_HOST_CWD:-}"
+    printf 'ORBIT_EXECUTOR_SECRET=%s\n' "${ORBIT_EXECUTOR_SECRET:-}"
+    printf 'ORBIT_NODE_IDENTITY=%s\n' "${ORBIT_NODE_IDENTITY:-}"
     printf 'args='
     for arg in "$@"; do
         printf '[%s]' "$arg"

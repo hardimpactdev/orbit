@@ -29,7 +29,10 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    config(['orbit.is_gateway' => true]);
+    config([
+        'orbit.is_gateway' => true,
+        'orbit.operation_token_secret' => 'node-new-hosted-roles-test-secret',
+    ]);
 
     $this->tempStorage = sys_get_temp_dir().'/orbit-node-new-hosted-roles-test-'.uniqid();
     app()->useStoragePath($this->tempStorage);
@@ -96,6 +99,16 @@ beforeEach(function (): void {
         'gateway_endpoint' => '10.6.0.2',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'vpn',
         'status' => 'active',
     ]);
 
@@ -168,6 +181,10 @@ beforeEach(function (): void {
             return Process::result(output: "wg-easy-public-key\n");
         }
 
+        if (str_contains($command, 'internal:wg-easy:state')) {
+            return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
+        }
+
         return Process::result();
     });
 });
@@ -188,7 +205,7 @@ it('creates a joined client identity with no hosted roles by default', function 
 
     expect($exitCode)->toBe(0)
         ->and(Node::query()->where('name', 'client-1')->exists())->toBeTrue()
-        ->and(NodeRoleAssignment::query()->count())->toBe(0);
+        ->and(NodeRoleAssignment::query()->whereRelation('node', 'name', 'client-1')->count())->toBe(0);
 });
 
 it('creates an app-development hosted role with tld settings', function (): void {
@@ -214,6 +231,9 @@ it('creates an app-development hosted role with tld settings', function (): void
     $commands = implode("\n", $this->processCommands);
 
     expect($commands)->toContain('99-orbit-hardening.conf')
+        ->toContain('internal:wg-easy:state')
+        ->toContain('delete-peer')
+        ->toContain('upsert-peer')
         ->toContain('wg set wg0 peer')
         ->toContain('/etc/wireguard/wg-orbit.conf')
         ->toContain('ping -c 1 -W 2')
@@ -222,6 +242,39 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->not->toContain('clients_table')
         ->not->toContain('sqlite3')
         ->not->toContain('sudo sqlite3');
+});
+
+it('honors the prepared topology WireGuard address reservation during E2E provisioning', function (): void {
+    $previousE2E = getenv('ORBIT_E2E');
+    $previousReservedAddress = getenv('ORBIT_E2E_NODE_WIREGUARD_ADDRESS');
+
+    putenv('ORBIT_E2E=1');
+    putenv('ORBIT_E2E_NODE_WIREGUARD_ADDRESS=10.6.0.44');
+
+    try {
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'dev-reserved-1',
+            '--role' => ['app-development'],
+            '--host' => '192.0.2.44',
+            '--tld' => 'reserved',
+            '--json' => true,
+        ]);
+    } finally {
+        is_string($previousE2E)
+            ? putenv("ORBIT_E2E={$previousE2E}")
+            : putenv('ORBIT_E2E');
+        is_string($previousReservedAddress)
+            ? putenv("ORBIT_E2E_NODE_WIREGUARD_ADDRESS={$previousReservedAddress}")
+            : putenv('ORBIT_E2E_NODE_WIREGUARD_ADDRESS');
+    }
+
+    $node = Node::query()->where('name', 'dev-reserved-1')->first();
+    $peer = WireGuardPeer::query()->where('node_id', $node?->id)->first();
+
+    expect($exitCode)->toBe(0)
+        ->and($node)->not->toBeNull()
+        ->and($node->wireguard_address)->toBe('10.6.0.44')
+        ->and($peer?->allowed_ips)->toBe('10.6.0.44/32');
 });
 
 it('pins the host key before provisioning and persists the canonical steady-state user', function (): void {
@@ -522,7 +575,7 @@ it('rejects conflicting hosted roles before side effects', function (): void {
 
     expect($exitCode)->toBe(1)
         ->and(Node::query()->where('name', 'bad')->exists())->toBeFalse()
-        ->and(NodeRoleAssignment::query()->count())->toBe(0);
+        ->and(NodeRoleAssignment::query()->whereRelation('node', 'name', 'bad')->count())->toBe(0);
 });
 
 it('rejects environment for canonical hosted-role input', function (): void {

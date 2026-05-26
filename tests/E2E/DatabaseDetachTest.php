@@ -6,7 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
-it('detaches a database connection from an app from the control node through the gateway api', function (): void {
+it('detaches a database connection from an app from the operator node through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 

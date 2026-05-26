@@ -8,9 +8,9 @@ use InvalidArgumentException;
 
 final readonly class PhpWorkerConfig
 {
-    public const DefaultWorkers = 'auto';
+    public const string DefaultWorkers = 'auto';
 
-    public const DefaultMaxRequests = 500;
+    public const int DefaultMaxRequests = 500;
 
     public function __construct(
         public string|int $workers = self::DefaultWorkers,

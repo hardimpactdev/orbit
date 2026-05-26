@@ -210,6 +210,40 @@ it('deletes stale instances when forced', function (): void {
     });
 });
 
+it('only reaps instances matching the configured runtime prefix', function (): void {
+    Process::fake(function ($process) {
+        if (str_contains($process->command, 'incus list')) {
+            return Process::result(output: json_encode([
+                ['name' => 'orbit-e2e-old', 'created_at' => '2026-05-03T04:00:00Z'],
+                ['name' => 'orbit-e2e-ab-current-old', 'created_at' => '2026-05-03T04:00:00Z'],
+            ]));
+        }
+
+        return Process::result();
+    });
+
+    $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_INSTANCE_PREFIX' => 'orbit-e2e-ab-current',
+    ], function (): void {
+        $this->artisan('e2e:reap-incus', ['--force' => true])
+            ->expectsOutputToContain('orbit-e2e-ab-current-old')
+            ->doesntExpectOutputToContain('orbit-e2e-old')
+            ->assertSuccessful();
+    });
+
+    Process::assertRan(function ($process) {
+        return str_contains($process->command, 'incus delete --force')
+            && str_contains($process->command, 'orbit-e2e-ab-current-old');
+    });
+
+    Process::assertNotRan(function ($process) {
+        return str_contains($process->command, 'incus delete --force')
+            && str_contains($process->command, 'orbit-e2e-old');
+    });
+});
+
 it('skips orbit-template and orbit-ready instances', function (): void {
     Process::fake(function ($process) {
         if (str_contains($process->command, 'incus list')) {

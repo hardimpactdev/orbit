@@ -41,7 +41,7 @@ PHP;
 
 it('sets app agent IDE intent from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $name = 'e2e-agent-'.strtolower(bin2hex(random_bytes(3)));
     $path = "/home/orbit/apps/{$name}";
 
@@ -129,4 +129,4 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

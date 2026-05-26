@@ -187,7 +187,7 @@ describe('node:revoke interactive input mode contract', function (): void {
 
         $message = $method->invoke($command, 'control-1', 'gateway-1', true);
 
-        expect($message)->toBe('Revoke this control node\'s gateway access? This machine will lose Orbit gateway access.');
+        expect($message)->toBe('Revoke this operator node\'s gateway access? This machine will lose Orbit gateway access.');
     });
 
     it('fails with validation_failed when consuming_node is missing in non-interactive mode', function (): void {

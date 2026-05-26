@@ -11,44 +11,31 @@ final readonly class IncusTopologyTemplate
      */
     public static function rolesFor(E2ETopologyKind $kind): array
     {
-        return match ($kind) {
+        $roles = match ($kind) {
             E2ETopologyKind::Control => ['control'],
             E2ETopologyKind::ControlGateway => ['control', 'gateway'],
             E2ETopologyKind::ControlGatewayDev => ['control', 'gateway', 'dev'],
-            E2ETopologyKind::OperatorGatewayAppdevIngress => ['control', 'gateway', 'dev', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['control', 'gateway', 'dev', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevS3 => ['control', 'gateway', 'dev', 's3'],
-            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3 => ['control', 'gateway', 'dev', 'ingress', 'websocket', 's3'],
             E2ETopologyKind::ControlGatewayDevProd => ['control', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAgent => ['control', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
         };
+
+        if (E2EPreparedTopology::prodHostsIngressRole($kind)) {
+            return array_values(array_filter($roles, fn (string $role): bool => $role !== 'ingress'));
+        }
+
+        return $roles;
     }
 
     public static function templateName(E2ETopologyKind $kind, string $role): string
     {
-        if (in_array($kind, [
-            E2ETopologyKind::OperatorGatewayAppdevIngress,
-            E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3,
-        ], true) && $role === 'ingress') {
-            return 'orbit-template-appdev-ingress';
-        }
-
-        if ($kind === E2ETopologyKind::OperatorGatewayAppprodIngress) {
-            return match ($role) {
-                'control' => 'orbit-template-ingress-control',
-                'gateway' => 'orbit-template-ingress-gateway',
-                'prod' => 'orbit-template-ingress-prod',
-                default => "orbit-template-{$role}",
-            };
-        }
-
-        return "orbit-template-{$role}";
+        return E2ETopologyArtifactNamespace::incusTemplateName("orbit-template-{$role}");
     }
 
     public static function snapshotName(E2ETopologyKind $kind): string
     {
-        return "clean-{$kind->value}";
+        return E2ETopologyArtifactNamespace::incusSnapshotName($kind);
     }
 
     /**
@@ -56,7 +43,7 @@ final readonly class IncusTopologyTemplate
      */
     public static function snapshotCandidates(E2ETopologyKind $kind): array
     {
-        return [self::snapshotName($kind)];
+        return [self::snapshotName(E2EPreparedTopology::incusSourceKindFor($kind))];
     }
 
     public static function cloneName(string $runId, string $role): string
@@ -120,6 +107,7 @@ final readonly class IncusTopologyTemplate
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
+        $rootSize = escapeshellarg($host->config->topologyRootSize);
         $stateSize = escapeshellarg($host->config->topologyStateSize);
         $storagePool = $host->storagePoolArgument();
         $storagePool = $storagePool !== '' ? " {$storagePool}" : '';
@@ -128,6 +116,7 @@ final readonly class IncusTopologyTemplate
         $waitCopyLines = [];
         $limitLines = [];
         $identityLines = [];
+        $rootSizeLines = [];
         $statefulLines = [];
         $startLines = [];
         $waitStartLines = [];
@@ -145,6 +134,7 @@ final readonly class IncusTopologyTemplate
             $waitCopyLines[] = "wait \$PID_COPY_{$index}";
             $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
             $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}";
+            $rootSizeLines[] = "incus config device set {$clone} root size={$rootSize} || incus config device override {$clone} root size={$rootSize}";
 
             if ($statefulReset) {
                 $statefulLines[] = "incus config device set {$clone} root size.state={$stateSize} || incus config device override {$clone} root size.state={$stateSize}";
@@ -160,6 +150,7 @@ final readonly class IncusTopologyTemplate
             ...$waitCopyLines,
             ...$limitLines,
             ...$identityLines,
+            ...$rootSizeLines,
             ...$statefulLines,
             ...$startLines,
             ...$waitStartLines,

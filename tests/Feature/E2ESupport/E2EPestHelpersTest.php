@@ -75,6 +75,22 @@ it('runs provider aware runtime commands through Docker runtime siblings', funct
         && str_contains($process->command, 'php -S 127.0.0.1:48123'));
 });
 
+it('uses Docker runtime siblings only for gateway roles', function (): void {
+    $commands = [];
+    $harness = new E2ETopologyHarness(new E2ETopologyLease(
+        kind: E2ETopologyKind::ControlGatewayDev,
+        control: e2ePestFakeInstance($commands, 'control'),
+        gateway: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-gateway', 'orbit-e2e-run'),
+        dev: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-dev', 'orbit-e2e-run'),
+        prod: null,
+        sshKeyPair: new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        rebuild: fn () => throw new RuntimeException('not expected'),
+    ));
+
+    expect(e2eRoleUsesDockerRuntime($harness, 'gateway'))->toBeTrue()
+        ->and(e2eRoleUsesDockerRuntime($harness, 'dev'))->toBeFalse();
+});
+
 it('wraps a topology lease with checkout and ssh helpers', function (): void {
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
@@ -90,13 +106,13 @@ it('wraps a topology lease with checkout and ssh helpers', function (): void {
         rebuild: fn () => throw new RuntimeException('not expected'),
     ));
 
-    $harness->setCheckouts(['control' => '/home/control/orbit-current']);
+    $harness->setCheckouts(['control' => '/home/orbit/orbit-current']);
 
     $result = $harness->ssh('control', 'php artisan node:list --json');
 
     expect($result->successful())->toBeTrue();
-    expect($commands)->toContain('ssh:control:php artisan node:list --json');
-    expect($harness->checkout('control'))->toBe('/home/control/orbit-current');
+    expect($commands)->toContain('ssh:orbit:php artisan node:list --json');
+    expect($harness->checkout('control'))->toBe('/home/orbit/orbit-current');
 });
 
 it('can expose checkout paths through the e2eCheckout helper', function (): void {
@@ -118,7 +134,7 @@ it('can expose checkout paths through the e2eCheckout helper', function (): void
         rebuild: fn () => throw new RuntimeException('not expected'),
     ));
 
-    expect(e2eCheckout($harness, roles: ['control']))->toBe(['control' => '/home/control/orbit-current']);
+    expect(e2eCheckout($harness, roles: ['control']))->toBe(['control' => '/home/orbit/orbit-current']);
 });
 
 it('clears checkout paths when the harness resets', function (): void {
@@ -139,7 +155,7 @@ it('clears checkout paths when the harness resets', function (): void {
         ],
     ));
 
-    $harness->setCheckouts(['control' => '/home/control/orbit-current']);
+    $harness->setCheckouts(['control' => '/home/orbit/orbit-current']);
     $harness->reset();
 
     expect(fn () => $harness->checkout('control'))
@@ -166,10 +182,8 @@ it('fails clearly when a helper role is unavailable', function (): void {
 
 it('can share cached topologies across helper calls in one process', function (): void {
     $previousCache = getenv('ORBIT_E2E_TOPOLOGY_CACHE');
-    $previousStrategy = getenv('ORBIT_E2E_TOPOLOGY_STRATEGY');
 
     putenv('ORBIT_E2E_TOPOLOGY_CACHE=process');
-    putenv('ORBIT_E2E_TOPOLOGY_STRATEGY=superset');
 
     $created = 0;
     $deleted = 0;
@@ -191,7 +205,7 @@ it('can share cached topologies across helper calls in one process', function ()
     });
 
     try {
-        $first = e2eTopology(E2ETopologyKind::Control);
+        $first = e2eTopology(E2ETopologyKind::ControlGatewayDevProd);
         $second = e2eTopology(E2ETopologyKind::ControlGatewayDevProd);
 
         expect($first->lease())->toBe($second->lease())
@@ -212,11 +226,59 @@ it('can share cached topologies across helper calls in one process', function ()
             putenv("ORBIT_E2E_TOPOLOGY_CACHE={$previousCache}");
         }
 
-        if ($previousStrategy === false) {
-            putenv('ORBIT_E2E_TOPOLOGY_STRATEGY');
+    }
+});
+
+it('evicts cached topologies when the process cache limit is reached', function (): void {
+    $previousCache = getenv('ORBIT_E2E_TOPOLOGY_CACHE');
+    $previousLimit = getenv('ORBIT_E2E_TOPOLOGY_CACHE_LIMIT');
+
+    putenv('ORBIT_E2E_TOPOLOGY_CACHE=process');
+    putenv('ORBIT_E2E_TOPOLOGY_CACHE_LIMIT=1');
+
+    $created = 0;
+    $deleted = 0;
+
+    E2ETopologyCache::fakeResolver(function (E2ETopologyKind $kind) use (&$created, &$deleted): E2ETopologyLease {
+        $created++;
+
+        return new E2ETopologyLease(
+            kind: $kind,
+            control: e2ePestDeletableFakeInstance($deleted, $kind->value.'-control'),
+            gateway: null,
+            dev: null,
+            prod: null,
+            sshKeyPair: new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+            rebuild: fn () => throw new RuntimeException('not expected'),
+        );
+    });
+
+    try {
+        $first = e2eTopology(E2ETopologyKind::Operator);
+        $second = e2eTopology(E2ETopologyKind::OperatorGateway);
+        $third = e2eTopology(E2ETopologyKind::OperatorGateway);
+
+        expect($first->lease())->not->toBe($second->lease())
+            ->and($second->lease())->toBe($third->lease())
+            ->and($created)->toBe(2)
+            ->and($deleted)->toBe(1);
+
+        E2ETopologyCache::cleanup();
+
+        expect($deleted)->toBe(2);
+    } finally {
+        if ($previousCache === false) {
+            putenv('ORBIT_E2E_TOPOLOGY_CACHE');
         } else {
-            putenv("ORBIT_E2E_TOPOLOGY_STRATEGY={$previousStrategy}");
+            putenv("ORBIT_E2E_TOPOLOGY_CACHE={$previousCache}");
         }
+
+        if ($previousLimit === false) {
+            putenv('ORBIT_E2E_TOPOLOGY_CACHE_LIMIT');
+        } else {
+            putenv("ORBIT_E2E_TOPOLOGY_CACHE_LIMIT={$previousLimit}");
+        }
+
     }
 });
 
@@ -304,7 +366,7 @@ it('creates and uses a checkout timer lazily when ORBIT_E2E_TIMINGS is enabled',
         $timer = e2ePestHarnessTimer($harness);
 
         expect($timer)->not->toBeNull()
-            ->and($harness->checkouts())->toBe(['control' => '/home/control/orbit-current']);
+            ->and($harness->checkouts())->toBe(['control' => '/home/orbit/orbit-current']);
     } finally {
         if ($previousCache === false) {
             putenv('ORBIT_E2E_TOPOLOGY_CACHE');
@@ -321,8 +383,8 @@ it('creates and uses a checkout timer lazily when ORBIT_E2E_TIMINGS is enabled',
 });
 
 it('restarts dns alias gateway api with canonical peer identity mapping', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
+    $previousProvider = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
@@ -344,6 +406,7 @@ it('restarts dns alias gateway api with canonical peer identity mapping', functi
 
         expect(implode("\n", $commands))
             ->toContain('$peerIdentityMap = array')
+            ->toContain('gateway')
             ->toContain('10.61.0.2')
             ->toContain('10.6.0.2')
             ->toContain('10.61.0.3')
@@ -351,15 +414,36 @@ it('restarts dns alias gateway api with canonical peer identity mapping', functi
             ->toContain('10.61.0.4')
             ->toContain('10.6.0.4');
     } finally {
-        $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+        $previousProvider === false
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previousProvider}");
     }
 });
 
+it('does not remap a colocated ingress instance away from its node identity', function (): void {
+    $commands = [];
+    $prod = e2ePestFakeInstanceWithIp($commands, 'prod', '10.61.0.5');
+
+    $harness = new E2ETopologyHarness(new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGatewayAppprodIngress,
+        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
+        dev: null,
+        prod: $prod,
+        sshKeyPair: new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        rebuild: fn () => throw new RuntimeException('not expected'),
+        gatewayApiIp: '10.61.0.2',
+        ingress: $prod,
+    ));
+
+    expect(e2eDockerDnsAliasPeerIdentityMap($harness))
+        ->toHaveKey('10.61.0.5', '10.6.0.5')
+        ->not->toContain('10.6.0.7');
+});
+
 it('uses gateway dns identity for docker dns-alias gateway settings', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
+    $previousProvider = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
@@ -378,15 +462,15 @@ it('uses gateway dns identity for docker dns-alias gateway settings', function (
         expect(e2eGatewayApiUrl($harness))->toBe('https://gateway')
             ->and(e2eGatewayWireGuardIp($harness))->toBe('10.6.0.2');
     } finally {
-        $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+        $previousProvider === false
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previousProvider}");
     }
 });
 
-it('uses lease gateway ip for non dns-alias gateway settings', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+it('uses lease gateway ip for incus gateway settings', function (): void {
+    $previousProvider = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=incus');
 
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
@@ -405,15 +489,52 @@ it('uses lease gateway ip for non dns-alias gateway settings', function (): void
         expect(e2eGatewayApiUrl($harness))->toBe('https://10.61.0.2')
             ->and(e2eGatewayWireGuardIp($harness))->toBe('10.61.0.2');
     } finally {
-        $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+        $previousProvider === false
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previousProvider}");
+    }
+});
+
+it('uses lease gateway identity when restarting the incus gateway api', function (): void {
+    $previousProvider = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=incus');
+
+    $commands = [];
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $harness = new E2ETopologyHarness(new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGatewayAgent,
+        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
+        dev: null,
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+        gatewayApiIp: '10.61.0.2',
+        agent: e2ePestFakeInstanceWithIp($commands, 'agent', '10.61.0.9'),
+    ));
+    $harness->setCheckouts(['gateway' => '/home/orbit/orbit-current']);
+
+    try {
+        e2eRestartGatewayApi($harness, 'incus-restart');
+
+        expect(e2eGatewayApiUrl($harness))->toBe('https://10.61.0.2')
+            ->and(e2eGatewayWireGuardIp($harness))->toBe('10.61.0.2')
+            ->and(implode("\n", $commands))->toContain('10.61.0.2:80')
+            ->toContain('$bindAddress = \'10.61.0.2\';')
+            ->toContain('$certKey = \'10.61.0.2\';')
+            ->not->toContain('0.0.0.0:80')
+            ->not->toContain('$bindAddress = \'0.0.0.0\';')
+            ->not->toContain('$certKey = \'gateway\';');
+    } finally {
+        $previousProvider === false
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previousProvider}");
     }
 });
 
 it('seeds current-checkout gateway settings for control callers', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
 
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
@@ -442,14 +563,14 @@ it('seeds current-checkout gateway settings for control callers', function (): v
             ->and($commands[0])->not->toContain("cd '/home/control/orbit' &&");
     } finally {
         $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previous}");
     }
 });
 
 it('seeds docker app current-checkout gateway settings through the cli env', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
     $dockerCommands = [];
     Process::fake(function ($process) use (&$dockerCommands): ProcessResult {
@@ -486,14 +607,14 @@ it('seeds docker app current-checkout gateway settings through the cli env', fun
             ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()');
     } finally {
         $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previous}");
     }
 });
 
-it('seeds docker control current-checkout gateway settings through the root app', function (): void {
-    $previous = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
+it('seeds docker operator current-checkout gateway settings through the root app', function (): void {
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
     $dockerCommands = [];
     Process::fake(function ($process) use (&$dockerCommands): ProcessResult {
@@ -506,8 +627,8 @@ it('seeds docker control current-checkout gateway settings through the root app'
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-control', 'orbit-e2e-run'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        control: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-operator', 'orbit-e2e-run'),
         gateway: e2ePestFakeInstance($commands, 'gateway'),
         dev: e2ePestFakeInstance($commands, 'dev'),
         prod: null,
@@ -516,19 +637,19 @@ it('seeds docker control current-checkout gateway settings through the root app'
         gatewayApiIp: '10.61.0.2',
     ));
     $harness->setCheckouts([
-        'control' => '/home/control/orbit-current',
+        'operator' => '/home/orbit/orbit-current',
         'gateway' => '/home/orbit/orbit-current',
     ]);
 
     try {
-        e2eConfigureCurrentCheckoutGatewaySettings($harness);
+        e2eConfigureCurrentCheckoutGatewaySettings($harness, 'operator');
 
         $dockerCommandOutput = implode("\n", $dockerCommands);
 
         expect($dockerCommands)->toHaveCount(2)
             ->and($commands)->toContain("ssh:orbit:cat '/home/orbit/orbit-current/storage/app/orbit/ca/root.crt'")
-            ->and($dockerCommandOutput)->toContain("docker exec --user 'control' 'orbit-e2e-run-control' sh -lc")
-            ->and($dockerCommandOutput)->toContain('/home/control/orbit-current/storage/app/orbit/ca/root.crt')
+            ->and($dockerCommandOutput)->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
+            ->and($dockerCommandOutput)->toContain('/home/orbit/orbit-current/storage/app/orbit/ca/root.crt')
             ->and($dockerCommandOutput)->toContain('orbit tinker --execute')
             ->and($dockerCommandOutput)->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommandOutput)->toContain('https://gateway')
@@ -536,8 +657,8 @@ it('seeds docker control current-checkout gateway settings through the root app'
             ->and($dockerCommandOutput)->not->toContain('/apps/cli');
     } finally {
         $previous === false
-            ? putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE')
-            : putenv("ORBIT_E2E_DOCKER_TOPOLOGY_MODE={$previous}");
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previous}");
     }
 });
 

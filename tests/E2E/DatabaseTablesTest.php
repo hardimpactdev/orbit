@@ -22,7 +22,7 @@ it('keeps database E2E SQLite fixture setup off the host sqlite3 binary', functi
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
 
-it('lists tables for a database connection from the control node through the gateway api', function (): void {
+it('lists tables for a database connection from the operator node through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 

@@ -21,6 +21,7 @@ owning family concept document.
 - **Node access grant** — gateway-stored edge that lets one node operate on another after WireGuard identity is authenticated. The grant edge is the first authorization gate; the scoped permissions stored on it are the second. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Node access permission** — normalized permission string stored on a node access grant; decides what the consuming node may do on the serving node. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Permission preset** — code-defined named bundle of node access permissions. The defined presets are `agent-self`, `operator`, `read-only`, `developer`, `admin`, and `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Operator** — node identity with the operator permission preset and grants to operate one or more nodes through the gateway. It is not a node role. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Gateway-admin grant** — a consumer-to-gateway grant whose permissions include `*` (the `gateway-admin` preset); confers fleet-wide super-admin authority including authority over future nodes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Node TLD** — node-level setting required by the `app-development` and `agent` roles. A node holds at most one `tld` value at a time, shared by every role that depends on it; drives the gateway-owned DNS mapping for that TLD. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent role** — exclusive workload role for autonomous agent runtimes; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -96,6 +97,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 <!-- concept-index:domains/1_node/node-concepts.md -->
 - **Node**
 - **Client**
+- **Operator**
 - **Node role**
 - **Gateway role**
 - **VPN role**

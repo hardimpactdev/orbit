@@ -137,7 +137,7 @@ final class SshCommandBuilder
             return $node->host;
         }
 
-        if ($this->dockerTopologyMode() === 'dns-alias' && filled($node->host)) {
+        if ($this->usesDockerTopology() && filled($node->host)) {
             return $node->host;
         }
 
@@ -261,7 +261,7 @@ final class SshCommandBuilder
         $hosts = array_values(array_unique(array_filter([
             $node->host,
             $node->wireguard_address,
-            $this->dockerTopologyMode() === 'dns-alias' ? $node->host : null,
+            $this->usesDockerTopology() ? $node->host : null,
         ], fn ($host): bool => is_string($host) && $host !== '')));
 
         return collect($hosts)
@@ -269,21 +269,41 @@ final class SshCommandBuilder
             ->implode(PHP_EOL).PHP_EOL;
     }
 
-    private function dockerTopologyMode(): ?string
+    private function usesDockerTopology(): bool
     {
-        $processValue = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+        $provider = $this->e2eEnvironmentValue('ORBIT_E2E_TOPOLOGY_PROVIDER');
+
+        if ($provider !== null) {
+            return strtolower(trim($provider)) === 'docker';
+        }
+
+        $providers = $this->e2eEnvironmentValue('ORBIT_E2E_TOPOLOGY_PROVIDERS');
+
+        if ($providers === null) {
+            return false;
+        }
+
+        return in_array('docker', array_map(
+            static fn (string $value): string => strtolower(trim($value)),
+            explode(',', $providers),
+        ), true);
+    }
+
+    private function e2eEnvironmentValue(string $key): ?string
+    {
+        $processValue = getenv($key);
 
         if (is_string($processValue) && $processValue !== '') {
             return $processValue;
         }
 
-        $serverValue = $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
+        $serverValue = $_SERVER[$key] ?? null;
 
         if (is_string($serverValue) && $serverValue !== '') {
             return $serverValue;
         }
 
-        $envValue = $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
+        $envValue = $_ENV[$key] ?? null;
 
         return is_string($envValue) && $envValue !== '' ? $envValue : null;
     }

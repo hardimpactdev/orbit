@@ -16,6 +16,8 @@ use Illuminate\Support\Str;
 
 class OrbitHostInstaller
 {
+    private const string PreferredTempDirectory = '/var/tmp';
+
     private ?Node $pinnedNode = null;
 
     public function usePinnedNode(?Node $node): void
@@ -25,10 +27,14 @@ class OrbitHostInstaller
 
     public function install(string $host, string $sshUser, string $runtimeUser = 'orbit', bool $asGateway = false): OrbitHostInstallResult
     {
+        $remotePrefix = self::PreferredTempDirectory.'/orbit-install-'.Str::lower(Str::random(8));
         $localArchive = $this->buildSourceArchive();
-        $remotePrefix = '/tmp/orbit-install-'.Str::lower(Str::random(8));
+        $localEnvironment = $this->buildExecutorEnvironmentFile($this->pinnedNode);
+        $localImageArchives = $this->buildForwardedImageArchives();
         $remoteArchive = "{$remotePrefix}.tar.gz";
         $remoteInstaller = "{$remotePrefix}.sh";
+        $remoteEnvironment = "{$remotePrefix}.env";
+        $remoteImageArchives = $this->remoteImageArchives($remotePrefix, $localImageArchives);
 
         try {
             $userCreated = $this->createRuntimeUser($host, $sshUser, $runtimeUser);
@@ -63,11 +69,42 @@ class OrbitHostInstaller
                 );
             }
 
+            $environmentUpload = $this->scp($localEnvironment, $executionUser, $host, $remoteEnvironment);
+
+            if (! $environmentUpload->successful()) {
+                return new OrbitHostInstallResult(
+                    successful: false,
+                    output: $environmentUpload->output(),
+                    errorOutput: $environmentUpload->errorOutput(),
+                );
+            }
+
+            foreach ($localImageArchives as $key => $localImageArchive) {
+                $imageUpload = $this->scp($localImageArchive, $executionUser, $host, $remoteImageArchives[$key]);
+
+                if (! $imageUpload->successful()) {
+                    return new OrbitHostInstallResult(
+                        successful: false,
+                        output: $imageUpload->output(),
+                        errorOutput: $imageUpload->errorOutput(),
+                    );
+                }
+            }
+
             if (! $this->pinnedNode instanceof Node && $sshUser !== $runtimeUser) {
+                $chownPaths = array_merge(
+                    [$remoteInstaller, $remoteArchive, $remoteEnvironment],
+                    array_values($remoteImageArchives),
+                );
                 $chown = Process::timeout(30)->run($this->ssh(
                     user: $sshUser,
                     host: $host,
-                    command: "sudo chown {$runtimeUser}:{$runtimeUser} {$remoteInstaller} {$remoteArchive}",
+                    command: sprintf(
+                        'sudo chown %s:%s %s',
+                        escapeshellarg($runtimeUser),
+                        escapeshellarg($runtimeUser),
+                        implode(' ', array_map(escapeshellarg(...), $chownPaths)),
+                    ),
                 ));
 
                 if (! $chown->successful()) {
@@ -81,10 +118,15 @@ class OrbitHostInstaller
 
             $remoteHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
             $installerFlags = $asGateway ? ' --gateway' : '';
+            $installerFlags .= $this->imageArchiveInstallerFlags($remoteImageArchives);
+            $cleanupPaths = array_merge(
+                [$remoteInstaller, $remoteArchive, $remoteEnvironment],
+                array_values($remoteImageArchives),
+            );
             $installCommand = sprintf(
-                "set -e; trap 'rm -f %s %s' EXIT; bash %s --path=%s --source-archive=%s%s",
-                escapeshellarg($remoteInstaller),
-                escapeshellarg($remoteArchive),
+                "set -e; trap 'rm -f %s' EXIT; set -a; . %s; set +a; bash %s --path=%s --source-archive=%s%s",
+                implode(' ', array_map(escapeshellarg(...), $cleanupPaths)),
+                escapeshellarg($remoteEnvironment),
                 escapeshellarg($remoteInstaller),
                 escapeshellarg("{$remoteHome}/orbit"),
                 escapeshellarg($remoteArchive),
@@ -123,7 +165,97 @@ class OrbitHostInstaller
         } finally {
             $this->pinnedNode = null;
             @unlink($localArchive);
+            @unlink($localEnvironment);
+
+            foreach ($localImageArchives as $localImageArchive) {
+                @unlink($localImageArchive);
+            }
         }
+    }
+
+    /**
+     * @return array{runtime?: string, caddy?: string, dnsmasq?: string}
+     */
+    private function buildForwardedImageArchives(): array
+    {
+        if (! config('orbit.forward_install_image_archives')) {
+            return [];
+        }
+
+        $archives = [];
+
+        foreach ([
+            'runtime' => ['image' => 'orbit-runtime:current', 'name' => 'orbit-runtime-current'],
+            'caddy' => ['image' => 'caddy:2-alpine', 'name' => 'caddy-2-alpine'],
+            'dnsmasq' => ['image' => '4km3/dnsmasq:latest', 'name' => 'dnsmasq-latest'],
+        ] as $key => $image) {
+            $inspect = Process::timeout(30)->run(sprintf(
+                'docker image inspect %s >/dev/null 2>&1',
+                escapeshellarg($image['image']),
+            ));
+
+            if (! $inspect->successful()) {
+                continue;
+            }
+
+            $archive = $this->localTempPath($image['name'].'-'.Str::lower(Str::random(8)).'.tar');
+            $save = Process::timeout(600)->run(sprintf(
+                'docker save %s -o %s',
+                escapeshellarg($image['image']),
+                escapeshellarg($archive),
+            ));
+
+            if (! $save->successful()) {
+                @unlink($archive);
+
+                throw new \RuntimeException('Failed to export Docker image '.$image['image'].': '.trim($save->errorOutput()));
+            }
+
+            $archives[$key] = $archive;
+        }
+
+        return $archives;
+    }
+
+    /**
+     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string}  $localImageArchives
+     * @return array{runtime?: string, caddy?: string, dnsmasq?: string}
+     */
+    private function remoteImageArchives(string $remotePrefix, array $localImageArchives): array
+    {
+        $remoteImageArchives = [];
+
+        foreach (array_keys($localImageArchives) as $key) {
+            $remoteImageArchives[$key] = match ($key) {
+                'runtime' => "{$remotePrefix}-orbit-runtime-current.tar",
+                'caddy' => "{$remotePrefix}-caddy-2-alpine.tar",
+                'dnsmasq' => "{$remotePrefix}-dnsmasq-latest.tar",
+            };
+        }
+
+        return $remoteImageArchives;
+    }
+
+    /**
+     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string}  $remoteImageArchives
+     */
+    private function imageArchiveInstallerFlags(array $remoteImageArchives): string
+    {
+        $flags = '';
+
+        if (isset($remoteImageArchives['runtime'])) {
+            $flags .= ' --runtime-image-archive='.escapeshellarg($remoteImageArchives['runtime']);
+        }
+
+        if (isset($remoteImageArchives['caddy'])) {
+            $flags .= ' --caddy-image-archive='.escapeshellarg($remoteImageArchives['caddy']);
+        }
+
+        if (isset($remoteImageArchives['dnsmasq'])) {
+            $flags .= ' --dnsmasq-image-archive='.escapeshellarg($remoteImageArchives['dnsmasq']);
+        }
+
+        return $flags;
     }
 
     private function createRuntimeUser(string $host, string $sshUser, string $runtimeUser): ProcessResult
@@ -178,7 +310,7 @@ SCRIPT,
 
     private function buildSourceArchive(): string
     {
-        $archive = '/tmp/orbit-source-'.Str::lower(Str::random(8)).'.tar.gz';
+        $archive = $this->localTempPath('orbit-source-'.Str::lower(Str::random(8)).'.tar.gz');
 
         $result = Process::timeout(120)->run(sprintf(
             "tar --exclude='.git' --exclude='node_modules' --exclude='vendor' --exclude='storage/logs/*' --exclude='storage/framework/cache/*' --exclude='storage/framework/sessions/*' --exclude='storage/framework/views/*' --exclude='database/*.sqlite*' --exclude='.env' -czf %s -C %s .",
@@ -193,6 +325,50 @@ SCRIPT,
         }
 
         return $archive;
+    }
+
+    private function buildExecutorEnvironmentFile(?Node $node): string
+    {
+        $path = $this->localTempPath('orbit-install-env-'.Str::lower(Str::random(8)).'.env');
+        $lines = [
+            $this->shellEnvironmentLine('ORBIT_OPERATION_TOKEN_SECRET', $this->operationTokenSecret()),
+        ];
+
+        if ($node instanceof Node) {
+            $lines[] = $this->shellEnvironmentLine('ORBIT_NODE_IDENTITY', (string) $node->name);
+        }
+
+        file_put_contents($path, implode('', $lines));
+        chmod($path, 0600);
+
+        return $path;
+    }
+
+    private function localTempPath(string $fileName): string
+    {
+        $directory = self::PreferredTempDirectory;
+
+        if (! is_dir($directory) || ! is_writable($directory)) {
+            $directory = sys_get_temp_dir();
+        }
+
+        return rtrim($directory, '/').'/'.$fileName;
+    }
+
+    private function operationTokenSecret(): string
+    {
+        $secret = config('orbit.operation_token_secret');
+
+        if (is_string($secret) && trim($secret) !== '') {
+            return $secret;
+        }
+
+        return base64_encode(random_bytes(32));
+    }
+
+    private function shellEnvironmentLine(string $key, string $value): string
+    {
+        return "{$key}=".escapeshellarg($value)."\n";
     }
 
     private function installSecurityBaseline(string $host, string $runtimeUser): ?OrbitHostInstallResult
@@ -238,7 +414,7 @@ SCRIPT,
     private function scp(string $source, string $sshUser, string $host, string $destination): ProcessResult
     {
         if ($this->pinnedNode instanceof Node) {
-            return Process::timeout(120)->run(app(SshCommandBuilder::class)->scpToNode(
+            return Process::timeout(600)->run(app(SshCommandBuilder::class)->scpToNode(
                 node: $this->pinnedNode,
                 source: $source,
                 destination: $destination,
@@ -251,7 +427,7 @@ SCRIPT,
             ));
         }
 
-        return Process::timeout(120)->run(app(SshCommandBuilder::class)->scpTo(
+        return Process::timeout(600)->run(app(SshCommandBuilder::class)->scpTo(
             source: $source,
             user: $sshUser,
             host: $host,

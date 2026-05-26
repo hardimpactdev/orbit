@@ -358,12 +358,38 @@ final class E2ECurrentCheckout
             return 'composer install --no-interaction --prefer-dist --optimize-autoloader';
         }
 
+        $environment = [
+            "ORBIT_SOURCE_PATH={$remotePath}",
+            'COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache',
+            'COMPOSER_HOME=/tmp/orbit-composer-home',
+            'COMPOSER_PROCESS_TIMEOUT=1200',
+            'COMPOSER_ALLOW_SUPERUSER=1',
+        ];
+
+        $environmentFlags = implode(' ', array_map(
+            fn (string $value): string => '--env '.escapeshellarg($value),
+            $environment,
+        ));
+
+        $composerConfig = sprintf(
+            'mkdir -p %s %s && printf %%s %s > %s',
+            escapeshellarg('/tmp/orbit-composer-cache'),
+            escapeshellarg('/tmp/orbit-composer-home'),
+            escapeshellarg(json_encode([
+                'config' => [
+                    'cache-dir' => '/tmp/orbit-composer-cache',
+                    'github-protocols' => ['https'],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+            escapeshellarg('/tmp/orbit-composer-home/config.json'),
+        );
+
         return sprintf(
-            'sudo docker exec --env %s --env %s --workdir %s %s composer install --no-interaction --prefer-dist --optimize-autoloader',
-            escapeshellarg("ORBIT_SOURCE_PATH={$remotePath}"),
-            escapeshellarg('COMPOSER_ALLOW_SUPERUSER=1'),
+            'sudo docker exec %s --workdir %s %s sh -lc %s',
+            $environmentFlags,
             escapeshellarg($remotePath),
             escapeshellarg($dockerRuntimeContainer),
+            escapeshellarg($composerConfig.' && (git config --global --add safe.directory '.escapeshellarg('*').' >/dev/null 2>&1 || true) && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress'),
         );
     }
 
@@ -371,7 +397,6 @@ final class E2ECurrentCheckout
     {
         $sourceLock = escapeshellarg("{$vendorSourcePath}/composer.lock");
         $sourceAutoload = escapeshellarg("{$vendorSourcePath}/vendor/autoload.php");
-        $sourceBoost = escapeshellarg("{$vendorSourcePath}/vendor/laravel/boost");
         $sourceComposer = escapeshellarg("{$vendorSourcePath}/vendor/composer");
         $sourceVendor = escapeshellarg("{$vendorSourcePath}/vendor");
         $reuseVendor = implode(' && ', [
@@ -380,10 +405,10 @@ final class E2ECurrentCheckout
             "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} vendor/ \\;",
             "cp -a {$sourceComposer} vendor/composer",
             "cp {$sourceAutoload} vendor/autoload.php",
-            'composer dump-autoload --no-interaction --optimize',
+            'if command -v composer >/dev/null 2>&1; then composer dump-autoload --no-interaction --optimize; fi',
         ]);
 
-        return "if [ -f {$sourceAutoload} ] && [ -d {$sourceBoost} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} composer.lock; then {$reuseVendor}; else composer install --no-interaction --prefer-dist --optimize-autoloader; fi";
+        return "if [ -f {$sourceAutoload} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} composer.lock; then {$reuseVendor}; elif command -v composer >/dev/null 2>&1; then composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Composer is not installed and prepared vendor dependencies could not be reused.' >&2; exit 127; fi";
     }
 
     private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null): string
@@ -391,7 +416,7 @@ final class E2ECurrentCheckout
         $runtimeDirectories = 'mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs';
 
         if ($seedFrom === null) {
-            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && ".self::artisanCommand('key:generate --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer);
+            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && ".self::dockerTopologyProviderEnvCommand($dockerTopology).' && '.self::artisanCommand('key:generate --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer);
         }
 
         $seedEnv = escapeshellarg("{$seedFrom}/.env");
@@ -404,7 +429,7 @@ final class E2ECurrentCheckout
             "if [ -f {$seedDatabase} ]; then cp {$seedDatabase} database/database.sqlite; else touch database/database.sqlite; fi",
             "if [ -d {$seedStorageApp} ]; then mkdir -p storage && rm -rf storage/app && cp -a {$seedStorageApp} storage/app; fi",
             $runtimeDirectories,
-            self::dockerTopologyModeEnvCommand(),
+            self::dockerTopologyProviderEnvCommand($dockerTopology),
             self::appKeyCommand($dockerTopology, $remotePath, $dockerRuntimeContainer),
         ]);
     }
@@ -418,16 +443,16 @@ final class E2ECurrentCheckout
         ]);
     }
 
-    private static function dockerTopologyModeEnvCommand(): string
+    private static function dockerTopologyProviderEnvCommand(bool $dockerTopology): string
     {
-        if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') !== 'dns-alias') {
+        if (! $dockerTopology) {
             return ':';
         }
 
         return implode(' && ', [
-            "grep -Ev '^(ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp",
+            "grep -Ev '^(ORBIT_E2E_TOPOLOGY_PROVIDER)=' .env > .env.tmp",
             'mv .env.tmp .env',
-            "printf '%s\\n' 'ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias' >> .env",
+            "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> .env",
         ]);
     }
 
@@ -441,10 +466,64 @@ final class E2ECurrentCheckout
 
     private static function migrateCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null): string
     {
-        return implode(' && ', [
+        $commands = [
             'cd '.escapeshellarg($remotePath),
             self::artisanCommand('migrate --force --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer),
-        ]);
+        ];
+
+        if ($dockerTopology) {
+            $commands[] = self::dockerGatewaySettingsCommand($remotePath, $dockerRuntimeContainer);
+        }
+
+        return implode(' && ', $commands);
+    }
+
+    private static function dockerGatewaySettingsCommand(string $remotePath, ?string $dockerRuntimeContainer): string
+    {
+        $php = <<<'PHP'
+if (\Illuminate\Support\Facades\Schema::hasTable('local_gateway_settings')) {
+    $rootCa = null;
+
+    if (gethostbyname('gateway') !== 'gateway') {
+        $response = @file_get_contents('http://gateway/api/ca/root', false, stream_context_create([
+            'http' => ['timeout' => 5],
+        ]));
+
+        if (is_string($response) && $response !== '') {
+            $decoded = json_decode($response, true);
+            $rootCa = is_array($decoded)
+                ? ($decoded['success']['data']['root_ca'] ?? $decoded['data']['root_ca'] ?? null)
+                : $response;
+        }
+    }
+
+    $caSha256 = null;
+    $caPemPath = null;
+
+    if (is_string($rootCa)
+        && str_contains($rootCa, '-----BEGIN CERTIFICATE-----')
+        && str_contains($rootCa, '-----END CERTIFICATE-----')) {
+        $caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($caPemPath));
+        \Illuminate\Support\Facades\File::put($caPemPath, $rootCa);
+        $caSha256 = hash('sha256', $rootCa);
+    }
+
+    $settings = \App\Models\LocalGatewaySettings::current();
+    $settings->gateway_url = 'https://gateway';
+    $settings->gateway_wg_ip = '10.6.0.2';
+
+    if ($caSha256 !== null && $caPemPath !== null) {
+        $settings->ca_sha256 = $caSha256;
+        $settings->ca_pem_path = $caPemPath;
+        $settings->trusted_at = now();
+    }
+
+    $settings->save();
+}
+PHP;
+
+        return self::artisanCommand('tinker --execute='.escapeshellarg($php), true, $remotePath, $dockerRuntimeContainer);
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer): void
@@ -547,25 +626,30 @@ final class E2ECurrentCheckout
      */
     private static function availableTopologyRoles(E2ETopologyLease $topology): array
     {
-        $roles = ['operator', 'control'];
+        $roles = ['operator'];
+        $instanceNames = [$topology->operator()->name()];
 
         if ($topology->gateway() !== null) {
             $roles[] = 'gateway';
+            $instanceNames[] = $topology->gateway()->name();
         }
 
         if ($topology->devApp() !== null) {
             $roles[] = 'dev';
+            $instanceNames[] = $topology->devApp()->name();
         }
 
         if ($topology->prodApp() !== null) {
             $roles[] = 'prod';
+            $instanceNames[] = $topology->prodApp()->name();
         }
 
         if ($topology->agent() !== null) {
             $roles[] = 'agent';
+            $instanceNames[] = $topology->agent()->name();
         }
 
-        if ($topology->ingress() !== null) {
+        if ($topology->ingress() !== null && ! in_array($topology->ingress()->name(), $instanceNames, true)) {
             $roles[] = 'ingress';
         }
 
@@ -587,7 +671,7 @@ final class E2ECurrentCheckout
             'dev' => self::requiredRole($topology->devApp(), $role, $users['dev'] ?? 'orbit'),
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),
             'agent' => self::requiredRole($topology->agent(), $role, $users['agent'] ?? 'orbit'),
-            'ingress', 'ingress' => self::requiredRole($topology->ingress(), $role, $users[$role] ?? 'orbit'),
+            'ingress' => self::requiredRole($topology->ingress(), $role, $users[$role] ?? 'orbit'),
             default => throw new RuntimeException("Unknown topology role [{$role}]."),
         };
     }
@@ -625,9 +709,12 @@ final class E2ECurrentCheckout
     public static function buildArchive(): string
     {
         $tarball = sys_get_temp_dir().'/orbit-current-'.bin2hex(random_bytes(6)).'.tar.gz';
-        $manifest = self::writeArchiveManifest();
+        $attempts = 0;
 
-        try {
+        do {
+            $attempts++;
+            $manifest = self::writeArchiveManifest();
+
             $result = Process::timeout(300)->run(sprintf(
                 'COPYFILE_DISABLE=1 tar --null -czf %s -C %s -T %s',
                 escapeshellarg($tarball),
@@ -635,12 +722,20 @@ final class E2ECurrentCheckout
                 escapeshellarg($manifest),
             ));
 
-            if (! $result->successful()) {
-                throw new RuntimeException("Failed to build current checkout archive: {$result->errorOutput()}");
-            }
-        } finally {
             @unlink($manifest);
-        }
+
+            if ($result->successful()) {
+                break;
+            }
+
+            @unlink($tarball);
+
+            if ($attempts < 3 && str_contains($result->errorOutput(), 'Cannot stat')) {
+                continue;
+            }
+
+            throw new RuntimeException("Failed to build current checkout archive: {$result->errorOutput()}");
+        } while ($attempts < 3);
 
         if (is_file($tarball) && ! @chmod($tarball, 0644)) {
             throw new RuntimeException("Failed to make current checkout archive readable: {$tarball}");

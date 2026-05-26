@@ -60,10 +60,10 @@ real VM, network, OS, or installer semantics.
 Prepared Docker topologies model the target runtime contract:
 
 - topology host images use an Ubuntu apt substrate so host prerequisite
-  packages, including the PHP 8.4 CLI baseline, mirror the installer path used
+  packages, including the PHP 8.5 CLI baseline, mirror the installer path used
   on managed Ubuntu nodes;
 - topology host images do not bake an Orbit source tree. Docker topology
-  preparation streams the current checkout into `/home/control/orbit` on the
+  preparation streams the current checkout into `/home/orbit/orbit` on the
   operator node and `/home/orbit/orbit` on gateway, app, ingress, and agent
   nodes, then links `/usr/local/bin/orbit` to the checkout launcher at
   `~/orbit/bin/orbit`;

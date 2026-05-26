@@ -14,18 +14,18 @@ use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-topology-contract');
 
-it('satisfies the prepared control topology contract', function (): void {
+it('satisfies the prepared operator topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::Operator);
 
     try {
-        expectPreparedControlTopology($topology, $config);
+        expectPreparedOperatorTopology($topology, $config);
     } finally {
         $topology->cleanup();
     }
 })->group('e2e-topology-contract-operator', 'e2e-topology-contract-control');
 
-it('satisfies the prepared control-gateway topology contract', function (): void {
+it('satisfies the prepared operator-gateway topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGateway);
 
@@ -36,7 +36,7 @@ it('satisfies the prepared control-gateway topology contract', function (): void
     }
 })->group('e2e-topology-contract-operator_gateway', 'e2e-topology-contract-control-gateway');
 
-it('satisfies the prepared control-gateway-dev topology contract', function (): void {
+it('satisfies the prepared operator-gateway-dev topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdev);
 
@@ -47,53 +47,7 @@ it('satisfies the prepared control-gateway-dev topology contract', function (): 
     }
 })->group('e2e-topology-contract-operator_gateway_app-dev', 'e2e-topology-contract-control-gateway-dev');
 
-it('satisfies the prepared control-gateway-dev-ingress topology contract', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevIngress);
-
-    try {
-        expectPreparedDevTopology($topology, $config);
-        expectPreparedIngressPlacement($topology);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-topology-contract-operator_gateway_app-dev_ingress');
-
-it('satisfies the prepared control-gateway-dev-websocket topology scaffold', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevWebsocket);
-
-    try {
-        expectPreparedDevServiceScaffold($topology, $config, ['websocket']);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-topology-contract-operator_gateway_app-dev_websocket');
-
-it('satisfies the prepared control-gateway-dev-s3 topology scaffold', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevS3);
-
-    try {
-        expectPreparedDevServiceScaffold($topology, $config, ['s3']);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-topology-contract-operator_gateway_app-dev_s3');
-
-it('satisfies the prepared control-gateway-dev-ingress-websocket-s3 topology scaffold', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevIngressWebsocketS3);
-
-    try {
-        expectPreparedDevServiceScaffold($topology, $config, ['websocket', 's3']);
-        expectPreparedIngressPlacement($topology);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-topology-contract-operator_gateway_app-dev_ingress_websocket_s3');
-
-it('satisfies the prepared control-gateway-dev-prod topology contract', function (): void {
+it('satisfies the prepared operator-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 
@@ -104,6 +58,28 @@ it('satisfies the prepared control-gateway-dev-prod topology contract', function
     }
 })->group('e2e-topology-contract-operator_gateway_app-dev_app-prod', 'e2e-topology-contract-control-gateway-dev-prod');
 
+it('satisfies the prepared operator-gateway-agent topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAgent);
+
+    try {
+        expectPreparedAgentTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_agent');
+
+it('satisfies the prepared operator-gateway-prod-ingress topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppprodIngress);
+
+    try {
+        expectPreparedProdIngressTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-prod_ingress');
+
 function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
 {
     try {
@@ -113,7 +89,7 @@ function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
     }
 }
 
-function expectPreparedControlTopology(E2ETopologyLease $topology, E2EConfig $config): void
+function expectPreparedOperatorTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
     $control = $topology->control();
     $key = $topology->sshKeyPair();
@@ -123,14 +99,14 @@ function expectPreparedControlTopology(E2ETopologyLease $topology, E2EConfig $co
 
 function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
-    expectPreparedControlTopology($topology, $config);
+    expectPreparedOperatorTopology($topology, $config);
 
     $control = $topology->control();
     $gateway = $topology->gateway();
     $key = $topology->sshKeyPair();
 
     if ($gateway === null) {
-        throw new RuntimeException('Prepared control-gateway topology did not return a gateway handle.');
+        throw new RuntimeException('Prepared operator-gateway topology did not return a gateway handle.');
     }
 
     expectPreparedOrbitCli($gateway, 'orbit', $key);
@@ -139,7 +115,7 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
 
     expect($gatewayUrl)->toBe(expectedPreparedGatewayUrl($topology));
 
-    E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
+    E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key, expectedPreparedGatewayApiHost($topology));
     expectPreparedGatewayCertificateKeysReadable($gateway, $key);
 
     $gatewayNode = readPreparedLocalGatewayNode($gateway);
@@ -161,7 +137,7 @@ function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config
     $key = $topology->sshKeyPair();
 
     if ($dev === null || $gateway === null) {
-        throw new RuntimeException('Prepared control-gateway-dev topology did not return gateway and dev handles.');
+        throw new RuntimeException('Prepared operator-gateway-dev topology did not return gateway and dev handles.');
     }
 
     expectPreparedOrbitCli($dev, 'orbit', $key);
@@ -181,7 +157,7 @@ function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $confi
     $key = $topology->sshKeyPair();
 
     if ($prod === null || $gateway === null) {
-        throw new RuntimeException('Prepared control-gateway-dev-prod topology did not return gateway and prod handles.');
+        throw new RuntimeException('Prepared operator-gateway-dev-prod topology did not return gateway and prod handles.');
     }
 
     expectPreparedOrbitCli($prod, 'orbit', $key);
@@ -191,45 +167,77 @@ function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $confi
     expectPreparedAppNode($prodNode, 'production', null, expectedPreparedGatewayEndpoint());
 }
 
-/**
- * @param  list<string>  $futureRoles
- */
-function expectPreparedDevServiceScaffold(E2ETopologyLease $topology, E2EConfig $config, array $futureRoles): void
+function expectPreparedAgentTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
-    expectPreparedDevTopology($topology, $config);
+    expectPreparedGatewayTopology($topology, $config);
 
-    foreach ($futureRoles as $role) {
-        $instance = $topology->instance($role);
+    $agent = $topology->agent();
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
 
-        if ($instance === null) {
-            throw new RuntimeException("Prepared topology did not return a {$role} placement handle.");
-        }
-
-        expectPreparedOrbitCli($instance, 'orbit', $topology->sshKeyPair());
+    if ($agent === null || $gateway === null) {
+        throw new RuntimeException('Prepared operator-gateway-agent topology did not return gateway and agent handles.');
     }
+
+    expect($topology->devApp())->toBeNull()
+        ->and($topology->prodApp())->toBeNull();
+
+    expectPreparedOrbitCli($agent, 'orbit', $key);
+
+    $agentNode = E2EGatewayApi::getNode($gateway, 'agent-1');
+    $state = readPreparedAgentState($gateway);
+
+    expect($agentNode['tld'])->toBe('agent')
+        ->and($agentNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
+        ->and($agentNode['user'])->toBe('orbit')
+        ->and($agentNode['wireguard_address'])->toBe('10.6.0.6')
+        ->and($state['roles'])->toContain('agent')
+        ->and($state['node_names'])->toBe(['agent-1', 'control-1', 'gateway']);
 }
 
-function expectPreparedIngressPlacement(E2ETopologyLease $topology): void
+function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
-    $ingress = $topology->ingress();
+    expectPreparedGatewayTopology($topology, $config);
 
-    if ($ingress === null) {
-        throw new RuntimeException('Prepared topology did not return an ingress handle.');
+    $prod = $topology->prodApp();
+    $ingress = $topology->ingress();
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
+
+    if ($prod === null || $ingress === null || $gateway === null) {
+        throw new RuntimeException('Prepared operator-gateway-prod-ingress topology did not return gateway, prod, and ingress handles.');
     }
 
-    expectPreparedOrbitCli($ingress, 'orbit', $topology->sshKeyPair());
+    expect($topology->devApp())->toBeNull()
+        ->and($topology->agent())->toBeNull()
+        ->and($ingress->name())->toBe($prod->name());
+
+    expectPreparedOrbitCli($prod, 'orbit', $key);
+
+    $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
+    $state = readPreparedProdIngressState($gateway);
+
+    expectPreparedAppNode($prodNode, 'production', null, expectedPreparedGatewayEndpoint());
+
+    expect($prodNode['wireguard_address'])->toBe('10.6.0.5')
+        ->and($state['roles'])->toContain('app-production')
+        ->and($state['roles'])->toContain('ingress')
+        ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
+        ->and($state['node_names'])->toBe(['app-prod-1', 'control-1', 'gateway']);
 }
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
 {
     $orbitPath = "/home/{$user}/orbit";
 
-    E2ECommand::ssh(
+    $result = E2ECommand::ssh(
         $instance,
         $user,
         $key,
-        'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version >/dev/null',
+        'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version',
     );
+
+    expect(trim($result->output()))->not->toBe('');
 }
 
 function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
@@ -276,6 +284,77 @@ PHP;
     );
 
     /** @var array{roles: list<string>, redis_expected_state: string|null} $state */
+    $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $state;
+}
+
+/**
+ * @return array{roles: list<string>, node_names: list<string>}
+ */
+function readPreparedAgentState(E2EInstance $gateway): array
+{
+    $php = <<<'PHP'
+$node = \App\Models\Node::query()->where('name', 'agent-1')->firstOrFail();
+
+echo json_encode([
+    'roles' => $node->roleAssignments()
+        ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+        ->orderBy('role')
+        ->pluck('role')
+        ->values()
+        ->all(),
+    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+], JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = E2ECommand::orbit(
+        $gateway,
+        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        'Could not read prepared agent state',
+    );
+
+    /** @var array{roles: list<string>, node_names: list<string>} $state */
+    $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $state;
+}
+
+/**
+ * @return array{roles: list<string>, app_production_ingress_node: string|null, node_names: list<string>}
+ */
+function readPreparedProdIngressState(E2EInstance $gateway): array
+{
+    $php = <<<'PHP'
+$node = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
+$assignments = $node->roleAssignments()
+    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+    ->orderBy('role')
+    ->get(['role', 'settings']);
+
+$appProduction = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::AppProduction->value);
+$appProductionSettings = $appProduction === null ? [] : ($appProduction->settings ?? []);
+$ingressNodeId = $appProductionSettings['ingress_node_id'] ?? null;
+$ingressNodeName = null;
+
+if ($ingressNodeId !== null) {
+    $ingressNodeName = \App\Models\Node::query()->whereKey($ingressNodeId)->value('name');
+}
+
+echo json_encode([
+    'roles' => $assignments->pluck('role')->values()->all(),
+    'app_production_ingress_node' => $ingressNodeName,
+    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+], JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = E2ECommand::orbit(
+        $gateway,
+        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        'Could not read prepared app production ingress state',
+    );
+
+    /** @var array{roles: list<string>, app_production_ingress_node: string|null, node_names: list<string>} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;
@@ -349,16 +428,25 @@ function readPreparedClientGatewayUrl(E2EInstance $control, string $controlUser,
  */
 function expectedPreparedGatewayUrl(E2ETopologyLease $topology): string
 {
-    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+    if (getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker') {
         return 'http://gateway';
     }
 
     return 'http://'.$topology->gatewayApiIp();
 }
 
+function expectedPreparedGatewayApiHost(E2ETopologyLease $topology): string
+{
+    if (getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker') {
+        return 'gateway';
+    }
+
+    return $topology->gatewayApiIp();
+}
+
 function expectedPreparedGatewayEndpoint(): string
 {
-    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+    if (getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker') {
         return 'gateway';
     }
 

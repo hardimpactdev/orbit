@@ -215,6 +215,10 @@ timestamp, expiry timestamp, and signature. The local executor verifies the
 signature, target node, command, and expiry before side effects. Missing signing
 secret configuration prevents minting; token minting is stateless and uses the
 existing operation id rather than creating operation persistence itself.
+Fresh host installs persist the gateway signing secret as both
+`ORBIT_OPERATION_TOKEN_SECRET` and the local executor's `ORBIT_EXECUTOR_SECRET`;
+known node provisioning also persists `ORBIT_NODE_IDENTITY` so internal
+executor commands can verify the token target.
 
 ### Authentication and authorization
 
@@ -226,7 +230,12 @@ Every Orbit command needs two things: an identity and permission.
 
 Authorization is two gates: a grant edge between a consuming node and a serving node decides whether the consuming node can reach the serving node at all, and the scoped permission set stored on that grant decides what the consuming node may do once it does. A grant with no permissions denies every action. Permissions are normalized permission strings such as `node:read`, `tool:restart`, `firewall_rule:read`, or `doctor:verify`; wildcards `node:*` and `*` are dynamic and include future permissions added in that namespace. Self-grants are explicit and required — a node does not implicitly have access to itself. A grant from a node to the gateway with `*` (the `gateway-admin` preset) is the fleet-wide super-admin grant: it covers every current node and every node added in the future. `node:new` itself requires a gateway-admin grant on the calling node, or an explicit `node:new` permission on its grant to the gateway.
 
-Any node with a gateway-known identity and the required grants can act through that identity-and-grants path. There is no separate "operator" or "control" role — capability comes from the grants attached to the node, not from a built-in label.
+Any node with a gateway-known identity and the required grants can act through
+that identity-and-grants path. All nodes are clients of the Orbit network when
+they call the gateway. An operator is a node identity with the operator
+permission preset and grants to operate one or more nodes through the gateway.
+`operator` is not a workload role, and legacy `control` naming is only an
+E2E/backward-compatibility alias for that operator shape.
 
 #### Gateway implicit authority
 

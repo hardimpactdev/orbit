@@ -94,14 +94,24 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         expect($writtenGlobalCaddyfile)->toContain('(security_headers)')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/*.caddy')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/sites/*.caddy')
-            ->and($writtenGatewayApiCaddyfile)->toContain('https://10.6.0.2:443')
+            ->and($writtenGatewayApiCaddyfile)->toContain(':80 {')
+            ->and($writtenGatewayApiCaddyfile)->toContain(':443 {')
+            ->and($writtenGatewayApiCaddyfile)->not->toContain('https://10.6.0.2:443')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('bind 10.6.0.2')
-            ->and($writtenGatewayApiCaddyfile)->toContain('tls '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.crt '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.key')
+            ->and($writtenGatewayApiCaddyfile)->toContain('tls /etc/orbit/certs/10.6.0.2.crt /etc/orbit/certs/10.6.0.2.key')
             ->and($writtenGatewayApiCaddyfile)->toContain('reverse_proxy http://orbit-runtime:8080')
             ->and($writtenGatewayApiCaddyfile)->toContain('flush_interval -1')
+            ->and($writtenGatewayApiCaddyfile)->toContain('header_up X-Forwarded-Proto http')
+            ->and($writtenGatewayApiCaddyfile)->toContain('header_up X-Forwarded-Proto https')
+            ->and($writtenGatewayApiCaddyfile)->toContain('request_header -X-Orbit-WireGuard-Ip')
+            ->and(substr_count($writtenGatewayApiCaddyfile, 'header_up X-Orbit-WireGuard-Ip {remote_host}'))->toBe(2)
             ->and($writtenGatewayApiCaddyfile)->not->toContain('php_fastcgi')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('php-fpm')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('orbit-api.sock');
+
+        Process::assertRan('sudo install -d -m 0755 /etc/orbit/certs');
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.crt")." '/etc/orbit/certs/10.6.0.2.crt'");
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.key")." '/etc/orbit/certs/10.6.0.2.key'");
     });
 
     it('preserves real-time streaming through the containerized gateway api with flush_interval disabled', function (): void {
@@ -242,22 +252,13 @@ describe('GatewayApiRuntimeInstaller', function (): void {
             && str_contains($process->command, 'usermod -aG orbit caddy'));
     });
 
-    it('rewrites runtime-container storage_path cert paths to the host path that lives under an orbit-caddy bind mount', function (): void {
-        $hostOrbit = '/home/orbit/orbit';
-        $sourcePath = '/opt/orbit';
+    it('copies issued gateway API TLS material to the caddy-readable /etc/orbit bind mount', function (): void {
         $writtenGatewayApiCaddyfile = null;
 
-        // Simulate running inside orbit-runtime: storage_path() points at
-        // /opt/orbit/storage and ORBIT_HOST_PATH tells us where that lives
-        // on the host bind source.
-        $containerStorage = "{$sourcePath}/storage";
-        $tempContainerRoot = sys_get_temp_dir().'/orbit-gateway-api-host-translate-'.uniqid();
+        $tempContainerRoot = sys_get_temp_dir().'/orbit-gateway-api-caddy-certs-'.uniqid();
         mkdir($tempContainerRoot, 0777, true);
         app()->useStoragePath($tempContainerRoot);
 
-        // OrbitCaService reads storage_path() to issue the leaf, so prepare
-        // CA material at the test storage path, then assert the *rendered*
-        // Caddyfile points at the host-translated location.
         $caDir = storage_path('app/orbit/ca');
         $certsDir = storage_path('app/orbit/certs');
         File::ensureDirectoryExists($caDir);
@@ -284,54 +285,27 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         });
         Process::preventStrayProcesses();
 
-        // The translation rule is "/opt/orbit/X → $ORBIT_HOST_PATH/X". For
-        // this test we point storage to a non-/opt path; the installer
-        // should leave non-/opt paths untouched, which keeps existing
-        // host-direct installs working. To exercise the live translation we
-        // also assert the helper directly.
-        putenv("ORBIT_HOST_PATH={$hostOrbit}");
-
         try {
             app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
         } finally {
-            putenv('ORBIT_HOST_PATH');
-
             if (is_dir($tempContainerRoot)) {
                 File::deleteDirectory($tempContainerRoot);
             }
         }
 
-        // Storage path under temp dir isn't /opt/orbit, so paths are
-        // returned unchanged here. The host-path translation logic is
-        // covered explicitly below with a hand-built container path.
-        expect($writtenGatewayApiCaddyfile)->toContain('tls '.$certsDir.'/10.6.0.2.crt');
-
-        $reflection = new ReflectionClass(GatewayApiRuntimeInstaller::class);
-        $method = $reflection->getMethod('caddyVisiblePath');
-        $method->setAccessible(true);
-        $instance = app(GatewayApiRuntimeInstaller::class);
-
-        putenv("ORBIT_HOST_PATH={$hostOrbit}");
-
-        try {
-            $translatedCert = $method->invoke($instance, "{$containerStorage}/app/orbit/certs/10.6.0.2.crt");
-            $translatedKey = $method->invoke($instance, "{$containerStorage}/app/orbit/certs/10.6.0.2.key");
-            $translatedExact = $method->invoke($instance, $sourcePath);
-            $passthrough = $method->invoke($instance, '/etc/orbit/certs/external.crt');
-        } finally {
-            putenv('ORBIT_HOST_PATH');
-        }
-
-        expect($translatedCert)->toBe("{$hostOrbit}/storage/app/orbit/certs/10.6.0.2.crt")
-            ->and($translatedKey)->toBe("{$hostOrbit}/storage/app/orbit/certs/10.6.0.2.key")
-            ->and($translatedExact)->toBe($hostOrbit)
-            ->and($passthrough)->toBe('/etc/orbit/certs/external.crt');
+        $caddyCertPath = '/etc/orbit/certs/10.6.0.2.crt';
+        $caddyKeyPath = '/etc/orbit/certs/10.6.0.2.key';
 
         $caddyContainer = OrbitCaddyContainer::forPrivateNode('10.6.0.2');
 
-        expect(gatewayApiInstallerPathIsCaddyVisible($translatedCert, $caddyContainer))->toBeTrue('translated cert path must fall under an orbit-caddy bind mount')
-            ->and(gatewayApiInstallerPathIsCaddyVisible($translatedKey, $caddyContainer))->toBeTrue('translated key path must fall under an orbit-caddy bind mount')
-            ->and(gatewayApiInstallerPathIsCaddyVisible($passthrough, $caddyContainer))->toBeTrue('paths already under /etc/orbit/* must remain Caddy-visible without translation');
+        expect($writtenGatewayApiCaddyfile)->toContain("tls {$caddyCertPath} {$caddyKeyPath}")
+            ->and($writtenGatewayApiCaddyfile)->not->toContain($certsDir)
+            ->and(gatewayApiInstallerPathIsCaddyVisible($caddyCertPath, $caddyContainer))->toBeTrue('gateway API cert path must fall under an orbit-caddy bind mount')
+            ->and(gatewayApiInstallerPathIsCaddyVisible($caddyKeyPath, $caddyContainer))->toBeTrue('gateway API key path must fall under an orbit-caddy bind mount');
+
+        Process::assertRan('sudo install -d -m 0755 /etc/orbit/certs');
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.crt").' '.escapeshellarg($caddyCertPath));
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath));
     });
 
     it('preserves an existing global Caddyfile and only ensures managed imports and snippets', function (): void {
@@ -393,6 +367,8 @@ CADDY);
             ->and(substr_count($writtenGlobalCaddyfile, 'import /etc/caddy/orbit/*.caddy'))->toBe(1)
             ->and(substr_count($writtenGlobalCaddyfile, '{'))->toBe(substr_count($writtenGlobalCaddyfile, '}'))
             ->and(substr_count($writtenGlobalCaddyfile, 'admin off'))->toBe(1)
-            ->and($writtenGatewayApiCaddyfile)->toContain('https://10.6.0.2:443');
+            ->and($writtenGatewayApiCaddyfile)->toContain(':80 {')
+            ->and($writtenGatewayApiCaddyfile)->toContain(':443 {')
+            ->and($writtenGatewayApiCaddyfile)->not->toContain('https://10.6.0.2:443');
     });
 });

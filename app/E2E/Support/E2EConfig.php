@@ -26,12 +26,11 @@ final readonly class E2EConfig
         public string $memory,
         public string $topologyCpus,
         public string $topologyMemory,
+        public string $topologyRootSize,
         public string $topologyStateSize,
         public string $incusStoragePool,
-        public int $incusMaxVmsPerHost,
         /** @var list<string> */
         public array $dockerHosts,
-        public int $dockerMaxContainersPerHost,
         public bool $keep,
         /** @var array<string, int> */
         public array $incusHostSlots = [],
@@ -48,12 +47,19 @@ final readonly class E2EConfig
         public array $dockerImageBuildHosts = [],
         /** @var list<string> */
         public array $exclusiveHosts = [],
-        public string $operatorUser = 'control',
+        public string $operatorUser = 'orbit',
+        /** @var array<string, int> */
+        public array $dockerHostContainerCaps = [],
+        /** @var list<string> */
+        public array $incusHosts = [],
+        /** @var array<string, int> */
+        public array $incusHostVmCaps = [],
     ) {}
 
     public static function fromEnvironment(): self
     {
         $host = self::envString('ORBIT_E2E_HOST', 'beast');
+        $dockerTestRunners = self::parseDockerTestRunners(self::envString('ORBIT_E2E_DOCKER_TEST_RUNNERS', ''));
 
         return new self(
             providerNames: self::providerNames(),
@@ -66,30 +72,64 @@ final readonly class E2EConfig
             hcloudLocation: self::envString('ORBIT_E2E_HCLOUD_LOCATION', 'ash'),
             hcloudBlankImage: self::envString('ORBIT_E2E_HCLOUD_BLANK_IMAGE', 'ubuntu-24.04'),
             bootstrapUser: self::envString('ORBIT_E2E_BOOTSTRAP_USER', 'provisioner'),
-            operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', self::envString('ORBIT_E2E_CONTROL_USER', 'control')),
-            controlUser: self::envString('ORBIT_E2E_CONTROL_USER', self::envString('ORBIT_E2E_OPERATOR_USER', 'control')),
+            operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', self::envString('ORBIT_E2E_CONTROL_USER', 'orbit')),
+            controlUser: self::envString('ORBIT_E2E_CONTROL_USER', self::envString('ORBIT_E2E_OPERATOR_USER', 'orbit')),
             instancePrefix: self::envString('ORBIT_E2E_INSTANCE_PREFIX', 'orbit-e2e'),
             timeoutSeconds: self::envInt('ORBIT_E2E_TIMEOUT_SECONDS', 600),
             cpus: self::envString('ORBIT_E2E_CPUS', '2'),
             memory: self::envString('ORBIT_E2E_MEMORY', '2GiB'),
             topologyCpus: self::envString('ORBIT_E2E_TOPOLOGY_CPUS', '1'),
             topologyMemory: self::envString('ORBIT_E2E_TOPOLOGY_MEMORY', '2GiB'),
+            topologyRootSize: self::envString('ORBIT_E2E_TOPOLOGY_ROOT_SIZE', '16GiB'),
             topologyStateSize: self::envString('ORBIT_E2E_TOPOLOGY_STATE_SIZE', '4GiB'),
             incusStoragePool: self::envString('ORBIT_E2E_INCUS_STORAGE_POOL', ''),
-            incusMaxVmsPerHost: self::envInt('ORBIT_E2E_INCUS_MAX_VMS_PER_HOST', 4),
             incusHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_INCUS_HOST_SLOTS', ''), backend: 'Incus'),
             hcloudLocationSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_LOCATION_SLOTS', ''), backend: 'Hcloud'),
             hcloudResourceSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_RESOURCE_SLOTS', ''), backend: 'Hcloud'),
-            dockerHosts: self::parseProviderNames(self::envString('ORBIT_E2E_DOCKER_HOSTS', 'local')),
-            dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 16),
+            dockerHosts: $dockerTestRunners['hosts'],
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
             slotWaitSeconds: self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
             slotStaleSeconds: self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
-            dockerHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', ''), backend: 'Docker'),
+            dockerHostSlots: $dockerTestRunners['slots'],
             incusImageBuildHost: self::envString('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST', $host),
             dockerImageBuildHosts: self::parseOptionalNames(self::envString('ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS', '')),
             exclusiveHosts: self::parseOptionalNames(self::envString('ORBIT_E2E_EXCLUSIVE_HOSTS', '')),
+            dockerHostContainerCaps: $dockerTestRunners['container_caps'],
+            incusHosts: self::parseOptionalNames(self::envString('ORBIT_E2E_INCUS_HOSTS', '')),
+            incusHostVmCaps: self::parseHostVmCaps(self::envString('ORBIT_E2E_INCUS_HOST_VM_CAPS', '')),
         );
+    }
+
+    public function dockerMaxContainersForHost(string $host): int
+    {
+        $host = strtolower($host);
+
+        return $this->dockerHostContainerCaps[$host]
+            ?? throw new \InvalidArgumentException("Missing Docker container cap for host [{$host}]. Set ORBIT_E2E_DOCKER_TEST_RUNNERS.");
+    }
+
+    public function incusMaxVmsForHost(string $host): int
+    {
+        $host = strtolower($host);
+
+        return $this->incusHostVmCaps[$host]
+            ?? throw new \InvalidArgumentException("Missing Incus VM cap for host [{$host}]. Set ORBIT_E2E_INCUS_HOST_VM_CAPS.");
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function incusHostCandidates(): array
+    {
+        if ($this->incusHosts !== []) {
+            return $this->incusHosts;
+        }
+
+        if ($this->incusHostSlots !== []) {
+            return array_keys($this->incusHostSlots);
+        }
+
+        return [$this->host];
     }
 
     /**
@@ -200,6 +240,92 @@ final readonly class E2EConfig
         return $hostSlots;
     }
 
+    /**
+     * @return array{hosts: list<string>, slots: array<string, int>, container_caps: array<string, int>}
+     */
+    private static function parseDockerTestRunners(string $runners): array
+    {
+        $entries = array_values(array_filter(
+            array_map(trim(...), explode(',', $runners)),
+            fn (string $entry): bool => $entry !== '',
+        ));
+
+        if ($entries === []) {
+            return [
+                'hosts' => ['local'],
+                'slots' => [],
+                'container_caps' => [],
+            ];
+        }
+
+        $hosts = [];
+        $hostSlots = [];
+        $hostContainerCaps = [];
+
+        foreach ($entries as $entry) {
+            [$host, $slotCount, $cap] = array_pad(array_map(trim(...), explode(':', $entry, 3)), 3, '');
+            $host = strtolower($host);
+
+            if ($host === '' || $slotCount === '' || $cap === '') {
+                throw new \InvalidArgumentException("Invalid Docker test runner entry [{$entry}]. Expected host:slots:containers.");
+            }
+
+            $slots = (int) $slotCount;
+
+            if ((string) $slots !== $slotCount || $slots < 1) {
+                throw new \InvalidArgumentException("Invalid Docker test runner slot count [{$slotCount}] for host [{$host}].");
+            }
+
+            $containers = (int) $cap;
+
+            if ((string) $containers !== $cap || $containers < 1) {
+                throw new \InvalidArgumentException("Invalid Docker test runner container cap [{$cap}] for host [{$host}].");
+            }
+
+            $hosts[] = $host;
+            $hostSlots[$host] = $slots;
+            $hostContainerCaps[$host] = $containers;
+        }
+
+        return [
+            'hosts' => array_values(array_unique($hosts)),
+            'slots' => $hostSlots,
+            'container_caps' => $hostContainerCaps,
+        ];
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private static function parseHostVmCaps(string $caps): array
+    {
+        $entries = array_values(array_filter(
+            array_map(trim(...), explode(',', $caps)),
+            fn (string $entry): bool => $entry !== '',
+        ));
+
+        $hostCaps = [];
+
+        foreach ($entries as $entry) {
+            [$host, $cap] = array_pad(array_map(trim(...), explode(':', $entry, 2)), 2, '');
+            $host = strtolower($host);
+
+            if ($host === '' || $cap === '') {
+                throw new \InvalidArgumentException("Invalid Incus host VM cap entry [{$entry}]. Expected host:vms.");
+            }
+
+            $vms = (int) $cap;
+
+            if ((string) $vms !== $cap || $vms < 1) {
+                throw new \InvalidArgumentException("Invalid Incus host VM cap [{$cap}] for host [{$host}].");
+            }
+
+            $hostCaps[$host] = $vms;
+        }
+
+        return $hostCaps;
+    }
+
     private static function envString(string $key, string $default): string
     {
         $value = getenv($key);
@@ -239,14 +365,13 @@ final readonly class E2EConfig
             memory: $this->memory,
             topologyCpus: $this->topologyCpus,
             topologyMemory: $this->topologyMemory,
+            topologyRootSize: $this->topologyRootSize,
             topologyStateSize: $this->topologyStateSize,
             incusStoragePool: $this->incusStoragePool,
-            incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
             incusHostSlots: $this->incusHostSlots,
             hcloudLocationSlots: $this->hcloudLocationSlots,
             hcloudResourceSlots: $this->hcloudResourceSlots,
             dockerHosts: $this->dockerHosts,
-            dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,
             slotWaitSeconds: $this->slotWaitSeconds,
             slotStaleSeconds: $this->slotStaleSeconds,
@@ -254,6 +379,9 @@ final readonly class E2EConfig
             incusImageBuildHost: $this->incusImageBuildHost,
             dockerImageBuildHosts: $this->dockerImageBuildHosts,
             exclusiveHosts: $this->exclusiveHosts,
+            dockerHostContainerCaps: $this->dockerHostContainerCaps,
+            incusHosts: $this->incusHosts,
+            incusHostVmCaps: $this->incusHostVmCaps,
         );
     }
 
@@ -278,14 +406,13 @@ final readonly class E2EConfig
             memory: $this->memory,
             topologyCpus: $this->topologyCpus,
             topologyMemory: $this->topologyMemory,
+            topologyRootSize: $this->topologyRootSize,
             topologyStateSize: $this->topologyStateSize,
             incusStoragePool: $this->incusStoragePool,
-            incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
             incusHostSlots: $this->incusHostSlots,
             hcloudLocationSlots: $this->hcloudLocationSlots,
             hcloudResourceSlots: $this->hcloudResourceSlots,
             dockerHosts: $this->dockerHosts,
-            dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,
             slotWaitSeconds: $this->slotWaitSeconds,
             slotStaleSeconds: $this->slotStaleSeconds,
@@ -293,6 +420,9 @@ final readonly class E2EConfig
             incusImageBuildHost: $this->incusImageBuildHost,
             dockerImageBuildHosts: $this->dockerImageBuildHosts,
             exclusiveHosts: $this->exclusiveHosts,
+            dockerHostContainerCaps: $this->dockerHostContainerCaps,
+            incusHosts: $this->incusHosts,
+            incusHostVmCaps: $this->incusHostVmCaps,
         );
     }
 
@@ -323,14 +453,13 @@ final readonly class E2EConfig
             memory: $this->memory,
             topologyCpus: $this->topologyCpus,
             topologyMemory: $this->topologyMemory,
+            topologyRootSize: $this->topologyRootSize,
             topologyStateSize: $this->topologyStateSize,
             incusStoragePool: $this->incusStoragePool,
-            incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
             incusHostSlots: $this->incusHostSlots,
             hcloudLocationSlots: $this->hcloudLocationSlots,
             hcloudResourceSlots: $this->hcloudResourceSlots,
             dockerHosts: $this->dockerHosts,
-            dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,
             slotWaitSeconds: $this->slotWaitSeconds,
             slotStaleSeconds: $this->slotStaleSeconds,
@@ -338,6 +467,9 @@ final readonly class E2EConfig
             incusImageBuildHost: $this->incusImageBuildHost,
             dockerImageBuildHosts: $this->dockerImageBuildHosts,
             exclusiveHosts: $this->exclusiveHosts,
+            dockerHostContainerCaps: $this->dockerHostContainerCaps,
+            incusHosts: $this->incusHosts,
+            incusHostVmCaps: $this->incusHostVmCaps,
         );
     }
 }

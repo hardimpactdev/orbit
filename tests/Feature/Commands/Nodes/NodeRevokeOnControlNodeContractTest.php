@@ -101,7 +101,7 @@ function fakeNodeRevokeControlGateway(
     ]);
 }
 
-describe('node:revoke on control node contract', function (): void {
+describe('node:revoke on operator node contract', function (): void {
     it('uses the documented self-lockout confirmation when the caller revokes its own gateway grant', function (): void {
         setupNodeRevokeControlCallerContract();
 
@@ -127,7 +127,7 @@ describe('node:revoke on control node contract', function (): void {
             'consuming_node' => 'control-1',
             'serving_node' => 'gateway-1',
         ])
-            ->expectsConfirmation('Revoke this control node\'s gateway access? This machine will lose Orbit gateway access.', 'no')
+            ->expectsConfirmation('Revoke this operator node\'s gateway access? This machine will lose Orbit gateway access.', 'no')
             ->expectsOutputToContain('Operation cancelled.')
             ->assertExitCode(1);
     });

@@ -107,7 +107,7 @@ it('reaps docker slot hosts when no docker host list is configured', function ()
     });
 
     withE2EConfigEnvironment([
-        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:1',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:28',
     ], function (): void {
         $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
             ->assertSuccessful();
@@ -136,7 +136,7 @@ it('uses configured e2e prefix and docker hosts when reaping resources', functio
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_INSTANCE_PREFIX' => 'orbit-custom',
-        'ORBIT_E2E_DOCKER_HOSTS' => 'beast',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:28',
     ], function (): void {
         $this->artisan('e2e:reap-docker', ['--older-than' => '0m'])
             ->expectsOutputToContain('stale: container orbit-custom-run-control on beast')

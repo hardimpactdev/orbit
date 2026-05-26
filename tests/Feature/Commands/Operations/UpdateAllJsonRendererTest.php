@@ -242,7 +242,7 @@ it('renders remote_update_failed with partial target results and summary', funct
     ]);
 });
 
-it('excludes control nodes from updates array', function (): void {
+it('excludes legacy control identities from updates array', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'mini',

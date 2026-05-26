@@ -47,7 +47,7 @@ SH;
     $topology->ssh('prod', $commonRuntime.PHP_EOL.$appRuntime, timeoutSeconds: 60);
 }
 
-it('serves a production app through a prepared dedicated ingress topology', function (): void {
+it('serves a production app through a prepared ingress topology', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppprodIngress, withGatewayApi: true);
     $suffix = strtolower(bin2hex(random_bytes(3)));
@@ -61,6 +61,8 @@ it('serves a production app through a prepared dedicated ingress topology', func
             ->and(collect($topology->instanceNames())->contains(
                 fn (string $instanceName): bool => str_contains($instanceName, '-dev') || str_contains($instanceName, '-agent'),
             ))->toBeFalse();
+
+        $colocatedIngress = $topology->lease()->ingress()?->name() === $topology->lease()->prodApp()?->name();
 
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
@@ -85,18 +87,19 @@ it('serves a production app through a prepared dedicated ingress topology', func
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $app = $payload['success']['data']['app'] ?? null;
         $route = preparedIngressProductionRoute($topology, $domain);
+        $backendPort = $colocatedIngress ? 8081 : 80;
 
         expect($app)->toBeArray()
             ->and($app['name'])->toBe($name)
             ->and($app['node'])->toBe('app-prod-1')
             ->and($app['url'])->toBe("https://{$domain}")
-            ->and($route['node'])->toBe('edge-1')
+            ->and($route['node'])->toBe($colocatedIngress ? 'app-prod-1' : 'edge-1')
             ->and($route['placement'])->toBe('ingress')
             ->and($route['router'])->toMatchArray([
                 'node' => 'gateway',
                 'url' => 'http://10.6.0.2:80',
                 'backend_pool' => [
-                    ['node' => 'app-prod-1', 'url' => 'http://10.6.0.5:80'],
+                    ['node' => 'app-prod-1', 'url' => "http://10.6.0.5:{$backendPort}"],
                 ],
             ]);
     } finally {

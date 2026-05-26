@@ -352,6 +352,7 @@ PHP;
 
 function workspaceSetupWriteOpenCodeDatabase(E2ETopologyHarness $topology, string $workspaceName, string $workspacePath): void
 {
+    $databasePath = '/home/orbit/.local/share/opencode/opencode.db';
     $script = <<<'PHP'
 <?php
 
@@ -359,13 +360,7 @@ declare(strict_types=1);
 
 $workspaceName = __WORKSPACE_NAME__;
 $workspacePath = __WORKSPACE_PATH__;
-$home = getenv('HOME');
-
-if (! is_string($home) || $home === '') {
-    throw new RuntimeException('Could not resolve HOME for OpenCode database setup.');
-}
-
-$databasePath = rtrim($home, '/').'/.local/share/opencode/opencode.db';
+$databasePath = __DATABASE_PATH__;
 $databaseDirectory = dirname($databasePath);
 
 if (! is_dir($databaseDirectory) && ! mkdir($databaseDirectory, 0775, true) && ! is_dir($databaseDirectory)) {
@@ -394,14 +389,24 @@ $insertWorkspace->execute([
 PHP;
 
     $script = str_replace(
-        ['__WORKSPACE_NAME__', '__WORKSPACE_PATH__'],
-        [var_export($workspaceName, true), var_export($workspacePath, true)],
+        ['__WORKSPACE_NAME__', '__WORKSPACE_PATH__', '__DATABASE_PATH__'],
+        [var_export($workspaceName, true), var_export($workspacePath, true), var_export($databasePath, true)],
         $script,
     );
 
     $topology->ssh(
         'dev',
         'php <<'.escapeshellarg('PHP').PHP_EOL.$script.PHP_EOL.'PHP',
+        timeoutSeconds: 120,
+    );
+
+    $topology->ssh(
+        'dev',
+        sprintf(
+            "touch %1\$s && grep -Ev '^ORBIT_OPENCODE_DB_PATH=' %1\$s > %1\$s.tmp || true; mv %1\$s.tmp %1\$s; printf 'ORBIT_OPENCODE_DB_PATH=%%s\n' %2\$s >> %1\$s",
+            escapeshellarg($topology->checkout('dev').'/apps/cli/.env'),
+            escapeshellarg($databasePath),
+        ),
         timeoutSeconds: 120,
     );
 }

@@ -63,7 +63,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | Gateway scheduler loop inside `orbit-runtime` |
 | Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Host prerequisites | Git, Docker, host PHP 8.4 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
+| Host prerequisites | Git, Docker, host PHP 8.5 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | `orbit-caddy` on `app-production` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
@@ -119,7 +119,7 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 
 The gateway API ingress is an internal `proxy` entry the gateway owns — managed by the same proxy family that handles every other route. Its proxy and TLS artifact is repaired by `doctor --fix --family=proxy --restore`, not by a backend-named provisioning command.
 
-The gateway API listener must not trust client-supplied forwarding identity. `orbit-caddy` strips `X-Forwarded-For`, `X-Real-IP`, and `Forwarded` before requests reach Laravel in `orbit-runtime`. Caller identity comes from the Orbit network identity model, not from forwarded headers.
+The gateway API listener must not trust client-supplied forwarding identity. `orbit-caddy` strips `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, and any incoming `X-Orbit-WireGuard-Ip` before proxying to Laravel. It then injects `X-Orbit-WireGuard-Ip` from the observed WireGuard peer address for the private `orbit-runtime` hop, and gateway-mode `orbit-runtime` trusts that proxy-owned header. Caller identity still comes from the Orbit network identity model, not from caller-supplied headers.
 
 Long-lived stream and log endpoints must not starve short command/API requests. The Docker-first API runtime owns this concurrency contract inside `orbit-runtime`; it does not use host PHP-FPM sockets and must be validated through gateway API tests.
 
@@ -184,7 +184,7 @@ Caddy configuration is split by exposure boundary, not by who happens to write t
 - `/etc/caddy/orbit/*.caddy` for Orbit platform surfaces that are internal to the Orbit network
 - `/etc/caddy/sites/*.caddy` for app, workspace, and custom proxy site routes
 
-Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. The gateway API belongs here. Its site block must match the gateway WireGuard address, for example `https://10.6.0.2:443`, and must not create a broad public virtual host.
+Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. The gateway API belongs here. Its `orbit-caddy` container publishes ports only on the gateway WireGuard address, while the Caddy site uses default `:80` and `:443` listeners inside the container so IP-address clients that do not send SNI can still complete TLS. It must not create a broad public virtual host.
 
 Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, workspace routes, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
@@ -193,7 +193,7 @@ Installer and doctor repair code must be additive: ensure required imports and m
 ### PHP runtime
 
 PHP app execution runs in FrankenPHP containers. The gateway runtime runs in
-`orbit-runtime`; the CLI/local-executor artifact runs through host PHP 8.4 CLI
+`orbit-runtime`; the CLI/local-executor artifact runs through host PHP 8.5 CLI
 with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json` support in the
 source-checkout distribution. Apps and workspaces run in dedicated long-lived
 app/workspace containers when their runtime kind is PHP. Static or non-PHP apps
@@ -232,16 +232,10 @@ Its `redis_node_id` setting points at a node with the `database` role and a
 managed Redis service. The websocket role consumes Redis; it does not install
 or own Redis.
 
-Focused WebSocket E2E coverage uses dedicated Docker-first prepared
-topologies: `client-gateway-appdev-websocket` for private
-`websocket.orbit` assertions, and
-`client-gateway-appdev-ingress-websocket-s3` for public
-`ingress -> router -> websocket` assertions. The ingress topology intentionally
-models `websocket` and `s3` as compatible future dev-service placements; it
-does not require either role runtime to exist before the role-specific command
-work lands. Those topologies must keep Reverb and Redis on the Docker
-substrate and must not add host PHP, host Caddy, PHP-FPM, or host Supervisor
-to make realtime assertions pass.
+Focused WebSocket E2E coverage is pending the websocket role runtime. When that
+role lands, coverage must use the prepared Docker/Incus topology lane and keep
+Reverb and Redis on the Docker substrate. It must not add host PHP, host Caddy,
+PHP-FPM, or host Supervisor to make realtime assertions pass.
 
 ### S3 runtime
 
@@ -269,15 +263,11 @@ row. V1 does not create per-app bucket credentials, bucket lifecycle commands,
 virtual-hosted bucket routes, wildcard DNS/TLS for bucket hostnames, distributed
 RustFS, or HA guarantees.
 
-Focused S3 E2E coverage uses dedicated Docker-first prepared topologies:
-`client-gateway-appdev-s3` for private `s3.orbit` assertions, and
-`client-gateway-appdev-ingress-websocket-s3` for public
-`ingress -> router -> s3` assertions. The ingress topology intentionally models
-`websocket` and `s3` as compatible future dev-service placements; it does not
-require either role runtime to exist before the role-specific command work
-lands. Those topologies must keep RustFS on the Docker-first runtime substrate
-and must not add role-local Docker Compose, host Caddy, host PHP, PHP-FPM, or
-host Supervisor to make object-storage assertions pass.
+Focused S3 E2E coverage is pending the S3 role runtime. When that role lands,
+coverage must use the prepared Docker/Incus topology lane, keep RustFS on the
+Docker-first runtime substrate, and must not add role-local Docker Compose,
+host Caddy, host PHP, PHP-FPM, or host Supervisor to make object-storage
+assertions pass.
 
 ### Process manager
 
@@ -353,7 +343,7 @@ Client setup is local:
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
-The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, host PHP 8.4 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, the Orbit checkout, the `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside `orbit-runtime`, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
+The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, host PHP 8.5 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, the Orbit checkout, root and `apps/cli` Composer dependencies inside a disposable `orbit-runtime` container, operation-token executor configuration, the long-running `orbit-runtime` container, the `orbit-caddy` container where the node role needs HTTP routing, WireGuard/SSH identity material, and the host `orbit` launcher. It creates the local SQLite database where appropriate, runs migrations inside a disposable `orbit-runtime` container before starting the long-running runtime, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
 
 The installer does not create a client identity for the gateway to trust. That identity is minted later — by `node:new --role=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 

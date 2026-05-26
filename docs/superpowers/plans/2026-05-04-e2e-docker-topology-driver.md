@@ -359,7 +359,6 @@ function withE2EProviderEnvironment(array $values, Closure $callback): void
 function withE2ETopologyEnvironment(array $values, Closure $callback): void
 {
     withE2EEnvironment([
-        'ORBIT_E2E_TOPOLOGY_STRATEGY',
         'ORBIT_E2E_INCUS_HOSTS',
         'ORBIT_E2E_HOST',
     ], $values, $callback);
@@ -944,18 +943,13 @@ final class E2ETopologyFactory
      * @param  array<string, string>|null  $sshUsers
      */
     private function __construct(
-        private readonly string $strategy,
         private readonly ?array $sshUsers = null,
         private readonly ?E2ETopologyCapabilities $capabilityRequirements = null,
     ) {}
 
     public static function fromEnvironment(): self
     {
-        $strategy = getenv('ORBIT_E2E_TOPOLOGY_STRATEGY');
-
-        return new self(
-            strategy: is_string($strategy) && $strategy !== '' ? $strategy : 'minimal',
-        );
+        return new self;
     }
 
     public function requireCapabilities(E2ETopologyCapabilities $required): self

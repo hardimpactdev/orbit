@@ -48,15 +48,53 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('-t "orbit-caddy:current"');
     });
 
-    it('runs composer install and key:generate inside the orbit-runtime container, not on the host', function (): void {
+    it('can load runtime and Caddy images from staged archives before falling back to Docker Hub', function (): void {
+        expect($this->installer)
+            ->toContain('RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"')
+            ->toContain('CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"')
+            ->toContain('DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"')
+            ->toContain('--runtime-image-archive=PATH')
+            ->toContain('--caddy-image-archive=PATH')
+            ->toContain('--dnsmasq-image-archive=PATH')
+            ->toContain('docker_cli load -i "$RUNTIME_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli load -i "$CADDY_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli load -i "$DNSMASQ_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli image inspect "orbit-runtime:current"')
+            ->toContain('docker_cli image inspect "4km3/dnsmasq:latest"')
+            ->toContain('docker_cli image inspect "caddy:2-alpine"')
+            ->toContain('docker_cli pull "caddy:2-alpine"');
+    });
+
+    it('marks archive-seeded installs so node:new can forward local runtime images during E2E provisioning', function (): void {
+        expect($this->installer)
+            ->toContain('ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES')
+            ->toContain('write_env_var "ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES" "1"');
+    });
+
+    it('runs root and CLI composer install plus key generation inside orbit-runtime, not on the host', function (): void {
         expect($this->installer)
             ->toContain('docker_cli run --rm')
             ->toContain('orbit-runtime:current')
             ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
+            ->toContain('--workdir /opt/orbit/apps/cli')
             ->toContain('php artisan key:generate --force --no-interaction')
             ->not->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader"')
             ->not->toContain('cd $target && composer install')
             ->not->toContain('cd $target && php artisan');
+    });
+
+    it('creates operation token secrets for the gateway app and CLI local executor during bootstrap', function (): void {
+        expect($this->installer)
+            ->toContain('ensure_operation_token_secret')
+            ->toContain('ORBIT_OPERATION_TOKEN_SECRET')
+            ->toContain('ORBIT_EXECUTOR_SECRET')
+            ->toContain('base64_encode(random_bytes(32))');
+    });
+
+    it('persists a supplied node identity for the CLI local executor when provisioning a known node', function (): void {
+        expect($this->installer)
+            ->toContain('ORBIT_NODE_IDENTITY')
+            ->toContain('write_env_var "ORBIT_NODE_IDENTITY"');
     });
 
     it('starts the orbit-runtime container with the documented Docker-first shape', function (): void {
@@ -70,6 +108,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('--network orbit-network')
             ->toContain('--network-alias orbit-runtime')
             ->toContain('orbit.container.kind=runtime')
+            ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
             ->toContain('target=/opt/orbit')
             ->toContain('/var/run/docker.sock');
     });
@@ -97,7 +136,6 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('docker_cli build')
             ->toContain('docker_cli pull')
             ->toContain('docker_cli run')
-            ->toContain('docker_cli exec')
             ->toContain('docker_cli container inspect')
             ->toContain('docker_cli network');
 
@@ -275,11 +313,19 @@ BASH);
         }
     });
 
-    it('runs migrations inside orbit-runtime instead of host PHP', function (): void {
+    it('runs migrations in a disposable orbit-runtime container before starting the long-running runtime', function (): void {
+        $migrationStep = strpos($this->installer, 'start_step "Run migrations inside orbit-runtime"');
+        $startRuntimeStep = strpos($this->installer, 'start_step "Start orbit-runtime container"');
+
         expect($this->installer)
-            ->toContain('docker_cli exec')
-            ->toContain('orbit-runtime')
-            ->toContain('php /opt/orbit/artisan migrate --force --no-interaction');
+            ->toContain('docker_cli run --rm')
+            ->toContain('-v "$TARGET_DIR":/opt/orbit')
+            ->toContain('orbit-runtime:current')
+            ->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
+            ->not->toContain('docker_cli exec \\')
+            ->and($migrationStep)->not->toBeFalse()
+            ->and($startRuntimeStep)->not->toBeFalse()
+            ->and($migrationStep)->toBeLessThan($startRuntimeStep);
     });
 
     it('preserves the host launcher symlink convention from the host launcher install contract', function (): void {

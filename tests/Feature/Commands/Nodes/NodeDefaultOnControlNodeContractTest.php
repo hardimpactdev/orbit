@@ -74,7 +74,7 @@ function nodeDefaultControlGatewayMock(array $nodes): MockClient
     ]);
 }
 
-describe('node:default on control node contract', function (): void {
+describe('node:default on operator node contract', function (): void {
     it('shows the local default without gateway identity preflight', function (): void {
         setupNodeDefaultControlContractGateway();
         DB::table('local_node_defaults')->insert([

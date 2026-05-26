@@ -338,11 +338,16 @@ function e2eGatewayApiByDefault(): bool
         && in_array(strtolower($value), ['1', 'true', 'yes'], true);
 }
 
+function e2eUsesDockerDnsAliasTopology(): bool
+{
+    return getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker';
+}
+
 function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
 {
     $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+    if (e2eUsesDockerDnsAliasTopology()) {
         E2EGatewayApi::restart(
             $topology->instance('gateway'),
             $label,
@@ -351,7 +356,7 @@ function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
             wireguardIdentity: '10.6.0.2',
             bindAddress: '0.0.0.0',
             certKey: 'gateway',
-            certSans: ['10.6.0.2'],
+            certSans: ['10.6.0.2', 'gateway'],
             peerIdentityMap: e2eDockerDnsAliasPeerIdentityMap($topology),
         );
         e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable($topology);
@@ -370,7 +375,7 @@ function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
 
 function e2eGatewayApiUrl(E2ETopologyHarness $topology): string
 {
-    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+    if (e2eUsesDockerDnsAliasTopology()) {
         return 'https://gateway';
     }
 
@@ -379,7 +384,7 @@ function e2eGatewayApiUrl(E2ETopologyHarness $topology): string
 
 function e2eGatewayWireGuardIp(E2ETopologyHarness $topology): string
 {
-    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+    if (e2eUsesDockerDnsAliasTopology()) {
         return '10.6.0.2';
     }
 
@@ -403,7 +408,7 @@ function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology
         return;
     }
 
-    $caPemPath = e2eRoleUsesDockerRuntime($topology, $role)
+    $caPemPath = e2eRoleUsesDockerTopologyNode($topology, $role)
         ? e2eInstallCurrentCheckoutGatewayCa($topology, $role)
         : null;
     $checkout = escapeshellarg($topology->checkout($role));
@@ -473,7 +478,7 @@ function e2eInstallCurrentCheckoutGatewayCa(E2ETopologyHarness $topology, string
 
 function e2eGatewayCliUrl(E2ETopologyHarness $topology): string
 {
-    if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias') {
+    if (e2eUsesDockerDnsAliasTopology()) {
         return 'http://gateway';
     }
 
@@ -503,9 +508,15 @@ function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
     ];
 
     $map = [];
+    $mappedInstances = [];
 
     foreach ($instances as $role => $instance) {
         if ($instance !== null) {
+            if (in_array($instance->name(), $mappedInstances, true)) {
+                continue;
+            }
+
+            $mappedInstances[] = $instance->name();
             $map[$instance->waitForIpv4()] = $canonical[$role];
         }
     }
@@ -530,14 +541,19 @@ function e2eCheckout(E2ETopologyLease|E2ETopologyHarness $topology, ?array $role
     return E2ECurrentCheckout::installOnTopology($topology, $roles, $users);
 }
 
-function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): bool
+function e2eRoleUsesDockerTopologyNode(E2ETopologyHarness $topology, string $role): bool
 {
     return $topology->instance($role) instanceof DockerInstance;
 }
 
+function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): bool
+{
+    return $role === 'gateway' && e2eRoleUsesDockerTopologyNode($topology, $role);
+}
+
 function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $role): bool
 {
-    return e2eRoleUsesDockerRuntime($topology, $role)
+    return e2eRoleUsesDockerTopologyNode($topology, $role)
         && in_array($role, ['dev', 'prod', 'agent', 'ingress'], true);
 }
 

@@ -18,7 +18,7 @@ final readonly class ProxyRouteRenderer
      * a Docker container. The orbit-caddy container configures the
      * matching `--add-host host.docker.internal:host-gateway` entry.
      */
-    public const HostLoopbackHostname = 'host.docker.internal';
+    public const string HostLoopbackHostname = 'host.docker.internal';
 
     public function render(ProxyRoute $route): string
     {
@@ -226,7 +226,7 @@ CADDY;
             throw new RuntimeException("Proxy route '{$route->domain}' is missing an upstream target.");
         }
 
-        $upstream = $this->normalizeHostLoopback($upstream);
+        $upstream = self::normalizeHostLoopback($upstream);
 
         $tls = $this->tlsDirective($route);
 

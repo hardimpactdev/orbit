@@ -8,7 +8,7 @@ use App\E2E\Support\E2ETopologyKind;
 
 it('lists the gateway-coupled vpn node from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGateway, withGatewayApi: true);
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
@@ -39,4 +39,4 @@ it('lists the gateway-coupled vpn node from a control caller through the gateway
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');

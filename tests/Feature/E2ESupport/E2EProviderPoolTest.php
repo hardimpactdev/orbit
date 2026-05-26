@@ -48,6 +48,12 @@ it('reads the topology state size from the environment', function (): void {
     });
 });
 
+it('reads the topology root size from the environment', function (): void {
+    withE2EProviderEnvironment(['ORBIT_E2E_TOPOLOGY_ROOT_SIZE' => '24GiB'], function (): void {
+        expect(E2EConfig::fromEnvironment()->topologyRootSize)->toBe('24GiB');
+    });
+});
+
 it('selects the first available provider', function (): void {
     $pool = new ProviderPool([
         fakeE2EProvider('incus', false),

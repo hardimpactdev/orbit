@@ -119,7 +119,7 @@ it('can include an agent peer with a stable WireGuard address', function (): voi
         ]);
 });
 
-it('can include future dev service peers with stable WireGuard addresses', function (): void {
+it('can include an ingress peer with a stable WireGuard address', function (): void {
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: '10.231.0.11',
         wgEasyPublicKey: 'wg-easy-public',
@@ -127,30 +127,20 @@ it('can include future dev service peers with stable WireGuard addresses', funct
         gatewayHostPublicKey: 'gateway-host-public',
         controlPrivateKey: 'control-private',
         controlPublicKey: 'control-public',
-        websocketPrivateKey: 'websocket-private',
-        websocketPublicKey: 'websocket-public',
-        s3PrivateKey: 's3-private',
-        s3PublicKey: 's3-public',
+        ingressPrivateKey: 'ingress-private',
+        ingressPublicKey: 'ingress-public',
     );
 
     $peers = $mesh->wgEasyPeers();
 
-    expect($mesh->addressFor('websocket'))->toBe('10.6.0.8')
-        ->and($mesh->addressFor('s3'))->toBe('10.6.0.9')
-        ->and($mesh->peerConfig('websocket'))->toContain('Address = 10.6.0.8/24')
-        ->and($mesh->peerConfig('s3'))->toContain('Address = 10.6.0.9/24')
-        ->and($peers)->toHaveCount(4)
+    expect($mesh->addressFor('ingress'))->toBe('10.6.0.7')
+        ->and($mesh->peerConfig('ingress'))->toContain('Address = 10.6.0.7/24')
+        ->and($peers)->toHaveCount(3)
         ->and($peers[2])->toMatchArray([
-            'name' => 'websocket',
-            'private_key' => 'websocket-private',
-            'public_key' => 'websocket-public',
-            'address' => '10.6.0.8',
-        ])
-        ->and($peers[3])->toMatchArray([
-            'name' => 's3',
-            'private_key' => 's3-private',
-            'public_key' => 's3-public',
-            'address' => '10.6.0.9',
+            'name' => 'ingress',
+            'private_key' => 'ingress-private',
+            'public_key' => 'ingress-public',
+            'address' => '10.6.0.7',
         ]);
 });
 

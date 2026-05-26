@@ -16,7 +16,7 @@ pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 
 /**
  * Asserts that an `app:new`-provisioned development app is reachable from the
- * control node over its TLD hostname.
+ * operator node over its TLD hostname.
  *
  * Mirrors the topology of `AppNewProvisioningTest` and adds an
  * HTTP-reachability assertion as a tail. Depends on the gateway DNS

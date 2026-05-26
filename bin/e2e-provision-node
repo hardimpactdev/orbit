@@ -6,21 +6,24 @@ ROLE=""
 SOURCE_ARCHIVE=""
 INSTALLER=""
 COMPOSER_CACHE=""
-CONTROL_USER="${ORBIT_E2E_CONTROL_USER:-control}"
+RUNTIME_IMAGE_ARCHIVE=""
+CADDY_IMAGE_ARCHIVE=""
+DNSMASQ_IMAGE_ARCHIVE=""
+OPERATOR_USER="${ORBIT_E2E_OPERATOR_USER:-${ORBIT_E2E_CONTROL_USER:-orbit}}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 CURRENT_STEP=""
 LOG_FILE="${ORBIT_E2E_PROVISION_LOG:-}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e-provision-node --role=control|gateway|app --source-archive=PATH [options]
+usage: bin/e2e-provision-node --role=operator|gateway|app --source-archive=PATH [options]
 
 Provision a freshly-cloned Orbit blank VM by pushing a source archive into place
 via bin/install-orbit. Designed to run inside the VM after the bundle has been
 pushed.
 
 Required:
-  --role=control|gateway|app   Topology role being installed.
+  --role=operator|gateway|app  Topology role being installed.
   --source-archive=PATH        Tarball of the Orbit checkout to install.
 
 Optional:
@@ -29,8 +32,19 @@ Optional:
   --composer-cache=PATH        Local composer cache directory. If given and
                                non-empty, copied into the role's composer cache
                                before install-orbit runs.
-  --control-user=NAME          Control-role steady-state user. Defaults to
-                               $ORBIT_E2E_CONTROL_USER or "control".
+  --runtime-image-archive=PATH Local Docker image archive for
+                               orbit-runtime:current. If given, forwarded to
+                               install-orbit so fresh VMs do not need to
+                               rebuild the runtime image from Docker Hub.
+  --caddy-image-archive=PATH   Local Docker image archive for caddy:2-alpine.
+                               If given, forwarded to install-orbit so fresh
+                               VMs do not need to pull Caddy from Docker Hub.
+  --dnsmasq-image-archive=PATH Local Docker image archive for
+                               4km3/dnsmasq:latest. If given, forwarded to
+                               install-orbit for gateway DNS bootstrap.
+  --operator-user=NAME         Operator steady-state user. Defaults to
+                               $ORBIT_E2E_OPERATOR_USER, then
+                               $ORBIT_E2E_CONTROL_USER, then "orbit".
   -h, --help                   Show this help text.
 HELP
 }
@@ -124,8 +138,20 @@ parse_args() {
             --composer-cache=*)
                 COMPOSER_CACHE="${1#*=}"
                 ;;
+            --runtime-image-archive=*)
+                RUNTIME_IMAGE_ARCHIVE="${1#*=}"
+                ;;
+            --caddy-image-archive=*)
+                CADDY_IMAGE_ARCHIVE="${1#*=}"
+                ;;
+            --dnsmasq-image-archive=*)
+                DNSMASQ_IMAGE_ARCHIVE="${1#*=}"
+                ;;
+            --operator-user=*)
+                OPERATOR_USER="${1#*=}"
+                ;;
             --control-user=*)
-                CONTROL_USER="${1#*=}"
+                OPERATOR_USER="${1#*=}"
                 ;;
             -h|--help)
                 usage
@@ -142,13 +168,13 @@ parse_args() {
 
 validate_args() {
     case "$ROLE" in
-        control|gateway|app)
+        operator|control|gateway|app)
             ;;
         "")
             fail validation_failed "--role is required"
             ;;
         *)
-            fail validation_failed "--role must be: control, gateway, or app"
+            fail validation_failed "--role must be: operator, gateway, or app"
             ;;
     esac
 
@@ -161,13 +187,25 @@ validate_args() {
 
     [ -x "$INSTALLER" ] || fail validation_failed "installer not executable: $INSTALLER"
 
-    [ -n "$CONTROL_USER" ] || fail validation_failed "--control-user must not be empty"
+    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ] && [ ! -f "$RUNTIME_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "runtime image archive not found: $RUNTIME_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$CADDY_IMAGE_ARCHIVE" ] && [ ! -f "$CADDY_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "caddy image archive not found: $CADDY_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ] && [ ! -f "$DNSMASQ_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "dnsmasq image archive not found: $DNSMASQ_IMAGE_ARCHIVE"
+    fi
+
+    [ -n "$OPERATOR_USER" ] || fail validation_failed "--operator-user must not be empty"
 }
 
 target_user_for_role() {
     case "$ROLE" in
-        control)
-            printf '%s' "$CONTROL_USER"
+        operator|control)
+            printf '%s' "$OPERATOR_USER"
             ;;
         gateway|app)
             printf '%s' orbit
@@ -213,10 +251,28 @@ restore_composer_cache() {
     sudo_run chown -R "${user}:${user}" "$target"
 }
 
+install_e2e_dependencies() {
+    if ! command -v apt-get >/dev/null 2>&1; then
+        return
+    fi
+
+    mapfile -t packages < <("${SCRIPT_DIR}/_e2e-deps.sh" --base)
+
+    sudo_run apt-get update
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y "${packages[@]}"
+
+    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files supervisor.service >/dev/null 2>&1; then
+        sudo_run systemctl enable --now supervisor.service
+    fi
+}
+
 install_role() {
     local user
     local home_dir
     local target_dir
+    local runtime_image_args=()
+    local caddy_image_args=()
+    local dnsmasq_image_args=()
 
     user="$(target_user_for_role)"
     home_dir="/home/${user}"
@@ -225,6 +281,18 @@ install_role() {
     sudo_run install -m 0644 -o "$user" -g "$user" "$SOURCE_ARCHIVE" "/tmp/orbit-source.tar.gz"
     sudo_run install -m 0755 "$INSTALLER" "/tmp/install-orbit"
 
+    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ]; then
+        runtime_image_args=(--runtime-image-archive="$RUNTIME_IMAGE_ARCHIVE")
+    fi
+
+    if [ -n "$CADDY_IMAGE_ARCHIVE" ]; then
+        caddy_image_args=(--caddy-image-archive="$CADDY_IMAGE_ARCHIVE")
+    fi
+
+    if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ]; then
+        dnsmasq_image_args=(--dnsmasq-image-archive="$DNSMASQ_IMAGE_ARCHIVE")
+    fi
+
     sudo_run runuser -u "$user" -- env \
         "HOME=${home_dir}" \
         "COMPOSER_HOME=${home_dir}/.composer" \
@@ -232,7 +300,10 @@ install_role() {
         /tmp/install-orbit \
         "--path=${target_dir}" \
         --source-archive=/tmp/orbit-source.tar.gz \
-        --bin=/usr/local/bin/orbit
+        --bin=/usr/local/bin/orbit \
+        "${runtime_image_args[@]}" \
+        "${caddy_image_args[@]}" \
+        "${dnsmasq_image_args[@]}"
 }
 
 cleanup_bundle() {
@@ -252,6 +323,10 @@ main() {
 
     start_step "Ensure target user"
     ensure_target_user
+    complete_step
+
+    start_step "Install E2E dependencies"
+    install_e2e_dependencies
     complete_step
 
     if [ -n "$COMPOSER_CACHE" ]; then

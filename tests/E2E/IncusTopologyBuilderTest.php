@@ -31,6 +31,7 @@ it('builds a control topology and snapshots the template clean', function (): vo
 
     $kind = E2ETopologyKind::Operator;
     $templateName = IncusTopologyTemplate::templateName($kind, 'control');
+    $snapshotName = IncusTopologyTemplate::snapshotName($kind);
 
     // Pre-cleanup in case a prior run left it behind.
     if ($host->instanceExists($templateName)) {
@@ -63,10 +64,10 @@ it('builds a control topology and snapshots the template clean', function (): vo
         expect($manifest)->toHaveCount(1);
         expect($manifest[0]['role'])->toBe('control');
         expect($manifest[0]['name'])->toBe($templateName);
-        expect($manifest[0]['snapshot'])->toBe('clean-control');
+        expect($manifest[0]['snapshot'])->toBe($snapshotName);
 
         expect($host->instanceExists($templateName))->toBeTrue();
-        expect($host->snapshotExists($templateName, 'clean-control'))->toBeTrue();
+        expect($host->snapshotExists($templateName, $snapshotName))->toBeTrue();
 
         $passed = true;
     } finally {

@@ -10,6 +10,8 @@ use RuntimeException;
 
 class IncusHost
 {
+    private const string GuestBundleDirectory = '/var/tmp/orbit-e2e-bundle';
+
     public function __construct(
         public readonly E2EConfig $config,
     ) {}
@@ -72,6 +74,10 @@ class IncusHost
                 throw new RuntimeException("Could not copy bundle locally into {$bundleDir}: {$copy->errorOutput()}");
             }
 
+            $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
+            $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir);
+            $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir);
+
             return $bundleDir;
         }
 
@@ -86,7 +92,28 @@ class IncusHost
             throw new RuntimeException("Could not scp bundle to {$this->config->host}:{$bundleDir}: {$scp->errorOutput()}");
         }
 
+        $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
+        $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir);
+        $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir);
+
         return $bundleDir;
+    }
+
+    private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir): void
+    {
+        $archive = "{$bundleDir}/{$fileName}";
+
+        $result = $this->run(sprintf(
+            'if command -v docker >/dev/null 2>&1 && docker image inspect %s >/dev/null 2>&1; then docker save %s -o %s; chmod 0644 %s; fi',
+            escapeshellarg($image),
+            escapeshellarg($image),
+            escapeshellarg($archive),
+            escapeshellarg($archive),
+        ), timeoutSeconds: 600);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not stage {$image} archive on {$this->config->host}: {$result->errorOutput()}");
+        }
     }
 
     /**
@@ -97,18 +124,20 @@ class IncusHost
         string $instanceName,
         string $role,
         string $remoteBundleDir,
-        ?string $controlUser = null,
+        ?string $operatorUser = null,
         ?int $timeoutSeconds = null,
     ): ProcessResult {
-        if (! in_array($role, ['control', 'gateway', 'app'], true)) {
-            throw new RuntimeException("Incus topology provisioning role must be control, gateway, or app; got [{$role}].");
+        if (! in_array($role, ['operator', 'control', 'gateway', 'app'], true)) {
+            throw new RuntimeException("Incus topology provisioning role must be operator, gateway, or app; got [{$role}].");
         }
 
-        $bundleTarget = "{$instanceName}/tmp/";
+        $guestBundleDirectory = self::GuestBundleDirectory;
+        $bundleTarget = "{$instanceName}/var/tmp/";
 
         $clearExistingBundle = $this->run(sprintf(
-            'incus exec %s -- rm -rf /tmp/orbit-e2e-bundle',
+            'incus exec %s -- rm -rf %s',
             escapeshellarg($instanceName),
+            escapeshellarg($guestBundleDirectory),
         ), timeoutSeconds: 30);
 
         if (! $clearExistingBundle->successful()) {
@@ -125,8 +154,8 @@ class IncusHost
             throw new RuntimeException("Could not push bundle into [{$instanceName}]: {$push->errorOutput()}");
         }
 
-        $controlUserArg = $controlUser !== null
-            ? ' --control-user='.escapeshellarg($controlUser)
+        $operatorUserArg = $operatorUser !== null
+            ? ' --operator-user='.escapeshellarg($operatorUser)
             : '';
 
         $hasComposerCache = $this->run(
@@ -135,15 +164,46 @@ class IncusHost
         )->successful();
 
         $composerCacheArg = $hasComposerCache
-            ? ' --composer-cache=/tmp/orbit-e2e-bundle/composer-cache'
+            ? " --composer-cache={$guestBundleDirectory}/composer-cache"
+            : '';
+
+        $hasRuntimeImageArchive = $this->run(
+            'test -f '.escapeshellarg("{$remoteBundleDir}/orbit-runtime-current.tar"),
+            timeoutSeconds: 5,
+        )->successful();
+
+        $runtimeImageArchiveArg = $hasRuntimeImageArchive
+            ? " --runtime-image-archive={$guestBundleDirectory}/orbit-runtime-current.tar"
+            : '';
+
+        $hasCaddyImageArchive = $this->run(
+            'test -f '.escapeshellarg("{$remoteBundleDir}/caddy-2-alpine.tar"),
+            timeoutSeconds: 5,
+        )->successful();
+
+        $caddyImageArchiveArg = $hasCaddyImageArchive
+            ? " --caddy-image-archive={$guestBundleDirectory}/caddy-2-alpine.tar"
+            : '';
+
+        $hasDnsmasqImageArchive = $this->run(
+            'test -f '.escapeshellarg("{$remoteBundleDir}/dnsmasq-latest.tar"),
+            timeoutSeconds: 5,
+        )->successful();
+
+        $dnsmasqImageArchiveArg = $hasDnsmasqImageArchive
+            ? " --dnsmasq-image-archive={$guestBundleDirectory}/dnsmasq-latest.tar"
             : '';
 
         $script = sprintf(
-            'chmod +x /tmp/orbit-e2e-bundle/e2e-provision-node /tmp/orbit-e2e-bundle/install-orbit /tmp/orbit-e2e-bundle/_e2e-deps.sh && '
-            .'/tmp/orbit-e2e-bundle/e2e-provision-node --role=%s --source-archive=/tmp/orbit-e2e-bundle/orbit-source.tar.gz --installer=/tmp/orbit-e2e-bundle/install-orbit%s%s',
+            'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
+            .'%1$s/e2e-provision-node --role=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s',
+            $guestBundleDirectory,
             escapeshellarg($role),
-            $controlUserArg,
+            $operatorUserArg,
             $composerCacheArg,
+            $runtimeImageArchiveArg,
+            $caddyImageArchiveArg,
+            $dnsmasqImageArchiveArg,
         );
 
         $command = sprintf(
@@ -159,8 +219,9 @@ class IncusHost
         }
 
         $removeProvisioningBundle = $this->run(sprintf(
-            'incus exec %s -- rm -rf /tmp/orbit-e2e-bundle',
+            'incus exec %s -- rm -rf %s',
             escapeshellarg($instanceName),
+            escapeshellarg($guestBundleDirectory),
         ), timeoutSeconds: 30);
 
         if (! $removeProvisioningBundle->successful()) {
@@ -319,6 +380,21 @@ class IncusHost
         $parts[] = '>/dev/null';
 
         return $this->run(implode(' ', array_filter($parts)), $timeoutSeconds);
+    }
+
+    public function launchTopologyInstance(string $image, string $name, ?int $timeoutSeconds = null): ProcessResult
+    {
+        return $this->launchInstance(
+            image: $image,
+            name: $name,
+            config: sprintf(
+                '--config=limits.cpu=%s --config=limits.memory=%s --device root,size=%s',
+                escapeshellarg($this->config->topologyCpus),
+                escapeshellarg($this->config->topologyMemory),
+                escapeshellarg($this->config->topologyRootSize),
+            ),
+            timeoutSeconds: $timeoutSeconds,
+        );
     }
 
     public function startInstance(string $name): ProcessResult
