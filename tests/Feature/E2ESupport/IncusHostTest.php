@@ -317,7 +317,10 @@ it('stages local Docker image archives in the pushed provisioning bundle when av
         ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/caddy-2-alpine.tar'")
         ->and(implode("\n", $commands))->toContain("docker image inspect '4km3/dnsmasq:latest'")
         ->and(implode("\n", $commands))->toContain("docker save '4km3/dnsmasq:latest'")
-        ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/dnsmasq-latest.tar'");
+        ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/dnsmasq-latest.tar'")
+        ->and(implode("\n", $commands))->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and(implode("\n", $commands))->toContain("docker save 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and(implode("\n", $commands))->toContain("'{$remoteStage}/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar'");
 });
 
 it('passes staged Docker image archives to the in-guest provisioner when present', function (): void {
@@ -356,10 +359,12 @@ it('passes staged Docker image archives to the in-guest provisioner when present
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/orbit-runtime-current.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/caddy-2-alpine.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/dnsmasq-latest.tar'")
+        ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar'")
         ->toContain("incus file push -r -p '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle' 'orbit-e2e-run-control/var/tmp/'")
         ->toContain('--runtime-image-archive=/var/tmp/orbit-e2e-bundle/orbit-runtime-current.tar')
         ->toContain('--caddy-image-archive=/var/tmp/orbit-e2e-bundle/caddy-2-alpine.tar')
         ->toContain('--dnsmasq-image-archive=/var/tmp/orbit-e2e-bundle/dnsmasq-latest.tar')
+        ->toContain('--frankenphp-image-archive=/var/tmp/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar')
         ->toContain('--operator-user=');
 });
 

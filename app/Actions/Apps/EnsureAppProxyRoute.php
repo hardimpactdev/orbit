@@ -9,6 +9,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Gateway\CaddyGlobalConfig;
@@ -67,7 +68,7 @@ final readonly class EnsureAppProxyRoute
             ]];
         }
 
-        $result = $this->remoteShell->run($servingNode, $this->renderInstallScript($domain, $content));
+        $result = $this->remoteShell->run($servingNode, $this->renderInstallScript($servingNode, $domain, $content));
 
         if (! $result->successful()) {
             return [[
@@ -102,7 +103,7 @@ final readonly class EnsureAppProxyRoute
             ]));
 
             $this->ensureGlobalCaddyfile($routerNode);
-            $routerResult = $this->remoteShell->run($routerNode, $this->renderInstallScript($domain, $routerContent));
+            $routerResult = $this->remoteShell->run($routerNode, $this->renderInstallScript($routerNode, $domain, $routerContent));
 
             if (! $routerResult->successful()) {
                 return [[
@@ -131,7 +132,7 @@ final readonly class EnsureAppProxyRoute
             );
 
             $this->ensureGlobalCaddyfile($app->node);
-            $backendResult = $this->remoteShell->run($app->node, $this->renderInstallScript($domain, $backendContent, backend: true));
+            $backendResult = $this->remoteShell->run($app->node, $this->renderInstallScript($app->node, $domain, $backendContent, backend: true));
 
             if (! $backendResult->successful()) {
                 return [[
@@ -222,21 +223,42 @@ CADDY;
 CADDY;
     }
 
-    private function renderInstallScript(string $domain, string $content, bool $backend = false): string
+    private function renderInstallScript(Node $node, string $domain, string $content, bool $backend = false): string
     {
         $suffix = $backend ? '.backend' : '';
         $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
+        $caddyToolConfig = $this->caddyToolConfig($node);
+        $caddyUpdateScript = $caddyToolConfig === null ? '' : (new CaddyTool)->updateScript($caddyToolConfig);
 
         return sprintf(
             <<<'SH'
 sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
+%s
 SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
+            $caddyUpdateScript,
             CaddyTool::reloadCommand(),
         );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function caddyToolConfig(Node $node): ?array
+    {
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->first();
+
+        if (! $tool instanceof NodeTool || ! is_array($tool->config)) {
+            return null;
+        }
+
+        return $tool->config;
     }
 
     private function ensureGlobalCaddyfile(Node $node): void

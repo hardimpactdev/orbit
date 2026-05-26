@@ -87,6 +87,7 @@ describe('tool catalog definitions', function (): void {
             ->toContain('docker run -d')
             ->toContain('--pull '.escapeshellarg('never'))
             ->toContain('docker start')
+            ->not->toContain('exit 0')
             ->not->toContain('then docker restart');
     });
 

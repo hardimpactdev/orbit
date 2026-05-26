@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Services\Php\PhpRuntimeCatalog;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -11,6 +12,8 @@ use RuntimeException;
 class IncusHost
 {
     private const string GuestBundleDirectory = '/var/tmp/orbit-e2e-bundle';
+
+    private const string DefaultFrankenPhpImageArchive = 'frankenphp-1-php8.5-bookworm.tar';
 
     public function __construct(
         public readonly E2EConfig $config,
@@ -77,6 +80,7 @@ class IncusHost
             $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
             $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir);
             $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir);
+            $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir);
 
             return $bundleDir;
         }
@@ -95,8 +99,14 @@ class IncusHost
         $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
         $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir);
         $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir);
+        $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir);
 
         return $bundleDir;
+    }
+
+    private function defaultFrankenPhpImage(): string
+    {
+        return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
     }
 
     private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir): void
@@ -194,9 +204,18 @@ class IncusHost
             ? " --dnsmasq-image-archive={$guestBundleDirectory}/dnsmasq-latest.tar"
             : '';
 
+        $hasFrankenPhpImageArchive = $this->run(
+            'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultFrankenPhpImageArchive),
+            timeoutSeconds: 5,
+        )->successful();
+
+        $frankenPhpImageArchiveArg = $hasFrankenPhpImageArchive
+            ? " --frankenphp-image-archive={$guestBundleDirectory}/".self::DefaultFrankenPhpImageArchive
+            : '';
+
         $script = sprintf(
             'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --role=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s',
+            .'%1$s/e2e-provision-node --role=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s',
             $guestBundleDirectory,
             escapeshellarg($role),
             $operatorUserArg,
@@ -204,6 +223,7 @@ class IncusHost
             $runtimeImageArchiveArg,
             $caddyImageArchiveArg,
             $dnsmasqImageArchiveArg,
+            $frankenPhpImageArchiveArg,
         );
 
         $command = sprintf(

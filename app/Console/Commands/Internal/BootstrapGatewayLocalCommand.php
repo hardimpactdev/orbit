@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace App\Console\Commands\Internal;
 
 use App\Data\Nodes\RoleSettings\VpnRoleSettings;
+use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use Illuminate\Console\Attributes\Description;
@@ -48,12 +51,15 @@ class BootstrapGatewayLocalCommand extends Command
         $identity = $this->identityPayload();
         $gatewayTld = $this->stringOption('tld') ?? 'gateway';
         $publicHost = $this->stringOption('public-host');
+        $hostKey = $publicHost !== null
+            ? app(SshHostKeyPinner::class)->pin($publicHost)
+            : null;
 
         if ($name === null || $wireguardAddress === null) {
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
-        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost): ?array {
+        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost, $hostKey): ?array {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -67,6 +73,7 @@ class BootstrapGatewayLocalCommand extends Command
                     'user' => 'orbit',
                     'orbit_path' => '/home/orbit/orbit',
                     'status' => 'active',
+                    ...$this->hostKeyAttributes($hostKey),
                 ],
             );
 
@@ -144,6 +151,17 @@ class BootstrapGatewayLocalCommand extends Command
                     'private_key' => $identity['control']['private_key'],
                     'pre_shared_key' => $identity['control']['pre_shared_key'],
                     'allowed_ips' => "{$identity['control']['wireguard_address']}/32",
+                ],
+            );
+
+            NodeAccess::query()->firstOrCreate(
+                [
+                    'consumer_node_id' => $control->id,
+                    'serving_node_id' => $gateway->id,
+                ],
+                [
+                    'permissions' => ['*'],
+                    'custom_permissions' => [],
                 ],
             );
 
@@ -251,6 +269,24 @@ class BootstrapGatewayLocalCommand extends Command
         config(['services.wg_easy.password' => $password]);
 
         return $password;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function hostKeyAttributes(?PinnedHostKey $hostKey): array
+    {
+        if (! $hostKey instanceof PinnedHostKey) {
+            return [];
+        }
+
+        return [
+            'host_key_type' => $hostKey->type,
+            'host_key_public' => $hostKey->publicKey,
+            'host_key_fingerprint' => $hostKey->fingerprint,
+            'host_key_pin_mode' => $hostKey->pinMode,
+            'host_key_pinned_at' => now(),
+        ];
     }
 
     /**

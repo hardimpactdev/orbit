@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Http\Gateway\GatewayConnector;
@@ -100,6 +102,11 @@ beforeEach(function (): void {
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
+        'host_key_type' => 'ssh-ed25519',
+        'host_key_public' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGatewayPinnedHostKeyForRuntimeModeTests',
+        'host_key_fingerprint' => 'SHA256:gateway-runtime-test',
+        'host_key_pin_mode' => 'verified',
+        'host_key_pinned_at' => now(),
     ]);
 
     NodeRoleAssignment::factory()->for($gateway)->create([
@@ -242,6 +249,53 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->not->toContain('clients_table')
         ->not->toContain('sqlite3')
         ->not->toContain('sudo sqlite3');
+});
+
+it('checks provisioned node WireGuard reachability from the gateway host when running in orbit-runtime', function (): void {
+    $previousSourcePath = getenv('ORBIT_SOURCE_PATH');
+
+    putenv('ORBIT_SOURCE_PATH=/opt/orbit');
+
+    $shell = new class implements RemoteShell
+    {
+        /** @var list<array{node: string, script: string, options: array<string, mixed>}> */
+        public array $runs = [];
+
+        public function run(Node $node, string $script, array $options = []): RemoteShellResult
+        {
+            $this->runs[] = [
+                'node' => (string) $node->name,
+                'script' => $script,
+                'options' => $options,
+            ];
+
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+    };
+
+    app()->instance(RemoteShell::class, $shell);
+
+    try {
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'dev-runtime-1',
+            '--role' => ['app-development'],
+            '--host' => '192.0.2.24',
+            '--tld' => 'runtime',
+            '--json' => true,
+        ]);
+    } finally {
+        is_string($previousSourcePath)
+            ? putenv("ORBIT_SOURCE_PATH={$previousSourcePath}")
+            : putenv('ORBIT_SOURCE_PATH');
+    }
+
+    expect($exitCode, Artisan::output())->toBe(0);
+
+    $node = Node::query()->where('name', 'dev-runtime-1')->firstOrFail();
+
+    expect(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 'gateway-1'
+        && $run['script'] === sprintf('ping -c 1 -W 2 %s', escapeshellarg((string) $node->wireguard_address))
+        && ($run['options']['timeout'] ?? null) === 5))->toBeTrue();
 });
 
 it('honors the prepared topology WireGuard address reservation during E2E provisioning', function (): void {

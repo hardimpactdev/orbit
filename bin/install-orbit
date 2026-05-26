@@ -9,6 +9,7 @@ SOURCE_ARCHIVE=""
 RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"
 CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"
 DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"
+FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
@@ -23,10 +24,10 @@ usage: bin/install-orbit [options]
 
 Install the Orbit CLI and its Docker-first runtime prerequisites on the
 current host. The installer prepares host PHP CLI for the CLI/local-executor
-artifact, Docker, the Orbit source checkout, the orbit-runtime and orbit-caddy
-container images, runs migrations inside a disposable orbit-runtime container,
-and starts the long-running orbit-runtime container. No host Composer, host
-Caddy, or host PHP-FPM is installed.
+artifact, Docker, the Orbit source checkout, the orbit-runtime, orbit-caddy,
+and default FrankenPHP runtime images, runs migrations inside a disposable
+orbit-runtime container, and starts the long-running orbit-runtime container.
+No host Composer, host Caddy, or host PHP-FPM is installed.
 
 Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
@@ -39,6 +40,10 @@ Options:
                                archive before falling back to Docker Hub.
   --dnsmasq-image-archive=PATH Load 4km3/dnsmasq:latest from this Docker
                                image archive for gateway DNS bootstrap.
+  --frankenphp-image-archive=PATH
+                               Load dunglas/frankenphp:1-php8.5-bookworm from
+                               this Docker image archive before falling back
+                               to Docker Hub.
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
   --skip-prerequisites         Skip Docker / package prerequisite installation.
@@ -140,7 +145,7 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Install Orbit source\n'
     printf '  │\n'
-    printf '  ○  Prepare orbit-runtime and orbit-caddy images\n'
+    printf '  ○  Prepare runtime Docker images\n'
     printf '  │\n'
     printf '  ○  Bootstrap Orbit runtime in the container\n'
     printf '  │\n'
@@ -210,6 +215,9 @@ parse_args() {
             --dnsmasq-image-archive=*)
                 DNSMASQ_IMAGE_ARCHIVE="${1#*=}"
                 ;;
+            --frankenphp-image-archive=*)
+                FRANKENPHP_IMAGE_ARCHIVE="${1#*=}"
+                ;;
             --bin=*)
                 LINK_PATH="${1#*=}"
                 ;;
@@ -252,6 +260,10 @@ validate_args() {
 
     if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ] && [ ! -f "$DNSMASQ_IMAGE_ARCHIVE" ]; then
         fail validation_failed "dnsmasq image archive not found: $DNSMASQ_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ] && [ ! -f "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "frankenphp image archive not found: $FRANKENPHP_IMAGE_ARCHIVE"
     fi
 }
 
@@ -529,6 +541,7 @@ build_runtime_images() {
     ensure_runtime_image
     ensure_caddy_image
     ensure_dnsmasq_image
+    ensure_frankenphp_image
 }
 
 ensure_runtime_image() {
@@ -586,6 +599,24 @@ ensure_dnsmasq_image() {
     fi
 
     fail validation_failed "dnsmasq image archive did not load 4km3/dnsmasq:latest: $DNSMASQ_IMAGE_ARCHIVE"
+}
+
+ensure_frankenphp_image() {
+    if docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm" >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
+        run docker_cli load -i "$FRANKENPHP_IMAGE_ARCHIVE"
+
+        if docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm" >/dev/null 2>&1; then
+            return
+        fi
+
+        fail validation_failed "frankenphp image archive did not load dunglas/frankenphp:1-php8.5-bookworm: $FRANKENPHP_IMAGE_ARCHIVE"
+    fi
+
+    run docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"
 }
 
 read_env_var() {
@@ -663,7 +694,7 @@ ensure_node_identity() {
 }
 
 ensure_forward_install_image_archives_flag() {
-    if [ -z "$RUNTIME_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ]; then
+    if [ -z "$RUNTIME_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ] && [ -z "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
         return
     fi
 
@@ -879,7 +910,7 @@ main() {
     install_source
     complete_step
 
-    start_step "Prepare orbit-runtime and orbit-caddy images"
+    start_step "Prepare runtime Docker images"
     build_runtime_images
     complete_step
 

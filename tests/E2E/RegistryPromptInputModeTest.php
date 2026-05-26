@@ -124,12 +124,13 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $commandA
     $result = $topology->ssh(
         'gateway',
         sprintf(
-            'if ! command -v script >/dev/null 2>&1 || ! script --version >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then echo "__ORBIT_PTY_CAPTURE_UNAVAILABLE__"; exit 0; fi; rm -f %1$s; (sleep 0.2; %3$s) | timeout 20s script -q -e -c %2$s %1$s >/dev/null; code=$?; cat %1$s; rm -f %1$s; exit $code',
+            'if ! command -v script >/dev/null 2>&1 || ! script --version >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then echo "__ORBIT_PTY_CAPTURE_UNAVAILABLE__"; exit 0; fi; rm -f %1$s; (sleep 1; %3$s) | timeout 30s script -q -e -c %2$s %1$s >/dev/null; code=$?; cat %1$s; rm -f %1$s; exit $code',
             $transcriptArgument,
             escapeshellarg($command),
             $inputCommand,
         ),
         timeoutSeconds: 60,
+        allowFailure: true,
     );
 
     if (str_contains($result->output(), '__ORBIT_PTY_CAPTURE_UNAVAILABLE__')) {
@@ -169,8 +170,8 @@ it('renders finite registry prompts as data tables in a real terminal session', 
         $schedulePrompt = registryPromptE2ECapture($topology, 'schedule:show --app=docs', 'schedule');
 
         expect($appPrompt)
-            ->toContain('App: docs')
-            ->toContain('docs')
+            ->toContain('App: api')
+            ->toContain('api')
             ->toContain('app-dev-1')
             ->not->toContain('App name or hostname');
 

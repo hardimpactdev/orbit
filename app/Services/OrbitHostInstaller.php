@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Node;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\RemoteShell\SshCommandBuilder;
 use App\Services\Security\HomeDirectoryLockdownInstaller;
 use App\Services\Security\SshdHardenedInstaller;
@@ -174,7 +175,7 @@ class OrbitHostInstaller
     }
 
     /**
-     * @return array{runtime?: string, caddy?: string, dnsmasq?: string}
+     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}
      */
     private function buildForwardedImageArchives(): array
     {
@@ -182,12 +183,14 @@ class OrbitHostInstaller
             return [];
         }
 
+        $phpRuntimeCatalog = new PhpRuntimeCatalog;
         $archives = [];
 
         foreach ([
             'runtime' => ['image' => 'orbit-runtime:current', 'name' => 'orbit-runtime-current'],
             'caddy' => ['image' => 'caddy:2-alpine', 'name' => 'caddy-2-alpine'],
             'dnsmasq' => ['image' => '4km3/dnsmasq:latest', 'name' => 'dnsmasq-latest'],
+            'frankenphp' => ['image' => $phpRuntimeCatalog->imageFor(PhpRuntimeCatalog::DEFAULT), 'name' => 'frankenphp-1-php8.5-bookworm'],
         ] as $key => $image) {
             $inspect = Process::timeout(30)->run(sprintf(
                 'docker image inspect %s >/dev/null 2>&1',
@@ -218,8 +221,8 @@ class OrbitHostInstaller
     }
 
     /**
-     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string}  $localImageArchives
-     * @return array{runtime?: string, caddy?: string, dnsmasq?: string}
+     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}  $localImageArchives
+     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}
      */
     private function remoteImageArchives(string $remotePrefix, array $localImageArchives): array
     {
@@ -230,6 +233,7 @@ class OrbitHostInstaller
                 'runtime' => "{$remotePrefix}-orbit-runtime-current.tar",
                 'caddy' => "{$remotePrefix}-caddy-2-alpine.tar",
                 'dnsmasq' => "{$remotePrefix}-dnsmasq-latest.tar",
+                'frankenphp' => "{$remotePrefix}-frankenphp-1-php8.5-bookworm.tar",
             };
         }
 
@@ -237,7 +241,7 @@ class OrbitHostInstaller
     }
 
     /**
-     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string}  $remoteImageArchives
+     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}  $remoteImageArchives
      */
     private function imageArchiveInstallerFlags(array $remoteImageArchives): string
     {
@@ -253,6 +257,10 @@ class OrbitHostInstaller
 
         if (isset($remoteImageArchives['dnsmasq'])) {
             $flags .= ' --dnsmasq-image-archive='.escapeshellarg($remoteImageArchives['dnsmasq']);
+        }
+
+        if (isset($remoteImageArchives['frankenphp'])) {
+            $flags .= ' --frankenphp-image-archive='.escapeshellarg($remoteImageArchives['frankenphp']);
         }
 
         return $flags;

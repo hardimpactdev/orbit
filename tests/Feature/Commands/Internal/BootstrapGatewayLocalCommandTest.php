@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Data\Security\PinnedHostKey;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -104,9 +107,29 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
+        $this->hostKeyPinner = new class
+        {
+            /** @var list<array{host: string, expected: string|null}> */
+            public array $calls = [];
+
+            public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
+            {
+                $this->calls[] = ['host' => $host, 'expected' => $expectedFingerprint];
+
+                return new PinnedHostKey(
+                    host: $host,
+                    type: 'ssh-ed25519',
+                    publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIGatewayBootstrapLocalHostKey',
+                    fingerprint: $expectedFingerprint ?? 'SHA256:gateway-bootstrap-local',
+                    pinMode: $expectedFingerprint === null ? 'tofu' : 'verified',
+                );
+            }
+        };
+
         app()->instance(GatewayApiRuntimeInstaller::class, $this->gatewayApiRuntimeInstaller);
         app()->instance(WgEasyServiceInstaller::class, $this->wgEasyServiceInstaller);
         app()->instance(OrbitDnsServiceInstaller::class, $this->orbitDnsServiceInstaller);
+        app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
     });
 
     afterEach(function (): void {
@@ -136,6 +159,11 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                 ->orderBy('role')
                 ->pluck('role')
                 ->all())->toBe(['gateway', 'router', 'vpn'])
+            ->and(Node::query()->where('name', 'gateway-1')->value('host_key_type'))->toBe('ssh-ed25519')
+            ->and(Node::query()->where('name', 'gateway-1')->value('host_key_fingerprint'))->toBe('SHA256:gateway-bootstrap-local')
+            ->and($this->hostKeyPinner->calls)->toBe([
+                ['host' => '203.0.113.10', 'expected' => null],
+            ])
             ->and(NodeRoleAssignment::query()
                 ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
                 ->where('role', 'vpn')
@@ -338,12 +366,19 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         $control = Node::query()->where('name', 'mini')->first();
         $gatewayPeer = WireGuardPeer::query()->where('node_id', $gateway?->id)->first();
         $controlPeer = WireGuardPeer::query()->where('node_id', $control?->id)->first();
+        $initialGatewayGrant = NodeAccess::query()
+            ->where('consumer_node_id', $control?->id)
+            ->where('serving_node_id', $gateway?->id)
+            ->first();
 
         expect($exitCode)->toBe(0)
             ->and($gateway)->toBeInstanceOf(Node::class)
             ->and($control)->toBeInstanceOf(Node::class)
             ->and($control->role)->toBe('control')
             ->and($control->wireguard_address)->toBe('10.6.0.3')
+            ->and($initialGatewayGrant)->toBeInstanceOf(NodeAccess::class)
+            ->and($initialGatewayGrant->permissions)->toBe(['*'])
+            ->and($initialGatewayGrant->custom_permissions)->toBe([])
             ->and($gatewayPeer)->toBeInstanceOf(WireGuardPeer::class)
             ->and($gatewayPeer->public_key)->toBe('gateway-public-v1')
             ->and($gatewayPeer->private_key)->toBe('gateway-private-v1')

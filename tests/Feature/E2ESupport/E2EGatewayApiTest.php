@@ -28,6 +28,9 @@ it('installs provisioning SSH keys for gateway API runtime users', function (): 
         /** @var list<array{source: string, target: string}> */
         public array $copies = [];
 
+        /** @var list<string> */
+        public array $commands = [];
+
         public function name(): string
         {
             return 'gateway';
@@ -35,6 +38,8 @@ it('installs provisioning SSH keys for gateway API runtime users', function (): 
 
         public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
         {
+            $this->commands[] = $command;
+
             return Process::result();
         }
 
@@ -70,6 +75,16 @@ it('installs provisioning SSH keys for gateway API runtime users', function (): 
             '/home/orbit/.ssh/id_ed25519',
             '/var/www/.ssh/id_ed25519',
         ]);
+
+        $runtimeKeyInstall = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-runtime')
+            && str_contains($command, 'docker cp')
+            && str_contains($command, '/root/.ssh/id_ed25519'));
+
+        expect($runtimeKeyInstall)->toBeString()
+            ->toContain("docker inspect --format='{{.State.Running}}' 'orbit-runtime'")
+            ->toContain('runtime_private_key=/home/orbit/.ssh/id_ed25519')
+            ->toContain("docker cp \"\$runtime_private_key\" 'orbit-runtime:/root/.ssh/id_ed25519'")
+            ->toContain("docker exec 'orbit-runtime' sh -lc 'chown root:root /root/.ssh/id_ed25519");
     } finally {
         @unlink($privateKey);
         @unlink($publicKey);

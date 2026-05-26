@@ -38,31 +38,37 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('systemctl enable --now docker');
     });
 
-    it('builds orbit-runtime from the checked-out source and pulls the official Caddy image', function (): void {
+    it('builds orbit-runtime from the checked-out source and pulls official runtime dependency images', function (): void {
         expect($this->installer)
             ->toContain('docker_cli build')
             ->toContain('docker/orbit-runtime/Dockerfile')
             ->toContain('-t "orbit-runtime:current"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
+            ->toContain('docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"')
             ->not->toContain('docker/orbit-caddy/Dockerfile')
             ->not->toContain('-t "orbit-caddy:current"');
     });
 
-    it('can load runtime and Caddy images from staged archives before falling back to Docker Hub', function (): void {
+    it('can load runtime dependency images from staged archives before falling back to Docker Hub', function (): void {
         expect($this->installer)
             ->toContain('RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"')
             ->toContain('CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"')
             ->toContain('DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"')
+            ->toContain('FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"')
             ->toContain('--runtime-image-archive=PATH')
             ->toContain('--caddy-image-archive=PATH')
             ->toContain('--dnsmasq-image-archive=PATH')
+            ->toContain('--frankenphp-image-archive=PATH')
             ->toContain('docker_cli load -i "$RUNTIME_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$CADDY_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$DNSMASQ_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli load -i "$FRANKENPHP_IMAGE_ARCHIVE"')
             ->toContain('docker_cli image inspect "orbit-runtime:current"')
             ->toContain('docker_cli image inspect "4km3/dnsmasq:latest"')
             ->toContain('docker_cli image inspect "caddy:2-alpine"')
-            ->toContain('docker_cli pull "caddy:2-alpine"');
+            ->toContain('docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm"')
+            ->toContain('docker_cli pull "caddy:2-alpine"')
+            ->toContain('docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"');
     });
 
     it('marks archive-seeded installs so node:new can forward local runtime images during E2E provisioning', function (): void {

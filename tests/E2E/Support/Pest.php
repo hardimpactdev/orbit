@@ -404,6 +404,7 @@ function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology
 {
     if (e2eRoleUsesDockerHostLauncher($topology, $role)) {
         e2eConfigureCurrentCheckoutCliGatewaySettings($topology, $role);
+        e2eConfigureCurrentCheckoutRootGatewaySettings($topology, $role, null, e2eGatewayCaUrl($topology));
 
         return;
     }
@@ -411,19 +412,57 @@ function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology
     $caPemPath = e2eRoleUsesDockerTopologyNode($topology, $role)
         ? e2eInstallCurrentCheckoutGatewayCa($topology, $role)
         : null;
+
+    e2eConfigureCurrentCheckoutRootGatewaySettings($topology, $role, $caPemPath);
+}
+
+function e2eConfigureCurrentCheckoutRootGatewaySettings(E2ETopologyHarness $topology, string $role, ?string $caPemPath, ?string $gatewayCaUrl = null): void
+{
     $checkout = escapeshellarg($topology->checkout($role));
     $gatewayUrlValue = var_export(e2eGatewayApiUrl($topology), true);
     $gatewayIpValue = var_export(e2eGatewayWireGuardIp($topology), true);
     $caPemPathValue = var_export($caPemPath, true);
+    $gatewayCaUrlValue = var_export($gatewayCaUrl, true);
 
     $php = <<<PHP
+\$gatewayCaUrl = {$gatewayCaUrlValue};
+\$caPemPath = {$caPemPathValue};
+\$caSha256 = null;
+
+if (\$gatewayCaUrl !== null) {
+    \$rootCa = null;
+    \$response = @file_get_contents(\$gatewayCaUrl, false, stream_context_create([
+        'http' => ['timeout' => 5],
+    ]));
+
+    if (is_string(\$response) && \$response !== '') {
+        \$decoded = json_decode(\$response, true);
+        \$rootCa = is_array(\$decoded)
+            ? (\$decoded['success']['data']['root_ca'] ?? \$decoded['data']['root_ca'] ?? null)
+            : \$response;
+    }
+
+    if (is_string(\$rootCa)
+        && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
+        && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
+        \$caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
+        \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
+        \$caSha256 = hash('sha256', \$rootCa);
+    }
+}
+
 \$settings = \\App\\Models\\LocalGatewaySettings::current();
 \$settings->fill([
     'gateway_url' => {$gatewayUrlValue},
     'gateway_wg_ip' => {$gatewayIpValue},
 ]);
-if ({$caPemPathValue} !== null) {
-    \$settings->ca_pem_path = {$caPemPathValue};
+if (\$caPemPath !== null) {
+    \$settings->ca_pem_path = \$caPemPath;
+}
+if (\$caSha256 !== null) {
+    \$settings->ca_sha256 = \$caSha256;
+    \$settings->trusted_at = now();
 }
 \$settings->save();
 echo 'configured';
@@ -483,6 +522,11 @@ function e2eGatewayCliUrl(E2ETopologyHarness $topology): string
     }
 
     return 'http://'.$topology->lease()->gatewayApiIp();
+}
+
+function e2eGatewayCaUrl(E2ETopologyHarness $topology): string
+{
+    return e2eGatewayCliUrl($topology).'/api/ca/root';
 }
 
 /**

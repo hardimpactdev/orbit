@@ -30,6 +30,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
                 'app' => $app,
                 'restart_policy' => 'never',
                 'crash_notification' => 'none',
+                'runtime' => 'docker',
             ])
             ->and($addPayload['success']['data']['runtime_units'][0]['name'])->toBe($runtimeUnit);
 
@@ -47,8 +48,13 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             'gateway',
             "cd {$checkout} && orbit process:start {$process} --app=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
+            allowFailure: true,
         );
         $startPayload = processCommandPayload($start->output());
+
+        if (! $start->successful()) {
+            throw new RuntimeException(processCommandDockerDiagnostics($topology, $runtimeUnit, $appPath, $start->output().$start->errorOutput()));
+        }
 
         expect($start->successful())->toBeTrue()
             ->and($startPayload['success']['data']['runtimes'][0])->toMatchArray([
@@ -182,8 +188,9 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
     );
     $topology->ssh(
         'dev',
-        'sudo supervisorctl stop '.escapeshellarg($runtimeUnit).' >/dev/null 2>&1 || true; sudo rm -f '.escapeshellarg("/etc/supervisor/conf.d/{$runtimeUnit}.conf").'; sudo supervisorctl reread >/dev/null 2>&1 || true; sudo supervisorctl update >/dev/null 2>&1 || true; rm -rf '.escapeshellarg($path),
+        'docker rm -f '.escapeshellarg($runtimeUnit).' >/dev/null 2>&1 || true; sudo supervisorctl stop '.escapeshellarg($runtimeUnit).' >/dev/null 2>&1 || true; sudo rm -f '.escapeshellarg("/etc/supervisor/conf.d/{$runtimeUnit}.conf").'; sudo supervisorctl reread >/dev/null 2>&1 || true; sudo supervisorctl update >/dev/null 2>&1 || true; rm -rf '.escapeshellarg($path),
         timeoutSeconds: 120,
+        allowFailure: true,
     );
 
     if (e2eUsesDockerDnsAliasTopology()) {
@@ -241,4 +248,23 @@ function processCommandDockerHostPathScript(string $operation, string $path): st
         escapeshellarg('{{.Config.Image}}'),
         escapeshellarg($operation.' '.escapeshellarg("/orbit-apps/{$relativePath}")),
     );
+}
+
+function processCommandDockerDiagnostics(E2ETopologyHarness $topology, string $runtimeUnit, string $path, string $startOutput): string
+{
+    $command = implode(' ; ', [
+        'echo "=== process:start ==="',
+        'printf %s '.escapeshellarg($startOutput),
+        'echo',
+        'echo "=== docker ps ==="',
+        'docker ps -a --filter name='.escapeshellarg($runtimeUnit).' 2>&1 || true',
+        'echo "=== docker inspect ==="',
+        'docker container inspect '.escapeshellarg($runtimeUnit).' 2>&1 || true',
+        'echo "=== docker logs ==="',
+        'docker logs '.escapeshellarg($runtimeUnit).' 2>&1 || true',
+        'echo "=== app path ==="',
+        'ls -la '.escapeshellarg($path).' 2>&1 || true',
+    ]);
+
+    return $topology->ssh('dev', $command, timeoutSeconds: 120, allowFailure: true)->output();
 }

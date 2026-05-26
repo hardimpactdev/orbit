@@ -49,6 +49,7 @@ it('renders install scripts for supervisor program definitions', function (): vo
 
     expect($script)
         ->toContain('sudo mkdir -p /etc/supervisor/conf.d')
+        ->toContain("sudo install -d -m 0755 -o 'orbit' -g 'orbit' '/Users/orbit/.config/orbit/logs'")
         ->toContain("sudo tee '/etc/supervisor/conf.d/orbit_docs_main_queue.conf' >/dev/null")
         ->toContain("sudo supervisorctl update 'orbit_docs_main_queue'")
         ->and($content)->toBe((new SupervisorProgramRenderer)->render($program))

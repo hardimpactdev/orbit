@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Services\Php\PhpRuntimeCatalog;
 use Illuminate\Support\Facades\Process;
 
 final readonly class DockerTopologyProvider implements E2ETopologyProvider
@@ -170,6 +171,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return E2ETopologyArtifactNamespace::dockerRuntimeImage('orbit-runtime');
     }
 
+    public static function defaultPhpRuntimeImage(): string
+    {
+        return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+    }
+
     /**
      * @param  list<string>|null  $hostNames
      * @return array{host: DockerHost|null, failures: list<string>, image_names?: array<string, string>}
@@ -204,6 +210,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             if (self::rolesNeedRuntimeSibling($roles) && ! $this->hasRuntimeSiblingImage($host)) {
                 $failures[] = "{$hostName}: docker runtime image ".self::runtimeSiblingImage().' is not available';
+
+                continue;
+            }
+
+            if (self::rolesNeedPhpRuntimeImage($roles) && ! $this->hasDefaultPhpRuntimeImage($host)) {
+                $failures[] = "{$hostName}: Docker PHP runtime image ".self::defaultPhpRuntimeImage().' is not available';
 
                 continue;
             }
@@ -295,6 +307,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         return $host->run(
             sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::runtimeSiblingImage())),
+            timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+        )->successful();
+    }
+
+    private function hasDefaultPhpRuntimeImage(DockerHost $host): bool
+    {
+        return $host->run(
+            sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::defaultPhpRuntimeImage())),
             timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
         )->successful();
     }
@@ -726,6 +746,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     private static function rolesNeedRuntimeSibling(array $roles): bool
     {
         return in_array('gateway', $roles, true);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private static function rolesNeedPhpRuntimeImage(array $roles): bool
+    {
+        return array_intersect($roles, ['dev', 'prod', 'ingress']) !== [];
     }
 
     private function orbitPathForRole(string $role): string

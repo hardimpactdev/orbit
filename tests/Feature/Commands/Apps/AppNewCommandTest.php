@@ -12,7 +12,9 @@ use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -647,8 +649,17 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
+        'wireguard_address' => '10.6.0.4',
     ]);
     assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    NodeTool::factory()->create([
+        'node_id' => $targetNode->id,
+        'name' => 'caddy',
+        'expected_state' => 'running',
+        'config' => [
+            'container' => OrbitCaddyContainer::forPrivateNode('10.6.0.4')->spec(),
+        ],
+    ]);
 
     $remoteShell = new SequencedRecordingRemoteShell([
         // source create
@@ -706,7 +717,11 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         ->and($caddySite)->not->toContain('php_fastcgi')
         ->and($caddySite)->not->toContain('file_server')
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite))
+        ->and($remoteShell->scripts[8] ?? '')->toContain("docker image inspect 'caddy:2-alpine'")
+        ->and($remoteShell->scripts[8] ?? '')->toContain('docker run -d')
+        ->and($remoteShell->scripts[8] ?? '')->toContain("--publish '10.6.0.4:80:80'")
         ->and($remoteShell->scripts[8] ?? '')->toContain("docker restart 'orbit-caddy'")
+        ->and($remoteShell->scripts[8] ?? '')->not->toContain('exit 0')
         ->and($remoteShell->scripts[8] ?? '')->not->toContain('caddy reload')
         ->and($remoteShell->scripts[8] ?? '')->not->toContain('sudo systemctl reload caddy');
 });

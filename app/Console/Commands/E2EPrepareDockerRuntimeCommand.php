@@ -39,6 +39,10 @@ class E2EPrepareDockerRuntimeCommand extends Command
                 'action' => 'pull',
             ],
             [
+                'image' => DockerTopologyProvider::defaultPhpRuntimeImage(),
+                'action' => 'pull',
+            ],
+            [
                 'image' => DockerTopologyBuilder::composerHelperImage(),
                 'action' => 'pull',
             ],

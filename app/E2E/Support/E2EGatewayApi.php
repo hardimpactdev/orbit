@@ -68,6 +68,10 @@ PHP;
         self::installSshKey($gateway, $key, 'root', '/root');
         self::installSshKeyIfUserExists($gateway, $key, 'orbit', '/home/orbit');
         self::installSshKeyIfUserExists($gateway, $key, 'www-data', '/var/www');
+        self::installRuntimeSshKeyIfContainerExists(
+            $gateway,
+            self::isDockerTopology($gateway) ? self::runtimeContainerName($gateway) : 'orbit-runtime',
+        );
     }
 
     private static function installSshKeyIfUserExists(E2EInstance $gateway, SshKeyPair $key, string $user, string $home): void
@@ -107,6 +111,38 @@ PHP;
                 escapeshellarg($privateKey),
             ),
             "Could not install {$user} SSH key on gateway",
+        );
+    }
+
+    private static function installRuntimeSshKeyIfContainerExists(E2EInstance $gateway, string $container): void
+    {
+        $containerArgument = escapeshellarg($container);
+        $containerPrivateKey = escapeshellarg("{$container}:/root/.ssh/id_ed25519");
+        $containerPublicKey = escapeshellarg("{$container}:/root/.ssh/id_ed25519.pub");
+
+        $script = <<<SH
+set -e
+if sudo docker inspect --format='{{.State.Running}}' {$containerArgument} 2>/dev/null | grep -qx true; then
+    runtime_private_key=/home/orbit/.ssh/id_ed25519
+    if [ ! -f "\$runtime_private_key" ]; then
+        runtime_private_key=/root/.ssh/id_ed25519
+    fi
+    if [ -f "\$runtime_private_key" ]; then
+        sudo docker exec {$containerArgument} sh -lc 'install -d -m 700 /root/.ssh'
+        sudo docker cp "\$runtime_private_key" {$containerPrivateKey}
+        if [ -f "\${runtime_private_key}.pub" ]; then
+            sudo docker cp "\${runtime_private_key}.pub" {$containerPublicKey}
+        fi
+        sudo docker exec {$containerArgument} sh -lc 'chown root:root /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /root/.ssh/id_ed25519.pub ]; then chown root:root /root/.ssh/id_ed25519.pub && chmod 644 /root/.ssh/id_ed25519.pub; fi'
+    fi
+fi
+SH;
+
+        E2ECommand::exec(
+            $gateway,
+            $script,
+            'Could not install provisioning SSH key in gateway runtime container',
+            timeoutSeconds: 60,
         );
     }
 

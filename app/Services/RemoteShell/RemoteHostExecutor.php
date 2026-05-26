@@ -104,7 +104,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
 
     private function command(Node $node, string $script): string
     {
-        if ((bool) config('orbit.is_gateway', false) && $this->roleAssignments->nodeIsGateway($node)) {
+        if ((bool) config('orbit.is_gateway', false) && $this->roleAssignments->nodeIsGateway($node) && ! $this->runningInsideOrbitRuntime()) {
             return 'bash -c '.escapeshellarg($script);
         }
 
@@ -117,5 +117,18 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
                 'server_alive_count_max' => 10,
             ],
         );
+    }
+
+    private function runningInsideOrbitRuntime(): bool
+    {
+        $hostPath = getenv('ORBIT_HOST_PATH');
+
+        if (is_string($hostPath) && trim($hostPath) !== '') {
+            return true;
+        }
+
+        $sourcePath = getenv('ORBIT_SOURCE_PATH');
+
+        return is_string($sourcePath) && trim($sourcePath) === '/opt/orbit';
     }
 }

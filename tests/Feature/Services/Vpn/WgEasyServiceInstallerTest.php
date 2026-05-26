@@ -97,6 +97,33 @@ it('defaults the wg-easy database path to the managed orbit home', function (): 
     expect(config('services.wg_easy.database_path'))->toBe('/home/orbit/.wg-easy/wg-easy.db');
 });
 
+it('checks wg-easy readiness through the container filesystem when host state is not mounted', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        if (str_contains((string) $process->command, "test -f '/home/orbit/.wg-easy'/wg-easy.db")) {
+            return Process::result(exitCode: 1);
+        }
+
+        if (str_contains((string) $process->command, 'wg show wg0 public-key')) {
+            return Process::result(output: "wg-easy-public-key\n");
+        }
+
+        return Process::result();
+    });
+
+    $publicKey = wgEasyServiceInstaller($this->workdir, '/home/orbit/.wg-easy')->publicKey();
+
+    $readinessCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'ip link show wg0'));
+
+    expect($publicKey)->toBe('wg-easy-public-key')
+        ->and($readinessCommand)->toBeString()
+        ->toContain('$ORBIT_DOCKER exec wg-easy test -f /etc/wireguard/wg-easy.db')
+        ->not->toContain("test -f '/home/orbit/.wg-easy'/wg-easy.db");
+});
+
 it('routes peer persistence through the local executor when resolved from the container', function (): void {
     $previousServerHome = $_SERVER['HOME'] ?? null;
     $_SERVER['HOME'] = '/var/www';
@@ -253,6 +280,8 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         ->and(json_encode($upsertLogs, JSON_THROW_ON_ERROR))->not->toContain('control-psk');
 
     expect($runtimeScript)->toContain('ORBIT_DOCKER="sudo docker"')
+        ->and($runtimeScript)->toContain('set -eu')
+        ->and($runtimeScript)->not->toContain('set -euo pipefail')
         ->and($runtimeScript)->toContain('gateway-public')
         ->and($runtimeScript)->toContain('gateway-psk')
         ->and($runtimeScript)->toContain('10.6.0.2/32')

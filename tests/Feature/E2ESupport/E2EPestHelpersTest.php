@@ -568,7 +568,7 @@ it('seeds current-checkout gateway settings for control callers', function (): v
     }
 });
 
-it('seeds docker app current-checkout gateway settings through the cli env', function (): void {
+it('seeds docker app current-checkout gateway settings through the cli env and root settings', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
     putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
@@ -597,14 +597,22 @@ it('seeds docker app current-checkout gateway settings through the cli env', fun
     try {
         e2eConfigureCurrentCheckoutGatewaySettings($harness, 'dev');
 
-        expect($dockerCommands)->toHaveCount(1)
+        expect($dockerCommands)->toHaveCount(2)
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-dev' sh -lc")
             ->and($dockerCommands[0])->toContain('/home/orbit/orbit-current/apps/cli')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
             ->and($dockerCommands[0])->not->toContain('orbit tinker --execute')
-            ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()');
+            ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()')
+            ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-dev' sh -lc")
+            ->and($dockerCommands[1])->toContain('/home/orbit/orbit-current')
+            ->and($dockerCommands[1])->toContain('orbit tinker --execute')
+            ->and($dockerCommands[1])->toContain('LocalGatewaySettings::current()')
+            ->and($dockerCommands[1])->toContain('https://gateway')
+            ->and($dockerCommands[1])->toContain('http://gateway/api/ca/root')
+            ->and($dockerCommands[1])->toContain('ca_sha256')
+            ->and($dockerCommands[1])->toContain('ca_pem_path');
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
@@ -612,7 +620,7 @@ it('seeds docker app current-checkout gateway settings through the cli env', fun
     }
 });
 
-it('seeds docker operator current-checkout gateway settings through the cli env', function (): void {
+it('seeds docker operator current-checkout gateway settings through the cli env and root settings', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
     putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
@@ -644,7 +652,7 @@ it('seeds docker operator current-checkout gateway settings through the cli env'
     try {
         e2eConfigureCurrentCheckoutGatewaySettings($harness, 'operator');
 
-        expect($dockerCommands)->toHaveCount(1)
+        expect($dockerCommands)->toHaveCount(2)
             ->and($commands)->not->toContain("ssh:orbit:cat '/home/orbit/orbit-current/storage/app/orbit/ca/root.crt'")
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
             ->and($dockerCommands[0])->toContain('/home/orbit/orbit-current/apps/cli')
@@ -652,7 +660,15 @@ it('seeds docker operator current-checkout gateway settings through the cli env'
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
             ->and($dockerCommands[0])->not->toContain('orbit tinker --execute')
-            ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()');
+            ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()')
+            ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
+            ->and($dockerCommands[1])->toContain('/home/orbit/orbit-current')
+            ->and($dockerCommands[1])->toContain('orbit tinker --execute')
+            ->and($dockerCommands[1])->toContain('LocalGatewaySettings::current()')
+            ->and($dockerCommands[1])->toContain('https://gateway')
+            ->and($dockerCommands[1])->toContain('http://gateway/api/ca/root')
+            ->and($dockerCommands[1])->toContain('ca_sha256')
+            ->and($dockerCommands[1])->toContain('ca_pem_path');
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')

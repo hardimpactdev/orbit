@@ -46,10 +46,14 @@ final readonly class SupervisorProgramRenderer
         return sprintf(
             <<<'SH'
 sudo mkdir -p /etc/supervisor/conf.d
+sudo install -d -m 0755 -o %s -g %s %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo supervisorctl reread
 sudo supervisorctl update %s
 SH,
+            escapeshellarg($program->user),
+            escapeshellarg($program->user),
+            escapeshellarg(dirname($program->stdoutLogFile)),
             escapeshellarg(base64_encode($this->render($program))),
             escapeshellarg($this->configPath($program)),
             escapeshellarg($program->name),

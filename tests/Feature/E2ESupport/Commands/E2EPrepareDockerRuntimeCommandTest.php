@@ -15,6 +15,7 @@ it('documents docker runtime image preparation without force', function (): void
         ->expectsOutputToContain('orbit-e2e-topology-runtime:prepared-current')
         ->expectsOutputToContain('orbit-runtime:prepared-current')
         ->expectsOutputToContain('caddy:2-alpine')
+        ->expectsOutputToContain('dunglas/frankenphp:1-php8.5-bookworm')
         ->expectsOutputToContain('composer:2')
         ->expectsOutputToContain('Dry run')
         ->assertExitCode(0);
@@ -31,6 +32,7 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
         ->expectsOutputToContain('Built orbit-e2e-topology-runtime:prepared-current.')
         ->expectsOutputToContain('Built orbit-runtime:prepared-current.')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
+        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.5-bookworm.')
         ->expectsOutputToContain('Pulled composer:2.')
         ->assertSuccessful();
 
@@ -52,6 +54,10 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
+        && str_contains($process->command, "'dunglas/frankenphp:1-php8.5-bookworm'"));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker pull')
         && str_contains($process->command, "'composer:2'"));
 
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
@@ -66,12 +72,17 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
 
     $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
+        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.5-bookworm.')
         ->expectsOutputToContain('Pulled composer:2.')
         ->assertSuccessful();
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
         && str_contains($process->command, "'caddy:2-alpine'"));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker pull')
+        && str_contains($process->command, "'dunglas/frankenphp:1-php8.5-bookworm'"));
 });
 
 it('keeps the Docker topology runtime image source-less without a baked orbit launcher', function (): void {

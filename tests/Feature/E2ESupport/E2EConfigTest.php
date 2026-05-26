@@ -22,6 +22,15 @@ it('keeps provisioning cpu/memory defaults at 2 / 2GiB', function (): void {
     });
 });
 
+it('defaults provisioning images to Ubuntu 26.04 base image', function (): void {
+    withE2EConfigEnvironment([], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->sourceImage)->toBe('images:ubuntu/26.04/cloud')
+            ->and($config->baseImage)->toBe('orbit-base-ubuntu-26.04');
+    });
+});
+
 it('overrides topology limits independently from provisioning limits', function (): void {
     withE2EConfigEnvironment([
         'ORBIT_E2E_CPUS' => '4',

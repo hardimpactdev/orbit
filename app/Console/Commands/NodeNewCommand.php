@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Contracts\RemoteShell;
 use App\Data\Nodes\NodeIdentityArtifact;
 use App\Data\Nodes\RoleSettings\VpnRoleSettings;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
@@ -1067,7 +1068,7 @@ SH;
         $lastOutput = null;
 
         for ($attempt = 0; $attempt < 12; $attempt++) {
-            $probe = Process::timeout(5)->run(sprintf('ping -c 1 -W 2 %s', escapeshellarg($wireguardAddress)));
+            $probe = $this->probeProvisionedNodeWireGuard($wireguardAddress);
 
             if ($probe->successful()) {
                 return null;
@@ -1092,6 +1093,52 @@ SH;
                 'error' => $lastOutput,
             ],
         );
+    }
+
+    private function probeProvisionedNodeWireGuard(string $wireguardAddress): RemoteShellResult
+    {
+        $command = sprintf('ping -c 1 -W 2 %s', escapeshellarg($wireguardAddress));
+
+        if ($this->runningInsideOrbitRuntime()) {
+            $gateway = app(NodeRoleAssignments::class)
+                ->activeGatewayNodeQuery()
+                ->orderBy('id')
+                ->first();
+
+            if (! $gateway instanceof Node) {
+                return new RemoteShellResult(
+                    exitCode: 1,
+                    stdout: '',
+                    stderr: 'No active gateway node record exists.',
+                    durationMs: 0,
+                );
+            }
+
+            return app(RemoteShell::class)->run($gateway, $command, ['timeout' => 5]);
+        }
+
+        $startedAt = hrtime(true);
+        $probe = Process::timeout(5)->run($command);
+
+        return new RemoteShellResult(
+            exitCode: $probe->successful() ? 0 : 1,
+            stdout: $probe->output(),
+            stderr: $probe->errorOutput(),
+            durationMs: (int) ((hrtime(true) - $startedAt) / 1_000_000),
+        );
+    }
+
+    private function runningInsideOrbitRuntime(): bool
+    {
+        $hostPath = getenv('ORBIT_HOST_PATH');
+
+        if (is_string($hostPath) && trim($hostPath) !== '') {
+            return true;
+        }
+
+        $sourcePath = getenv('ORBIT_SOURCE_PATH');
+
+        return is_string($sourcePath) && trim($sourcePath) === '/opt/orbit';
     }
 
     private function gatewayPublicEndpoint(Node $gateway): ?string
@@ -2226,6 +2273,22 @@ SCRIPT,
             );
         }
 
+        try {
+            $pinnedHostKey = app(SshHostKeyPinner::class)->pin($host, $this->stringOption('host-key-fingerprint'));
+        } catch (HostKeyMismatch $exception) {
+            return $this->failCommand(
+                code: 'node.host_key_mismatch',
+                message: $exception->getMessage(),
+                meta: ['host' => $host],
+            );
+        } catch (HostKeyPinningFailed $exception) {
+            return $this->failCommand(
+                code: 'node.host_key_pin_failed',
+                message: $exception->getMessage(),
+                meta: ['host' => $host],
+            );
+        }
+
         $identityJson = json_encode([
             'gateway' => [
                 'public_key' => $gatewayKeys['public_key'],
@@ -2393,7 +2456,7 @@ SCRIPT,
             );
         }
 
-        DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $controlPreSharedKey, $trustPath, $caSha256): void {
+        DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $controlPreSharedKey, $trustPath, $caSha256, $pinnedHostKey): void {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -2407,6 +2470,11 @@ SCRIPT,
                     'user' => $runtimeUser,
                     'orbit_path' => "/home/{$runtimeUser}/orbit",
                     'status' => 'active',
+                    'host_key_type' => $pinnedHostKey->type,
+                    'host_key_public' => $pinnedHostKey->publicKey,
+                    'host_key_fingerprint' => $pinnedHostKey->fingerprint,
+                    'host_key_pin_mode' => $pinnedHostKey->pinMode,
+                    'host_key_pinned_at' => now(),
                 ],
             );
 
@@ -2463,6 +2531,17 @@ SCRIPT,
                     'private_key' => $controlKeys['private_key'],
                     'pre_shared_key' => $controlPreSharedKey,
                     'allowed_ips' => "{$controlAddress}/32",
+                ],
+            );
+
+            NodeAccess::query()->firstOrCreate(
+                [
+                    'consumer_node_id' => $control->id,
+                    'serving_node_id' => $gateway->id,
+                ],
+                [
+                    'permissions' => ['*'],
+                    'custom_permissions' => [],
                 ],
             );
 

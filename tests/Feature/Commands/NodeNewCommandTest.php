@@ -8,6 +8,7 @@ use App\Data\Security\PinnedHostKey;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Security\SshHostKeyPinner;
@@ -349,6 +350,10 @@ describe('node:new', function (): void {
 
         $gateway = DB::table('nodes')->where('name', 'gateway-1')->first();
         $control = DB::table('nodes')->where('name', 'mini')->first();
+        $initialGatewayGrant = NodeAccess::query()
+            ->where('consumer_node_id', $control?->id)
+            ->where('serving_node_id', $gateway?->id)
+            ->first();
 
         expect($gateway)->not->toBeNull()
             ->and($gateway->role)->toBe('gateway')
@@ -358,6 +363,9 @@ describe('node:new', function (): void {
             ->and($gateway->gateway_endpoint)->toBe('192.0.2.10')
             ->and($gateway->user)->toBe('orbit')
             ->and($gateway->orbit_path)->toBe('/home/orbit/orbit')
+            ->and($gateway->host_key_type)->toBe('ssh-ed25519')
+            ->and($gateway->host_key_fingerprint)->toBe('SHA256:node-new-test')
+            ->and($gateway->host_key_pin_mode)->toBe('tofu')
             ->and(NodeRoleAssignment::query()
                 ->where('node_id', $gateway->id)
                 ->orderBy('role')
@@ -365,7 +373,10 @@ describe('node:new', function (): void {
                 ->all())->toBe(['gateway', 'router', 'vpn'])
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
-            ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform());
+            ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform())
+            ->and($initialGatewayGrant)->toBeInstanceOf(NodeAccess::class)
+            ->and($initialGatewayGrant->permissions)->toBe(['*'])
+            ->and($initialGatewayGrant->custom_permissions)->toBe([]);
 
         $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
 

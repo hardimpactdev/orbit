@@ -155,7 +155,7 @@ class WgEasyServiceInstaller
 
         $script = sprintf(
             <<<'SH'
-set -euo pipefail
+set -eu
 %s
 %s
 SH,
@@ -178,17 +178,18 @@ SH,
             <<<'SH'
 %s
 for i in $(seq 1 60); do
-    test -f %s/wg-easy.db && $ORBIT_DOCKER exec wg-easy ip link show wg0 >/dev/null 2>&1 && exit 0
+    $ORBIT_DOCKER exec wg-easy test -f /etc/wireguard/wg-easy.db && $ORBIT_DOCKER exec wg-easy ip link show wg0 >/dev/null 2>&1 && exit 0
     sleep 1
 done
 exit 1
 SH,
             $this->dockerShellPrefix(),
-            $this->statePathForShell(),
         ));
 
         if ($result->successful()) {
-            $this->ensureStateWritable();
+            if (File::exists($this->statePath().'/wg-easy.db')) {
+                $this->ensureStateWritable();
+            }
 
             return;
         }

@@ -49,8 +49,9 @@ set and rebuilds only later roles. Rebuild the base image only when the
 base image shape changes.
 
 The provisioning bundle stages host-local `orbit-runtime:current`,
-`caddy:2-alpine`, and `4km3/dnsmasq:latest` Docker image archives when those
-images exist on the Incus host. `bin/install-orbit` loads those archives before
+`caddy:2-alpine`, `4km3/dnsmasq:latest`, and
+`dunglas/frankenphp:1-php8.5-bookworm` Docker image archives when those images
+exist on the Incus host. `bin/install-orbit` loads those archives before
 falling back to Docker Hub and marks archive-seeded installs with
 `ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES=1` so `node:new` can forward the same
 local runtime images to freshly provisioned gateway and app nodes.

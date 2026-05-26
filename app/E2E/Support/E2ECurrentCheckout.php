@@ -233,6 +233,7 @@ final class E2ECurrentCheckout
         $deadline = self::now() + 600.0;
         $dockerTopology = self::usesDockerRuntime($instance);
         $dockerRuntimeContainer = $dockerTopology ? self::dockerRuntimeContainerName($instance) : null;
+        $runBootstrapInDockerRuntime = $dockerTopology && ! $hostLauncher;
         $requiresRootApplication = ! ($dockerTopology && $hostLauncher);
 
         self::runInstallPhase(
@@ -255,14 +256,10 @@ final class E2ECurrentCheckout
             $deadline,
         );
 
-        if ($dockerTopology && $hostLauncher) {
-            return;
-        }
-
         self::runInstallPhase(
             $timer,
             'checkout.runtime-state',
-            fn (): string => self::runtimeStateCommand($remotePath, $seedFrom, $dockerTopology, $dockerRuntimeContainer),
+            fn (): string => self::runtimeStateCommand($remotePath, $seedFrom, $dockerTopology, $dockerRuntimeContainer, $runBootstrapInDockerRuntime),
             $instance,
             $user,
             $keyPair,
@@ -272,7 +269,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.migrate',
-            fn (): string => self::migrateCommand($remotePath, $dockerTopology, $dockerRuntimeContainer),
+            fn (): string => self::migrateCommand($remotePath, $dockerTopology, $dockerRuntimeContainer, $runBootstrapInDockerRuntime),
             $instance,
             $user,
             $keyPair,
@@ -338,12 +335,15 @@ final class E2ECurrentCheckout
     private static function reuseRuntimeDependenciesCommand(string $vendorSourcePath, string $remotePath, ?string $dockerRuntimeContainer = null, bool $requiresRootApplication = true): string
     {
         $sourceVendor = escapeshellarg("{$vendorSourcePath}/vendor");
+        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/vendor/autoload.php");
         $sourceCliVendor = escapeshellarg("{$vendorSourcePath}/apps/cli/vendor");
         $sourceCliEnv = escapeshellarg("{$vendorSourcePath}/apps/cli/.env");
         $commands = [];
 
         if ($requiresRootApplication) {
-            $commands[] = "if [ -d {$sourceVendor} ]; then rm -rf vendor && ln -s {$sourceVendor} vendor; else ".self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer).'; fi';
+            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf vendor && ln -s {$sourceVendor} vendor; else ".self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer).'; fi';
+        } else {
+            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf vendor && ln -s {$sourceVendor} vendor; else echo 'Prepared root vendor dependencies are required for Docker host-launcher checkout.' >&2; exit 127; fi";
         }
 
         $commands[] = "if [ -d {$sourceCliVendor} ]; then rm -rf apps/cli/vendor && ln -s {$sourceCliVendor} apps/cli/vendor; fi";
@@ -411,12 +411,13 @@ final class E2ECurrentCheckout
         return "if [ -f {$sourceAutoload} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} composer.lock; then {$reuseVendor}; elif command -v composer >/dev/null 2>&1; then composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Composer is not installed and prepared vendor dependencies could not be reused.' >&2; exit 127; fi";
     }
 
-    private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null): string
+    private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null): string
     {
+        $runArtisanInDockerRuntime ??= $dockerTopology;
         $runtimeDirectories = 'mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs';
 
         if ($seedFrom === null) {
-            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && ".self::dockerTopologyProviderEnvCommand($dockerTopology).' && '.self::artisanCommand('key:generate --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer);
+            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && ".self::dockerTopologyProviderEnvCommand($dockerTopology).' && '.self::artisanCommand('key:generate --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
         }
 
         $seedEnv = escapeshellarg("{$seedFrom}/.env");
@@ -430,7 +431,7 @@ final class E2ECurrentCheckout
             "if [ -d {$seedStorageApp} ]; then mkdir -p storage && rm -rf storage/app && cp -a {$seedStorageApp} storage/app; fi",
             $runtimeDirectories,
             self::dockerTopologyProviderEnvCommand($dockerTopology),
-            self::appKeyCommand($dockerTopology, $remotePath, $dockerRuntimeContainer),
+            self::appKeyCommand($runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer),
         ]);
     }
 
@@ -456,29 +457,30 @@ final class E2ECurrentCheckout
         ]);
     }
 
-    private static function runtimeStateCommand(string $remotePath, ?string $seedFrom, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null): string
+    private static function runtimeStateCommand(string $remotePath, ?string $seedFrom, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            self::prepareRuntimeStateCommand($seedFrom, $dockerTopology, $remotePath, $dockerRuntimeContainer),
+            self::prepareRuntimeStateCommand($seedFrom, $dockerTopology, $remotePath, $dockerRuntimeContainer, $runArtisanInDockerRuntime),
         ]);
     }
 
-    private static function migrateCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null): string
+    private static function migrateCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null): string
     {
+        $runArtisanInDockerRuntime ??= $dockerTopology;
         $commands = [
             'cd '.escapeshellarg($remotePath),
-            self::artisanCommand('migrate --force --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer),
+            self::artisanCommand('migrate --force --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer),
         ];
 
         if ($dockerTopology) {
-            $commands[] = self::dockerGatewaySettingsCommand($remotePath, $dockerRuntimeContainer);
+            $commands[] = self::dockerGatewaySettingsCommand($remotePath, $dockerRuntimeContainer, $runArtisanInDockerRuntime);
         }
 
         return implode(' && ', $commands);
     }
 
-    private static function dockerGatewaySettingsCommand(string $remotePath, ?string $dockerRuntimeContainer): string
+    private static function dockerGatewaySettingsCommand(string $remotePath, ?string $dockerRuntimeContainer, bool $runArtisanInDockerRuntime = true): string
     {
         $php = <<<'PHP'
 if (\Illuminate\Support\Facades\Schema::hasTable('local_gateway_settings')) {
@@ -523,7 +525,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('local_gateway_settings')) {
 }
 PHP;
 
-        return self::artisanCommand('tinker --execute='.escapeshellarg($php), true, $remotePath, $dockerRuntimeContainer);
+        return self::artisanCommand('tinker --execute='.escapeshellarg($php), $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer): void

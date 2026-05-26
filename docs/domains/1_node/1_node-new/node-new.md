@@ -208,7 +208,8 @@ identity, gateway APIs, and node access policy.
 When a client with no configured gateway bootstraps the first gateway,
 `node:new --role=gateway` also mints and installs the initiating client's
 WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
-local gateway endpoint, and verifies gateway API access. After that successful
+local gateway endpoint, creates the initiating client-to-gateway
+gateway-admin grant, and verifies gateway API access. After that successful
 flow, the initiating client does not run `gateway:add`.
 
 Gateway bootstrap also installs the runtime substrate for the gateway-coupled

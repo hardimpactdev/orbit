@@ -179,6 +179,30 @@ it('requires the orbit runtime sibling image only for gateway-backed Docker topo
         ->and($provider->availability(E2ETopologyKind::ControlGateway)->message)->toContain('orbit-runtime:prepared-current');
 });
 
+it('requires the default FrankenPHP image for app-node Docker topologies', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null' || $process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm' >/dev/null") {
+            return Process::result(exitCode: 1);
+        }
+
+        if (str_starts_with($process->command, 'docker image inspect ')) {
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+
+    $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+    expect($provider->availability(E2ETopologyKind::OperatorGateway)->available)->toBeTrue()
+        ->and($provider->availability(E2ETopologyKind::OperatorGatewayAppdev)->available)->toBeFalse()
+        ->and($provider->availability(E2ETopologyKind::OperatorGatewayAppdev)->message)->toContain('dunglas/frankenphp:1-php8.5-bookworm');
+});
+
 it('advertises container feature capabilities', function (): void {
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -596,6 +620,7 @@ it('launches app production ingress as a prod-node role', function (): void {
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-runtime:prepared-current' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm' >/dev/null"
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || str_starts_with($command, 'docker network create ')
             || str_starts_with($command, 'docker exec ')

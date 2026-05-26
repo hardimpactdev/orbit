@@ -11,7 +11,8 @@
   active gateway node. Gateway callers are implicitly authorized; non-gateway
   callers require a covering grant to the gateway node. First-gateway bootstrap
   is the one no-gateway path: an unconfigured CLI runs the SSH bootstrap
-  directly.
+  directly and materializes an initial gateway-admin grant from the initiating
+  operator node to the new gateway.
 - Role-specific network, platform, topology, and authorization prerequisites
   are applied as post-input path eligibility in the role companion contracts
   once the requested role and required fields are known.

@@ -475,7 +475,7 @@ it('installs the current checkout on Docker topology nodes through the runtime c
         ->and($wrapperCopyCommands)->toHaveCount(1);
 });
 
-it('skips root app bootstrapping for Docker host launcher checkout nodes', function (): void {
+it('bootstraps root app state for Docker host launcher checkout nodes without root composer installs', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -502,11 +502,18 @@ it('skips root app bootstrapping for Docker host launcher checkout nodes', funct
     )));
 
     expect($nodeInstallCommands)
+        ->toContain('/home/orbit/orbit/vendor/autoload.php')
+        ->toContain('/home/orbit/orbit/vendor')
+        ->toContain('rm -rf vendor')
+        ->toContain('php artisan key:generate --force --no-interaction --ansi')
+        ->toContain('php artisan migrate --force --ansi')
+        ->toContain('php artisan tinker --execute')
+        ->toContain('LocalGatewaySettings::current()')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('rm -rf apps/cli/vendor')
         ->toContain('apps/cli/.env')
-        ->not->toContain('key:generate')
-        ->not->toContain('migrate --force')
+        ->not->toContain('orbit-e2e-run123-dev-orbit-runtime')
+        ->not->toContain('sudo docker exec --env')
         ->not->toContain('composer install');
 });
 
@@ -547,17 +554,27 @@ it('uses the host launcher for Docker operator and app checkouts while the gatew
     )));
 
     expect($operatorInstallCommands)
-        ->not->toContain('key:generate')
-        ->not->toContain('migrate --force')
+        ->toContain('php artisan key:generate')
+        ->toContain('php artisan migrate --force')
+        ->toContain('php artisan tinker --execute')
+        ->toContain('LocalGatewaySettings::current()')
+        ->toContain('/home/orbit/orbit/vendor/autoload.php')
+        ->toContain('rm -rf vendor')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
+        ->not->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->and($gatewayInstallCommands)
         ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->toContain('key:generate')
         ->toContain('migrate --force')
         ->and($devInstallCommands)
-        ->not->toContain('key:generate')
-        ->not->toContain('migrate --force')
-        ->toContain('/home/orbit/orbit/apps/cli/vendor');
+        ->toContain('php artisan key:generate')
+        ->toContain('php artisan migrate --force')
+        ->toContain('php artisan tinker --execute')
+        ->toContain('LocalGatewaySettings::current()')
+        ->toContain('/home/orbit/orbit/vendor/autoload.php')
+        ->toContain('rm -rf vendor')
+        ->toContain('/home/orbit/orbit/apps/cli/vendor')
+        ->not->toContain('orbit-e2e-run123-dev-orbit-runtime');
 });
 
 it('refreshes Docker gateway checkout host keys through the runtime container', function (): void {

@@ -233,6 +233,37 @@ describe('node role assignment service', function (): void {
         expect($tool)->toBeNull();
     });
 
+    it('materializes the development app runtime baseline as desired tools', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'role' => 'control',
+            'wireguard_address' => '10.6.0.20',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']);
+
+        $tools = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->whereIn('name', ['caddy', 'php'])
+            ->orderBy('name')
+            ->get();
+
+        expect($tools->pluck('name')->all())
+            ->toBe(['caddy', 'php'])
+            ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
+            ->toBe([
+                'caddy' => 'running',
+                'php' => 'running',
+            ]);
+
+        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-development', force: true);
+
+        expect(NodeTool::query()
+            ->where('node_id', $node->id)
+            ->whereIn('name', ['caddy', 'php'])
+            ->exists())->toBeFalse();
+    });
+
     it('materializes the production app runtime baseline as desired tools', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',

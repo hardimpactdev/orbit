@@ -9,6 +9,7 @@ COMPOSER_CACHE=""
 RUNTIME_IMAGE_ARCHIVE=""
 CADDY_IMAGE_ARCHIVE=""
 DNSMASQ_IMAGE_ARCHIVE=""
+FRANKENPHP_IMAGE_ARCHIVE=""
 OPERATOR_USER="${ORBIT_E2E_OPERATOR_USER:-${ORBIT_E2E_CONTROL_USER:-orbit}}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 CURRENT_STEP=""
@@ -42,6 +43,11 @@ Optional:
   --dnsmasq-image-archive=PATH Local Docker image archive for
                                4km3/dnsmasq:latest. If given, forwarded to
                                install-orbit for gateway DNS bootstrap.
+  --frankenphp-image-archive=PATH
+                               Local Docker image archive for
+                               dunglas/frankenphp:1-php8.5-bookworm. If given,
+                               forwarded to install-orbit for app runtime
+                               bootstrap.
   --operator-user=NAME         Operator steady-state user. Defaults to
                                $ORBIT_E2E_OPERATOR_USER, then
                                $ORBIT_E2E_CONTROL_USER, then "orbit".
@@ -147,6 +153,9 @@ parse_args() {
             --dnsmasq-image-archive=*)
                 DNSMASQ_IMAGE_ARCHIVE="${1#*=}"
                 ;;
+            --frankenphp-image-archive=*)
+                FRANKENPHP_IMAGE_ARCHIVE="${1#*=}"
+                ;;
             --operator-user=*)
                 OPERATOR_USER="${1#*=}"
                 ;;
@@ -197,6 +206,10 @@ validate_args() {
 
     if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ] && [ ! -f "$DNSMASQ_IMAGE_ARCHIVE" ]; then
         fail validation_failed "dnsmasq image archive not found: $DNSMASQ_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ] && [ ! -f "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "frankenphp image archive not found: $FRANKENPHP_IMAGE_ARCHIVE"
     fi
 
     [ -n "$OPERATOR_USER" ] || fail validation_failed "--operator-user must not be empty"
@@ -270,9 +283,14 @@ install_role() {
     local user
     local home_dir
     local target_dir
+    local staged_runtime_image_archive=""
+    local staged_caddy_image_archive=""
+    local staged_dnsmasq_image_archive=""
+    local staged_frankenphp_image_archive=""
     local runtime_image_args=()
     local caddy_image_args=()
     local dnsmasq_image_args=()
+    local frankenphp_image_args=()
 
     user="$(target_user_for_role)"
     home_dir="/home/${user}"
@@ -282,15 +300,27 @@ install_role() {
     sudo_run install -m 0755 "$INSTALLER" "/tmp/install-orbit"
 
     if [ -n "$RUNTIME_IMAGE_ARCHIVE" ]; then
-        runtime_image_args=(--runtime-image-archive="$RUNTIME_IMAGE_ARCHIVE")
+        staged_runtime_image_archive="/tmp/orbit-runtime-current.tar"
+        sudo_run install -m 0644 -o "$user" -g "$user" "$RUNTIME_IMAGE_ARCHIVE" "$staged_runtime_image_archive"
+        runtime_image_args=(--runtime-image-archive="$staged_runtime_image_archive")
     fi
 
     if [ -n "$CADDY_IMAGE_ARCHIVE" ]; then
-        caddy_image_args=(--caddy-image-archive="$CADDY_IMAGE_ARCHIVE")
+        staged_caddy_image_archive="/tmp/caddy-2-alpine.tar"
+        sudo_run install -m 0644 -o "$user" -g "$user" "$CADDY_IMAGE_ARCHIVE" "$staged_caddy_image_archive"
+        caddy_image_args=(--caddy-image-archive="$staged_caddy_image_archive")
     fi
 
     if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ]; then
-        dnsmasq_image_args=(--dnsmasq-image-archive="$DNSMASQ_IMAGE_ARCHIVE")
+        staged_dnsmasq_image_archive="/tmp/dnsmasq-latest.tar"
+        sudo_run install -m 0644 -o "$user" -g "$user" "$DNSMASQ_IMAGE_ARCHIVE" "$staged_dnsmasq_image_archive"
+        dnsmasq_image_args=(--dnsmasq-image-archive="$staged_dnsmasq_image_archive")
+    fi
+
+    if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
+        staged_frankenphp_image_archive="/tmp/frankenphp-1-php8.5-bookworm.tar"
+        sudo_run install -m 0644 -o "$user" -g "$user" "$FRANKENPHP_IMAGE_ARCHIVE" "$staged_frankenphp_image_archive"
+        frankenphp_image_args=(--frankenphp-image-archive="$staged_frankenphp_image_archive")
     fi
 
     sudo_run runuser -u "$user" -- env \
@@ -303,11 +333,12 @@ install_role() {
         --bin=/usr/local/bin/orbit \
         "${runtime_image_args[@]}" \
         "${caddy_image_args[@]}" \
-        "${dnsmasq_image_args[@]}"
+        "${dnsmasq_image_args[@]}" \
+        "${frankenphp_image_args[@]}"
 }
 
 cleanup_bundle() {
-    sudo_run rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit
+    sudo_run rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit /tmp/orbit-runtime-current.tar /tmp/caddy-2-alpine.tar /tmp/dnsmasq-latest.tar /tmp/frankenphp-1-php8.5-bookworm.tar
 }
 
 main() {

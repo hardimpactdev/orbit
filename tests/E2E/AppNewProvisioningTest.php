@@ -6,7 +6,6 @@ use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EImage;
 use App\E2E\Support\E2EInstance;
-use App\E2E\Support\E2ENetwork;
 use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
@@ -69,18 +68,7 @@ it('creates an app through provisioned gateway and converges real runtime artifa
         $key = $run->createSshKeyPair();
         $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
-        [$app] = e2eProvisionAppThroughNodeNew($provider, $run, $config, $control, $key, 'app-dev-1', 'development', 'test');
-
-        $controlIp = $control->waitForIpv4();
-        $gatewayIp = $gateway->waitForIpv4();
-        $appIp = $app->waitForIpv4();
-
-        E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
-        E2ENetwork::routeWireGuardPeer($control, '10.6.0.4', $appIp, '10.6.0.3');
-        E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
-        E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.4', $appIp, '10.6.0.2');
-        E2ENetwork::routeWireGuardPeer($app, '10.6.0.2', $gatewayIp, '10.6.0.4');
-        E2ENetwork::routeWireGuardPeer($app, '10.6.0.3', $controlIp, '10.6.0.4');
+        e2eProvisionAppThroughNodeNew($provider, $run, $config, $control, $key, 'app-dev-1', 'development', 'test');
 
         appNewProvisionGrantAccess($gateway, $key);
 
@@ -119,19 +107,6 @@ it('creates an app through provisioned gateway and converges real runtime artifa
             ->and($registerPayload['success']['data']['app']['node'])->toBe('app-dev-1')
             ->and($registerPayload['success']['meta']['warnings'] ?? [])->toBe([]);
 
-        E2ECommand::ssh(
-            $app,
-            $config->bootstrapUser,
-            $key,
-            sprintf(
-                'sudo test -d %s && sudo test -f %s && sudo test -f %s',
-                escapeshellarg("/home/orbit/apps/{$name}"),
-                escapeshellarg("/etc/php/8.5/fpm/pool.d/orbit-{$name}.conf"),
-                escapeshellarg("/etc/caddy/sites/{$name}.test.caddy"),
-            ),
-            timeoutSeconds: 120,
-        );
-
         $gatewayState = E2ECommand::ssh(
             $gateway,
             'orbit',
@@ -139,6 +114,7 @@ it('creates an app through provisioned gateway and converges real runtime artifa
             'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg("echo json_encode([
                 'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
                 'route' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$name}.test')->exists(),
+                'app_wireguard_address' => \\App\\Models\\Node::query()->where('name', 'app-dev-1')->value('wireguard_address'),
                 'processes' => \\App\\Models\\App::query()->where('name', '{$name}')->firstOrFail()->processes()->count(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
@@ -150,6 +126,31 @@ it('creates an app through provisioned gateway and converges real runtime artifa
             'route' => true,
             'processes' => 0,
         ]);
+
+        $appWireGuardAddress = $state['app_wireguard_address'] ?? null;
+
+        expect($appWireGuardAddress)->toBeString()->not->toBe('');
+
+        $artifactCommand = sprintf(
+            'sudo test -d %s && sudo docker container inspect %s >/dev/null && sudo docker image inspect %s >/dev/null && sudo test -f %s && sudo test -f %s',
+            escapeshellarg("/home/orbit/apps/{$name}"),
+            escapeshellarg("orbit-app-{$name}"),
+            escapeshellarg('dunglas/frankenphp:1-php8.5-bookworm'),
+            escapeshellarg("/etc/orbit/apps/{$name}.ini"),
+            escapeshellarg("/etc/caddy/sites/{$name}.test.caddy"),
+        );
+
+        E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $key,
+            sprintf(
+                'ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 %s %s',
+                escapeshellarg("{$config->bootstrapUser}@{$appWireGuardAddress}"),
+                escapeshellarg($artifactCommand),
+            ),
+            timeoutSeconds: 120,
+        );
 
         $passed = true;
     } finally {

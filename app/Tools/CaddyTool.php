@@ -71,7 +71,6 @@ final class CaddyTool extends BaseTool
             'expected_hash='.escapeshellarg($container->specHash()),
             sprintf('if ! %s >/dev/null 2>&1; then', $commands->containerInspect($container->name())),
             '    '.$commands->runDetached($container),
-            '    exit 0',
             'fi',
             sprintf(
                 'actual_hash="$(docker container inspect --format %s %s 2>/dev/null || true)"',
@@ -81,7 +80,6 @@ final class CaddyTool extends BaseTool
             'if [ "$actual_hash" != "$expected_hash" ]; then',
             '    '.$commands->containerRemove($container->name()),
             '    '.$commands->runDetached($container),
-            '    exit 0',
             'fi',
             sprintf(
                 'running="$(docker container inspect --format %s %s 2>/dev/null || true)"',

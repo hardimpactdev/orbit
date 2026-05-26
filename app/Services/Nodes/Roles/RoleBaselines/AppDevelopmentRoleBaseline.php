@@ -30,7 +30,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'not_applicable') {
-            $this->convergeOrbitCaddy($node);
+            $this->convergeTools($node, ['caddy', 'php']);
 
             return;
         }
@@ -49,7 +49,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->removeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'failed') {
-            $this->removeTools($node, ['caddy']);
+            $this->removeTools($node, ['caddy', 'php']);
 
             return;
         }

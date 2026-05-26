@@ -167,6 +167,7 @@ class E2EPrepareDockerHostsCommand extends Command
                 ['role' => 'topology-runtime', 'image' => DockerTopologyBuilder::runtimeImage()],
                 ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
                 ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
+                ['role' => 'frankenphp-runtime', 'image' => DockerTopologyProvider::defaultPhpRuntimeImage()],
             ],
         ];
     }

@@ -10,9 +10,9 @@ require_once __DIR__.'/Support/SqliteDatabaseFixture.php';
 
 it('keeps database E2E SQLite fixture setup off the host sqlite3 binary', function (): void {
     $sources = [
-        __DIR__.'/DatabaseTablesTest.php',
-        __DIR__.'/DatabaseSchemaTest.php',
-        __DIR__.'/DatabaseDescribeTest.php',
+        databaseTablesE2ETestSource('DatabaseTablesTest.php'),
+        databaseTablesE2ETestSource('DatabaseSchemaTest.php'),
+        databaseTablesE2ETestSource('DatabaseDescribeTest.php'),
     ];
 
     foreach ($sources as $source) {
@@ -21,6 +21,23 @@ it('keeps database E2E SQLite fixture setup off the host sqlite3 binary', functi
         expect($contents)->not->toMatch('/->ssh\(\s*[\'"]dev[\'"][\s\S]*sqlite3/');
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+
+function databaseTablesE2ETestSource(string $basename): string
+{
+    $directPath = __DIR__.'/'.$basename;
+
+    if (is_file($directPath)) {
+        return $directPath;
+    }
+
+    $generatedMatches = glob(__DIR__.'/*'.$basename) ?: [];
+
+    if (count($generatedMatches) === 1) {
+        return $generatedMatches[0];
+    }
+
+    throw new RuntimeException("Could not resolve E2E test source [{$basename}].");
+}
 
 it('lists tables for a database connection from the operator node through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();

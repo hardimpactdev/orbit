@@ -69,6 +69,59 @@ it('runs nodes with an assigned gateway role through bash without ssh', function
     Process::assertRan(fn (PendingProcess $process): bool => $process->command === "bash -c 'pwd'");
 });
 
+it('runs gateway host work over ssh when dispatched from orbit-runtime', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "ok\n"),
+    ]);
+
+    $previousHostPath = getenv('ORBIT_HOST_PATH');
+    $previousSourcePath = getenv('ORBIT_SOURCE_PATH');
+    putenv('ORBIT_HOST_PATH');
+    putenv('ORBIT_SOURCE_PATH=/opt/orbit');
+
+    try {
+        $node = Node::factory()->create([
+            'host' => 'gateway.example.com',
+            'wireguard_address' => '10.6.0.2',
+            'role' => 'gateway',
+            'user' => 'orbit',
+            ...sshRemoteShellPinnedHostKey(),
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+
+        $result = (new SshRemoteShell)->run($node, 'pwd');
+
+        expect($result->successful())->toBeTrue();
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            $command = (string) $process->command;
+
+            return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+                && str_contains($command, "'orbit'@'10.6.0.2'")
+                && str_contains($command, 'bash -lc')
+                && ! str_starts_with($command, 'bash -c ');
+        });
+    } finally {
+        if ($previousHostPath === false) {
+            putenv('ORBIT_HOST_PATH');
+        } else {
+            putenv("ORBIT_HOST_PATH={$previousHostPath}");
+        }
+
+        if ($previousSourcePath === false) {
+            putenv('ORBIT_SOURCE_PATH');
+        } else {
+            putenv("ORBIT_SOURCE_PATH={$previousSourcePath}");
+        }
+    }
+});
+
 it('rejects invalid metadata keys before composing shell commands', function (): void {
     Process::preventStrayProcesses();
     Process::fake();
