@@ -694,7 +694,7 @@ allowed_scope:
   - app/**
   - bin/**
   - composer.json
-  - TESTING.md
+  - docs/testing/README.md
   - tests/E2E/Support/**
 
 forbidden_scope:

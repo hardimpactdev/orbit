@@ -56,8 +56,8 @@ You are the one-shot worktree setup helper for one Solo todo.
 
    E2E notes:
 
-   - `composer test:e2e`, `composer test:e2e:provision`, and
-     `composer test:e2e:hcloud-docker` source `.env.e2e` when it exists.
+   - `composer test:e2e` and `composer test:e2e:provision` source `.env.e2e`
+     when it exists.
    - The preferred worktree setup is a symlink to the main checkout's
      `.env.e2e`, so every worktree uses the same Docker, Incus, and provider
      pool configuration.

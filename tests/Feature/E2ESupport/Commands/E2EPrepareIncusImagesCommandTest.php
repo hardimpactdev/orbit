@@ -101,26 +101,6 @@ it('--force --role=blank invokes preparer and returns success envelope', functio
         ->assertSuccessful();
 });
 
-it('--force --role=blank without configured Incus provider fails clearly', function (): void {
-    $previousProvider = getenv('ORBIT_E2E_PROVIDER');
-    $previousProviders = getenv('ORBIT_E2E_PROVIDERS');
-
-    putenv('ORBIT_E2E_PROVIDER=hcloud');
-    putenv('ORBIT_E2E_PROVIDERS=hcloud');
-
-    try {
-        $this->artisan('e2e:prepare-incus-images', [
-            '--force' => true,
-            '--role' => 'blank',
-        ])
-            ->expectsOutputToContain('No Incus provider configured.')
-            ->assertFailed();
-    } finally {
-        $previousProvider === false ? putenv('ORBIT_E2E_PROVIDER') : putenv("ORBIT_E2E_PROVIDER={$previousProvider}");
-        $previousProviders === false ? putenv('ORBIT_E2E_PROVIDERS') : putenv("ORBIT_E2E_PROVIDERS={$previousProviders}");
-    }
-});
-
 it('--force surfaces preparer failure as command failure', function (): void {
     $preparer = m::mock(IncusE2EImagePreparer::class);
     $preparer->shouldReceive('prepare')

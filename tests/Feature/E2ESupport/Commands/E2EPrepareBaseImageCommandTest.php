@@ -185,14 +185,16 @@ it('--force builds on the configured image build host and distributes to configu
     expect($distributorHost)->toBe('beast');
 });
 
-it('--force without an Incus provider fails clearly', function (): void {
+it('--force rejects unsupported provisioning provider configuration', function (): void {
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
 
     putenv('ORBIT_E2E_PROVIDER=docker');
 
+    $this->expectException(InvalidArgumentException::class);
+    $this->expectExceptionMessage('Unsupported E2E provider [docker]. Supported providers: incus.');
+
     try {
         $this->artisan('e2e:prepare-base-image', ['--force' => true])
-            ->expectsOutputToContain('No Incus provider configured')
             ->assertFailed();
     } finally {
         $previousProvider === false ? putenv('ORBIT_E2E_PROVIDER') : putenv("ORBIT_E2E_PROVIDER={$previousProvider}");

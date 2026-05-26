@@ -30,7 +30,7 @@ If memory becomes the real bottleneck, reduce memory only after timing data show
 
 Relevant files:
 
-- `TESTING.md` documents `ORBIT_E2E_INCUS_HOSTS`, `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, and `ORBIT_E2E_TOPOLOGY_RESET`.
+- `docs/testing/README.md` documents `ORBIT_E2E_INCUS_HOSTS`, `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, and `ORBIT_E2E_TOPOLOGY_RESET`.
 - `tests/E2E/Support/E2EConfig.php` has one global `cpus`/`memory` pair used by runtime providers and image preparation.
 - `tests/E2E/Support/IncusHostPool.php` chooses the first host that has templates; it does not enforce capacity.
 - `tests/E2E/Support/IncusTopologyTemplate.php` copies, starts, and waits for topology roles sequentially.
@@ -125,7 +125,7 @@ Expected: the new timer tests pass.
   - cleanup;
   - reset.
 
-- [ ] Document `ORBIT_E2E_TIMINGS=1` in `TESTING.md`.
+- [ ] Document `ORBIT_E2E_TIMINGS=1` in `docs/testing/README.md`.
 
 - [ ] Run:
 
@@ -144,7 +144,7 @@ vendor/bin/pint --dirty --format agent
 - Modify: `tests/E2E/Support/E2EConfig.php`
 - Modify: `tests/E2E/Support/IncusHost.php`
 - Modify: `tests/E2E/Support/IncusTopologyTemplate.php`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: `tests/Feature/E2EConfigTest.php`
 - Test: `tests/Feature/IncusTopologyTemplateTest.php`
 
@@ -186,7 +186,7 @@ public function setInstanceLimits(string $name, string $cpus, string $memory): P
   - env overrides work independently;
   - topology clone limit commands run before start commands.
 
-- [ ] Document the resource split in `TESTING.md`.
+- [ ] Document the resource split in `docs/testing/README.md`.
 
 Run:
 
@@ -206,7 +206,7 @@ vendor/bin/pint --dirty --format agent
 - Modify: `tests/E2E/Support/IncusHost.php`
 - Modify: `tests/E2E/Support/IncusHostPool.php`
 - Modify: `tests/E2E/Support/E2ETopologyFactory.php`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: `tests/Feature/E2EProviderPoolTest.php`
 - Test: `tests/Feature/E2ETopologyFactoryTest.php`
 
@@ -324,7 +324,7 @@ vendor/bin/pint --dirty --format agent
 - Modify: `tests/E2E/Support/IncusInstance.php`
 - Modify: `tests/E2E/Support/E2ETopologyLease.php`
 - Modify: `tests/E2E/Support/E2ETopologyFactory.php`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: `tests/Feature/E2ETopologyResetTest.php`
 
 - [ ] Add host methods:
@@ -380,7 +380,7 @@ vendor/bin/pint --dirty --format agent
 **Files:**
 
 - Modify: `composer.json`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: no PHP test needed; verify with command help and dry invocation.
 
 - [ ] Add a separate opt-in script for parallel feature E2E after host capacity is enforced:

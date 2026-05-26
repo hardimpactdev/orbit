@@ -102,7 +102,7 @@ or invalidate another assertion.
 - Modify: `app/E2E/Support/IncusTopologyTemplate.php`
 - Modify: `app/E2E/Support/E2EProvisioningBundle.php`
 - Modify: `composer.json`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Modify: `docs/porting/PORTING.md`
 
 ## Phases
@@ -118,11 +118,11 @@ or invalidate another assertion.
 - [ ] Keep idempotence assertions after the rerun, grouped by behavior.
 - [ ] Run the old filtered set before the merge and the new convergence filter
       after the merge with `/usr/bin/time -p`; record the wall-clock delta in
-      `TESTING.md`.
+      `docs/testing/README.md`.
 
 ### Phase 2: Document The Prepared Image Lane Contract
 
-- [ ] Add a `Prepared role image lane` section to `TESTING.md`.
+- [ ] Add a `Prepared role image lane` section to `docs/testing/README.md`.
 - [ ] Document that prepared role images are for feature/app-command E2E, not installer/provisioning proof.
 - [ ] Document image aliases, fixed E2E-only key paths, and source refresh behavior.
 - [ ] Add a `docs/porting/PORTING.md` Testing Infrastructure candidate named `E2E-PREPARED-ROLE-IMAGES-1`.

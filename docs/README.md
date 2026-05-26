@@ -8,7 +8,8 @@
 ## Additional Documentation
 
 1. [UX](ux/)
-2. [Superpowers](superpowers/)
+2. [Testing](testing/)
+3. [Superpowers](superpowers/)
 
 ## Domains
 

@@ -46,7 +46,8 @@ user explicitly provides additional source material for a specific task.
 
 ## Verification
 
-Before adding, changing, debugging, or running E2E tests, read `TESTING.md`.
+Before adding, changing, debugging, or running E2E tests, read
+`docs/testing/README.md`.
 It is the authoritative lane map for prepared-topology feature tests,
 provisioning tests, host pools, cache strategy, and performance baselines.
 
@@ -70,8 +71,8 @@ composer test:e2e
 ```
 
 There is no standing live-node test lane. Provisioning, host-mutation, and
-repair/adoption flows belong in `composer test:e2e:provision`. See `TESTING.md`
-for the full verification model and lane map.
+repair/adoption flows belong in `composer test:e2e:provision`. See
+`docs/testing/README.md` for the full verification model and lane map.
 
 ## AI Guideline Precedence
 

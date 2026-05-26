@@ -40,7 +40,7 @@ run_bg() {
     eval "${label}_PID=$!"
 }
 
-run_bg docs_lint php artisan librarian:lint --format=agent --path=docs/domains
+run_bg docs_lint bash -lc 'php artisan librarian:lint --format=agent --path=docs/domains && php artisan librarian:lint --format=agent --path=docs/testing'
 run_bg phpstan   vendor/bin/phpstan analyse --memory-limit=512M --no-progress
 run_bg rector    vendor/bin/rector process "${RECTOR_ARGS[@]}"
 run_bg pint      vendor/bin/pint "${PINT_ARGS[@]}"

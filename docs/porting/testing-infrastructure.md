@@ -42,7 +42,6 @@ composer e2e:prepare-docker-hosts
 composer e2e:prepare-base-image
 composer e2e:reap-incus
 composer e2e:reap-docker
-composer e2e:reap-hcloud
 ```
 
 ## Porting Rule

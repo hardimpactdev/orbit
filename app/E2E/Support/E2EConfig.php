@@ -15,9 +15,6 @@ final readonly class E2EConfig
         public string $sourceImage,
         public string $blankImage,
         public string $baseImage,
-        public string $hcloudServerType,
-        public string $hcloudLocation,
-        public string $hcloudBlankImage,
         public string $bootstrapUser,
         public string $controlUser,
         public string $instancePrefix,
@@ -34,10 +31,6 @@ final readonly class E2EConfig
         public bool $keep,
         /** @var array<string, int> */
         public array $incusHostSlots = [],
-        /** @var array<string, int> */
-        public array $hcloudLocationSlots = [],
-        /** @var array<string, int> */
-        public array $hcloudResourceSlots = [],
         public int $slotWaitSeconds = 900,
         public int $slotStaleSeconds = 7200,
         /** @var array<string, int> */
@@ -68,9 +61,6 @@ final readonly class E2EConfig
             sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04/cloud')),
             blankImage: self::envString('ORBIT_E2E_BLANK_IMAGE', 'orbit-blank-ubuntu-26.04'),
             baseImage: self::envString('ORBIT_E2E_BASE_IMAGE', 'orbit-base-ubuntu-26.04'),
-            hcloudServerType: self::envString('ORBIT_E2E_HCLOUD_SERVER_TYPE', 'cpx11'),
-            hcloudLocation: self::envString('ORBIT_E2E_HCLOUD_LOCATION', 'ash'),
-            hcloudBlankImage: self::envString('ORBIT_E2E_HCLOUD_BLANK_IMAGE', 'ubuntu-24.04'),
             bootstrapUser: self::envString('ORBIT_E2E_BOOTSTRAP_USER', 'provisioner'),
             operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', self::envString('ORBIT_E2E_CONTROL_USER', 'orbit')),
             controlUser: self::envString('ORBIT_E2E_CONTROL_USER', self::envString('ORBIT_E2E_OPERATOR_USER', 'orbit')),
@@ -84,8 +74,6 @@ final readonly class E2EConfig
             topologyStateSize: self::envString('ORBIT_E2E_TOPOLOGY_STATE_SIZE', '4GiB'),
             incusStoragePool: self::envString('ORBIT_E2E_INCUS_STORAGE_POOL', ''),
             incusHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_INCUS_HOST_SLOTS', ''), backend: 'Incus'),
-            hcloudLocationSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_LOCATION_SLOTS', ''), backend: 'Hcloud'),
-            hcloudResourceSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_RESOURCE_SLOTS', ''), backend: 'Hcloud'),
             dockerHosts: $dockerTestRunners['hosts'],
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
             slotWaitSeconds: self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
@@ -140,7 +128,7 @@ final readonly class E2EConfig
         $providers = self::envString('ORBIT_E2E_TOPOLOGY_PROVIDERS', '');
 
         if ($providers !== '') {
-            $names = self::parseProviderNames($providers);
+            $names = self::parseProviderNames($providers, supported: ['docker', 'incus']);
 
             return in_array('auto', $names, true) ? ['incus'] : $names;
         }
@@ -152,7 +140,7 @@ final readonly class E2EConfig
                 return ['incus'];
             }
 
-            return self::parseProviderNames($provider);
+            return self::parseProviderNames($provider, supported: ['docker', 'incus']);
         }
 
         return ['incus'];
@@ -166,7 +154,7 @@ final readonly class E2EConfig
         $providers = self::envString('ORBIT_E2E_PROVIDERS', '');
 
         if ($providers !== '') {
-            return self::parseProviderNames($providers);
+            return self::parseProviderNames($providers, supported: ['incus']);
         }
 
         $provider = self::envString('ORBIT_E2E_PROVIDER', 'incus');
@@ -175,13 +163,14 @@ final readonly class E2EConfig
             return ['incus'];
         }
 
-        return self::parseProviderNames($provider);
+        return self::parseProviderNames($provider, supported: ['incus']);
     }
 
     /**
+     * @param  list<string>  $supported
      * @return list<string>
      */
-    private static function parseProviderNames(string $providers): array
+    private static function parseProviderNames(string $providers, array $supported): array
     {
         $names = array_values(array_filter(
             array_map(
@@ -191,7 +180,19 @@ final readonly class E2EConfig
             fn (string $provider): bool => $provider !== '',
         ));
 
-        return $names !== [] ? $names : ['incus'];
+        $names = $names !== [] ? $names : ['incus'];
+
+        foreach ($names as $name) {
+            if ($name === 'auto' || in_array($name, $supported, true)) {
+                continue;
+            }
+
+            throw new \InvalidArgumentException(
+                'Unsupported E2E provider ['.$name.']. Supported providers: '.implode(', ', $supported).'.'
+            );
+        }
+
+        return $names;
     }
 
     /**
@@ -353,9 +354,6 @@ final readonly class E2EConfig
             sourceImage: $this->sourceImage,
             blankImage: $this->blankImage,
             baseImage: $this->baseImage,
-            hcloudServerType: $this->hcloudServerType,
-            hcloudLocation: $this->hcloudLocation,
-            hcloudBlankImage: $this->hcloudBlankImage,
             bootstrapUser: $this->bootstrapUser,
             operatorUser: $this->operatorUser,
             controlUser: $this->controlUser,
@@ -369,96 +367,6 @@ final readonly class E2EConfig
             topologyStateSize: $this->topologyStateSize,
             incusStoragePool: $this->incusStoragePool,
             incusHostSlots: $this->incusHostSlots,
-            hcloudLocationSlots: $this->hcloudLocationSlots,
-            hcloudResourceSlots: $this->hcloudResourceSlots,
-            dockerHosts: $this->dockerHosts,
-            keep: $this->keep,
-            slotWaitSeconds: $this->slotWaitSeconds,
-            slotStaleSeconds: $this->slotStaleSeconds,
-            dockerHostSlots: $this->dockerHostSlots,
-            incusImageBuildHost: $this->incusImageBuildHost,
-            dockerImageBuildHosts: $this->dockerImageBuildHosts,
-            exclusiveHosts: $this->exclusiveHosts,
-            dockerHostContainerCaps: $this->dockerHostContainerCaps,
-            incusHosts: $this->incusHosts,
-            incusHostVmCaps: $this->incusHostVmCaps,
-        );
-    }
-
-    public function forHcloudLocation(string $location): self
-    {
-        return new self(
-            providerNames: $this->providerNames,
-            topologyProviderNames: $this->topologyProviderNames,
-            host: $this->host,
-            sourceImage: $this->sourceImage,
-            blankImage: $this->blankImage,
-            baseImage: $this->baseImage,
-            hcloudServerType: $this->hcloudServerType,
-            hcloudLocation: $location,
-            hcloudBlankImage: $this->hcloudBlankImage,
-            bootstrapUser: $this->bootstrapUser,
-            operatorUser: $this->operatorUser,
-            controlUser: $this->controlUser,
-            instancePrefix: $this->instancePrefix,
-            timeoutSeconds: $this->timeoutSeconds,
-            cpus: $this->cpus,
-            memory: $this->memory,
-            topologyCpus: $this->topologyCpus,
-            topologyMemory: $this->topologyMemory,
-            topologyRootSize: $this->topologyRootSize,
-            topologyStateSize: $this->topologyStateSize,
-            incusStoragePool: $this->incusStoragePool,
-            incusHostSlots: $this->incusHostSlots,
-            hcloudLocationSlots: $this->hcloudLocationSlots,
-            hcloudResourceSlots: $this->hcloudResourceSlots,
-            dockerHosts: $this->dockerHosts,
-            keep: $this->keep,
-            slotWaitSeconds: $this->slotWaitSeconds,
-            slotStaleSeconds: $this->slotStaleSeconds,
-            dockerHostSlots: $this->dockerHostSlots,
-            incusImageBuildHost: $this->incusImageBuildHost,
-            dockerImageBuildHosts: $this->dockerImageBuildHosts,
-            exclusiveHosts: $this->exclusiveHosts,
-            dockerHostContainerCaps: $this->dockerHostContainerCaps,
-            incusHosts: $this->incusHosts,
-            incusHostVmCaps: $this->incusHostVmCaps,
-        );
-    }
-
-    public function forHcloudResource(string $resource): self
-    {
-        [$location, $serverType, $image] = array_pad(explode('/', $resource, 3), 3, '');
-
-        if ($location === '' || $serverType === '' || $image === '') {
-            throw new \InvalidArgumentException("Invalid Hcloud resource slot [{$resource}]. Expected location/server-type/image.");
-        }
-
-        return new self(
-            providerNames: $this->providerNames,
-            topologyProviderNames: $this->topologyProviderNames,
-            host: $this->host,
-            sourceImage: $this->sourceImage,
-            blankImage: $this->blankImage,
-            baseImage: $this->baseImage,
-            hcloudServerType: $serverType,
-            hcloudLocation: $location,
-            hcloudBlankImage: $image,
-            bootstrapUser: $this->bootstrapUser,
-            operatorUser: $this->operatorUser,
-            controlUser: $this->controlUser,
-            instancePrefix: $this->instancePrefix,
-            timeoutSeconds: $this->timeoutSeconds,
-            cpus: $this->cpus,
-            memory: $this->memory,
-            topologyCpus: $this->topologyCpus,
-            topologyMemory: $this->topologyMemory,
-            topologyRootSize: $this->topologyRootSize,
-            topologyStateSize: $this->topologyStateSize,
-            incusStoragePool: $this->incusStoragePool,
-            incusHostSlots: $this->incusHostSlots,
-            hcloudLocationSlots: $this->hcloudLocationSlots,
-            hcloudResourceSlots: $this->hcloudResourceSlots,
             dockerHosts: $this->dockerHosts,
             keep: $this->keep,
             slotWaitSeconds: $this->slotWaitSeconds,

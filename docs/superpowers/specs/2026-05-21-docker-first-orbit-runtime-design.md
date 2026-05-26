@@ -447,7 +447,7 @@ starts:
   launcher expectations where IDEs call Orbit.
 - `docs/domains/16_dns/**` - only if local development URL behavior changes
   while Caddy moves to Docker.
-- `TESTING.md` and `docs/porting/testing-infrastructure.md` - Docker-first E2E
+- `docs/testing/README.md` and `docs/porting/testing-infrastructure.md` - Docker-first E2E
   topology contract and sibling-container model.
 
 After these docs are aligned, implementation proceeds with failing tests,

@@ -73,15 +73,29 @@ it('expands topology provider auto to the safe vm-backed default', function (): 
 
 it('uses explicit topology providers without changing provisioning providers', function (): void {
     withE2EConfigEnvironment([
-        'ORBIT_E2E_PROVIDER' => 'hcloud',
+        'ORBIT_E2E_PROVIDER' => 'incus',
         'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'docker, incus',
     ], function (): void {
         $config = E2EConfig::fromEnvironment();
 
-        expect($config->providerNames)->toBe(['hcloud'])
+        expect($config->providerNames)->toBe(['incus'])
             ->and($config->topologyProviderNames)->toBe(['docker', 'incus']);
     });
 });
+
+it('rejects removed hetzner provider configuration', function (string $key, string $value): void {
+    withE2EConfigEnvironment([
+        $key => $value,
+    ], function (): void {
+        expect(fn () => E2EConfig::fromEnvironment())
+            ->toThrow(InvalidArgumentException::class, 'Unsupported E2E provider');
+    });
+})->with([
+    'single hcloud provider' => ['ORBIT_E2E_PROVIDER', 'hcloud'],
+    'single hetzner provider' => ['ORBIT_E2E_PROVIDER', 'hetzner'],
+    'provider list containing hcloud' => ['ORBIT_E2E_PROVIDERS', 'incus,hcloud'],
+    'topology provider containing hcloud' => ['ORBIT_E2E_TOPOLOGY_PROVIDERS', 'docker,hcloud'],
+]);
 
 it('parses docker test runners into hosts slots and container caps', function (): void {
     withE2EConfigEnvironment([
@@ -216,35 +230,6 @@ it('parses incus host slots for the lease pool', function (): void {
         ])->and($config->forHost('sidecar1')->incusHostSlots)->toBe([
             'sidecar1' => 1,
             'sidecar2' => 2,
-        ]);
-    });
-});
-
-it('parses hcloud location slots for the lease pool', function (): void {
-    withE2EConfigEnvironment([
-        'ORBIT_E2E_HCLOUD_LOCATION_SLOTS' => 'nbg1:2, fsn1:1',
-    ], function (): void {
-        $config = E2EConfig::fromEnvironment();
-
-        expect($config->hcloudLocationSlots)->toBe([
-            'nbg1' => 2,
-            'fsn1' => 1,
-        ])->and($config->forHcloudLocation('fsn1')->hcloudLocationSlots)->toBe([
-            'nbg1' => 2,
-            'fsn1' => 1,
-        ]);
-    });
-});
-
-it('parses hcloud resource slots for the lease pool', function (): void {
-    withE2EConfigEnvironment([
-        'ORBIT_E2E_HCLOUD_RESOURCE_SLOTS' => 'nbg1/cx23/ubuntu-24.04:2, fsn1/cpx31/ubuntu-24.04:1',
-    ], function (): void {
-        $config = E2EConfig::fromEnvironment();
-
-        expect($config->hcloudResourceSlots)->toBe([
-            'nbg1/cx23/ubuntu-24.04' => 2,
-            'fsn1/cpx31/ubuntu-24.04' => 1,
         ]);
     });
 });

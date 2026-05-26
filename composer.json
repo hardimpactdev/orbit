@@ -75,7 +75,10 @@
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
         ],
-        "docs-lint": "@php artisan librarian:lint --format=agent --path=docs/domains",
+        "docs-lint": [
+            "@php artisan librarian:lint --format=agent --path=docs/domains",
+            "@php artisan librarian:lint --format=agent --path=docs/testing"
+        ],
         "test": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan config:clear --ansi @no_additional_args",
@@ -114,12 +117,7 @@
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi"
         ],
-        "test:e2e:hcloud-docker": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test-hcloud-docker @additional_args"
-        ],
         "e2e:preflight": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:preflight @additional_args",
-        "e2e:reap-hcloud": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-hcloud @additional_args",
         "e2e:reap-incus": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-incus @additional_args",
         "e2e:reap-docker": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-docker @additional_args",
         "e2e:prepare-docker-runtime": [

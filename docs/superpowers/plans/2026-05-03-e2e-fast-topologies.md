@@ -4,9 +4,9 @@
 
 **Goal:** Make Orbit E2E fast for feature testing by cloning prepared node topologies instead of reprovisioning control, gateway, development app, and production app nodes in every test.
 
-**Architecture:** Keep provisioning E2Es as a separate slow lane that proves Orbit can build the world from blank/ready images. Add a fast topology lane where tests request the smallest prepared topology they need, and the harness clones disposable VMs from prepared Incus topology templates. Treat `beast`, `sidecar1`, and `sidecar2` as one Incus capacity pool so topology leases can be placed on any healthy host with enough VM slots. Hcloud starts as a supported provider for existing image-based E2E and can later gain equivalent snapshot topologies without blocking Incus speedups.
+**Architecture:** Keep provisioning E2Es as a separate slow lane that proves Orbit can build the world from blank/ready images. Add a fast topology lane where tests request the smallest prepared topology they need, and the harness clones disposable VMs from prepared Incus topology templates. Treat `beast`, `sidecar1`, and `sidecar2` as one Incus capacity pool so topology leases can be placed on any healthy host with enough VM slots. Provisioning remains Incus-only after cloud-provider support was removed.
 
-**Tech Stack:** Laravel 13, Pest 4, Incus VMs on `beast`, `sidecar1`, and `sidecar2`, optional hcloud snapshots, existing `tests/E2E/Support` provider abstractions.
+**Tech Stack:** Laravel 13, Pest 4, Incus VMs on `beast`, `sidecar1`, and `sidecar2`, existing `tests/E2E/Support` provider abstractions.
 
 ---
 
@@ -17,7 +17,7 @@ Relevant files:
 - `tests/Pest.php` groups `tests/E2E` as `e2e` and skips unless `ORBIT_E2E=1`.
 - `tests/E2E/Support/E2EProvider.php` can start a run, create SSH keys, launch `E2EImage` instances, and cleanup instances.
 - `tests/E2E/Support/IncusProvider.php` launches VMs from prepared images.
-- `tests/E2E/Support/HcloudProvider.php` launches hcloud servers from configured base/snapshot images.
+- Cloud-provider E2E support has been removed; Incus is the VM provider for this lane.
 - `tests/E2E/GatewayAddTest.php`, `tests/E2E/NodeNewDevelopmentAppTest.php`, and `tests/E2E/NodeNewProductionAppTest.php` contain duplicated network, gateway API, SSH, and assertion helpers.
 - Provisioning E2Es currently create the desired topology by running actual commands such as `gateway:add` and `node:new`, which is correct for provisioning tests but too slow as the default setup path for feature E2Es.
 - Incus capacity exists on `beast`, `sidecar1`, and `sidecar2`. Each sidecar has 12 threads and should be able to run at least four VMs, so the harness should not hard-code all E2E work to `beast`.
@@ -100,7 +100,7 @@ Incus host selection:
 
 - Modify: `tests/Pest.php`
 - Modify: `composer.json`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Modify: `docs/porting/PORTING.md`
 
 - [ ] Add two Pest groups while preserving the existing `e2e` group:
@@ -150,7 +150,7 @@ pest()->group('e2e-feature');
 ]
 ```
 
-- [ ] Document lane rules in `TESTING.md`:
+- [ ] Document lane rules in `docs/testing/README.md`:
   - provisioning E2E may mutate disposable VMs and test setup flows;
   - feature E2E must start from prepared topology clones and should not run installer/provisioning commands unless the feature under test requires it;
   - live/standing infra smoke tests are sunset.
@@ -506,7 +506,7 @@ Supported kinds:
 
 Implementation rules:
 
-- Hidden command, same style as `e2e:prepare-hcloud-images`.
+- Hidden command, same style as existing E2E preparation commands.
 - Default dry-run unless `--force` is present.
 - Incus-only for the first implementation.
 - Build templates from existing prepared images and existing provisioning E2Es logic.
@@ -681,7 +681,6 @@ Expected: pass.
 
 - Modify: `tests/E2E/Support/E2EProvider.php`
 - Modify: `tests/E2E/Support/IncusProvider.php`
-- Modify: `tests/E2E/Support/HcloudProvider.php`
 - Create: `tests/Feature/E2EProviderCapabilityTest.php`
 
 Add provider capabilities:
@@ -714,11 +713,10 @@ ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
 - A `Control` lease needs one VM slot.
 - Prefer hosts in configured order, but skip hosts without enough free slots.
 
-Hcloud:
+Removed cloud providers:
 
-- returns false initially;
-- feature topology tests skip with: `hcloud prepared topologies are not implemented yet`;
-- existing provisioning E2Es continue to work.
+- stay unsupported by the topology provider pool;
+- fail configuration validation instead of skipping at runtime.
 
 - [ ] Run:
 
@@ -735,7 +733,6 @@ Expected: pass.
 **Files:**
 
 - Modify: `bin/e2e`
-- Modify: `app/Console/Commands/E2EReapHcloudCommand.php`
 - Create: `app/Console/Commands/E2EReapIncusCommand.php`
 - Create: `tests/Feature/Commands/E2EReapIncusCommandTest.php`
 
@@ -774,7 +771,7 @@ Expected: pass.
 
 **Files:**
 
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Modify: `docs/porting/PORTING.md`
 - Modify: `docs/domains/README.md` if command testing guidance mentions E2E lanes.
 

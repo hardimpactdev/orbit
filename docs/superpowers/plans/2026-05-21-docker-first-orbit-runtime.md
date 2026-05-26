@@ -70,7 +70,7 @@ Risk: High
 - Modify: `docs/domains/11_operation/**`
 - Modify: `docs/domains/14_php/**`
 - Modify: `docs/domains/15_agent-ide/**`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Modify: `docs/porting/testing-infrastructure.md` if present on the execution branch.
 
 ### Installer And Launcher
@@ -305,7 +305,7 @@ Expected: `issues: 0`, `errors: 0`.
 - [ ] **Step 7: Commit docs alignment**
 
 ```bash
-git add docs TESTING.md
+git add docs docs/testing/README.md
 git commit -m "docs: define docker-first orbit runtime"
 ```
 

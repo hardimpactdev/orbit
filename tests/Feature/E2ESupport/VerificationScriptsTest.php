@@ -9,7 +9,6 @@ use App\Console\Commands\E2EPrepareDockerTopologyCommand;
 use App\Console\Commands\E2EPrepareIncusImagesCommand;
 use App\Console\Commands\E2EPrepareTopologyCommand;
 use App\Console\Commands\E2EReapDockerCommand;
-use App\Console\Commands\E2EReapHcloudCommand;
 use App\Console\Commands\E2EReapIncusCommand;
 use App\Console\Commands\E2ETestCommand;
 use App\E2E\Support\E2ECurrentCheckout;
@@ -61,11 +60,13 @@ it('keeps composer test:live and bin/live-smoke out of every doc surface agents 
 
 it('reports command docs lint severities in agent format', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $docsLintScript = implode("\n", (array) $composer['scripts']['docs-lint']);
 
-    expect($composer['scripts']['docs-lint'])
+    expect($docsLintScript)
         ->toContain('artisan librarian:lint')
         ->toContain('--format=agent')
         ->toContain('--path=docs/domains')
+        ->toContain('--path=docs/testing')
         ->not->toContain('--strict');
 });
 
@@ -83,6 +84,7 @@ it('keeps the aggregate quality gate complete', function (): void {
 
     expect($script)
         ->toContain('librarian:lint')
+        ->toContain('--path=docs/testing')
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('vendor/bin/pint')
@@ -134,12 +136,18 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 });
 
 it('documents the supported verification lanes', function (): void {
-    $testing = file_get_contents(base_path('TESTING.md'));
+    $testing = implode("\n", [
+        file_get_contents(base_path('docs/testing/README.md')),
+        file_get_contents(base_path('docs/testing/in-memory/README.md')),
+        file_get_contents(base_path('docs/testing/e2e/README.md')),
+    ]);
+
+    expect(base_path('TESTING.md'))->not->toBeFile();
 
     expect($testing)
-        ->toContain('## In-Memory Pest')
-        ->toContain('## Ephemeral E2E')
-        ->toContain('Docker-backed feature E2E')
+        ->toContain('# In-memory tests')
+        ->toContain('# E2E testing')
+        ->toContain('Feature E2E backed by Docker')
         ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:docker')
         ->toContain('composer test:e2e:incus')
@@ -152,7 +160,7 @@ it('documents the supported verification lanes', function (): void {
 });
 
 it('documents the e2e docker benchmark protocol', function (): void {
-    $testing = file_get_contents(base_path('TESTING.md'));
+    $testing = file_get_contents(base_path('docs/testing/e2e/performance.md'));
 
     expect($testing)
         ->toContain('## E2E Docker lane - benchmark protocol')
@@ -170,7 +178,7 @@ it('documents the e2e docker benchmark protocol', function (): void {
 });
 
 it('keeps active testing and orchestration docs on current e2e script names', function (): void {
-    $testing = file_get_contents(base_path('TESTING.md'));
+    $testing = file_get_contents(base_path('docs/testing/e2e/README.md'));
     $orchestration = file_get_contents(base_path('docs/superpowers/plans/solo-orchestration/README.md'));
 
     expect($testing)
@@ -200,10 +208,21 @@ it('keeps reusable e2e support code free of Pest-only expectations', function ()
     expect($supportFiles)->each(fn ($contents) => $contents->not->toContain('expect('));
 });
 
-it('exposes the hcloud e2e resource reaper', function (): void {
+it('does not expose hetzner e2e support', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['e2e:reap-hcloud'])->toBe('set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-hcloud @additional_args');
+    expect($composer['scripts'])
+        ->not->toHaveKey('test:e2e:hcloud-docker')
+        ->not->toHaveKey('e2e:reap-hcloud')
+        ->not->toHaveKey('e2e:prepare-hcloud-images');
+
+    expect(is_file(base_path('app/Console/Commands/E2EReapHcloudCommand.php')))->toBeFalse()
+        ->and(is_file(base_path('app/Console/Commands/E2ETestHcloudDockerCommand.php')))->toBeFalse()
+        ->and(is_file(base_path('app/E2E/Support/HcloudProvider.php')))->toBeFalse()
+        ->and(is_file(base_path('app/E2E/Support/HcloudInstance.php')))->toBeFalse()
+        ->and(is_file(base_path('app/Services/E2E/HcloudE2EReaper.php')))->toBeFalse()
+        ->and(is_file(base_path('app/Services/E2E/HcloudDockerE2ERunner.php')))->toBeFalse()
+        ->and(is_file(base_path('app/Services/E2E/HcloudDockerE2ERunOptions.php')))->toBeFalse();
 });
 
 it('exposes e2e preflight, preparation, and cleanup helpers', function (): void {
@@ -228,8 +247,7 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} php artisan e2e:prepare-topology @additional_args",
         ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} php artisan e2e:reap-incus @additional_args")
-        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} php artisan e2e:reap-docker @additional_args")
-        ->and($composer['scripts'])->not->toHaveKey('e2e:prepare-hcloud-images');
+        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} php artisan e2e:reap-docker @additional_args");
 });
 
 it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
@@ -311,7 +329,6 @@ it('registers the e2e artisan commands', function (): void {
         E2EPrepareDockerTopologyCommand::class,
         E2EReapDockerCommand::class,
         E2EReapIncusCommand::class,
-        E2EReapHcloudCommand::class,
         E2ETestCommand::class,
     ];
 
@@ -330,7 +347,6 @@ it('registers the e2e artisan commands', function (): void {
         E2EPrepareDockerTopologyCommand::class,
         E2EReapDockerCommand::class,
         E2EReapIncusCommand::class,
-        E2EReapHcloudCommand::class,
     ];
 
     foreach ($jsonCommands as $class) {
@@ -426,7 +442,7 @@ it('aligns orbit checkout ownership with the home parent so non-root users can w
 });
 
 it('documents e2e topology timing event names', function (): void {
-    $testing = file_get_contents(base_path('TESTING.md'));
+    $testing = file_get_contents(base_path('docs/testing/e2e/performance.md'));
 
     expect($testing)
         ->toContain('batch.copy-start')

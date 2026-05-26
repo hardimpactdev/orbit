@@ -49,7 +49,7 @@ That's the full design. Everything else is code organization.
 - `app/Services/E2E/IncusE2EImagePreparer.php` — keep `buildBlank()` (provisioning lane still needs it). Delete `buildFromBlank()` and the control/gateway/devapp/prodapp branches in `prepare()`. The role-specific build paths are gone; `IncusBaseImagePreparer` owns the new lane.
 - `app/Console/Commands/E2EPrepareIncusImagesCommand.php` — accept only `blank` (existing). Remove `control`/`gateway`/`devapp`/`prodapp` role inputs entirely. The base image is built via `e2e:prepare-base-image`.
 - `composer.json` — add `e2e:prepare-base-image` script alongside the existing `e2e:prepare-incus-images`.
-- `TESTING.md` — replace the "Ready image aliases" section with the base-image lane. Drop `ORBIT_E2E_CONTROL_IMAGE` / `ORBIT_E2E_GATEWAY_IMAGE` / dev / prod env vars; add `ORBIT_E2E_BASE_IMAGE`.
+- `docs/testing/README.md` — replace the "Ready image aliases" section with the base-image lane. Drop `ORBIT_E2E_CONTROL_IMAGE` / `ORBIT_E2E_GATEWAY_IMAGE` / dev / prod env vars; add `ORBIT_E2E_BASE_IMAGE`.
 - `docs/porting/PORTING.md` — add `[~] E2E-IMAGE-ARCH-1` under "Testing Infrastructure" with a checklist mirroring the tasks below.
 
 ### Deleted (same PR)
@@ -102,11 +102,11 @@ That's the full design. Everything else is code organization.
 - [ ] Strip `control`/`gateway`/`devapp`/`prodapp` role inputs from `E2EPrepareIncusImagesCommand`.
 - [ ] One-shot host cleanup: `ssh beast 'incus image delete orbit-ready-{control,gateway,devapp,prodapp} || true'`.
 - [ ] Drop `controlImage`, `gatewayImage`, dev/prod aliases from `E2EConfig`. Add `baseImageAlias`.
-- [ ] Update `TESTING.md` and `docs/porting/PORTING.md` per the File Map.
+- [ ] Update `docs/testing/README.md` and `docs/porting/PORTING.md` per the File Map.
 
 ### Task 6 — Wall-time check
 
-- [ ] Time `composer e2e:prepare-topology -- --force control-gateway-dev-prod` cold (no composer cache) and warm (cache populated from the prior run). Document numbers in `TESTING.md`.
+- [ ] Time `composer e2e:prepare-topology -- --force control-gateway-dev-prod` cold (no composer cache) and warm (cache populated from the prior run). Document numbers in `docs/testing/README.md`.
 - [ ] Budget: cold ≤ 8 min, warm ≤ 3 min. If cold blows budget, parallelize roles in `IncusTopologyBuilder::provisionInstances()` (per-role `incus exec` in parallel via process pool, then a join). If warm blows budget, the composer cache strategy isn't working — debug before declaring done.
 
 ### Task 7 — Topology contract regression coverage
@@ -169,7 +169,7 @@ composer test:e2e
 
 ## Out of Scope
 
-- Hcloud image preparation (`E2EPrepareHcloudImagesCommand`). Same architectural fix can apply once Incus baseline is proven; not part of this PR.
+- External cloud image preparation is no longer supported; Incus is the E2E VM image lane.
 - Docker topology provider. Already builds per-run from a Dockerfile; not affected (`2026-05-04-e2e-docker-topology-driver.md`).
 - Warmed-vendor base image variant. Composer cache (Task 4) is enough; a `vendor/`-baked variant adds image churn for marginal speed and is tracked as `E2E-IMAGE-ARCH-2` only if Task 6's wall-time gate fails.
 

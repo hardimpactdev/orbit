@@ -593,7 +593,7 @@ Command docs may reference these suite layers:
 | --- | --- |
 | `tests/Unit/` | In-memory behavior for pure services, probes, DTOs, and value objects. |
 | `tests/Feature/` | Command contract tests in the Laravel app context. Prefer these for input/output contracts, side-effect boundaries, and persisted state. |
-| `tests/E2E/` | Real VM tests that create, alter, or destroy disposable hosts, identities, or state. These require explicit ephemeral infrastructure configuration from [`TESTING.md`](../../TESTING.md). |
+| `tests/E2E/` | Real VM tests that create, alter, or destroy disposable hosts, identities, or state. These require explicit ephemeral infrastructure configuration from [testing docs](../testing/README.md). |
 
 E2E tests prove the contract works through real process, network, and node
 boundaries. They should remain smoke-level and must not replace the primary

@@ -9,13 +9,13 @@ reviewer-approved implementation todo.
    - `docs/superpowers/plans/solo-orchestration/control-config.md`
    - `docs/superpowers/plans/solo-orchestration/references/todo-state.md`
    - the assigned todo and comments
-   - `TESTING.md`
+   - `docs/testing/README.md`
    - `docs/porting/PORTING.md`
    - relevant `docs/domains/**`
    - assigned worktree path and branch from the todo's `Worktree Assignment`.
 
 2. Confirm the todo declares `lane=e2e-provision`, `lane=e2e-feature`, or
-   `lane=none`, plus exact commands. Check lane safety against `TESTING.md`:
+   `lane=none`, plus exact commands. Check lane safety against `docs/testing/README.md`:
    - `e2e-provision`: VM-backed provisioning/destructive flow on Incus,
      typically `composer test:e2e:provision`;
    - `e2e-feature`: Docker-backed prepared-topology feature flow with this
@@ -29,7 +29,7 @@ reviewer-approved implementation todo.
 
    For `e2e-feature`, reject any command that rebuilds images or templates
    to make branch code visible. Feature gates must use the prepared
-   topology plus the checkout overlay/cache described in `TESTING.md` and
+   topology plus the checkout overlay/cache described in `docs/testing/README.md` and
    `docs/porting/PORTING.md`.
 
 3. If lane is `none`, post
@@ -65,7 +65,7 @@ reviewer-approved implementation todo.
    the shortest useful stdout/stderr summary.
 
    Default `ORBIT_E2E_KEEP=0` for `e2e-feature` commands. For
-   `e2e-provision`, follow `TESTING.md`'s provision failure behavior:
+   `e2e-provision`, follow `docs/testing/README.md`'s provision failure behavior:
    successful runs clean up; failed runs may keep tracked VMs for
    inspection unless the todo explicitly requests forced cleanup.
 

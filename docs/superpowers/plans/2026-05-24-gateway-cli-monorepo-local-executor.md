@@ -25,7 +25,7 @@
 - `solo://proj/2/todo/--366`
 - `docs/architecture.md`
 - `docs/execution-lanes.md`
-- `TESTING.md`
+- `docs/testing/README.md`
 - `docs/superpowers/plans/2026-05-21-docker-first-orbit-runtime.md`
 
 **Current conflict:** ORBIT-EXEC-01/02 landed a two-lane model:
@@ -106,7 +106,7 @@ recorded in Solo.
 - Modify: `docs/tech-stack.md`
 - Modify: `docs/concepts.md`
 - Modify: `docs/execution-lanes.md`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Modify: `docs/porting/testing-infrastructure.md`
 - Coordinate: `solo://proj/2/todo/--341`
 - Coordinate: `solo://proj/2/todo/--364`
@@ -190,7 +190,7 @@ recorded in Solo.
 - Modify: `docs/tech-stack.md`
 - Modify: `docs/concepts.md`
 - Modify: `docs/execution-lanes.md`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Coordinate: `solo://proj/2/todo/--341`
 - Coordinate: `solo://proj/2/todo/--364`
 - Coordinate: `solo://proj/2/todo/--365`
@@ -238,7 +238,7 @@ recorded in Solo.
 
 - [ ] **Step 4: Update testing contract**
 
-  In `TESTING.md`, state that prepared Docker/Incus E2E is the primary
+  In `docs/testing/README.md`, state that prepared Docker/Incus E2E is the primary
   verification path for this work. Standing live infra is diagnostic only.
   Prepared topology images provide Orbit-capable hosts; the current checkout
   is synced into those hosts during topology preparation or test setup.
@@ -263,7 +263,7 @@ recorded in Solo.
 - [ ] **Step 7: Commit**
 
   ```bash
-  git add docs/architecture.md docs/tech-stack.md docs/concepts.md docs/execution-lanes.md TESTING.md
+  git add docs/architecture.md docs/tech-stack.md docs/concepts.md docs/execution-lanes.md docs/testing/README.md
   git commit -m "docs: add local executor lane"
   ```
 
@@ -754,7 +754,7 @@ recorded in Solo.
 - Modify: `docker/e2e/topology/Dockerfile.dockerignore`
 - Modify: `app/E2E/Support/DockerTopologyBuilder.php`
 - Modify: `app/E2E/Support/E2ECommand.php`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: `tests/Feature/E2ESupport/DockerTopologyBuilderTest.php`
 - Test: `tests/E2E/PreparedTopologyContractTest.php`
 
@@ -799,7 +799,7 @@ recorded in Solo.
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add docker/e2e/topology app/E2E/Support TESTING.md tests/Feature/E2ESupport tests/E2E/PreparedTopologyContractTest.php
+  git add docker/e2e/topology app/E2E/Support docs/testing/README.md tests/Feature/E2ESupport tests/E2E/PreparedTopologyContractTest.php
   git commit -m "test: prepare e2e topology for monorepo cli"
   ```
 

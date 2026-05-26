@@ -33,7 +33,7 @@
 **Files:**
 
 - Inspect: `composer.json`
-- Inspect: `TESTING.md`
+- Inspect: `docs/testing/README.md`
 - Inspect: `tests/E2E/NodeListTopologyTest.php`
 - Inspect: `tests/E2E/Support/E2EGatewayApi.php`
 - Inspect: `tests/E2E/Support/E2ETopologyFactory.php`
@@ -58,7 +58,7 @@ Expected:
 Run:
 
 ```bash
-rg -n "features:parallel|--parallel|processes=3|withSshUsers|ORBIT_E2E_TIMINGS|batch.copy-start|lease-clean|snapshot-restore|runningE2EInstanceCount" composer.json TESTING.md tests/E2E tests/Feature
+rg -n "features:parallel|--parallel|processes=3|withSshUsers|ORBIT_E2E_TIMINGS|batch.copy-start|lease-clean|snapshot-restore|runningE2EInstanceCount" composer.json docs/testing/README.md tests/E2E tests/Feature
 ```
 
 Expected:
@@ -532,7 +532,7 @@ git commit -m "test: allow selective ssh setup for e2e topologies"
 
 **Files:**
 
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: `tests/Feature/VerificationScriptsTest.php`
 
 - [ ] Add a docs assertion for the actual timing event names.
@@ -541,7 +541,7 @@ Add this test to `tests/Feature/VerificationScriptsTest.php`:
 
 ```php
 it('documents e2e topology timing event names', function (): void {
-    $testing = file_get_contents(base_path('TESTING.md'));
+    $testing = file_get_contents(base_path('docs/testing/README.md'));
 
     expect($testing)
         ->toContain('batch.copy-start')
@@ -560,9 +560,9 @@ Run:
 php artisan test --compact tests/Feature/VerificationScriptsTest.php --filter='documents e2e topology timing event names'
 ```
 
-Expected: fail until `TESTING.md` uses the actual names.
+Expected: fail until `docs/testing/README.md` uses the actual names.
 
-- [ ] Update `TESTING.md` to describe the current timing output without claiming split copy/start timings.
+- [ ] Update `docs/testing/README.md` to describe the current timing output without claiming split copy/start timings.
 
 Replace the timing paragraph with:
 
@@ -589,7 +589,7 @@ Expected: test and docs lint pass.
 Commit:
 
 ```bash
-git add TESTING.md tests/Feature/VerificationScriptsTest.php
+git add docs/testing/README.md tests/Feature/VerificationScriptsTest.php
 git commit -m "docs: align e2e timing event names"
 ```
 
@@ -673,7 +673,7 @@ git commit -m "test: preserve node list filters in e2e gateway fixture"
 **Files:**
 
 - Modify: `composer.json`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Test: `tests/Feature/VerificationScriptsTest.php`
 
 - [ ] Check whether the parallelization agent already added the script.
@@ -681,7 +681,7 @@ git commit -m "test: preserve node list filters in e2e gateway fixture"
 Run:
 
 ```bash
-rg -n "test:e2e:features:parallel|--parallel|processes=3" composer.json TESTING.md tests/Feature
+rg -n "test:e2e:features:parallel|--parallel|processes=3" composer.json docs/testing/README.md tests/Feature
 ```
 
 Expected:
@@ -705,7 +705,7 @@ This keeps topology contracts serial and trustworthy, then runs only feature ass
 
 - [ ] Add docs for the parallel script.
 
-Add this paragraph to `TESTING.md` near the E2E commands:
+Add this paragraph to `docs/testing/README.md` near the E2E commands:
 
 ```markdown
 `composer test:e2e:features:parallel` is opt-in. It runs topology contracts first,
@@ -749,7 +749,7 @@ Expected:
 Commit:
 
 ```bash
-git add composer.json TESTING.md tests/Feature/VerificationScriptsTest.php
+git add composer.json docs/testing/README.md tests/Feature/VerificationScriptsTest.php
 git commit -m "test: add opt-in parallel feature e2e script"
 ```
 
@@ -759,7 +759,7 @@ git commit -m "test: add opt-in parallel feature e2e script"
 
 **Files:**
 
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 - Optional test evidence file: none
 
 - [ ] Confirm host pool is clean enough to run the suite.
@@ -822,7 +822,7 @@ Expected:
 - `resources` is empty after successful cleanup;
 - if resources remain from an interrupted run, delete them with `php artisan e2e:reap-incus --older-than=0m --force --json`.
 
-- [ ] Record measured runtime guidance in `TESTING.md`.
+- [ ] Record measured runtime guidance in `docs/testing/README.md`.
 
 Add a short note with the observed serial and parallel durations:
 
@@ -847,7 +847,7 @@ Expected: docs lint passes.
 Commit:
 
 ```bash
-git add TESTING.md
+git add docs/testing/README.md
 git commit -m "docs: record e2e runtime timing baseline"
 ```
 
@@ -866,4 +866,4 @@ git commit -m "docs: record e2e runtime timing baseline"
 ## Open Questions
 
 - Should `composer test:e2e:features:parallel` run all topology contracts first, or only contracts for topology feature groups that currently have tests?
-- Should timing baselines live in `TESTING.md`, or should repeated benchmark history move to a separate E2E operations note after the first measured run?
+- Should timing baselines live in `docs/testing/README.md`, or should repeated benchmark history move to a separate E2E operations note after the first measured run?

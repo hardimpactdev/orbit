@@ -44,7 +44,6 @@ final readonly class ProviderPool
     {
         return match ($provider) {
             'incus' => new IncusProvider($config),
-            'hcloud', 'hetzner' => new HcloudProvider($config),
             default => throw new \InvalidArgumentException("Unknown E2E provider [{$provider}]."),
         };
     }

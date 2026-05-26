@@ -62,6 +62,7 @@ return [
             'README.md',
         ],
         'allowed' => [
+            'testing',
             'ux',
             'superpowers',
         ],

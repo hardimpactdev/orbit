@@ -15,7 +15,7 @@ You are the one-shot pipeline filler for one Orbit Solo cycle.
    - `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`
    - `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
    - `docs/porting/PORTING.md`
-   - `TESTING.md`
+   - `docs/testing/README.md`
    - active Solo todos, blockers, locks, and recent comments.
 
 3. Post `PIPELINE_FILL_STARTED process=<id>` on `coordination_todo`.

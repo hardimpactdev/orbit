@@ -275,7 +275,7 @@ that a prompt landed.
   queue capacity.
 - Every command port ends with one E2E gate todo. Implementers author and run
   the lane; the E2E role reruns it after commit.
-- Use Pest E2E lanes from `TESTING.md`.
+- Use Pest E2E lanes from `docs/testing/README.md`.
 
 ## Manual Priority Todos
 
@@ -354,7 +354,7 @@ new code.
 
 - Standing infrastructure is not a test lane.
 - Destructive, provisioning, host-mutation, repair, adoption, and live transport
-  verification flows are ephemeral-only per `TESTING.md`.
+  verification flows are ephemeral-only per `docs/testing/README.md`.
 - Do not use `git stash`, `git reset --hard`, `git checkout --`, broad
   `git restore`, or hidden reverts.
 - Shared worktree diffs may belong to another role or the user. Verify

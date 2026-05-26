@@ -20,7 +20,7 @@ You are the long-lived implementer for exactly one Solo todo.
    - product docs named by the todo
    - relevant `docs/domains/**`
    - `docs/porting/PORTING.md`
-   - `TESTING.md`
+   - `docs/testing/README.md`
    - current code, tests, and worktree diff in owned scope
    - other open Solo todos currently tagged `in-progress` and their
      `Owned Files Or Domains` (used in step 5 as foreign scope).

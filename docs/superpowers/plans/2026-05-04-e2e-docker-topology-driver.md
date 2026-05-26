@@ -4,7 +4,7 @@
 
 **Goal:** Add Docker as an optional fast prepared-topology provider for feature E2E without weakening VM-backed provisioning coverage.
 
-**Architecture:** Keep provisioning E2E on real VM providers. Split prepared topology selection from provisioning provider selection, then add a Docker provider that starts disposable containers for `e2e-feature` tests only. Docker optimizes command and gateway behavior feedback loops; Incus and hcloud remain the authority for SSH, sudo, OS trust stores, systemd, package installs, and real host mutation. Topology selection accepts optional capability requirements so a test that needs VM behavior can refuse Docker even when Docker is first in the pool.
+**Architecture:** Keep provisioning E2E on real VM providers. Split prepared topology selection from provisioning provider selection, then add a Docker provider that starts disposable containers for `e2e-feature` tests only. Docker optimizes command and gateway behavior feedback loops; Incus remains the authority for SSH, sudo, OS trust stores, systemd, package installs, and real host mutation. Topology selection accepts optional capability requirements so a test that needs VM behavior can refuse Docker even when Docker is first in the pool.
 
 **Tech Stack:** Laravel 13, Pest 4, Composer scripts, Docker CLI, existing `tests/E2E/Support` provider and topology classes, Incus VMs on `beast`, `sidecar1`, and `sidecar2`.
 
@@ -44,7 +44,7 @@
 **Files:**
 
 - Inspect: `composer.json`
-- Inspect: `TESTING.md`
+- Inspect: `docs/testing/README.md`
 - Inspect: `tests/E2E/Support/E2ETopologyFactory.php`
 - Inspect: `tests/E2E/Support/E2ETopologyLease.php`
 - Inspect: `app/Console/Commands/Internal/*`
@@ -76,7 +76,7 @@ The `2026-05-04-e2e-fast-suite-hardening.md` plan has already landed. Confirm th
 Run:
 
 ```bash
-rg -n "test:e2e:topology-contract|withSshUsers|fresh-clone|snapshot-restore|ORBIT_E2E_TIMINGS|features:parallel|INCUS_MAX" composer.json TESTING.md tests/E2E tests/Feature
+rg -n "test:e2e:topology-contract|withSshUsers|fresh-clone|snapshot-restore|ORBIT_E2E_TIMINGS|features:parallel|INCUS_MAX" composer.json docs/testing/README.md tests/E2E tests/Feature
 ```
 
 Expected: every bullet above can be tied to current code. If this fails, stop and reconcile the baseline before introducing Docker topology providers.
@@ -86,7 +86,7 @@ Expected: every bullet above can be tied to current code. If this fails, stop an
 Run:
 
 ```bash
-rg -n "withSshUsers|features:parallel|ORBIT_E2E_TIMINGS|snapshot-restore|fresh-clone|E2ETopologyProvider|Docker" composer.json TESTING.md tests/E2E tests/Feature docs/superpowers/plans
+rg -n "withSshUsers|features:parallel|ORBIT_E2E_TIMINGS|snapshot-restore|fresh-clone|E2ETopologyProvider|Docker" composer.json docs/testing/README.md tests/E2E tests/Feature docs/superpowers/plans
 ```
 
 Expected:
@@ -150,7 +150,7 @@ git commit -m "docs: add docker e2e topology driver plan"
 - Test: `tests/Feature/E2EProviderPoolTest.php`
 - Create: `tests/Helpers/E2EEnvironment.php`
 - Modify: `composer.json` (autoload-dev `files` for the helpers)
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 
 - [x] Add a failing config test for topology provider defaults.
 
@@ -270,12 +270,12 @@ Append:
 ```php
 it('uses explicit topology providers without changing provisioning providers', function (): void {
     withE2EConfigEnvironment([
-        'ORBIT_E2E_PROVIDER' => 'hcloud',
+        'ORBIT_E2E_PROVIDER' => 'incus',
         'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'docker, incus',
     ], function (): void {
         $config = E2EConfig::fromEnvironment();
 
-        expect($config->providerNames)->toBe(['hcloud'])
+        expect($config->providerNames)->toBe(['incus'])
             ->and($config->topologyProviderNames)->toBe(['docker', 'incus']);
     });
 });
@@ -403,7 +403,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php tests/Feature/E2EProv
 
 Expected: all tests still pass with no env leakage.
 
-- [x] Document the split in `TESTING.md`.
+- [x] Document the split in `docs/testing/README.md`.
 
 Add these environment lines near the existing E2E environment block:
 
@@ -440,7 +440,7 @@ Expected: tests and docs lint pass.
 Commit:
 
 ```bash
-git add composer.json tests/E2E/Support/E2EConfig.php tests/Feature/E2EConfigTest.php tests/Feature/E2EProviderPoolTest.php tests/Helpers/E2EEnvironment.php TESTING.md
+git add composer.json tests/E2E/Support/E2EConfig.php tests/Feature/E2EConfigTest.php tests/Feature/E2EProviderPoolTest.php tests/Helpers/E2EEnvironment.php docs/testing/README.md
 git commit -m "test: split e2e topology provider config"
 ```
 
@@ -2478,9 +2478,9 @@ git commit -m "test: classify feature e2e topology capabilities"
 - Create: `app/Console/Commands/E2EReapDockerCommand.php`
 - Test: `tests/Feature/Commands/E2EReapDockerCommandTest.php`
 - Modify: `composer.json`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 
-The acquire path must clean up after partial failures, but interrupted processes can still leave Docker resources behind. Add a Docker reaper that mirrors the Incus/Hcloud cleanup surface.
+The acquire path must clean up after partial failures, but interrupted processes can still leave Docker resources behind. Add a Docker reaper that mirrors the Incus cleanup surface.
 
 - [x] Add failing reaper command tests.
 
@@ -2551,7 +2551,7 @@ Add to `composer.json`:
 "e2e:reap-docker": "@php artisan e2e:reap-docker"
 ```
 
-Add to `TESTING.md` Docker cleanup docs:
+Add to `docs/testing/README.md` Docker cleanup docs:
 
 ```bash
 composer e2e:reap-docker
@@ -2570,7 +2570,7 @@ vendor/bin/pint --dirty --format agent
 Commit:
 
 ```bash
-git add app/Console/Commands/E2EReapDockerCommand.php tests/Feature/Commands/E2EReapDockerCommandTest.php composer.json TESTING.md
+git add app/Console/Commands/E2EReapDockerCommand.php tests/Feature/Commands/E2EReapDockerCommandTest.php composer.json docs/testing/README.md
 git commit -m "test: add docker e2e reaper"
 ```
 
@@ -2579,7 +2579,7 @@ git commit -m "test: add docker e2e reaper"
 **Files:**
 
 - Modify: `composer.json`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 
 - [x] Add Composer scripts for Docker feature runs that have tests.
 
@@ -2613,7 +2613,7 @@ composer validate --no-check-publish
 
 Expected: Composer file is valid.
 
-- [x] Document Docker as feature-only in `TESTING.md`.
+- [x] Document Docker as feature-only in `docs/testing/README.md`.
 
 Add this section under prepared topology documentation:
 
@@ -2670,7 +2670,7 @@ Expected: docs lint passes.
 Commit:
 
 ```bash
-git add composer.json TESTING.md
+git add composer.json docs/testing/README.md
 git commit -m "docs: add docker feature e2e lane"
 ```
 
@@ -2679,7 +2679,7 @@ git commit -m "docs: add docker feature e2e lane"
 **Files:**
 
 - Modify: `docs/superpowers/plans/2026-05-04-e2e-docker-topology-driver.md`
-- Optionally modify: `TESTING.md`
+- Optionally modify: `docs/testing/README.md`
 
 Goal: produce defensible timing data, not noise. A single sample is not signal. Methodology below uses warmup + three measured runs per provider per topology size, reports median.
 
@@ -2791,7 +2791,7 @@ Expected: docs lint passes.
 Commit:
 
 ```bash
-git add docs/superpowers/plans/2026-05-04-e2e-docker-topology-driver.md TESTING.md
+git add docs/superpowers/plans/2026-05-04-e2e-docker-topology-driver.md docs/testing/README.md
 git commit -m "docs: record docker e2e timing decision"
 ```
 
@@ -2803,7 +2803,7 @@ git commit -m "docs: record docker e2e timing decision"
 - Modify: `tests/E2E/Support/DockerHost.php`
 - Modify: `tests/E2E/Support/DockerTopologyProvider.php`
 - Test: `tests/Feature/DockerTopologyProviderTest.php`
-- Modify: `TESTING.md`
+- Modify: `docs/testing/README.md`
 
 This task uses `DOCKER_HOST=ssh://host` as the remote transport, not `ssh host docker ...`. The persistent connection is materially faster, the Docker CLI handles auth, and there is no command quoting layer. Implement this after the local Docker MVP works; it is useful even before Docker becomes the default because it lets a low-resource development machine run Pest locally while `beast` runs the Docker containers.
 
@@ -2934,7 +2934,7 @@ Expected: tests and docs lint pass.
 Commit:
 
 ```bash
-git add tests/E2E/Support/E2EConfig.php tests/E2E/Support/DockerHost.php tests/E2E/Support/DockerTopologyProvider.php tests/Feature/E2EConfigTest.php tests/Feature/DockerTopologyProviderTest.php TESTING.md
+git add tests/E2E/Support/E2EConfig.php tests/E2E/Support/DockerHost.php tests/E2E/Support/DockerTopologyProvider.php tests/Feature/E2EConfigTest.php tests/Feature/DockerTopologyProviderTest.php docs/testing/README.md
 git commit -m "test: add docker topology host pooling"
 ```
 
