@@ -29,6 +29,7 @@ class ProxyRoute extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'domain',

@@ -15,6 +15,7 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::PUT;
 
     /**

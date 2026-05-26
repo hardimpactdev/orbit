@@ -17,6 +17,7 @@ use RuntimeException;
 #[Description('Run the Orbit Scheduler daemon')]
 class OrbitSchedulerCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(OrbitScheduler $scheduler): int

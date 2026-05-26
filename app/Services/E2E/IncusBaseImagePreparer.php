@@ -14,10 +14,9 @@ use RuntimeException;
  * `orbit` user, and the runtime directory tree — but no Orbit source. Source
  * is pushed per topology preparation; see bin/e2e-provision-node.
  *
- * Mirrors the cloud-init bootstrap shape of IncusE2EImagePreparer::buildBlank()
- * but additionally creates the `orbit` user and pre-installs the apt package
- * list defined by bin/_e2e-deps.sh, so the per-run `bin/install-orbit` invocation
- * inside a base-cloned VM is fast.
+ * Creates the `orbit` user and pre-installs the apt package list defined by
+ * bin/_e2e-deps.sh, so the per-run `bin/install-orbit` invocation inside a
+ * base-cloned VM is fast.
  */
 class IncusBaseImagePreparer
 {

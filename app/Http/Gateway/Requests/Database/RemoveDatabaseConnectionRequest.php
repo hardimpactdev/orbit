@@ -15,6 +15,7 @@ final class RemoveDatabaseConnectionRequest extends GatewayRequest implements Ha
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::DELETE;
 
     public function __construct(

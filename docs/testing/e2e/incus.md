@@ -32,7 +32,7 @@ readiness polling.
 
 Prepared Incus feature tests do not use `ORBIT_E2E_INCUS_HOST_SLOTS`.
 `ORBIT_E2E_INCUS_HOST_SLOTS` is for provisioning/image-prep leases, where a test
-mutates Incus host state by creating new blank or base VMs. Prepared feature
+mutates Incus host state by creating new base VMs. Prepared feature
 tests clone existing topology snapshots and choose a host through
 `ORBIT_E2E_INCUS_HOSTS` plus `ORBIT_E2E_INCUS_HOST_VM_CAPS`.
 

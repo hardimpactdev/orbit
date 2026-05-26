@@ -182,7 +182,6 @@ final class IncusProvider implements E2EProvider
     private function aliasFor(E2EImage $image): string
     {
         return match ($image) {
-            E2EImage::Blank => $this->config->blankImage,
             E2EImage::Base => $this->config->baseImage,
         };
     }

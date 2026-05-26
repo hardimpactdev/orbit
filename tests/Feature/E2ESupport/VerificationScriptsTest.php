@@ -6,7 +6,6 @@ use App\Console\Commands\E2EPreflightCommand;
 use App\Console\Commands\E2EPrepareBaseImageCommand;
 use App\Console\Commands\E2EPrepareDockerRuntimeCommand;
 use App\Console\Commands\E2EPrepareDockerTopologyCommand;
-use App\Console\Commands\E2EPrepareIncusImagesCommand;
 use App\Console\Commands\E2EPrepareTopologyCommand;
 use App\Console\Commands\E2EReapDockerCommand;
 use App\Console\Commands\E2EReapIncusCommand;
@@ -322,7 +321,6 @@ it('keeps the docker topology host image free of host Composer dependencies', fu
 it('registers the e2e artisan commands', function (): void {
     $commands = [
         E2EPreflightCommand::class,
-        E2EPrepareIncusImagesCommand::class,
         E2EPrepareBaseImageCommand::class,
         E2EPrepareTopologyCommand::class,
         E2EPrepareDockerRuntimeCommand::class,
@@ -341,7 +339,6 @@ it('registers the e2e artisan commands', function (): void {
 
     $jsonCommands = [
         E2EPreflightCommand::class,
-        E2EPrepareIncusImagesCommand::class,
         E2EPrepareBaseImageCommand::class,
         E2EPrepareTopologyCommand::class,
         E2EPrepareDockerTopologyCommand::class,

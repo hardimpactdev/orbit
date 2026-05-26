@@ -13,10 +13,10 @@ use App\E2E\Support\ProviderPool;
 
 pest()->group('e2e-provision');
 
-it('NodeNewWireGuard enrolls the first gateway from blank VMs', function (): void {
+it('NodeNewWireGuard enrolls the first gateway from base VMs', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -29,7 +29,7 @@ it('NodeNewWireGuard enrolls the first gateway from blank VMs', function (): voi
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway, $payload] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key, useWireGuardGatewayUrl: false);
 
         [$controlIp, $gatewayIp] = e2eProvisionStep('resolve VM IPv4 addresses', fn () => [

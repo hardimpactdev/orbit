@@ -17,6 +17,7 @@ use Throwable;
 #[Description('Execute a database query from a stdin payload')]
 final class DatabaseQueryLocalCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(DatabaseQueryRunner $runner): int

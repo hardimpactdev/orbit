@@ -5,7 +5,7 @@ Change the PHP image version used by an app or workspace runtime container.
 ## Usage
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--json]
+orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Examples
@@ -14,6 +14,7 @@ orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] 
 orbit php:use 8.5 --app=docs
 orbit php:use 8.4 --app=docs --workspace=feature-docs
 orbit php:use --app=docs --workspace=feature-docs --inherit
+orbit php:use 8.5 --node=app-1 --cli
 orbit php:use 8.5 --app=docs --json
 ```
 
@@ -24,6 +25,8 @@ orbit php:use 8.5 --app=docs --json
 - `--workspace=<workspace>`: Target workspace override.
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
   app PHP version.
+- `--cli`: Select the node CLI PHP default. Only PHP 8.5 is supported for
+  Orbit CLI/local-executor use.
 - `--node=<node>`: For app and workspace targets, this may only confirm the
   owning node. A node that does not own the resolved app or workspace fails
   validation with the stable `target_mismatch` reason before any gateway
@@ -39,9 +42,9 @@ orbit php:use 8.5 --app=docs --json
 Run this command to select the PHP image version for an app or workspace.
 
 `php:use` resolves exactly one target scope: app runtime, workspace runtime
-override, or workspace inheritance. It validates that the requested version is
-supported by Orbit and available as an image on the target node before
-side effects begin.
+override, workspace inheritance, or node CLI default. It validates that app and
+workspace versions are supported by Orbit and available as images on the target
+node before side effects begin. Node CLI selection only accepts PHP 8.5.
 
 For app and workspace targets, the command writes gateway configuration and re-applies
 the derived runtime container and affected proxy backend artifacts through the gateway.
@@ -63,8 +66,8 @@ machine-readable output.
   gateway.
 - The current node identity is authorized to manage the selected app or
   workspace.
-- The requested PHP version is supported by Orbit and available as an image on
-  the target node.
+- The requested app or workspace PHP version is supported by Orbit and available
+  as an image on the target node. Node CLI selection requires PHP 8.5.
 - The gateway can reach the target node over SSH when node artifacts must be
   applied.
 

@@ -29,6 +29,7 @@ use RuntimeException;
 #[Description('Bake an app-node registry row for prepared E2E topology images')]
 class BakeAppNodeCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(NodeRegistryWriter $registryWriter): int

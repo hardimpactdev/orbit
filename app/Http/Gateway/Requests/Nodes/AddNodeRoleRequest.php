@@ -16,6 +16,7 @@ final class AddNodeRoleRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     /**

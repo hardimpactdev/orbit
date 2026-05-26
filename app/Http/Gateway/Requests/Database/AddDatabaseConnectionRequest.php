@@ -15,6 +15,7 @@ final class AddDatabaseConnectionRequest extends GatewayRequest implements HasBo
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     /**

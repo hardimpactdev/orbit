@@ -10,6 +10,7 @@ use Saloon\Http\Response;
 
 final class ShowGatewayCaRootRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function resolveEndpoint(): string

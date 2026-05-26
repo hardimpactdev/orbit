@@ -24,6 +24,7 @@ class DatabaseConnectionTarget extends Model
     /** @use HasFactory<DatabaseConnectionTargetFactory> */
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'database_connection_id',
         'app_id',

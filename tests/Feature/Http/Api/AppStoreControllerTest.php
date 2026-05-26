@@ -73,13 +73,14 @@ describe('AppStoreController', function (): void {
             'name' => 'docs',
             'node' => 'app-1',
             'root' => 'public',
-            'php_version' => '8.5',
+            'php_version' => '8.4',
         ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.result.action', 'created')
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
+            ->assertJsonPath('success.data.app.php_version', '8.4')
             ->assertJsonPath('success.data.app.runtime_kind', 'php')
             ->assertJsonPath('success.data.app.worker_enabled', false)
             ->assertJsonPath('success.data.app.worker_config', null)

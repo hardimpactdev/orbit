@@ -12,8 +12,10 @@ final class WireGuardPeer extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $table = 'wireguard_peers';
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'public_key',

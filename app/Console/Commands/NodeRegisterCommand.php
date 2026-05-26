@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 #[Description('Register or update a node in the gateway registry')]
 class NodeRegisterCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

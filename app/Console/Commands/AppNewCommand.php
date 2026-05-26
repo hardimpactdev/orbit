@@ -19,6 +19,7 @@ use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Support\GitRepositoryReference;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -42,8 +43,6 @@ class AppNewCommand extends Command
     use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
-
-    private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
 
     /**
      * @var array<string, string>|null
@@ -347,7 +346,7 @@ class AppNewCommand extends Command
 
         $repository = GitRepositoryReference::canonicalize($repository);
         $root = $this->stringOption('root') ?? 'public';
-        $phpVersion = $this->stringOption('php-version') ?? '8.5';
+        $phpVersion = $this->stringOption('php-version') ?? PhpRuntimeCatalog::DEFAULT;
         $domain = $this->stringOption('domain');
 
         if ($repository === false) {
@@ -358,7 +357,7 @@ class AppNewCommand extends Command
             return $this->failValidation('root', 'Document root is invalid.');
         }
 
-        if (! in_array($phpVersion, self::SUPPORTED_PHP_VERSIONS, true)) {
+        if (! in_array($phpVersion, PhpRuntimeCatalog::SUPPORTED, true)) {
             return $this->failValidation('php_version', 'Unsupported PHP version.');
         }
 

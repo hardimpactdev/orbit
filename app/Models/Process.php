@@ -32,6 +32,7 @@ class Process extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'app_id',
         'name',
@@ -42,6 +43,7 @@ class Process extends Model
         'sort_order',
     ];
 
+    #[\Override]
     protected $attributes = [
         'runtime' => 'docker',
     ];

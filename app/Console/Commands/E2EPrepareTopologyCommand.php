@@ -29,6 +29,7 @@ use RuntimeException;
 #[Description('Prepare Incus topology templates used by ephemeral E2E tests')]
 class E2EPrepareTopologyCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     /**

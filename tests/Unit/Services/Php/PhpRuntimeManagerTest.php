@@ -115,6 +115,32 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
         ]);
 });
 
+it('rejects CLI PHP selection for versions other than 8.5', function (): void {
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'config' => [
+            'images' => [
+                'dunglas/frankenphp:1-php8.5-bookworm',
+                'dunglas/frankenphp:1-php8.4-bookworm',
+            ],
+            'versions' => ['8.5', '8.4'],
+            'cli_version' => '8.5',
+        ],
+    ]);
+
+    $result = app(PhpRuntimeManager::class)->use(version: '8.4', node: 'app-1', cli: true);
+
+    expect($result->failed())->toBeTrue()
+        ->and($tool->refresh()->config['cli_version'])->toBe('8.5')
+        ->and($result->failure?->meta)->toMatchArray([
+            'field' => 'version',
+            'reason' => 'unsupported_cli_version',
+            'supported' => ['8.5'],
+        ]);
+});
+
 it('frankenphp rejects workspace writes when --node does not own the parent app', function (): void {
     $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
     NodeTool::factory()->create([

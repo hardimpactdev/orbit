@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Process;
 #[Description('Prepare the bare Docker runtime images used by the Docker prepared topology pipeline')]
 class E2EPrepareDockerRuntimeCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

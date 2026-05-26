@@ -59,7 +59,7 @@ it('selects the first available provider', function (): void {
         fakeE2EProvider('second', true),
     ]);
 
-    $selection = $pool->select(E2EImage::Blank);
+    $selection = $pool->select(E2EImage::Base);
 
     expect($selection->available())->toBeTrue()
         ->and($selection->provider()->name())->toBe('second')
@@ -72,7 +72,7 @@ it('reports provider failures when no provider is available', function (): void 
         fakeE2EProvider('second', false),
     ]);
 
-    $selection = $pool->select(E2EImage::Blank);
+    $selection = $pool->select(E2EImage::Base);
 
     expect($selection->available())->toBeFalse()
         ->and($selection->message)->toContain('incus: unavailable')

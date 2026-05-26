@@ -347,7 +347,7 @@ it('creates workspace with supported custom php version', function (): void {
     $exitCode = Artisan::call('workspace:new', [
         'name' => 'feature-php',
         '--app' => 'demo',
-        '--php-version' => '8.5',
+        '--php-version' => '8.4',
         '--json' => true,
     ]);
 
@@ -355,20 +355,20 @@ it('creates workspace with supported custom php version', function (): void {
     $payload = json_decode($output, true);
 
     expect($exitCode)->toBe(0);
-    expect($payload['success']['data']['workspace']['php_version'])->toBe('8.5');
+    expect($payload['success']['data']['workspace']['php_version'])->toBe('8.4');
 
     $workspace = Workspace::query()
         ->where('name', 'feature-php')
         ->first();
 
-    expect($workspace->php_version)->toBe('8.5');
+    expect($workspace->php_version)->toBe('8.4');
 });
 
 it('rejects unsupported php versions', function (): void {
     $exitCode = Artisan::call('workspace:new', [
         'name' => 'feature-php',
         '--app' => 'demo',
-        '--php-version' => '8.4',
+        '--php-version' => '8.2',
         '--json' => true,
     ]);
 

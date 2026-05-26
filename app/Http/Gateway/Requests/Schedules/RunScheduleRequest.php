@@ -11,6 +11,7 @@ use Saloon\Http\Response;
 
 final class RunScheduleRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(

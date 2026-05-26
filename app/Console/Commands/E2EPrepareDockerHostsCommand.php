@@ -26,6 +26,7 @@ use Throwable;
 #[Description('Prepare Docker E2E images across all configured Docker hosts')]
 class E2EPrepareDockerHostsCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

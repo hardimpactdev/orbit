@@ -28,8 +28,10 @@ class NodeRoleRemoveCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
+    #[\Override]
     protected $name = 'node role:remove';
 
+    #[\Override]
     protected $description = 'Remove a hosted role from a node';
 
     protected function configure(): void

@@ -18,6 +18,7 @@ use Throwable;
 #[Description('Refresh hosted node SSH host-key pins for internal topology checkout setup')]
 class PinNodeHostKeysCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

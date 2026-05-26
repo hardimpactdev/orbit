@@ -998,7 +998,7 @@ Add this test skeleton:
 it('serves a production app on a colocated ingress node', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -1011,7 +1011,7 @@ it('serves a production app on a colocated ingress node', function (): void {
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
         [$web, $nodePayload] = e2eProvisionIngressAppThroughNodeNew(
             provider: $provider,
@@ -1056,7 +1056,7 @@ Add this test skeleton:
 it('serves a production app through a dedicated ingress node', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -1069,7 +1069,7 @@ it('serves a production app through a dedicated ingress node', function (): void
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
         e2eProvisionIngressAppThroughNodeNew(
             provider: $provider,
@@ -1133,7 +1133,7 @@ function e2eProvisionIngressAppThroughNodeNew(
 ): array
 ```
 
-The helper launches a blank instance, authorizes SSH, runs:
+The helper launches a base instance, authorizes SSH, runs:
 
 ```bash
 orbit node:new <name> --role=<first-role> --role=<second-role> --host=<ip> --user=<bootstrap-user> --json

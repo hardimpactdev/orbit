@@ -11,6 +11,7 @@ use Saloon\Http\Response;
 
 final class RemoveVpnClientRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::DELETE;
 
     public function __construct(

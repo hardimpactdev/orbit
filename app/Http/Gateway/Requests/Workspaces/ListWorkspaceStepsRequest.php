@@ -12,6 +12,7 @@ use Saloon\Http\Response;
 
 final class ListWorkspaceStepsRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function __construct(

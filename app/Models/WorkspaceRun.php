@@ -29,6 +29,7 @@ class WorkspaceRun extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'workspace_id',
         'phase',

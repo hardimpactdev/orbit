@@ -27,6 +27,7 @@ class WorkspaceRunStep extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'workspace_run_id',
         'workspace_step_id',

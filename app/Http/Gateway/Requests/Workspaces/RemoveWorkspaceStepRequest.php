@@ -16,6 +16,7 @@ final class RemoveWorkspaceStepRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::DELETE;
 
     public function __construct(

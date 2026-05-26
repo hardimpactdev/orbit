@@ -15,6 +15,7 @@ final class EditProcessRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::PATCH;
 
     public function __construct(

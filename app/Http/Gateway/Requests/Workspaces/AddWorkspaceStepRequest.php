@@ -16,6 +16,7 @@ final class AddWorkspaceStepRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(

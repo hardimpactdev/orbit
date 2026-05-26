@@ -71,10 +71,10 @@ class IncusTopologyBuilder
      */
     private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): array
     {
-        $blankImage = $this->host->config->blankImage;
+        $baseImage = $this->host->config->baseImage;
 
-        if (! $this->host->imageExists($blankImage)) {
-            throw new RuntimeException("Required blank image [{$blankImage}] not found on host.");
+        if (! $this->host->imageExists($baseImage)) {
+            throw new RuntimeException("Required base image [{$baseImage}] not found on host.");
         }
 
         if ($this->remoteBundleDir === null) {
@@ -419,7 +419,7 @@ class IncusTopologyBuilder
     {
         $instances = [];
         $controlName = IncusTopologyTemplate::templateName(E2ETopologyKind::Control, 'control');
-        $this->timer->measure('control.launch', fn () => $this->launchBlank($controlName));
+        $this->timer->measure('control.launch', fn () => $this->launchBase($controlName));
         $control = new IncusInstance($this->host, $controlName);
         $this->timer->measure('control.agent.initial', fn () => $control->waitForAgent());
         $this->timer->measure('control.cloud-init', fn () => $this->host->waitForCloudInit($controlName));
@@ -442,7 +442,7 @@ class IncusTopologyBuilder
     {
         $instances = $this->startTemplateRoles(['control'], $key);
         $control = $instances['control'];
-        $gateway = $this->launchBlankRole('gateway', $key);
+        $gateway = $this->launchBaseRole('gateway', $key);
         $gatewayIp = $this->timer->measure('gateway.ipv4', fn (): string => $gateway->waitForIpv4());
         $instances['gateway'] = $gateway;
 
@@ -473,7 +473,7 @@ class IncusTopologyBuilder
         $this->timer->measure('dev.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
         $this->timer->measure('dev.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
 
-        $dev = $this->launchBlankRole('dev', $key);
+        $dev = $this->launchBaseRole('dev', $key);
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
         $instances['dev'] = $dev;
 
@@ -503,7 +503,7 @@ class IncusTopologyBuilder
         $this->timer->measure('prod.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
         $this->timer->measure('prod.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
 
-        $prod = $this->launchBlankRole('prod', $key);
+        $prod = $this->launchBaseRole('prod', $key);
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
         $instances['prod'] = $prod;
 
@@ -532,7 +532,7 @@ class IncusTopologyBuilder
         $this->timer->measure('agent.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
         $this->timer->measure('agent.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
 
-        $agent = $this->launchBlankRole('agent', $key, E2ETopologyKind::OperatorGatewayAgent);
+        $agent = $this->launchBaseRole('agent', $key, E2ETopologyKind::OperatorGatewayAgent);
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
         $instances['agent'] = $agent;
 
@@ -560,9 +560,9 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
         $this->timer->measure('prepared.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
 
-        $dev = $this->launchBlankRole('dev', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
-        $prod = $this->launchBlankRole('prod', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
-        $agent = $this->launchBlankRole('agent', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+        $dev = $this->launchBaseRole('dev', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+        $prod = $this->launchBaseRole('prod', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+        $agent = $this->launchBaseRole('agent', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
@@ -603,7 +603,7 @@ class IncusTopologyBuilder
         $this->timer->measure('ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
         $this->timer->measure('ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
 
-        $prod = $this->launchBlankRole('prod', $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
+        $prod = $this->launchBaseRole('prod', $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
         $instances['prod'] = $prod;
 
@@ -730,10 +730,10 @@ BASH;
         return $instance;
     }
 
-    private function launchBlankRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Control): IncusInstance
+    private function launchBaseRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Control): IncusInstance
     {
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
-        $this->timer->measure("{$role}.launch", fn () => $this->launchBlank($name));
+        $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name));
         $instance = new IncusInstance($this->host, $name);
         $this->timer->measure("{$role}.agent.initial", fn () => $instance->waitForAgent());
         $this->timer->measure("{$role}.cloud-init", fn () => $this->host->waitForCloudInit($name));
@@ -1170,9 +1170,9 @@ PHP;
         );
     }
 
-    private function launchBlank(string $target): void
+    private function launchBase(string $target): void
     {
-        $sourceImageAlias = $this->host->config->blankImage;
+        $sourceImageAlias = $this->host->config->baseImage;
         $result = $this->host->launchTopologyInstance($sourceImageAlias, $target, timeoutSeconds: $this->host->config->timeoutSeconds);
 
         if (! $result->successful()) {

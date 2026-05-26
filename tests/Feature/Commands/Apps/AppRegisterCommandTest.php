@@ -95,6 +95,7 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
         'name' => 'docs',
         '--node' => 'app-1',
         '--path' => '/home/orbit/apps/docs',
+        '--php-version' => '8.4',
         '--json' => true,
     ]);
 
@@ -104,9 +105,9 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
 
     expect($exitCode)->toBe(0)
         ->and($remoteShell->scripts[0])->toContain("test -d '/home/orbit/apps/docs'")
-        ->and($remoteShell->scripts[4])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($remoteShell->scripts[4])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.4-bookworm'")
         ->and($remoteShell->scripts[5])->toContain("'orbit-app-docs'")
-        ->and($remoteShell->scripts[5])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($remoteShell->scripts[5])->toContain("'dunglas/frankenphp:1-php8.4-bookworm'")
         ->and($app)->not->toBeNull()
         ->and($app?->node_id)->toBe($targetNode->id)
         ->and($app?->path)->toBe('/home/orbit/apps/docs')
@@ -122,7 +123,7 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
             'root' => 'public',
             'repository' => null,
             'runtime_kind' => 'php',
-            'php_version' => '8.5',
+            'php_version' => '8.4',
             'worker_enabled' => false,
             'worker_config' => null,
             'adopted' => true,

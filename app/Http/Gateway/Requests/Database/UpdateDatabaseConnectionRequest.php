@@ -15,6 +15,7 @@ final class UpdateDatabaseConnectionRequest extends GatewayRequest implements Ha
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::PATCH;
 
     /**

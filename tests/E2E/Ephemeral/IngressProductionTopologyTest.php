@@ -35,7 +35,7 @@ PHP),
 it('serves a production app on a colocated ingress node', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -48,7 +48,7 @@ it('serves a production app on a colocated ingress node', function (): void {
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
         [, $nodePayload] = e2eProvisionIngressAppThroughNodeNew(
             provider: $provider,
@@ -91,7 +91,7 @@ it('serves a production app on a colocated ingress node', function (): void {
 it('serves a production app through a dedicated ingress node', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -104,7 +104,7 @@ it('serves a production app through a dedicated ingress node', function (): void
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
         e2eProvisionIngressAppThroughNodeNew(
             provider: $provider,

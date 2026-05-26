@@ -18,7 +18,7 @@ We do not need a feature toggle, deprecation phase, or `--force-legacy` fallback
 
 ## The Mechanism
 
-1. **Base image** `orbit-base-ubuntu-26.04` — Ubuntu 26.04 + PHP 8.5 + Composer + git + sqlite + WireGuard + OpenSSH + the `orbit` runtime user (created, no state). No Orbit source. Rebuilt only when system deps change. Lives alongside the existing `orbit-blank-ubuntu-26.04` (which intentionally has no `orbit` user and stays for the provisioning lane).
+1. **Base image** `orbit-base-ubuntu-26.04` — Ubuntu 26.04 + PHP 8.5 + Composer + git + sqlite + WireGuard + OpenSSH + the `orbit` runtime user (created, no state). No Orbit source. Rebuilt only when system deps change. This is the only reusable Incus E2E image.
 2. **Push source** — `tar -czf` of the current checkout (excluding `.git`, `vendor`, `node_modules`, `database/*.sqlite`, `storage/framework/{cache,sessions,testing,views}`). `incus file push -r` into a fresh base-image clone. Supports uncommitted worktrees by default.
 3. **Provisioner** `bin/e2e-provision-node` — Bash. Takes `--role=control|gateway|app`. Calls `bin/install-orbit --role=<role> --source-archive=<path>`. For `gateway` role, also runs `php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2`. The `app` role is install-only — `node:new`/`bake-app-node` calls happen later from control/gateway during `IncusTopologyBuilder::provisionInstances()`.
 4. **Composer cache** — host directory (default `~/.cache/orbit-e2e/composer`) is `incus file push -r`'d into `/home/orbit/.composer/cache` before `bin/install-orbit` runs. Skipped if absent. Cuts cold install on a fresh base from ~3 min to <30s once the host cache is warm.
@@ -34,7 +34,7 @@ That's the full design. Everything else is code organization.
 
 - `bin/e2e-provision-node` — Bash. ~150 lines. Args: `--role=control|gateway|app`, `--source-archive=<path>`, `--installer=<path>` (defaults to sibling `install-orbit`), `--composer-cache=<path>` (optional). Idempotent for manual debugging.
 - `app/Services/E2E/IncusBaseImagePreparer.php` — extracted from the existing `IncusE2EImagePreparer::buildBlank()` shape. Builds `orbit-base-ubuntu-26.04` from `images:ubuntu/26.04/cloud`. Cloud-init creates the `orbit` user (no SSH keys), installs PHP 8.5 + Composer + git + sqlite + WireGuard + OpenSSH.
-- `app/Console/Commands/E2EPrepareBaseImageCommand.php` — `e2e:prepare-base-image {--force} {--json}`. Hidden. Wraps `IncusBaseImagePreparer`. Replaces the role-specific roles in `e2e:prepare-incus-images`.
+- `app/Console/Commands/E2EPrepareBaseImageCommand.php` — `e2e:prepare-base-image {--force} {--json}`. Hidden. Wraps `IncusBaseImagePreparer`.
 - `tests/Feature/E2EProvisionScriptShapeTest.php` — Pest. Asserts `--help`, missing-arg errors, role validation. No Incus.
 - `tests/Feature/Services/IncusBaseImagePreparerTest.php` — Pest. Mocks `IncusHost->run()`, asserts the cloud-init bootstrap sequence under `--force`.
 - `tests/Feature/Commands/E2EPrepareBaseImageCommandTest.php` — Pest. Dry-run, `--json`, `--force` planning, validation.
@@ -47,8 +47,8 @@ That's the full design. Everything else is code organization.
 - `tests/E2E/Support/E2EConfig.php` — add `baseImageAlias` (default `orbit-base-ubuntu-26.04`, env override `ORBIT_E2E_BASE_IMAGE`). Drop `controlImage`, `gatewayImage`, devapp/prodapp aliases.
 - `app/Services/E2E/IncusE2EImagePreparationOptions.php` — drop `controlImageAlias`, `gatewayImageAlias`, `devappImageAlias`, `prodappImageAlias`. Add `baseImageAlias` (default `orbit-base-ubuntu-26.04`).
 - `app/Services/E2E/IncusE2EImagePreparer.php` — keep `buildBlank()` (provisioning lane still needs it). Delete `buildFromBlank()` and the control/gateway/devapp/prodapp branches in `prepare()`. The role-specific build paths are gone; `IncusBaseImagePreparer` owns the new lane.
-- `app/Console/Commands/E2EPrepareIncusImagesCommand.php` — accept only `blank` (existing). Remove `control`/`gateway`/`devapp`/`prodapp` role inputs entirely. The base image is built via `e2e:prepare-base-image`.
-- `composer.json` — add `e2e:prepare-base-image` script alongside the existing `e2e:prepare-incus-images`.
+- `app/Console/Commands/E2EPrepareIncusImagesCommand.php` — deleted. Blank-image preparation is not supported.
+- `composer.json` — add `e2e:prepare-base-image`.
 - `docs/testing/README.md` — replace the "Ready image aliases" section with the base-image lane. Drop `ORBIT_E2E_CONTROL_IMAGE` / `ORBIT_E2E_GATEWAY_IMAGE` / dev / prod env vars; add `ORBIT_E2E_BASE_IMAGE`.
 - `docs/porting/PORTING.md` — add `[~] E2E-IMAGE-ARCH-1` under "Testing Infrastructure" with a checklist mirroring the tasks below.
 
@@ -130,7 +130,7 @@ That's the full design. Everything else is code organization.
 
 - `tests/E2E/IncusTopologyBuilderTest.php` — base-image + provisioner expectations.
 - `tests/Feature/Commands/E2EPrepareTopologyCommandTest.php` — `--force` source-archive/bundle-push assertions, `--branch` override case.
-- `tests/Feature/Commands/E2EPrepareIncusImagesCommandTest.php` — only `blank` is accepted; role inputs are rejected.
+- `tests/Feature/Commands/E2EPrepareIncusImagesCommandTest.php` — deleted with the command.
 
 ---
 

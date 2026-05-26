@@ -17,7 +17,7 @@ final readonly class E2EBaseProvisioner
             throw new \RuntimeException("E2E direct provisioning only installs operator nodes; got [{$role}].");
         }
 
-        $instance = $run->launchBlank($suffix);
+        $instance = $run->launchBase($suffix);
 
         $this->provider->host->waitForCloudInit($instance->name());
         $instance->waitForAgent();

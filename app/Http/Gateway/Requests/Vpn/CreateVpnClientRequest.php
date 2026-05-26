@@ -11,6 +11,7 @@ use Saloon\Http\Response;
 
 final class CreateVpnClientRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(

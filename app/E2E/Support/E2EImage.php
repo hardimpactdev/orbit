@@ -6,6 +6,5 @@ namespace App\E2E\Support;
 
 enum E2EImage: string
 {
-    case Blank = 'blank';
     case Base = 'base';
 }

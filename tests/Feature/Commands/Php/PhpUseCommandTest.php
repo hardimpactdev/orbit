@@ -203,6 +203,28 @@ describe('php:use command contract', function (): void {
             ]);
     });
 
+    it('rejects CLI PHP selection for versions other than 8.5', function (): void {
+        createPhpLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $tool = createPhpTool($node, ['versions' => ['8.5', '8.4'], 'cli_version' => '8.5']);
+
+        $exitCode = Artisan::call('php:use', [
+            'version' => '8.4',
+            '--node' => 'app-1',
+            '--cli' => true,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($tool->refresh()->config['cli_version'])->toBe('8.5')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'field' => 'version',
+                'reason' => 'unsupported_cli_version',
+                'supported' => ['8.5'],
+            ]);
+    });
+
     it('rejects unsupported and missing available image versions before side effects', function (): void {
         createPhpLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);

@@ -22,6 +22,7 @@ use RuntimeException;
 #[Description('Reap stale Incus instances created by ephemeral E2E tests')]
 class E2EReapIncusCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

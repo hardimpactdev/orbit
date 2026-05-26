@@ -8,8 +8,8 @@ use App\E2E\Support\ProviderPool;
 
 pest()->group('e2e-provision');
 
-it('launches a blank VM, reaches it over SSH, and destroys it', function (): void {
-    $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank);
+it('launches a base VM, reaches it over SSH, and destroys it', function (): void {
+    $selection = ProviderPool::fromEnvironment()->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -17,12 +17,12 @@ it('launches a blank VM, reaches it over SSH, and destroys it', function (): voi
 
     $provider = $selection->provider();
     $config = $provider->config();
-    $run = E2ERun::start($provider, 'blank-lifecycle');
+    $run = E2ERun::start($provider, 'base-lifecycle');
     $passed = false;
 
     try {
         $key = $run->createSshKeyPair();
-        $vm = $run->launchBlank('blank');
+        $vm = $run->launchBase('base');
 
         $vm->authorizeSsh($config->bootstrapUser, $key);
         $vm->waitForSsh($config->bootstrapUser, $key);

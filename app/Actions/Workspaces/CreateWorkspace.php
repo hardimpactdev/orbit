@@ -13,12 +13,13 @@ use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 
 final readonly class CreateWorkspace
 {
-    public const array SUPPORTED_PHP_VERSIONS = ['8.5'];
+    public const array SUPPORTED_PHP_VERSIONS = PhpRuntimeCatalog::SUPPORTED;
 
     public function __construct(
         private RemoteShell $remoteShell,

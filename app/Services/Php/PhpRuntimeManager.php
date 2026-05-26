@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 final readonly class PhpRuntimeManager
 {
+    private const array SUPPORTED_CLI_PHP_VERSIONS = ['8.5'];
+
     public function __construct(
         private PhpRuntimeCatalog $catalog,
         private NodeRoleAssignments $nodeRoleAssignments,
@@ -58,6 +60,18 @@ final readonly class PhpRuntimeManager
         $requestedVersion = is_string($version) ? trim($version) : null;
 
         if ($requestedVersion !== null && $target['scope'] === 'node_cli') {
+            if (! in_array($requestedVersion, self::SUPPORTED_CLI_PHP_VERSIONS, true)) {
+                return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
+                    code: 'validation_failed',
+                    message: "Unsupported CLI PHP version '{$requestedVersion}'.",
+                    meta: [
+                        'field' => 'version',
+                        'reason' => 'unsupported_cli_version',
+                        'supported' => self::SUPPORTED_CLI_PHP_VERSIONS,
+                    ],
+                ));
+            }
+
             $availabilityFailure = $this->versionAvailabilityFailure($target['node'], $requestedVersion);
 
             if ($availabilityFailure instanceof PhpRuntimeFailure) {

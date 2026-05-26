@@ -59,6 +59,7 @@ it('creates source on the target app node before writing gateway app intent', fu
     $exitCode = Artisan::call('app:new', [
         'name' => 'docs',
         '--node' => 'app-1',
+        '--php-version' => '8.4',
         '--json' => true,
     ]);
 
@@ -78,7 +79,7 @@ it('creates source on the target app node before writing gateway app intent', fu
             'root' => 'public',
             'repository' => null,
             'runtime_kind' => 'php',
-            'php_version' => '8.5',
+            'php_version' => '8.4',
             'worker_enabled' => false,
             'worker_config' => null,
             'adopted' => false,

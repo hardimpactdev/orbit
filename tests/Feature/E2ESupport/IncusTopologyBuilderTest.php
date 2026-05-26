@@ -32,7 +32,6 @@ function incusTopologyBuilderConfig(): E2EConfig
         topologyProviderNames: ['incus'],
         host: 'beast',
         sourceImage: 'images:ubuntu/26.04/cloud',
-        blankImage: 'orbit-blank-ubuntu-26.04',
         baseImage: 'orbit-base-ubuntu-26.04',
         bootstrapUser: 'provisioner',
         controlUser: 'control',
@@ -50,19 +49,19 @@ function incusTopologyBuilderConfig(): E2EConfig
     );
 }
 
-it('throws when the blank image is missing', function (): void {
+it('throws when the base image is missing', function (): void {
     $config = E2EConfig::fromEnvironment();
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')
-        ->with($config->blankImage)
+        ->with($config->baseImage)
         ->andReturn(false);
 
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
     expect(fn () => $builder->build(E2ETopologyKind::Control))
-        ->toThrow(RuntimeException::class, "Required blank image [{$config->blankImage}] not found");
+        ->toThrow(RuntimeException::class, "Required base image [{$config->baseImage}] not found");
 });
 
 it('throws when no provisioning bundle has been staged', function (): void {
@@ -239,7 +238,7 @@ it('builds full prepared roles from the gateway base with parallel downstream pr
         ]);
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
-        $host->shouldReceive('imageExists')->with($config->blankImage)->andReturn(true);
+        $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('waitForCloudInit')->times(5);
         $host->shouldReceive('provisionInstance')->with('orbit-template-prepared-control', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
@@ -294,9 +293,9 @@ it('builds full prepared roles from the gateway base with parallel downstream pr
                 fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-prepared-operator_gateway_app-dev_app-prod_agent'),
                 fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-prepared-operator_gateway_app-dev_app-prod_agent'),
             )
-            ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-dev'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-prod'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-agent'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-dev'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-prod'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-agent'")
             ->and($commandOutput)->toContain('PID_NODE_NEW_DEV=$!')
             ->and($commandOutput)->toContain('PID_NODE_NEW_PROD=$!')
             ->and($commandOutput)->toContain('PID_NODE_NEW_AGENT=$!')
@@ -411,7 +410,7 @@ it('records phase timings while building topology templates', function (): void 
     $timer = new E2EPhaseTimer;
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('imageExists')->with($config->blankImage)->andReturn(true);
+    $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->with('orbit-template-prepared-control')->andReturn(false);
     $host->shouldReceive('waitForCloudInit')->with('orbit-template-prepared-control')->once();
     $host->shouldReceive('provisionInstance')
@@ -462,7 +461,7 @@ it('builds prepared topology templates through staged node:new snapshots', funct
     ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('imageExists')->with($config->blankImage)->andReturn(true);
+    $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('waitForCloudInit')->times(4);
     $host->shouldReceive('provisionInstance')->with('orbit-template-prepared-control', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
@@ -526,10 +525,10 @@ it('builds prepared topology templates through staged node:new snapshots', funct
             'name' => 'orbit-template-prepared-prod',
             'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod',
         ],
-    ])->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-control'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-gateway'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-dev'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-prod'")
+    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-control'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-gateway'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-dev'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-prod'")
         ->and($commandOutput)->not->toContain('orbit-template-prepared-operator_gateway_app-dev_app-prod-control')
         ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
         ->and($commandOutput)->not->toContain('--role=gateway')
@@ -569,7 +568,7 @@ it('builds app production ingress on the prod template without development or ag
     ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('imageExists')->with($config->blankImage)->andReturn(true);
+    $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('waitForCloudInit')->times(3);
     $host->shouldReceive('provisionInstance')->with('orbit-template-prepared-control', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
@@ -623,8 +622,8 @@ it('builds app production ingress on the prod template without development or ag
             'name' => 'orbit-template-prepared-prod',
             'snapshot' => 'clean-prepared-operator_gateway_app-prod_ingress',
         ],
-    ])->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-prod'")
-        ->and($commandOutput)->not->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prepared-ingress'")
+    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-prod'")
+        ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-prepared-ingress'")
         ->and($commandOutput)->not->toContain("incus copy 'orbit-template-prepared-control/clean-prepared-operator_gateway'")
         ->and($commandOutput)->not->toContain('edge-1')
         ->and($commandOutput)->toContain('--role=ingress')

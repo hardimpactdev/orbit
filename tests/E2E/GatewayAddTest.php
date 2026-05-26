@@ -17,7 +17,7 @@ pest()->group('e2e-provision');
 it('derives the gateway IP and joins a provisioned gateway from a provisioned control VM', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -30,7 +30,7 @@ it('derives the gateway IP and joins a provisioned gateway from a provisioned co
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
 
         $controlIp = $control->waitForIpv4();

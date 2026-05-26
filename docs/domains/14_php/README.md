@@ -37,6 +37,9 @@ These rules define what PHP runtime commands own and how they operate.
   runtimes for app or workspace containers.
 - The app and workspace families own applying the selected PHP image to their
   runtime containers.
+- Node CLI PHP selection is only supported for PHP 8.5. This covers Orbit's
+  host CLI/local-executor baseline and does not limit app or workspace
+  FrankenPHP runtime versions.
 - App PHP version is gateway-tracked app configuration.
 - Workspace PHP version is gateway-tracked workspace configuration. A workspace
   inherits the parent app PHP version unless it stores an override.
@@ -55,7 +58,7 @@ PHP JSON renderers use this shape for runtime selection results:
 ```json
 {
   "node": "app-1",
-  "supported": ["8.4", "8.5"],
+  "supported": ["8.5", "8.4", "8.3"],
   "available_images": ["8.5"],
   "app": {
     "name": "docs",

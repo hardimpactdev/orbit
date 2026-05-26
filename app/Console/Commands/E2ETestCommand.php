@@ -33,6 +33,7 @@ use Symfony\Component\Console\Output\ConsoleOutputInterface;
 #[Description('Run prepared-topology E2E lanes')]
 class E2ETestCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     private bool $interruptCleanupStarted = false;

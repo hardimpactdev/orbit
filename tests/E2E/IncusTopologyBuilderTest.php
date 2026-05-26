@@ -25,8 +25,8 @@ it('builds a control topology and snapshots the template clean', function (): vo
         $this->markTestSkipped('No Incus host configured (ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST).');
     }
 
-    if (! $host->imageExists($config->blankImage)) {
-        $this->markTestSkipped("Required blank image [{$config->blankImage}] missing on Incus host.");
+    if (! $host->imageExists($config->baseImage)) {
+        $this->markTestSkipped("Required base image [{$config->baseImage}] missing on Incus host.");
     }
 
     $kind = E2ETopologyKind::Operator;

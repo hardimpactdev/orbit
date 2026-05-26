@@ -40,7 +40,7 @@ function e2eProvisionStep(string $step, callable $callback): mixed
     }
 }
 
-function e2eProvisionControlFromBlank(
+function e2eProvisionControlFromBase(
     IncusProvider $provider,
     E2ERun $run,
     E2EProvisioningBundle $bundle,
@@ -49,7 +49,7 @@ function e2eProvisionControlFromBlank(
 ): E2EInstance {
     $provisioner = new E2EBaseProvisioner($provider, $bundle);
     $control = e2eProvisionStep(
-        'provision control from blank',
+        'provision control from base',
         fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser),
     );
 
@@ -72,7 +72,7 @@ function e2eProvisionGatewayThroughNodeNew(
     string $name = 'gateway-1',
     bool $useWireGuardGatewayUrl = true,
 ): array {
-    $gateway = e2eProvisionStep('launch blank gateway', fn () => $run->launchBlank('gateway'));
+    $gateway = e2eProvisionStep('launch base gateway', fn () => $run->launchBase('gateway'));
 
     e2eProvisionStep('wait for gateway cloud-init', fn () => $provider->host->waitForCloudInit($gateway->name()));
     $gateway->authorizeSsh($config->bootstrapUser, $key);
@@ -111,7 +111,7 @@ function e2eProvisionAppThroughNodeNew(
     string $environment,
     ?string $tld = null,
 ): array {
-    $app = e2eProvisionStep("launch blank {$environment} app", fn () => $run->launchBlank($name));
+    $app = e2eProvisionStep("launch base {$environment} app", fn () => $run->launchBase($name));
 
     e2eProvisionStep("wait for {$environment} app cloud-init", fn () => $provider->host->waitForCloudInit($app->name()));
     $app->authorizeSsh($config->bootstrapUser, $key);
@@ -156,7 +156,7 @@ function e2eProvisionIngressAppThroughNodeNew(
     array $roles,
     ?string $ingress = null,
 ): array {
-    $app = e2eProvisionStep("launch blank {$name}", fn () => $run->launchBlank($name));
+    $app = e2eProvisionStep("launch base {$name}", fn () => $run->launchBase($name));
 
     e2eProvisionStep("wait for {$name} cloud-init", fn () => $provider->host->waitForCloudInit($app->name()));
     $app->authorizeSsh($config->bootstrapUser, $key);

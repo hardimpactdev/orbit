@@ -15,6 +15,7 @@ final class DefaultNodeSetRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::PUT;
 
     public function __construct(

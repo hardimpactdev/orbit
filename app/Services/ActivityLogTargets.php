@@ -29,7 +29,7 @@ final class ActivityLogTargets
 
     public function primary(): ?Node
     {
-        return $this->nodes === [] ? null : array_values($this->nodes)[0];
+        return $this->nodes === [] ? null : array_first($this->nodes);
     }
 
     public function reset(): void

@@ -28,6 +28,7 @@ class ProcessEvent extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'event',
         'event_id',

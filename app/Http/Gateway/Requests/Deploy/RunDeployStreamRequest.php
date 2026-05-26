@@ -13,6 +13,7 @@ final class RunDeployStreamRequest extends GatewayStreamRequest implements HasBo
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(

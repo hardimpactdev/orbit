@@ -6,7 +6,7 @@ installation, cloud-init, or host-level daemon behavior.
 
 ```bash
 composer e2e:preflight
-php artisan e2e:prepare-incus-images --role=blank --force
+composer e2e:prepare-base-image -- --force
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 composer test:e2e:provision
 ```
@@ -18,12 +18,14 @@ command ports should add feature tests that use prepared topologies instead.
 ## Incus image model
 
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
-default). It builds one reusable blank image plus prepared source snapshots:
+default). It builds one reusable base image plus prepared source snapshots:
 
-1. Blank image `orbit-blank-ubuntu-26.04`. Built once via
-   `php artisan e2e:prepare-incus-images --role=blank --force`. It contains
-   Ubuntu cloud, the bootstrap user, and sshd. It is used by the provisioning
-   lane's blank-VM lifecycle test and as the source for prepared topology roles.
+1. Base image `orbit-base-ubuntu-26.04`. Built once via
+   `composer e2e:prepare-base-image -- --force`. It contains Ubuntu cloud, the
+   bootstrap user, the `orbit` user, sshd, the E2E OS dependency set, and the
+   PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
+   It is used by the provisioning lane's base-VM lifecycle test and as the
+   source for prepared topology roles.
 2. Prepared source templates `orbit-template-control`, `orbit-template-gateway`,
    `orbit-template-dev`, `orbit-template-prod`, and `orbit-template-agent`.
    Build them with
@@ -31,7 +33,7 @@ default). It builds one reusable blank image plus prepared source snapshots:
 
 During topology preparation, Orbit tars the current checkout, ships it plus
 `bin/install-orbit` and `bin/e2e-provision-node` to the host, installs Orbit on
-the operator template from the blank image, snapshots `clean-operator`, then
+the operator template from the base image, snapshots `clean-operator`, then
 starts that template and provisions the gateway through real `node:new`. After
 the gateway is seeded, app-dev, app-prod, and agent are provisioned in parallel
 before the five-role source snapshot is taken.
@@ -41,10 +43,10 @@ ingress role by default.
 
 ## Source bundle and archives
 
-Source code lives in the per-run bundle, not in the blank image. Forced topology
+Source code lives in the per-run bundle, not in the base image. Forced topology
 preparation resumes from the highest complete canonical prerequisite snapshot
-set and rebuilds only later roles. Rebuild the blank image only when the
-bootstrap image shape changes.
+set and rebuilds only later roles. Rebuild the base image only when the
+base image shape changes.
 
 The provisioning bundle stages host-local `orbit-runtime:current`,
 `caddy:2-alpine`, and `4km3/dnsmasq:latest` Docker image archives when those
@@ -103,7 +105,7 @@ changes the image shape.
 ORBIT_E2E_HOST=beast
 ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
-ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
+ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_OPERATOR_USER=orbit
 ORBIT_E2E_CONTROL_USER=orbit # Legacy alias for older scripts.

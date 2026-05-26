@@ -27,6 +27,7 @@ class ScheduleRun extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'schedule_key',

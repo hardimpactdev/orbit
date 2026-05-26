@@ -19,8 +19,10 @@ use function Laravel\Prompts\table;
 
 class NodeRoleListCommand extends Command
 {
+    #[\Override]
     protected $name = 'node role:list';
 
+    #[\Override]
     protected $description = 'List role assignments for a node';
 
     protected function configure(): void

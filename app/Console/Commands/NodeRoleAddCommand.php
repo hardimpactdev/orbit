@@ -24,8 +24,10 @@ class NodeRoleAddCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
+    #[\Override]
     protected $name = 'node role:add';
 
+    #[\Override]
     protected $description = 'Add a hosted role to a node';
 
     protected function configure(): void

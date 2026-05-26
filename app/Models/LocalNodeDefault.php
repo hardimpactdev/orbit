@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class LocalNodeDefault extends Model
 {
+    #[\Override]
     protected $fillable = [
         'default_node_name',
     ];

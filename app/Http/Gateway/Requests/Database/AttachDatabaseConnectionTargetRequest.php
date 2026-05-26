@@ -15,6 +15,7 @@ final class AttachDatabaseConnectionTargetRequest extends GatewayRequest impleme
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     /**

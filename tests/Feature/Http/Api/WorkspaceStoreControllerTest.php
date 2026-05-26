@@ -146,24 +146,24 @@ it('creates workspace with supported custom php version', function (): void {
     $response = $this->call('POST', '/api/workspaces', [
         'name' => 'feature-php',
         'app' => 'demo',
-        'php_version' => '8.5',
+        'php_version' => '8.4',
     ], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
 
     $response->assertCreated();
-    $response->assertJsonPath('success.data.workspace.php_version', '8.5');
+    $response->assertJsonPath('success.data.workspace.php_version', '8.4');
 
     $workspace = Workspace::query()
         ->where('name', 'feature-php')
         ->first();
 
-    expect($workspace->php_version)->toBe('8.5');
+    expect($workspace->php_version)->toBe('8.4');
 });
 
 it('rejects unsupported php version', function (): void {
     $response = $this->call('POST', '/api/workspaces', [
         'name' => 'feature-php',
         'app' => 'demo',
-        'php_version' => '8.4',
+        'php_version' => '8.2',
     ], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
 
     $response->assertStatus(422);

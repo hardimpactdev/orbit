@@ -28,7 +28,7 @@ pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 it('resolves and serves the gateway TLD over wireguard', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -41,7 +41,7 @@ it('resolves and serves the gateway TLD over wireguard', function (): void {
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
 
         $controlIp = $control->waitForIpv4();

@@ -13,13 +13,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class NodeAccess extends Model
 {
+    #[\Override]
     protected $table = 'node_access';
 
+    #[\Override]
     protected $attributes = [
         'permissions' => '["*"]',
         'custom_permissions' => '[]',
     ];
 
+    #[\Override]
     protected $fillable = [
         'consumer_node_id',
         'serving_node_id',

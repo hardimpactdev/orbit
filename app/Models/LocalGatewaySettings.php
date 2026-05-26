@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class LocalGatewaySettings extends Model
 {
+    #[\Override]
     protected $fillable = [
         'gateway_url',
         'gateway_wg_ip',

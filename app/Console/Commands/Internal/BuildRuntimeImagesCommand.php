@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Process;
 #[Description('Ensure the orbit-runtime image is built and the orbit-caddy Caddy image is pulled locally')]
 class BuildRuntimeImagesCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

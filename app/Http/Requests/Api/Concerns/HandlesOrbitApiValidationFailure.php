@@ -40,7 +40,7 @@ trait HandlesOrbitApiValidationFailure
         $messages = $validator->errors()->messages();
 
         foreach ($this->validationFailureFields() as $field) {
-            if (array_key_exists($field, $messages)) {
+            if (array_key_exists((string) $field, $messages)) {
                 return $field;
             }
         }

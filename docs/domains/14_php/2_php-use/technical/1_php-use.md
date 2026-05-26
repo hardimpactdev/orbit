@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--json]`
+# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
 
 [Back to public `php:use` documentation.](../php-use.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--json]
+orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Input Contract
@@ -22,16 +22,18 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the resolved target node. |
+| `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the resolved target node. For `cli=true`, only `8.5` is supported. |
 | `app` | `--app` | No app or workspace context resolves for app/workspace targets. | Never. | Cwd-inferred app when present. | Visible app selector. |
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
-| `node` | `--node` | Optional. | Never. | App/workspace owning node for runtime scope. | Visible node slug. For app and workspace targets, may only confirm the owning node; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
+| `cli` | `--cli` | Optional. | `app`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
+| `node` | `--node` | Optional. | Never. | App/workspace owning node for runtime scope; default node for CLI scope. | Visible node slug. For app and workspace targets, may only confirm the owning node; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
 
 1. Resolve target scope:
+   - `--cli` selects node CLI runtime intent.
    - `--workspace` or cwd workspace context selects workspace runtime.
    - `--app` or cwd app context selects app runtime.
    - With no resolved target, interactive mode prompts from authorized app,
@@ -39,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
 3. Validate mutually exclusive inputs.
 4. Validate the requested version against Orbit-supported versions and
-   available images on the target node.
+   available images on the target node. CLI scope accepts only PHP 8.5.
 5. Apply post-input authorization before side effects.
 
 For app and workspace runtime targets, the target node is always the owning app
@@ -77,6 +79,13 @@ facts from another node.
   artifact application did not converge.
 - Reports proxy-family drift warnings when proxy backend artifact convergence for
   the workspace did not complete.
+
+### Node CLI Selection
+
+- Writes the node CLI PHP default in gateway tool facts.
+- Accepts only PHP 8.5, matching Orbit's host CLI/local-executor and
+  `orbit-runtime` baseline.
+- Does not limit app or workspace FrankenPHP runtime versions.
 
 ### Scope Boundaries
 

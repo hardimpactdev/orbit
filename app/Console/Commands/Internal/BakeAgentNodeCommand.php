@@ -25,6 +25,7 @@ use RuntimeException;
 #[Description('Bake an agent-node registry row for prepared E2E topology images')]
 class BakeAgentNodeCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(NodeRegistryWriter $registryWriter): int

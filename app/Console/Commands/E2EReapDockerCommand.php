@@ -19,6 +19,7 @@ use RuntimeException;
 #[Description('Reap stale Docker resources created by ephemeral E2E tests')]
 class E2EReapDockerCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(): int

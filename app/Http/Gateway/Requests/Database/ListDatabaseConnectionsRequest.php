@@ -11,6 +11,7 @@ use Saloon\Http\Response;
 
 final class ListDatabaseConnectionsRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function __construct(

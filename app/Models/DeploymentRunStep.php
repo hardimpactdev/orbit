@@ -27,6 +27,7 @@ class DeploymentRunStep extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'deployment_run_id',
         'deploy_step_id',

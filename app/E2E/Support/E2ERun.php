@@ -44,11 +44,6 @@ final class E2ERun
         return $this->sshKeyPair;
     }
 
-    public function launchBlank(string $suffix): E2EInstance
-    {
-        return $this->launch(E2EImage::Blank, $suffix);
-    }
-
     public function launchBase(string $suffix): E2EInstance
     {
         return $this->launch(E2EImage::Base, $suffix);

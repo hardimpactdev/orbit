@@ -15,6 +15,7 @@ final class DetachDatabaseConnectionTargetRequest extends GatewayRequest impleme
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::DELETE;
 
     /**

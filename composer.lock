@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "81452a6855b5b5a90855f1c6bb396d19",
+    "content-hash": "ad53621f1c12a52fc9fd93c7fb5a3f20",
     "packages": [
         {
             "name": "beyondcode/polyscope",
@@ -1319,11 +1319,11 @@
             "dist": {
                 "type": "path",
                 "url": "packages/core",
-                "reference": "2f99d0cd2e3fbf4fa0bb69ed513019aa8c5cde00"
+                "reference": "9213d2acb344a321cfc45d3954e9094140e68731"
             },
             "require": {
-                "illuminate/support": "^13.0",
-                "php": "^8.4"
+                "illuminate/support": "^12.0 || ^13.0",
+                "php": "^8.5"
             },
             "require-dev": {
                 "laravel/pint": "^1.29",
@@ -10561,7 +10561,7 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
-        "php": "^8.4"
+        "php": "^8.5"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"

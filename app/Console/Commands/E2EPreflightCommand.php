@@ -15,6 +15,7 @@ use Illuminate\Console\Command;
 #[Description('Check that the configured Incus host is reachable')]
 class E2EPreflightCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     /**

@@ -9,6 +9,7 @@ use Saloon\Enums\Method;
 
 final class UpdateAllStreamRequest extends GatewayStreamRequest
 {
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function resolveEndpoint(): string

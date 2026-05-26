@@ -33,6 +33,7 @@ class Workspace extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'app_id',
         'name',

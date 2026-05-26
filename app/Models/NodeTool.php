@@ -24,6 +24,7 @@ class NodeTool extends Model
     /** @use HasFactory<NodeToolFactory> */
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'name',

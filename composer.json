@@ -10,7 +10,7 @@
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.4",
+        "php": "^8.5",
         "beyondcode/polyscope": "^1.0",
         "hardimpactdev/librarian": "^0.0.2",
         "hardimpactdev/opencode-sdk-laravel": "^0.0.7",

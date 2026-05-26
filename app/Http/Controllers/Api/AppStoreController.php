@@ -14,6 +14,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Support\GitRepositoryReference;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -22,8 +23,6 @@ use Illuminate\Http\Request;
 #[RequiresPermission('app:new', servingNode: ServingNode::Target)]
 final class AppStoreController implements Loggable
 {
-    private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
-
     private ?App $activitySubject = null;
 
     public function __construct(
@@ -112,7 +111,7 @@ final class AppStoreController implements Loggable
         $node = $this->stringInput($request, 'node');
         $repository = GitRepositoryReference::canonicalize($this->stringInput($request, 'repository'));
         $root = $this->stringInput($request, 'root') ?? 'public';
-        $phpVersion = $this->stringInput($request, 'php_version') ?? '8.5';
+        $phpVersion = $this->stringInput($request, 'php_version') ?? PhpRuntimeCatalog::DEFAULT;
         $domain = $this->stringInput($request, 'domain');
 
         if ($name === null) {
@@ -135,7 +134,7 @@ final class AppStoreController implements Loggable
             return $this->validationFailed('root', 'Document root is invalid.');
         }
 
-        if (! in_array($phpVersion, self::SUPPORTED_PHP_VERSIONS, true)) {
+        if (! in_array($phpVersion, PhpRuntimeCatalog::SUPPORTED, true)) {
             return $this->validationFailed('php_version', 'Unsupported PHP version.');
         }
 

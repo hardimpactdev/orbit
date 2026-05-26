@@ -47,6 +47,7 @@ class Node extends Model
 
     public const string STATUS_ACTIVE = 'active';
 
+    #[\Override]
     protected $fillable = [
         'name',
         'role',

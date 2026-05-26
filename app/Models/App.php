@@ -44,6 +44,7 @@ class App extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'name',
         'node_id',
@@ -63,6 +64,7 @@ class App extends Model
         'latest_deployment_run_id',
     ];
 
+    #[\Override]
     protected $attributes = [
         'runtime_kind' => 'php',
         'worker_enabled' => false,

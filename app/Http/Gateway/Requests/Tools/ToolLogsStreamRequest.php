@@ -9,6 +9,7 @@ use Saloon\Enums\Method;
 
 final class ToolLogsStreamRequest extends GatewayStreamRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function __construct(

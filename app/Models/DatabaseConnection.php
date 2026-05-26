@@ -30,6 +30,7 @@ class DatabaseConnection extends Model
     /** @use HasFactory<DatabaseConnectionFactory> */
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'slug',

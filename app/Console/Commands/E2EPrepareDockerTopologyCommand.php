@@ -21,6 +21,7 @@ use RuntimeException;
 #[Description('Prepare per-role Docker images used by the Docker prepared topology provider')]
 class E2EPrepareDockerTopologyCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     /**

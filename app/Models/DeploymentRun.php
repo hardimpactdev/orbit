@@ -25,6 +25,7 @@ class DeploymentRun extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'app_id',
         'status',

@@ -25,6 +25,7 @@ class DeployStep extends Model
 
     public const int DEFAULT_TIMEOUT_SECONDS = 600;
 
+    #[\Override]
     protected $fillable = [
         'app_id',
         'title',

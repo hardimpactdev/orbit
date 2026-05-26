@@ -16,7 +16,7 @@ pest()->group('e2e-provision');
 it('provisions app nodes with the security baseline and blocks production workspaces', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -29,7 +29,7 @@ it('provisions app nodes with the security baseline and blocks production worksp
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
         [$dev] = e2eProvisionAppThroughNodeNew($provider, $run, $config, $control, $key, 'app-dev-1', 'development', 'test');
         [$prod] = e2eProvisionAppThroughNodeNew($provider, $run, $config, $control, $key, 'app-prod-1', 'production');

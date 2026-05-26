@@ -74,7 +74,7 @@ Use these examples when a feature could fit more than one lane.
 | Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-runtime`, runtime containers, and the scheduler. |
 | Host-init service control and journal behavior | Incus VM-feature | Requires real systemd and host init semantics. |
 | OS package installs, trust-store mutation, sudo, real SSH daemon behavior | Incus VM-feature | Depends on VM and OS behavior Docker does not model. |
-| Blank image, installer, topology preparation, `node:new`, WireGuard routing | Incus provision | Mutates disposable VMs and proves production-style provisioning. |
+| Base image, installer, topology preparation, `node:new`, WireGuard routing | Incus provision | Mutates disposable VMs and proves production-style provisioning. |
 
 When in doubt, start with Docker feature. Move to Incus only when the assertion
 would be false confidence in Docker because the kernel, VM boot, host init, or
@@ -89,8 +89,8 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   tests with `composer test:e2e:docker`; run Incus-only feature tests with
   `composer test:e2e:incus`. The aggregate `composer test:e2e` runs both
   prepared-topology feature lanes.
-- `e2e-provision` mutates disposable VMs from blank images and exercises setup
-  flows such as blank VM lifecycle, operator node readiness, gateway onboarding,
+- `e2e-provision` mutates disposable VMs from the base image and exercises setup
+  flows such as base VM lifecycle, operator node readiness, gateway onboarding,
   and node provisioning. Run it with `composer test:e2e:provision`.
 
 Each prepared topology has its own contract group:

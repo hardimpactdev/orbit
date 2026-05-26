@@ -513,7 +513,7 @@ it('--force surfaces builder failure as command failure', function (): void {
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle');
     $builder->shouldReceive('build')
-        ->andThrow(new RuntimeException('Required blank image [orbit-blank-ubuntu-26.04] not found.'));
+        ->andThrow(new RuntimeException('Required base image [orbit-base-ubuntu-26.04] not found.'));
 
     $command = app(E2EPrepareTopologyCommand::class);
     $command->setBuilderFactory(fn () => $builder);
@@ -523,6 +523,6 @@ it('--force surfaces builder failure as command failure', function (): void {
         'kind' => 'control',
         '--force' => true,
     ])
-        ->expectsOutputToContain('Required blank image [orbit-blank-ubuntu-26.04] not found.')
+        ->expectsOutputToContain('Required base image [orbit-base-ubuntu-26.04] not found.')
         ->assertFailed();
 });

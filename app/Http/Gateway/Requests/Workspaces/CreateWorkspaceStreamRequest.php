@@ -13,6 +13,7 @@ final class CreateWorkspaceStreamRequest extends GatewayStreamRequest implements
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(

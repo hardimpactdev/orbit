@@ -124,6 +124,8 @@ function orbitLauncherProbe(?bool $isGateway, array $arguments): array
                 'HOME' => $home,
                 'PATH' => $fakeBin.PATH_SEPARATOR.getenv('PATH'),
                 'ORBIT_LAUNCHER_CAPTURE' => $capturePath,
+                'ORBIT_EXECUTOR_SECRET' => false,
+                'ORBIT_NODE_IDENTITY' => false,
             ],
         );
 

@@ -16,6 +16,7 @@ use RuntimeException;
 #[Description('Detect the current host platform for internal provisioning flows')]
 class DetectPlatformCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(PlatformDetector $platformDetector): int

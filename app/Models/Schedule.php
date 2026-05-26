@@ -37,6 +37,7 @@ class Schedule extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'schedule_key',
         'name',

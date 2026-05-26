@@ -22,6 +22,7 @@ class SchedulerState extends Model
 {
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'heartbeat_at',

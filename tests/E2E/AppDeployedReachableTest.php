@@ -25,7 +25,7 @@ pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-reachability');
 it('serves a deployed production app from the control over its TLD hostname', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -40,7 +40,7 @@ it('serves a deployed production app from the control over its TLD hostname', fu
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
         [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
         [$app] = e2eProvisionAppThroughNodeNew($provider, $run, $config, $control, $key, 'app-prod-1', 'production');
 

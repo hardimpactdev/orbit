@@ -13,6 +13,7 @@ final class ToolActionStreamRequest extends GatewayStreamRequest implements HasB
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     /**

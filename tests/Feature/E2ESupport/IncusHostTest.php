@@ -20,7 +20,6 @@ function incusHostTestConfig(string $incusStoragePool = '', string $host = 'beas
         topologyProviderNames: ['incus'],
         host: $host,
         sourceImage: 'images:ubuntu/26.04/cloud',
-        blankImage: 'orbit-blank-ubuntu-26.04',
         baseImage: 'orbit-base-ubuntu-26.04',
         bootstrapUser: 'provisioner',
         controlUser: 'control',
@@ -89,9 +88,9 @@ it('sets the configured root disk size when launching topology instances', funct
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->launchTopologyInstance('orbit-blank-ubuntu-26.04', 'orbit-template-control');
+    $host->launchTopologyInstance('orbit-base-ubuntu-26.04', 'orbit-template-control');
 
-    expect($commands[0])->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-control' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
+    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-control' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
 });
 
 it('uses incus snapshot restore and supports stateful restore', function (): void {

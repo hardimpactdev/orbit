@@ -35,6 +35,7 @@ class FirewallRule extends Model
     /** @use HasFactory<FirewallRuleFactory> */
     use HasFactory;
 
+    #[\Override]
     protected $fillable = [
         'node_id',
         'name',

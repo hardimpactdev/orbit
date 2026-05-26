@@ -25,6 +25,7 @@ use RuntimeException;
 #[Description('Bake an ingress node registry row for prepared E2E topology images')]
 class BakeIngressNodeCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     public function handle(NodeRegistryWriter $registryWriter): int

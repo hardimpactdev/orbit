@@ -22,6 +22,7 @@ use RuntimeException;
 #[Description('Prepare the reusable Incus base image used by ephemeral E2E topologies')]
 class E2EPrepareBaseImageCommand extends Command
 {
+    #[\Override]
     protected $hidden = true;
 
     /**

@@ -48,15 +48,14 @@ function mockIncusTopologyCurrentSnapshots(IncusHost $host, int $count): void
         ->andReturn(successfulProcessResult());
 }
 
-function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB', string $incusStoragePool = '', string $blankImage = '', string $topologyRootSize = '16GiB'): E2EConfig
+function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB', string $incusStoragePool = '', string $baseImage = '', string $topologyRootSize = '16GiB'): E2EConfig
 {
     return new E2EConfig(
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
         host: 'beast',
         sourceImage: '',
-        blankImage: $blankImage,
-        baseImage: '',
+        baseImage: $baseImage,
         bootstrapUser: 'provisioner',
         controlUser: 'control',
         instancePrefix: 'orbit-e2e',
@@ -425,7 +424,7 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
 
 it('requires the requested Incus roles in the prepared full snapshot', function (): void {
     withE2ETopologyEnvironment([], function (): void {
-        $config = makeIncusTopologyTemplateTestConfig(blankImage: 'orbit-blank-ubuntu-26.04');
+        $config = makeIncusTopologyTemplateTestConfig(baseImage: 'orbit-base-ubuntu-26.04');
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('run')
             ->once()
@@ -436,7 +435,7 @@ it('requires the requested Incus roles in the prepared full snapshot', function 
                 && str_contains($command, "incus info 'orbit-template-prepared-prod'")
                 && str_contains($command, "incus info 'orbit-template-prepared-agent'")
                 && str_contains($command, 'clean-prepared-operator_gateway_app-dev_app-prod_agent')
-                && ! str_contains($command, "incus image info 'orbit-blank-ubuntu-26.04'")
+                && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04'")
                 && ! str_contains($command, "snapshots/clean-prepared-operator'")
                 && ! str_contains($command, "snapshots/clean-prepared-operator_gateway'")
                 && ! str_contains($command, 'orbit-template-prepared-ingress'))
@@ -483,7 +482,7 @@ it('clones only requested Incus roles from the prepared full snapshot', function
     });
 });
 
-it('prepared Incus acquisition retargets selected snapshot roles without dynamic blank provisioning', function (): void {
+it('prepared Incus acquisition retargets selected snapshot roles without dynamic base provisioning', function (): void {
     $source = file_get_contents(app_path('E2E/Support/IncusTopologyProvider.php'));
 
     expect($source)
@@ -506,7 +505,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
         ->toContain('escapeshellarg(self::AgentWireGuardIp)')
         ->toContain("foreach (['dev', 'prod', 'agent', 'ingress'] as \$role)")
         ->not->toContain('prepared.node-new')
-        ->not->toContain('launchPreparedBlankRole')
+        ->not->toContain('launchPreparedBaseRole')
         ->not->toContain('& PID_');
 });
 
