@@ -140,5 +140,23 @@ If Docker resources accumulate from interrupted runs, prefer the reaper:
 
 ```bash
 composer e2e:reap-docker
-composer e2e:reap-docker -- --force --older-than=0m
+composer e2e:reap-docker -- --force
+composer e2e:reap-docker -- --force --older-than=0m --artifacts-older-than=0m
 ```
+
+The Docker reaper also reports unused Docker image and standalone volume
+artifacts. These artifact classes are age-gated separately from the run-resource
+selector: `--artifacts-older-than=6h` is the default, and lower values are only
+for deliberate cleanup of known stale test residue.
+
+Docker artifact cleanup is explicit, not a generic `docker prune`:
+
+- Images are eligible only when they are clearly Orbit E2E-owned. Prepared
+  topology repositories matching `orbit-e2e-topology*` qualify by name, while
+  `orbit-runtime:*` qualifies only when the image carries
+  `org.orbit.e2e.artifact=true`.
+- Volumes are eligible only when their name starts with the configured
+  `ORBIT_E2E_INSTANCE_PREFIX`, no Docker container references them, and their
+  `CreatedAt` timestamp is older than `--artifacts-older-than`.
+- The official helper images pulled for the lane, such as `caddy:2-alpine` and
+  `composer:2`, are not Orbit E2E artifacts and are not reaped by this command.

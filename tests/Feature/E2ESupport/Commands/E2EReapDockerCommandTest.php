@@ -13,6 +13,9 @@ it('reports docker e2e resources in dry-run json mode', function (): void {
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run\n"),
         "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\n"),
+        "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-control-home-control'" => Process::result(output: ''),
+        "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-control-home-control'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+        "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: ''),
     ]);
 
     $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--json' => true])
@@ -22,6 +25,7 @@ it('reports docker e2e resources in dry-run json mode', function (): void {
                     'provider' => 'docker',
                     'dry_run' => true,
                     'older_than_minutes' => 0,
+                    'artifact_older_than_minutes' => 360,
                     'filter' => 'prefix',
                     'resources' => [
                         'containers' => [
@@ -45,6 +49,76 @@ it('reports docker e2e resources in dry-run json mode', function (): void {
                                 'type' => 'volume',
                                 'host' => 'local',
                                 'name' => 'orbit-e2e-run-control-home-control',
+                                'created' => '2026-05-03T03:00:00Z',
+                                'deleted' => false,
+                            ],
+                        ],
+                        'images' => [],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR))
+        ->assertSuccessful();
+});
+
+it('reports only old unused orbit docker artifact images and volumes', function (): void {
+    Process::fake(function ($process) {
+        return match ($process->command) {
+            "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+            "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+            "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-stale-home\norbit-e2e-run-fresh-home\norbit-e2e-run-used-home\n"),
+            "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-stale-home'",
+            "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-fresh-home'" => Process::result(output: ''),
+            "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-used-home'" => Process::result(output: "orbit-e2e-run-control\n"),
+            "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-stale-home'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+            "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-fresh-home'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T09:00:00Z'])),
+            "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: "orbit-e2e-topology-runtime:prepared-current\norbit-e2e-topology-runtime:fresh\norbit-runtime:prepared-current\norbit-runtime:production\nubuntu:24.04\n"),
+            "docker image inspect --format '{{json .}}' 'orbit-e2e-topology-runtime:prepared-current'" => Process::result(output: json_encode(['Created' => '2026-05-03T03:00:00Z', 'Config' => ['Labels' => ['org.orbit.e2e.source' => 'prepared-checkout']]])),
+            "docker image inspect --format '{{json .}}' 'orbit-e2e-topology-runtime:fresh'" => Process::result(output: json_encode(['Created' => '2026-05-03T09:00:00Z', 'Config' => ['Labels' => ['org.orbit.e2e.source' => 'prepared-checkout']]])),
+            "docker image inspect --format '{{json .}}' 'orbit-runtime:prepared-current'" => Process::result(output: json_encode(['Created' => '2026-05-03T02:00:00Z', 'Config' => ['Labels' => ['org.orbit.e2e.artifact' => 'true']]])),
+            "docker image inspect --format '{{json .}}' 'orbit-runtime:production'" => Process::result(output: json_encode(['Created' => '2026-05-03T02:00:00Z', 'Config' => ['Labels' => null]])),
+            "docker ps -a --format '{{.Names}}' --filter 'ancestor=orbit-e2e-topology-runtime:prepared-current'",
+            "docker ps -a --format '{{.Names}}' --filter 'ancestor=orbit-runtime:prepared-current'" => Process::result(output: ''),
+            default => Process::result(),
+        };
+    });
+
+    $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
+
+    $this->artisan('e2e:reap-docker', ['--json' => true])
+        ->expectsOutput(json_encode([
+            'success' => [
+                'data' => [
+                    'provider' => 'docker',
+                    'dry_run' => true,
+                    'older_than_minutes' => 30,
+                    'artifact_older_than_minutes' => 360,
+                    'filter' => 'prefix',
+                    'resources' => [
+                        'containers' => [],
+                        'networks' => [],
+                        'volumes' => [
+                            [
+                                'type' => 'volume',
+                                'host' => 'local',
+                                'name' => 'orbit-e2e-run-stale-home',
+                                'created' => '2026-05-03T03:00:00Z',
+                                'deleted' => false,
+                            ],
+                        ],
+                        'images' => [
+                            [
+                                'type' => 'image',
+                                'host' => 'local',
+                                'name' => 'orbit-e2e-topology-runtime:prepared-current',
+                                'created' => '2026-05-03T03:00:00Z',
+                                'deleted' => false,
+                            ],
+                            [
+                                'type' => 'image',
+                                'host' => 'local',
+                                'name' => 'orbit-runtime:prepared-current',
+                                'created' => '2026-05-03T02:00:00Z',
                                 'deleted' => false,
                             ],
                         ],
@@ -53,6 +127,32 @@ it('reports docker e2e resources in dry-run json mode', function (): void {
             ],
         ], JSON_THROW_ON_ERROR))
         ->assertSuccessful();
+
+    Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'prune'));
+});
+
+it('deletes old unused orbit docker artifact images and volumes when forced', function (): void {
+    Process::fake([
+        "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+        "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+        "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-stale-home\n"),
+        "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-stale-home'" => Process::result(output: ''),
+        "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-stale-home'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+        "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: "orbit-e2e-topology-runtime:prepared-current\n"),
+        "docker image inspect --format '{{json .}}' 'orbit-e2e-topology-runtime:prepared-current'" => Process::result(output: json_encode(['Created' => '2026-05-03T03:00:00Z', 'Config' => ['Labels' => ['org.orbit.e2e.source' => 'prepared-checkout']]])),
+        "docker ps -a --format '{{.Names}}' --filter 'ancestor=orbit-e2e-topology-runtime:prepared-current'" => Process::result(output: ''),
+        "docker volume rm 'orbit-e2e-run-stale-home'" => Process::result(),
+        "docker image rm 'orbit-e2e-topology-runtime:prepared-current'" => Process::result(),
+    ]);
+
+    $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
+
+    $this->artisan('e2e:reap-docker', ['--force' => true])
+        ->assertSuccessful();
+
+    Process::assertRan("docker volume rm 'orbit-e2e-run-stale-home'");
+    Process::assertRan("docker image rm 'orbit-e2e-topology-runtime:prepared-current'");
+    Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'prune'));
 });
 
 it('removes docker e2e resources when forced', function (): void {
@@ -60,12 +160,15 @@ it('removes docker e2e resources when forced', function (): void {
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run\n"),
         "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\n"),
+        "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-control-home-control'" => Process::result(output: ''),
+        "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-control-home-control'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+        "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: ''),
         "docker rm -f 'orbit-e2e-run-control'" => Process::result(),
         "docker network rm 'orbit-e2e-run'" => Process::result(),
         "docker volume rm 'orbit-e2e-run-control-home-control'" => Process::result(),
     ]);
 
-    $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
+    $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--artifacts-older-than' => '0m', '--force' => true])
         ->assertSuccessful();
 
     Process::assertRan("docker rm -f 'orbit-e2e-run-control'");
@@ -78,11 +181,16 @@ it('removes docker e2e home volumes when forced', function (): void {
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
         "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\norbit-e2e-run-gateway-home-orbit\n"),
+        "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-control-home-control'" => Process::result(output: ''),
+        "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-control-home-control'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+        "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-gateway-home-orbit'" => Process::result(output: ''),
+        "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-gateway-home-orbit'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+        "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: ''),
         "docker volume rm 'orbit-e2e-run-control-home-control'" => Process::result(),
         "docker volume rm 'orbit-e2e-run-gateway-home-orbit'" => Process::result(),
     ]);
 
-    $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
+    $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--artifacts-older-than' => '0m', '--force' => true])
         ->assertSuccessful();
 
     Process::assertRan("docker volume rm 'orbit-e2e-run-control-home-control'");
@@ -102,6 +210,11 @@ it('reaps docker slot hosts when no docker host list is configured', function ()
             "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
             "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run\n"),
             "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control-home-control\norbit-e2e-run-gateway-home-orbit\n"),
+            "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-control-home-control'",
+            "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-e2e-run-gateway-home-orbit'",
+            "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: ''),
+            "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-control-home-control'",
+            "docker volume inspect --format '{{json .}}' 'orbit-e2e-run-gateway-home-orbit'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
             default => Process::result(),
         };
     });
@@ -109,7 +222,7 @@ it('reaps docker slot hosts when no docker host list is configured', function ()
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:28',
     ], function (): void {
-        $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--force' => true])
+        $this->artisan('e2e:reap-docker', ['--older-than' => '0m', '--artifacts-older-than' => '0m', '--force' => true])
             ->assertSuccessful();
     });
 
@@ -132,6 +245,9 @@ it('uses configured e2e prefix and docker hosts when reaping resources', functio
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-custom-'" => Process::result(output: "orbit-custom-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-custom-'" => Process::result(output: "orbit-custom-run\n"),
         "docker volume ls --format '{{.Name}}' --filter 'name=orbit-custom-'" => Process::result(output: "orbit-custom-run-control-home-control\n"),
+        "docker ps -a --format '{{.Names}}' --filter 'volume=orbit-custom-run-control-home-control'" => Process::result(output: ''),
+        "docker volume inspect --format '{{json .}}' 'orbit-custom-run-control-home-control'" => Process::result(output: json_encode(['CreatedAt' => '2026-05-03T03:00:00Z'])),
+        "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: ''),
     ]);
 
     withE2EConfigEnvironment([
@@ -166,6 +282,7 @@ it('fails when forced docker resource deletion fails', function (): void {
         "docker ps -a --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(output: "orbit-e2e-run-control\n"),
         "docker network ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
         "docker volume ls --format '{{.Name}}' --filter 'name=orbit-e2e-'" => Process::result(output: ''),
+        "docker image ls --format '{{.Repository}}:{{.Tag}}'" => Process::result(output: ''),
         "docker rm -f 'orbit-e2e-run-control'" => Process::result(errorOutput: 'delete failed', exitCode: 1),
     ]);
 

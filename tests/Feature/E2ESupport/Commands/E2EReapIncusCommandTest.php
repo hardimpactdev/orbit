@@ -35,6 +35,7 @@ it('defaults to older-than=30m', function (): void {
                     'provider' => 'incus',
                     'dry_run' => true,
                     'older_than_minutes' => 30,
+                    'artifact_older_than_minutes' => 360,
                     'resources' => [
                         [
                             'type' => 'instance',
@@ -72,6 +73,7 @@ it('parses 30m shorthand', function (): void {
                     'provider' => 'incus',
                     'dry_run' => true,
                     'older_than_minutes' => 30,
+                    'artifact_older_than_minutes' => 360,
                     'resources' => [
                         [
                             'type' => 'instance',
@@ -109,6 +111,7 @@ it('parses 2h shorthand', function (): void {
                     'provider' => 'incus',
                     'dry_run' => true,
                     'older_than_minutes' => 120,
+                    'artifact_older_than_minutes' => 360,
                     'resources' => [
                         [
                             'type' => 'instance',
@@ -146,6 +149,7 @@ it('parses 1d shorthand', function (): void {
                     'provider' => 'incus',
                     'dry_run' => true,
                     'older_than_minutes' => 1440,
+                    'artifact_older_than_minutes' => 360,
                     'resources' => [
                         [
                             'type' => 'instance',
@@ -289,6 +293,7 @@ it('returns structured json output', function (): void {
                     'provider' => 'incus',
                     'dry_run' => true,
                     'older_than_minutes' => 30,
+                    'artifact_older_than_minutes' => 360,
                     'resources' => [
                         [
                             'type' => 'instance',
@@ -304,4 +309,154 @@ it('returns structured json output', function (): void {
             ],
         ], JSON_THROW_ON_ERROR))
         ->assertSuccessful();
+});
+
+it('reports only old unused orbit incus artifact images and volumes', function (): void {
+    Process::fake(function ($process) {
+        if (str_contains($process->command, 'incus image list --format json')) {
+            return Process::result(output: json_encode([
+                [
+                    'fingerprint' => 'image-old-fingerprint',
+                    'aliases' => [['name' => 'orbit-e2e-topology-old']],
+                    'created_at' => '2026-05-01T00:00:00Z',
+                    'last_used_at' => '2026-05-03T03:00:00Z',
+                ],
+                [
+                    'fingerprint' => 'image-fresh-fingerprint',
+                    'aliases' => [['name' => 'orbit-e2e-topology-fresh']],
+                    'created_at' => '2026-05-01T00:00:00Z',
+                    'last_used_at' => '2026-05-03T09:00:00Z',
+                ],
+                [
+                    'fingerprint' => 'image-base-fingerprint',
+                    'aliases' => [['name' => 'orbit-base-ubuntu-26.04']],
+                    'created_at' => '2026-05-01T00:00:00Z',
+                    'last_used_at' => '2026-05-01T00:00:00Z',
+                ],
+            ]));
+        }
+
+        if (str_contains($process->command, 'incus storage volume list')
+            && str_contains($process->command, 'orbit-e2e')
+            && str_contains($process->command, '--format json')) {
+            return Process::result(output: json_encode([
+                [
+                    'name' => 'orbit-e2e-run-stale-volume',
+                    'type' => 'custom',
+                    'created_at' => '2026-05-03T03:00:00Z',
+                    'used_by' => [],
+                ],
+                [
+                    'name' => 'orbit-e2e-run-used-volume',
+                    'type' => 'custom',
+                    'created_at' => '2026-05-03T03:00:00Z',
+                    'used_by' => ['/1.0/instances/orbit-e2e-run-control'],
+                ],
+                [
+                    'name' => 'orbit-template-prepared-control',
+                    'type' => 'custom',
+                    'created_at' => '2026-05-01T00:00:00Z',
+                    'used_by' => [],
+                ],
+            ]));
+        }
+
+        if (str_contains($process->command, 'incus list --format json')) {
+            return Process::result(output: json_encode([]));
+        }
+
+        return Process::result();
+    });
+
+    $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
+
+    withE2EEnvironment(['ORBIT_E2E_INCUS_STORAGE_POOL'], [
+        'ORBIT_E2E_INCUS_STORAGE_POOL' => 'orbit-e2e',
+    ], function (): void {
+        $this->artisan('e2e:reap-incus', ['--json' => true])
+            ->expectsOutput(json_encode([
+                'success' => [
+                    'data' => [
+                        'provider' => 'incus',
+                        'dry_run' => true,
+                        'older_than_minutes' => 30,
+                        'artifact_older_than_minutes' => 360,
+                        'resources' => [
+                            [
+                                'type' => 'image',
+                                'id' => 'image-old-fingerprint',
+                                'name' => 'orbit-e2e-topology-old',
+                                'created' => '2026-05-01T00:00:00Z',
+                                'last_used' => '2026-05-03T03:00:00Z',
+                                'deleted' => false,
+                                'host' => 'beast',
+                            ],
+                            [
+                                'type' => 'volume',
+                                'id' => 'orbit-e2e/custom/orbit-e2e-run-stale-volume',
+                                'name' => 'orbit-e2e-run-stale-volume',
+                                'pool' => 'orbit-e2e',
+                                'created' => '2026-05-03T03:00:00Z',
+                                'deleted' => false,
+                                'host' => 'beast',
+                            ],
+                        ],
+                        'skipped' => ['orbit-base-ubuntu-26.04', 'orbit-template-prepared-control'],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR))
+            ->assertSuccessful();
+    });
+
+    Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'prune'));
+});
+
+it('deletes old unused orbit incus artifact images and volumes when forced', function (): void {
+    Process::fake(function ($process) {
+        if (str_contains($process->command, 'incus image list --format json')) {
+            return Process::result(output: json_encode([
+                [
+                    'fingerprint' => 'image-old-fingerprint',
+                    'aliases' => [['name' => 'orbit-e2e-topology-old']],
+                    'created_at' => '2026-05-01T00:00:00Z',
+                    'last_used_at' => '2026-05-03T03:00:00Z',
+                ],
+            ]));
+        }
+
+        if (str_contains($process->command, 'incus storage volume list')
+            && str_contains($process->command, 'orbit-e2e')
+            && str_contains($process->command, '--format json')) {
+            return Process::result(output: json_encode([
+                [
+                    'name' => 'orbit-e2e-run-stale-volume',
+                    'type' => 'custom',
+                    'created_at' => '2026-05-03T03:00:00Z',
+                    'used_by' => [],
+                ],
+            ]));
+        }
+
+        if (str_contains($process->command, 'incus list --format json')) {
+            return Process::result(output: json_encode([]));
+        }
+
+        return Process::result();
+    });
+
+    $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
+
+    withE2EEnvironment(['ORBIT_E2E_INCUS_STORAGE_POOL'], [
+        'ORBIT_E2E_INCUS_STORAGE_POOL' => 'orbit-e2e',
+    ], function (): void {
+        $this->artisan('e2e:reap-incus', ['--force' => true])
+            ->assertSuccessful();
+    });
+
+    Process::assertRan(fn ($process): bool => str_contains($process->command, 'incus image delete')
+        && str_contains($process->command, 'image-old-fingerprint'));
+
+    Process::assertRan(fn ($process): bool => str_contains($process->command, 'incus storage volume delete')
+        && str_contains($process->command, 'orbit-e2e')
+        && str_contains($process->command, 'custom/orbit-e2e-run-stale-volume'));
 });

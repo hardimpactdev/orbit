@@ -26,12 +26,20 @@ class E2EPrepareDockerRuntimeCommand extends Command
                 'action' => 'build',
                 'dockerfile' => base_path('docker/e2e/topology/Dockerfile'),
                 'context' => base_path(),
+                'labels' => [
+                    'org.orbit.e2e.artifact' => 'true',
+                    'org.orbit.e2e.runtime' => 'topology-runtime',
+                ],
             ],
             [
                 'image' => DockerTopologyProvider::runtimeSiblingImage(),
                 'action' => 'build',
                 'dockerfile' => base_path('docker/orbit-runtime/Dockerfile'),
                 'context' => base_path(),
+                'labels' => [
+                    'org.orbit.e2e.artifact' => 'true',
+                    'org.orbit.e2e.runtime' => 'orbit-runtime',
+                ],
             ],
             [
                 'image' => OrbitCaddyContainer::Image,
@@ -55,10 +63,17 @@ class E2EPrepareDockerRuntimeCommand extends Command
         }
 
         foreach ($images as $image) {
+            $labels = array_map(
+                fn (string $key, string $value): string => sprintf('--label %s', escapeshellarg("{$key}={$value}")),
+                array_keys($image['labels'] ?? []),
+                array_values($image['labels'] ?? []),
+            );
+
             $command = $image['action'] === 'pull'
                 ? sprintf('docker pull %s', escapeshellarg($image['image']))
                 : sprintf(
-                    'docker build -f %s -t %s %s',
+                    'docker build %s-f %s -t %s %s',
+                    $labels === [] ? '' : implode(' ', $labels).' ',
                     escapeshellarg($image['dockerfile']),
                     escapeshellarg($image['image']),
                     escapeshellarg($image['context']),

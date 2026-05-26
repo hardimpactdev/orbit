@@ -96,3 +96,30 @@ The regression signature for a storage-pool mismatch is
 `ORBIT_E2E_TIMINGS=1 composer test:e2e:incus` reporting `batch.copy-start` near
 100s per worker. The expected local Beast value after a healthy rebuild on
 `orbit-e2e` is about 2s per worker.
+
+## Cleanup
+
+If Incus resources accumulate from interrupted runs, prefer the reaper:
+
+```bash
+composer e2e:reap-incus
+composer e2e:reap-incus -- --force
+composer e2e:reap-incus -- --force --older-than=0m --artifacts-older-than=0m
+```
+
+The Incus reaper also reports unused image aliases and storage volumes that are
+clearly Orbit E2E-owned. Artifact cleanup is age-gated separately from instance
+cleanup: `--artifacts-older-than=6h` is the default.
+
+Incus artifact cleanup is explicit, not a generic storage or image prune:
+
+- Images are eligible only when their alias starts with the configured
+  `ORBIT_E2E_INSTANCE_PREFIX` or `orbit-e2e-`, and their `last_used_at`
+  timestamp is older than `--artifacts-older-than`. If an image has never been
+  used, the reaper falls back to `created_at`.
+- Storage volumes are eligible only when their name starts with the configured
+  `ORBIT_E2E_INSTANCE_PREFIX` or `orbit-e2e-`, their `used_by` list is empty,
+  and their `created_at` timestamp is older than `--artifacts-older-than`.
+- Protected prepared assets are reported as skipped, not deleted. This includes
+  `orbit-template-*`, `orbit-ready-*`, `orbit-base-*`, `orbit-blank-*`, and
+  `clean-*` names.

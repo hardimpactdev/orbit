@@ -37,12 +37,16 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'docker/e2e/topology/Dockerfile')
+        && str_contains($process->command, "--label 'org.orbit.e2e.artifact=true'")
+        && str_contains($process->command, "--label 'org.orbit.e2e.runtime=topology-runtime'")
         && str_contains($process->command, 'orbit-e2e-topology-runtime:prepared-current')
         && str_contains($process->command, base_path()));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'docker/orbit-runtime/Dockerfile')
+        && str_contains($process->command, "--label 'org.orbit.e2e.artifact=true'")
+        && str_contains($process->command, "--label 'org.orbit.e2e.runtime=orbit-runtime'")
         && str_contains($process->command, 'orbit-runtime:prepared-current')
         && str_contains($process->command, base_path()));
 
