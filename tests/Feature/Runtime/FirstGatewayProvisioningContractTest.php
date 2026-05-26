@@ -37,6 +37,7 @@ describe('first-gateway provisioning contract', function (): void {
             ->toContain('--gateway')
             ->toContain('GATEWAY_MODE')
             ->toContain('ORBIT_IS_GATEWAY=1')
+            ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
             ->toContain('ORBIT_HOST_PATH=$TARGET_DIR');
     });
 
@@ -160,13 +161,9 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
             ->not->toContain("'443:443'");
     });
 
-    it('renders the gateway API TLS cert/key under host paths that orbit-caddy can read through its /home or /etc/orbit bind mounts', function (): void {
-        $hostOrbit = '/home/orbit/orbit';
+    it('renders the gateway API TLS cert/key under the caddy-readable /etc/orbit bind mount', function (): void {
         $writtenGatewayApiCaddyfile = null;
 
-        // Switch the storage path to a /opt/orbit-shaped namespace so the
-        // installer is reasoning about container paths, then verify the
-        // rendered Caddyfile substitutes the configured ORBIT_HOST_PATH.
         $containerStorageRoot = sys_get_temp_dir().'/orbit-host-translate-storage-'.uniqid();
         mkdir($containerStorageRoot.'/app/orbit/ca', 0777, true);
         mkdir($containerStorageRoot.'/app/orbit/certs', 0777, true);
@@ -194,38 +191,18 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         });
         Process::preventStrayProcesses();
 
-        // Force the installer to translate paths as if it were running inside
-        // orbit-runtime: pretend storage_path() returns /opt/orbit-shaped
-        // paths by inspecting the helper directly afterward; the live
-        // install call exercises the rest of the wiring without --pull-never
-        // surprises.
-        putenv("ORBIT_HOST_PATH={$hostOrbit}");
-
         try {
             app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
-
-            // Force the helper to translate a container-style storage path
-            // and assert the rendered Caddyfile would point at the host
-            // copy that lives under orbit-caddy's bind mounts.
-            $reflection = new ReflectionClass(GatewayApiRuntimeInstaller::class);
-            $method = $reflection->getMethod('caddyVisiblePath');
-            $method->setAccessible(true);
-            $instance = app(GatewayApiRuntimeInstaller::class);
-
-            $translatedCert = $method->invoke($instance, '/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt');
-            $translatedKey = $method->invoke($instance, '/opt/orbit/storage/app/orbit/certs/10.6.0.2.key');
         } finally {
-            putenv('ORBIT_HOST_PATH');
             File::deleteDirectory($containerStorageRoot);
         }
 
+        $caddyCertPath = '/etc/orbit/certs/10.6.0.2.crt';
+        $caddyKeyPath = '/etc/orbit/certs/10.6.0.2.key';
         $caddyContainer = OrbitCaddyContainer::forPrivateNode('10.6.0.2');
         $caddyVisibleRoots = collect($caddyContainer->mounts())
             ->pluck('target')
             ->all();
-
-        expect($translatedCert)->toBe("{$hostOrbit}/storage/app/orbit/certs/10.6.0.2.crt")
-            ->and($translatedKey)->toBe("{$hostOrbit}/storage/app/orbit/certs/10.6.0.2.key");
 
         $reachable = function (string $path) use ($caddyVisibleRoots): bool {
             foreach ($caddyVisibleRoots as $target) {
@@ -237,28 +214,21 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
             return false;
         };
 
-        expect($reachable($translatedCert))->toBeTrue('translated cert must live under an orbit-caddy bind mount target')
-            ->and($reachable($translatedKey))->toBeTrue('translated key must live under an orbit-caddy bind mount target');
+        expect($reachable($caddyCertPath))->toBeTrue('gateway API cert must live under an orbit-caddy bind mount target')
+            ->and($reachable($caddyKeyPath))->toBeTrue('gateway API key must live under an orbit-caddy bind mount target')
+            ->and($reachable('/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt'))->toBeFalse('runtime-private /opt/orbit paths must NOT be rendered into orbit-caddy config');
 
-        // /opt/orbit is not in orbit-caddy's mount set, so an untranslated
-        // container path would not be readable. Sanity-check the fail case
-        // so the assertion above proves the translation actually moved the
-        // path out of the unreachable zone.
-        expect($reachable('/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt'))->toBeFalse('untranslated /opt/orbit paths must NOT be Caddy-visible — this is the regression we are guarding against');
-
-        // The live install above wrote the Caddyfile through the fake
-        // Process; assert the path the installer DID emit lives under one
-        // of those host-visible roots. When storage_path() is already a
-        // host-direct path (as in this test), no translation is needed and
-        // the assertion still holds.
         expect($writtenGatewayApiCaddyfile)->not->toBeNull();
         preg_match('#^\s+tls\s+(\S+)\s+(\S+)\s*$#m', $writtenGatewayApiCaddyfile, $matches);
         expect($matches)->toHaveCount(3, 'rendered Caddyfile must include a tls cert and key directive');
-        // Storage path here is the test temp dir, not /opt/orbit. The
-        // installer leaves non-/opt paths untouched, so we only need to
-        // confirm both paths were emitted.
-        expect($matches[1])->toContain('10.6.0.2.crt')
-            ->and($matches[2])->toContain('10.6.0.2.key');
+
+        expect($matches[1])->toBe($caddyCertPath)
+            ->and($matches[2])->toBe($caddyKeyPath)
+            ->and($writtenGatewayApiCaddyfile)->not->toContain($containerStorageRoot);
+
+        Process::assertRan('sudo install -d -m 0755 /etc/orbit/certs');
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerStorageRoot}/app/orbit/certs/10.6.0.2.crt").' '.escapeshellarg($caddyCertPath));
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerStorageRoot}/app/orbit/certs/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath));
     });
 
     it('writes the gateway API Caddyfile through the host bind mount that orbit-caddy reads', function (): void {

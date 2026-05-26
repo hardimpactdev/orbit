@@ -8,7 +8,7 @@ use App\E2E\Support\E2ETopologyKind;
 
 it('manages and lists node access permissions from the gateway', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
@@ -54,4 +54,4 @@ it('manages and lists node access permissions from the gateway', function (): vo
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

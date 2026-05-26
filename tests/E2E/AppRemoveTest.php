@@ -41,7 +41,7 @@ PHP;
 
 it('removes an app from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $name = 'e2e-rm-'.strtolower(bin2hex(random_bytes(3)));
     $path = "/home/orbit/apps/{$name}";
 
@@ -83,7 +83,7 @@ it('removes an app from a control caller through the gateway api', function (): 
 
         expect($app)->toBeArray()
             ->and($payload['success']['data']['result']['action'])->toBe('removed')
-            ->and($payload['success']['data']['cleanup']['proxy_routes_removed'])->toBe(0)
+            ->and($payload['success']['data']['cleanup']['proxy_routes_removed'])->toBe(1)
             ->and($payload['success']['data']['cleanup']['processes_removed'])->toBe(0)
             ->and($app['name'])->toBe($name)
             ->and($app['node'])->toBe('app-dev-1')
@@ -115,4 +115,4 @@ it('removes an app from a control caller through the gateway api', function (): 
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

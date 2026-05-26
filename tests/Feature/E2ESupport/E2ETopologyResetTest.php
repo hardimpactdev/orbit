@@ -341,9 +341,9 @@ it('fresh-clone reset uses a prepared rebuild state', function (): void {
         ->and($lease->control())->toBe($newControl);
 });
 
-it('falls back to fresh-clone for unknown strategy values', function (): void {
+it('falls back to fresh-clone for unknown reset mode values', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
-    putenv('ORBIT_E2E_TOPOLOGY_RESET=unknown-strategy');
+    putenv('ORBIT_E2E_TOPOLOGY_RESET=unknown-mode');
 
     try {
         $oldControl = m::mock(E2EInstance::class);

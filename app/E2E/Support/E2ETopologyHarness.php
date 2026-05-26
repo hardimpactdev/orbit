@@ -63,6 +63,18 @@ final class E2ETopologyHarness
 
     public function checkout(string $role): string
     {
+        if ($role === 'operator') {
+            return $this->checkouts['operator']
+                ?? $this->checkouts['control']
+                ?? throw new RuntimeException("Current checkout has not been installed for role [{$role}].");
+        }
+
+        if ($role === 'control') {
+            return $this->checkouts['control']
+                ?? $this->checkouts['operator']
+                ?? throw new RuntimeException("Current checkout has not been installed for role [{$role}].");
+        }
+
         return $this->checkouts[$role]
             ?? throw new RuntimeException("Current checkout has not been installed for role [{$role}].");
     }
@@ -98,7 +110,7 @@ final class E2ETopologyHarness
             'dev' => $this->lease->devApp() ?? throw new RuntimeException('Topology does not include role [dev].'),
             'prod' => $this->lease->prodApp() ?? throw new RuntimeException('Topology does not include role [prod].'),
             'agent' => $this->lease->agent() ?? throw new RuntimeException('Topology does not include role [agent].'),
-            'ingress', 'ingress' => $this->lease->ingress() ?? throw new RuntimeException('Topology does not include role [ingress].'),
+            'ingress' => $this->lease->ingress() ?? throw new RuntimeException('Topology does not include role [ingress].'),
             default => throw new RuntimeException("Unknown topology role [{$role}]."),
         };
     }
@@ -132,8 +144,8 @@ final class E2ETopologyHarness
     {
         return match ($role) {
             'operator' => E2EConfig::fromEnvironment()->operatorUser,
-            'control' => E2EConfig::fromEnvironment()->controlUser,
-            'gateway', 'dev', 'prod', 'agent', 'ingress', 'ingress' => 'orbit',
+            'control' => E2EConfig::fromEnvironment()->operatorUser,
+            'gateway', 'dev', 'prod', 'agent', 'ingress' => 'orbit',
             default => throw new RuntimeException("Unknown topology role [{$role}]."),
         };
     }

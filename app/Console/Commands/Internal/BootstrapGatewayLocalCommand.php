@@ -161,7 +161,7 @@ class BootstrapGatewayLocalCommand extends Command
             ];
         });
 
-        $this->markGatewayEnvironment();
+        $this->markGatewayEnvironment($name);
 
         $caService->ensureRootCa();
         $wireguardServerPublicKey = null;
@@ -321,19 +321,24 @@ class BootstrapGatewayLocalCommand extends Command
         return is_string($value) && $value !== '' ? $value : null;
     }
 
-    private function markGatewayEnvironment(): void
+    private function ensureOperationTokenSecret(): string
     {
-        $path = app()->environmentFilePath();
-        $contents = File::exists($path) ? File::get($path) : '';
-        $line = 'ORBIT_IS_GATEWAY=true';
+        $secret = $this->readEnvVar('ORBIT_OPERATION_TOKEN_SECRET')
+            ?? $this->readEnvVar('ORBIT_EXECUTOR_SECRET')
+            ?? base64_encode(random_bytes(32));
 
-        if (preg_match('/^ORBIT_IS_GATEWAY=/m', $contents) === 1) {
-            $contents = (string) preg_replace('/^ORBIT_IS_GATEWAY=.*$/m', $line, $contents);
-        } else {
-            $contents = rtrim($contents)."\n{$line}\n";
-        }
+        $this->writeEnvVar('ORBIT_OPERATION_TOKEN_SECRET', $secret);
+        $this->writeEnvVar('ORBIT_EXECUTOR_SECRET', $secret);
+        config(['orbit.operation_token_secret' => $secret]);
 
-        File::put($path, $contents);
+        return $secret;
+    }
+
+    private function markGatewayEnvironment(string $name): void
+    {
+        $this->ensureOperationTokenSecret();
+        $this->writeEnvVar('ORBIT_IS_GATEWAY', 'true');
+        $this->writeEnvVar('ORBIT_NODE_IDENTITY', $name);
         config(['orbit.is_gateway' => true]);
     }
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerInstance;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
@@ -46,10 +47,28 @@ $app = \App\Models\App::query()->create([
     'adopted' => true,
 ]);
 
+\App\Models\App::query()->create([
+    'name' => 'api',
+    'node_id' => $nodes->get('app-dev-1'),
+    'environment' => 'development',
+    'path' => '/home/orbit/apps/api',
+    'document_root' => 'public',
+    'php_version' => '8.5',
+    'adopted' => true,
+]);
+
 \App\Models\Workspace::query()->create([
     'app_id' => $app->id,
     'name' => 'feature-docs',
     'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
+    'php_version' => null,
+    'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
+]);
+
+\App\Models\Workspace::query()->create([
+    'app_id' => $app->id,
+    'name' => 'bugfix-docs',
+    'path' => '/home/orbit/apps/docs/.worktrees/bugfix-docs',
     'php_version' => null,
     'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
 ]);
@@ -69,6 +88,21 @@ $app = \App\Models\App::query()->create([
     'status' => 'expected',
 ]);
 
+\App\Models\Schedule::query()->create([
+    'schedule_key' => 'app:docs:weekly-docs',
+    'name' => 'weekly-docs',
+    'scope' => 'app',
+    'app_id' => $app->id,
+    'node_id' => null,
+    'target_name' => 'docs',
+    'interval' => 'weekly',
+    'timezone' => 'UTC',
+    'execution_type' => 'command',
+    'execution_value' => 'orbit docs:weekly',
+    'enabled' => true,
+    'status' => 'expected',
+]);
+
 echo 'seeded';
 PHP;
 
@@ -79,11 +113,11 @@ PHP;
     );
 }
 
-function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanCommand, string $label): string
+function registryPromptE2ECapture(E2ETopologyHarness $topology, string $commandArguments, string $label): string
 {
-    $checkout = escapeshellarg($topology->checkout('gateway'));
+    $checkout = $topology->checkout('gateway');
     $transcript = '/tmp/orbit-registry-prompt-'.$label.'-'.strtolower(bin2hex(random_bytes(3))).'.log';
-    $command = sprintf('cd %s && ORBIT_IS_GATEWAY=1 %s', $checkout, $artisanCommand);
+    $command = registryPromptE2ECommand($topology, $checkout, $commandArguments);
     $transcriptArgument = escapeshellarg($transcript);
 
     $result = $topology->ssh(
@@ -103,6 +137,22 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $artisanC
     return $result->output();
 }
 
+function registryPromptE2ECommand(E2ETopologyHarness $topology, string $checkout, string $commandArguments): string
+{
+    if ($topology->instance('gateway') instanceof DockerInstance) {
+        return sprintf(
+            'sudo docker exec --interactive --tty --env %s --env %s --env %s --workdir /tmp %s orbit %s',
+            escapeshellarg("ORBIT_SOURCE_PATH={$checkout}"),
+            escapeshellarg('ORBIT_HOST_CWD=/tmp'),
+            escapeshellarg('ORBIT_IS_GATEWAY=1'),
+            escapeshellarg(e2eRuntimeContainerName($topology, 'gateway')),
+            $commandArguments,
+        );
+    }
+
+    return sprintf('cd /tmp && ORBIT_HOST_CWD=/tmp ORBIT_IS_GATEWAY=1 php %s %s', escapeshellarg("{$checkout}/artisan"), $commandArguments);
+}
+
 it('renders finite registry prompts as data tables in a real terminal session', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev);
 
@@ -111,10 +161,10 @@ it('renders finite registry prompts as data tables in a real terminal session', 
 
         registryPromptE2ESeed($topology);
 
-        $appPrompt = registryPromptE2ECapture($topology, 'orbit app:show', 'app');
-        $nodePrompt = registryPromptE2ECapture($topology, 'orbit node:show', 'node');
-        $workspacePrompt = registryPromptE2ECapture($topology, 'orbit workspace:show --app=docs', 'workspace');
-        $schedulePrompt = registryPromptE2ECapture($topology, 'orbit schedule:show --app=docs', 'schedule');
+        $appPrompt = registryPromptE2ECapture($topology, 'app:show', 'app');
+        $nodePrompt = registryPromptE2ECapture($topology, 'node:show', 'node');
+        $workspacePrompt = registryPromptE2ECapture($topology, 'workspace:show --app=docs', 'workspace');
+        $schedulePrompt = registryPromptE2ECapture($topology, 'schedule:show --app=docs', 'schedule');
 
         expect($appPrompt)
             ->toContain('Select an app')

@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyKind;
 use App\Services\E2E\DockerImageDistributor;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -17,17 +18,14 @@ use Illuminate\Support\Facades\Process;
 use Throwable;
 
 #[Signature('e2e:prepare-docker-hosts
-    {kind=operator_gateway_app-dev_app-prod : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_s3|operator_gateway_app-dev_ingress_websocket_s3|operator_gateway_app-dev_app-prod|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
-    {--force : Build the Docker runtime and topology images}
+    {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
+    {--force : Ensure Docker runtime and topology images exist on the build host and sync them to runners}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
-    {--topology-mode=dns-alias : Topology mode to bake (legacy-retarget|dns-alias)}
     {--json : Output as JSON}')]
 #[Description('Prepare Docker E2E images across all configured Docker hosts')]
 class E2EPrepareDockerHostsCommand extends Command
 {
-    private const string RuntimeImage = 'orbit-e2e-topology-runtime:current';
-
     protected $hidden = true;
 
     public function handle(): int
@@ -36,30 +34,28 @@ class E2EPrepareDockerHostsCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_s3, operator_gateway_app-dev_ingress_websocket_s3, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress. Legacy control and client topology names are accepted as aliases.");
+            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
         }
 
         if ((bool) $this->option('runtime-only') && (bool) $this->option('topology-only')) {
             return $this->failCommand('Choose either --runtime-only or --topology-only, not both.');
         }
 
-        $mode = (string) $this->option('topology-mode');
-
-        if (! $this->isSupportedTopologyMode($mode)) {
-            return $this->failCommand("Invalid topology mode [{$mode}]. Supported: legacy-retarget, dns-alias.");
+        if (! E2EPreparedTopology::supportsKind($kind)) {
+            return $this->failCommand(E2EPreparedTopology::unsupportedKindMessage($kind));
         }
 
         $config = E2EConfig::fromEnvironment();
 
         if (count($config->dockerImageBuildHosts) > 1) {
-            return $this->failCommand('Configure exactly one Docker image build host. Use ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast and keep sidecars in ORBIT_E2E_DOCKER_HOST_SLOTS only.');
+            return $this->failCommand('Configure exactly one Docker image build host. Use ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast and keep test runners in ORBIT_E2E_DOCKER_TEST_RUNNERS only.');
         }
 
         $hosts = $this->hosts($config);
         $buildHosts = $this->buildHosts($config, $hosts);
         $buildHost = $buildHosts[0] ?? 'local';
         $runtimeStep = $this->runtimeStep();
-        $topologySteps = $this->topologySteps($kind, $mode);
+        $topologySteps = $this->topologySteps($kind);
         $steps = array_values(array_filter([
             $runtimeStep,
             ...$topologySteps,
@@ -110,7 +106,6 @@ class E2EPrepareDockerHostsCommand extends Command
                         'provider' => 'docker',
                         'dry_run' => false,
                         'kind' => $kind->value,
-                        'topology_mode' => $mode,
                         'hosts' => $hosts,
                         'build_hosts' => $buildHosts,
                         'results' => $results,
@@ -168,7 +163,7 @@ class E2EPrepareDockerHostsCommand extends Command
             'name' => 'runtime',
             'command' => 'composer e2e:prepare-docker-runtime -- --force',
             'images' => [
-                ['role' => 'topology-runtime', 'image' => self::RuntimeImage],
+                ['role' => 'topology-runtime', 'image' => DockerTopologyBuilder::runtimeImage()],
                 ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
                 ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
             ],
@@ -178,30 +173,49 @@ class E2EPrepareDockerHostsCommand extends Command
     /**
      * @return list<array{name: string, command: string, images: list<array{role: string, image: string}>}>
      */
-    private function topologySteps(E2ETopologyKind $kind, string $mode): array
+    private function topologySteps(E2ETopologyKind $kind): array
     {
         if ((bool) $this->option('runtime-only')) {
             return [];
         }
 
-        $roles = array_values(array_filter(
-            DockerTopologyBuilder::rolesFor($kind),
-            fn (string $role): bool => DockerTopologyBuilder::ownsImage($kind, $role),
-        ));
+        $buildKinds = E2EPreparedTopology::dockerArtifactSourceKindsFor($kind);
+        $images = [];
 
-        $images = array_map(
-            fn (string $role): array => [
-                'role' => $role,
-                'image' => DockerTopologyBuilder::imageNameFor($kind, $role, $mode),
-            ],
-            $roles,
-        );
+        foreach ($buildKinds as $buildKind) {
+            $roles = array_values(array_filter(
+                DockerTopologyBuilder::rolesFor($buildKind),
+                fn (string $role): bool => DockerTopologyBuilder::ownsImage($buildKind, $role),
+            ));
+
+            $images = [
+                ...$images,
+                ...array_map(
+                    fn (string $role): array => [
+                        'role' => $role,
+                        'image' => DockerTopologyBuilder::imageNameFor($buildKind, $role),
+                    ],
+                    $roles,
+                ),
+            ];
+        }
 
         return [[
-            'name' => 'topology',
-            'command' => sprintf('composer e2e:prepare-docker-topology -- --force --topology-mode=%s %s', escapeshellarg($mode), escapeshellarg($kind->value)),
+            'name' => 'topology:'.$this->topologyStepName($buildKinds),
+            'command' => sprintf('composer e2e:prepare-docker-topology -- --force %s', escapeshellarg($kind->value)),
             'images' => $images,
         ]];
+    }
+
+    /**
+     * @param  list<E2ETopologyKind>  $buildKinds
+     */
+    private function topologyStepName(array $buildKinds): string
+    {
+        return implode('+', array_map(
+            fn (E2ETopologyKind $kind): string => $kind->value,
+            $buildKinds,
+        ));
     }
 
     /**
@@ -218,7 +232,6 @@ class E2EPrepareDockerHostsCommand extends Command
                         'provider' => 'docker',
                         'dry_run' => true,
                         'kind' => $kind->value,
-                        'topology_mode' => (string) $this->option('topology-mode'),
                         'hosts' => $hosts,
                         'build_hosts' => $buildHosts,
                         'steps' => array_column($steps, 'name'),
@@ -229,7 +242,7 @@ class E2EPrepareDockerHostsCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->line('Dry run. Pass --force to build Docker images on the build host and distribute them to configured hosts.');
+        $this->line('Dry run. Pass --force to build missing Docker images on the build host and distribute them to configured runners.');
 
         foreach ($buildHosts as $buildHost) {
             $this->line("builder: {$buildHost}");
@@ -248,6 +261,24 @@ class E2EPrepareDockerHostsCommand extends Command
      */
     private function runBuildStep(string $buildHost, array $step, array &$results): bool
     {
+        $missingImages = $this->missingImagesFor($buildHost, $step['images']);
+
+        if ($missingImages === []) {
+            $results[] = [
+                'host' => $buildHost,
+                'step' => $step['name'],
+                'successful' => true,
+                'action' => 'existing',
+                'output' => '',
+            ];
+
+            if (! (bool) $this->option('json')) {
+                $this->line("existing: {$buildHost} {$step['name']}");
+            }
+
+            return true;
+        }
+
         $result = Process::timeout(3600)
             ->env($this->environmentFor($buildHost))
             ->run($step['command']);
@@ -256,6 +287,8 @@ class E2EPrepareDockerHostsCommand extends Command
             'host' => $buildHost,
             'step' => $step['name'],
             'successful' => $result->successful(),
+            'action' => 'built',
+            'missing_images' => $missingImages,
             'output' => trim($result->output().$result->errorOutput()),
         ];
 
@@ -275,6 +308,30 @@ class E2EPrepareDockerHostsCommand extends Command
     }
 
     /**
+     * @param  list<array{role: string, image: string}>  $images
+     * @return list<string>
+     */
+    private function missingImagesFor(string $buildHost, array $images): array
+    {
+        $missing = [];
+        $imageNames = array_values(array_unique(array_column($images, 'image')));
+
+        foreach ($imageNames as $image) {
+            $result = Process::timeout(120)
+                ->env($this->environmentFor($buildHost))
+                ->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)));
+
+            if ($result->successful()) {
+                continue;
+            }
+
+            $missing[] = $image;
+        }
+
+        return $missing;
+    }
+
+    /**
      * @param  array<string, list<array{role: string, image: string}>>  $pendingImagesByHost
      * @param  list<array{role: string, image: string}>  $images
      */
@@ -291,11 +348,38 @@ class E2EPrepareDockerHostsCommand extends Command
      */
     private function environmentFor(string $host): array
     {
+        $environment = $this->topologyArtifactEnvironment();
+
         if ($host === 'local') {
-            return [];
+            return $environment;
         }
 
-        return ['DOCKER_HOST' => "ssh://{$host}"];
+        return [
+            ...$environment,
+            'DOCKER_HOST' => "ssh://{$host}",
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function topologyArtifactEnvironment(): array
+    {
+        $environment = [];
+
+        foreach ([
+            'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE',
+            'ORBIT_E2E_DOCKER_COMPOSER_CACHE',
+            'ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY',
+        ] as $key) {
+            $value = getenv($key);
+
+            if (is_string($value) && $value !== '') {
+                $environment[$key] = $value;
+            }
+        }
+
+        return $environment;
     }
 
     private function imageDistributorFor(string $buildHost, E2EConfig $config): DockerImageDistributor
@@ -335,11 +419,6 @@ class E2EPrepareDockerHostsCommand extends Command
         }
 
         return true;
-    }
-
-    private function isSupportedTopologyMode(string $mode): bool
-    {
-        return in_array($mode, ['legacy-retarget', 'dns-alias'], true);
     }
 
     private function failCommand(string $message): int

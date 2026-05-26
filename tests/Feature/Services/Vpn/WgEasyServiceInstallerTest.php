@@ -103,17 +103,7 @@ it('resolves the configured database state path when resolved from the container
     config()->set('services.wg_easy.database_path', '/home/orbit/.wg-easy/wg-easy.db');
     app()->forgetInstance(WgEasyServiceInstaller::class);
 
-    $peerScript = null;
-
-    Process::fake(function ($process) use (&$peerScript) {
-        $command = (string) $process->command;
-
-        if (str_contains($command, 'clients_table')) {
-            $peerScript = $command;
-        }
-
-        return Process::result();
-    });
+    Process::fake(fn () => Process::result());
 
     try {
         app(WgEasyServiceInstaller::class)->configurePeers([
@@ -135,8 +125,12 @@ it('resolves the configured database state path when resolved from the container
         app()->forgetInstance(WgEasyServiceInstaller::class);
     }
 
-    expect($peerScript)->toContain("sqlite3 '/home/orbit/.wg-easy'/wg-easy.db")
-        ->and($peerScript)->not->toContain('/var/www/.wg-easy');
+    $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
+
+    expect($scripts)->toHaveCount(1)
+        ->and($scripts[0])->toContain("--action='configure-peers'")
+        ->and($scripts[0])->toContain("--database-path='/home/orbit/.wg-easy/wg-easy.db'")
+        ->and($scripts[0])->not->toContain('/var/www/.wg-easy');
 });
 
 it('uses the default runtime values when install inputs are omitted', function (): void {
@@ -178,12 +172,12 @@ it('reads the wg-easy server public key from the running container', function ()
     expect($publicKey)->toBe('wg-easy-public-key');
 });
 
-it('persists and activates node peers on wg-easy wg0', function (): void {
-    $peerScript = null;
+it('persists peers through the local executor and activates them on wg-easy wg0', function (): void {
+    $runtimeScript = null;
 
-    Process::fake(function ($process) use (&$peerScript) {
-        if (str_contains((string) $process->command, 'clients_table')) {
-            $peerScript = (string) $process->command;
+    Process::fake(function ($process) use (&$runtimeScript) {
+        if (str_contains((string) $process->command, 'wg set wg0 peer')) {
+            $runtimeScript = (string) $process->command;
         }
 
         return Process::result();
@@ -206,17 +200,25 @@ it('persists and activates node peers on wg-easy wg0', function (): void {
         ],
     ]);
 
-    expect($peerScript)->toContain('wg-easy.db')
-        ->and($peerScript)->toContain('ORBIT_DOCKER="sudo docker"')
-        ->and($peerScript)->toContain('clients_table')
-        ->and($peerScript)->toContain('gateway-public')
-        ->and($peerScript)->toContain('gateway-psk')
-        ->and($peerScript)->toContain('10.6.0.2/32')
-        ->and($peerScript)->toContain('control-public')
-        ->and($peerScript)->toContain('control-psk')
-        ->and($peerScript)->toContain('10.6.0.3/32')
-        ->and($peerScript)->toContain('wg set wg0 peer')
-        ->and($peerScript)->toContain('preshared-key');
+    $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
+
+    expect($scripts)->toHaveCount(1)
+        ->and($scripts[0])->toContain('internal:wg-easy:state')
+        ->and($scripts[0])->toContain("--action='configure-peers'")
+        ->and($scripts[0])->toContain("--peers-json='-'")
+        ->and($scripts[0])->toContain('--operation-token=')
+        ->and($scripts[0])->not->toContain('gateway-private')
+        ->and($scripts[0])->not->toContain('gateway-psk')
+        ->and($scripts[0])->not->toContain('sqlite3')
+        ->and($runtimeScript)->toContain('ORBIT_DOCKER="sudo docker"')
+        ->and($runtimeScript)->toContain('gateway-public')
+        ->and($runtimeScript)->toContain('gateway-psk')
+        ->and($runtimeScript)->toContain('10.6.0.2/32')
+        ->and($runtimeScript)->toContain('control-public')
+        ->and($runtimeScript)->toContain('control-psk')
+        ->and($runtimeScript)->toContain('10.6.0.3/32')
+        ->and($runtimeScript)->toContain('wg set wg0 peer')
+        ->and($runtimeScript)->toContain('preshared-key');
 });
 
 it('converges the runtime server address and routes supported database updates through the local executor', function (): void {

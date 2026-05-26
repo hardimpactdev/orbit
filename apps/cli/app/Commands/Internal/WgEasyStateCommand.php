@@ -19,6 +19,8 @@ final class WgEasyStateCommand extends OrbitCommand
 
     private const ActionEnsureWritable = 'ensure-writable';
 
+    private const ActionConfigurePeers = 'configure-peers';
+
     /**
      * @var list<string>
      */
@@ -26,6 +28,7 @@ final class WgEasyStateCommand extends OrbitCommand
         self::ActionUpdateUser,
         self::ActionUpdateGeneral,
         self::ActionEnsureWritable,
+        self::ActionConfigurePeers,
     ];
 
     protected $signature = 'internal:wg-easy:state
@@ -35,7 +38,9 @@ final class WgEasyStateCommand extends OrbitCommand
         {--host=}
         {--default-dns=}
         {--default-persistent-keepalive=}
-        {--setup-step=}';
+        {--setup-step=}
+        {--database-path=}
+        {--peers-json=}';
 
     protected $description = 'Update wg-easy state through the internal local executor';
 
@@ -62,7 +67,7 @@ final class WgEasyStateCommand extends OrbitCommand
         if (! in_array($action, self::Actions, true)) {
             return $this->renderFailure(
                 'invalid_action',
-                'wg-easy state action must be one of: update-user, update-general, ensure-writable.',
+                'wg-easy state action must be one of: update-user, update-general, ensure-writable, configure-peers.',
                 [
                     'action' => $action,
                     'allowed' => self::Actions,
@@ -74,6 +79,7 @@ final class WgEasyStateCommand extends OrbitCommand
             self::ActionUpdateUser => $this->updateUser(),
             self::ActionUpdateGeneral => $this->updateGeneral(),
             self::ActionEnsureWritable => $this->ensureWritable(),
+            self::ActionConfigurePeers => $this->configurePeers(),
         };
     }
 
@@ -160,6 +166,99 @@ final class WgEasyStateCommand extends OrbitCommand
         return $this->renderSuccess([
             'action' => self::ActionUpdateGeneral,
             'updated' => true,
+        ], []);
+    }
+
+    private function configurePeers(): int
+    {
+        $peers = $this->peersPayload();
+
+        if (is_int($peers)) {
+            return $peers;
+        }
+
+        $database = $this->openWritableDatabase();
+
+        if (! $database instanceof PDO) {
+            return $database;
+        }
+
+        try {
+            $database->beginTransaction();
+
+            foreach ($peers as $peer) {
+                $this->prepare($database, <<<'SQL'
+                    delete from clients_table
+                    where name = :name
+                       or public_key = :public_key
+                       or ipv4_address = :ipv4_address
+                    SQL)->execute([
+                    'name' => $peer['name'],
+                    'public_key' => $peer['public_key'],
+                    'ipv4_address' => $peer['address'],
+                ]);
+
+                $this->prepare($database, <<<'SQL'
+                    insert into clients_table (
+                        user_id,
+                        interface_id,
+                        name,
+                        ipv4_address,
+                        ipv6_address,
+                        private_key,
+                        public_key,
+                        pre_shared_key,
+                        allowed_ips,
+                        server_allowed_ips,
+                        persistent_keepalive,
+                        mtu,
+                        dns,
+                        enabled
+                    ) values (
+                        1,
+                        'wg0',
+                        :name,
+                        :ipv4_address,
+                        :ipv6_address,
+                        :private_key,
+                        :public_key,
+                        :pre_shared_key,
+                        :allowed_ips,
+                        :server_allowed_ips,
+                        25,
+                        1420,
+                        :dns,
+                        1
+                    )
+                    SQL)->execute([
+                    'name' => $peer['name'],
+                    'ipv4_address' => $peer['address'],
+                    'ipv6_address' => $this->ipv6For($peer['address']),
+                    'private_key' => $peer['private_key'],
+                    'public_key' => $peer['public_key'],
+                    'pre_shared_key' => $peer['pre_shared_key'],
+                    'allowed_ips' => '["0.0.0.0/0", "::/0"]',
+                    'server_allowed_ips' => '["'.$peer['address'].'/32"]',
+                    'dns' => '["10.6.0.1"]',
+                ]);
+            }
+
+            $database->commit();
+        } catch (PDOException) {
+            if ($database->inTransaction()) {
+                $database->rollBack();
+            }
+
+            return $this->renderFailure(
+                'query_failed',
+                'wg-easy database update failed.',
+                ['action' => self::ActionConfigurePeers],
+            );
+        }
+
+        return $this->renderSuccess([
+            'action' => self::ActionConfigurePeers,
+            'configured' => count($peers),
         ], []);
     }
 
@@ -297,6 +396,22 @@ final class WgEasyStateCommand extends OrbitCommand
 
     private function databasePath(): string|int|null
     {
+        $option = $this->option('database-path');
+
+        if (is_string($option) && $option !== '') {
+            $path = $this->stringValue($option);
+
+            if ($path === null) {
+                return $this->renderFailure(
+                    'validation_failed',
+                    'The --database-path option is invalid.',
+                    ['field' => 'database-path'],
+                );
+            }
+
+            return $path;
+        }
+
         $override = $this->rawEnvironmentValue('ORBIT_WG_EASY_DB_PATH');
 
         if (is_string($override)) {
@@ -440,5 +555,81 @@ final class WgEasyStateCommand extends OrbitCommand
     private function normalizePath(string $path): string
     {
         return rtrim($path, '/');
+    }
+
+    /**
+     * @return list<array{name: string, private_key: string, public_key: string, pre_shared_key: string, address: string}>|int
+     */
+    private function peersPayload(): array|int
+    {
+        $json = $this->stringValue($this->option('peers-json'));
+
+        if ($json === '-') {
+            $json = stream_get_contents(STDIN);
+        }
+
+        if ($json === null || $json === false || trim($json) === '') {
+            return $this->invalidOption('peers-json');
+        }
+
+        try {
+            $decoded = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return $this->invalidOption('peers-json');
+        }
+
+        if (! is_array($decoded)) {
+            return $this->invalidOption('peers-json');
+        }
+
+        $peers = [];
+
+        foreach ($decoded as $peer) {
+            if (! is_array($peer)) {
+                return $this->invalidOption('peers-json');
+            }
+
+            $normalized = $this->peerPayload($peer);
+
+            if ($normalized === null) {
+                return $this->invalidOption('peers-json');
+            }
+
+            $peers[] = $normalized;
+        }
+
+        return $peers;
+    }
+
+    /**
+     * @param  array<mixed>  $peer
+     * @return array{name: string, private_key: string, public_key: string, pre_shared_key: string, address: string}|null
+     */
+    private function peerPayload(array $peer): ?array
+    {
+        $name = $this->stringValue($peer['name'] ?? null);
+        $privateKey = $this->stringValue($peer['private_key'] ?? null);
+        $publicKey = $this->stringValue($peer['public_key'] ?? null);
+        $preSharedKey = $this->stringValue($peer['pre_shared_key'] ?? null);
+        $address = $this->stringValue($peer['address'] ?? null);
+
+        if ($name === null || $privateKey === null || $publicKey === null || $preSharedKey === null || $address === null) {
+            return null;
+        }
+
+        return [
+            'name' => $name,
+            'private_key' => $privateKey,
+            'public_key' => $publicKey,
+            'pre_shared_key' => $preSharedKey,
+            'address' => $address,
+        ];
+    }
+
+    private function ipv6For(string $ipv4): string
+    {
+        $lastOctet = (int) substr(strrchr($ipv4, '.') ?: '.0', 1);
+
+        return 'fdcc:ad94:bacf:61a4::cafe:'.dechex($lastOctet);
     }
 }

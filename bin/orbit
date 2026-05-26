@@ -42,6 +42,70 @@ gateway_flag() {
     grep -E '^ORBIT_IS_GATEWAY=' "$env_file" | tail -n 1 | cut -d= -f2- || true
 }
 
+env_value() {
+    local key="$1"
+    local env_file="${ORBIT_REPO}/.env"
+
+    if [ ! -f "$env_file" ]; then
+        return
+    fi
+
+    grep -E "^${key}=" "$env_file" | tail -n 1 | cut -d= -f2- || true
+}
+
+command_name() {
+    local argument
+
+    for argument in "$@"; do
+        if [ "$argument" = "--" ]; then
+            return
+        fi
+
+        if [ -z "$argument" ] || [[ "$argument" == -* ]]; then
+            continue
+        fi
+
+        printf '%s\n' "$argument"
+        return
+    done
+}
+
+is_local_executor_command() {
+    case "$1" in
+        internal:executor:verify|internal:wg-easy:state|internal:workspace-adapter:lookup)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+export_local_executor_environment() {
+    local executor_secret
+    local node_identity
+
+    if [ -z "${ORBIT_EXECUTOR_SECRET:-}" ]; then
+        executor_secret="$(env_value "ORBIT_EXECUTOR_SECRET")"
+
+        if [ -z "$executor_secret" ]; then
+            executor_secret="$(env_value "ORBIT_OPERATION_TOKEN_SECRET")"
+        fi
+
+        if [ -n "$executor_secret" ]; then
+            export ORBIT_EXECUTOR_SECRET="$executor_secret"
+        fi
+    fi
+
+    if [ -z "${ORBIT_NODE_IDENTITY:-}" ]; then
+        node_identity="$(env_value "ORBIT_NODE_IDENTITY")"
+
+        if [ -n "$node_identity" ]; then
+            export ORBIT_NODE_IDENTITY="$node_identity"
+        fi
+    fi
+}
+
 resolve_host_cwd() {
     local host_cwd
     local public_cwd
@@ -67,11 +131,24 @@ fi
 
 export ORBIT_REPO
 export ORBIT_HOST_CWD="$(resolve_host_cwd)"
+export_local_executor_environment
+
+ORBIT_COMMAND="$(command_name "$@")"
+
+if [ -n "$ORBIT_COMMAND" ] && is_local_executor_command "$ORBIT_COMMAND"; then
+    export ORBIT_APP="cli"
+
+    exec "${ORBIT_REPO}/apps/cli/orbit" "$@"
+fi
 
 if [ "$(gateway_flag)" = "true" ]; then
     export ORBIT_APP="gateway"
 
-    exec php "${ORBIT_REPO}/apps/gateway/artisan" "$@"
+    if [ -f "${ORBIT_REPO}/apps/gateway/artisan" ]; then
+        exec php "${ORBIT_REPO}/apps/gateway/artisan" "$@"
+    fi
+
+    exec php "${ORBIT_REPO}/artisan" "$@"
 fi
 
 export ORBIT_APP="cli"

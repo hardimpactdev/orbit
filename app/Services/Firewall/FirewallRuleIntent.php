@@ -304,9 +304,41 @@ class FirewallRuleIntent
 
     private function shouldDeferBackendMutation(): bool
     {
-        return getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker'
-            || ($_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null) === 'dns-alias'
-            || ($_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null) === 'dns-alias';
+        $provider = $this->e2eEnvironmentValue('ORBIT_E2E_TOPOLOGY_PROVIDER');
+
+        if ($provider !== null) {
+            return strtolower(trim($provider)) === 'docker';
+        }
+
+        $providers = $this->e2eEnvironmentValue('ORBIT_E2E_TOPOLOGY_PROVIDERS');
+
+        if ($providers === null) {
+            return false;
+        }
+
+        return in_array('docker', array_map(
+            static fn (string $value): string => strtolower(trim($value)),
+            explode(',', $providers),
+        ), true);
+    }
+
+    private function e2eEnvironmentValue(string $key): ?string
+    {
+        $processValue = getenv($key);
+
+        if (is_string($processValue) && $processValue !== '') {
+            return $processValue;
+        }
+
+        $serverValue = $_SERVER[$key] ?? null;
+
+        if (is_string($serverValue) && $serverValue !== '') {
+            return $serverValue;
+        }
+
+        $envValue = $_ENV[$key] ?? null;
+
+        return is_string($envValue) && $envValue !== '' ? $envValue : null;
     }
 
     /**

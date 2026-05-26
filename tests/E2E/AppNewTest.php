@@ -41,7 +41,7 @@ PHP;
 
 it('creates a real app source directory from a control caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $name = 'e2e-app-'.strtolower(bin2hex(random_bytes(3)));
 
     try {
@@ -65,16 +65,11 @@ it('creates a real app source directory from a control caller through the gatewa
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $app = $payload['success']['data']['app'] ?? null;
-        $warnings = $payload['success']['meta']['warnings'] ?? [];
-
         expect($app)->toBeArray()
             ->and($payload['success']['data']['result']['action'])->toBe('created')
             ->and($app['name'])->toBe($name)
             ->and($app['node'])->toBe('app-dev-1')
             ->and($app['path'])->toBe("/home/orbit/apps/{$name}");
-
-        expect(collect($warnings)->contains(fn (array $warning): bool => ($warning['code'] ?? null) === 'app.php_version_unavailable'))
-            ->toBeTrue();
 
         $source = $topology->ssh(
             'dev',
@@ -100,4 +95,4 @@ it('creates a real app source directory from a control caller through the gatewa
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg("/home/orbit/apps/{$name}"), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

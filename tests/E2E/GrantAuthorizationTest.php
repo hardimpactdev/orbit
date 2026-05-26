@@ -260,7 +260,7 @@ function grantAuthorizationE2eApi(
 
 function grantAuthorizationE2eApiUrl(E2ETopologyHarness $topology, string $path): string
 {
-    $baseUrl = getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') === 'dns-alias'
+    $baseUrl = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker'
         ? 'http://gateway'
         : 'http://'.$topology->lease()->gatewayApiIp();
 

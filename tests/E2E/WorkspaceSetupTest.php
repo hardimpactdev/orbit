@@ -351,9 +351,10 @@ PHP;
 
 function workspaceSetupWriteOpenCodeDatabase(E2ETopologyHarness $topology, string $workspaceName, string $workspacePath): void
 {
+    $databasePath = '/home/orbit/.local/share/opencode/opencode.db';
     $script = <<<'PY'
 import pathlib, sqlite3
-db = pathlib.Path.home() / ".local/share/opencode/opencode.db"
+db = pathlib.Path("DATABASE_PATH")
 db.parent.mkdir(parents=True, exist_ok=True)
 conn = sqlite3.connect(db)
 try:
@@ -373,14 +374,24 @@ finally:
 PY;
 
     $script = str_replace(
-        ['WORKSPACE_NAME', 'WORKSPACE_PATH'],
-        [var_export($workspaceName, true), var_export($workspacePath, true)],
+        ['WORKSPACE_NAME', 'WORKSPACE_PATH', 'DATABASE_PATH'],
+        [var_export($workspaceName, true), var_export($workspacePath, true), $databasePath],
         $script,
     );
 
     $topology->ssh(
         'dev',
         'python3 - <<'.escapeshellarg('PY').PHP_EOL.$script.PHP_EOL.'PY',
+        timeoutSeconds: 120,
+    );
+
+    $topology->ssh(
+        'dev',
+        sprintf(
+            "touch %1\$s && grep -Ev '^ORBIT_OPENCODE_DB_PATH=' %1\$s > %1\$s.tmp || true; mv %1\$s.tmp %1\$s; printf 'ORBIT_OPENCODE_DB_PATH=%%s\n' %2\$s >> %1\$s",
+            escapeshellarg($topology->checkout('dev').'/apps/cli/.env'),
+            escapeshellarg($databasePath),
+        ),
         timeoutSeconds: 120,
     );
 }

@@ -216,7 +216,7 @@ describe('node:new', function (): void {
         }
     });
 
-    it('ships a Docker-first local installer for control nodes', function (): void {
+    it('ships a Docker-first local installer for operator nodes', function (): void {
         $installer = base_path('bin/install-orbit');
         $contents = file_get_contents($installer);
 
@@ -234,7 +234,7 @@ describe('node:new', function (): void {
             ->and($help->output())->not->toContain('--php=')
             ->and($help->output())->toContain('--source-archive=PATH')
             ->and($help->output())->toContain('--verbose')
-            ->and($help->output())->toContain('A new control node runs it')
+            ->and($help->output())->toContain('A new operator node runs it')
             ->and($help->output())->toContain('Gateway and app roles are provisioned by node:new')
             ->and($help->output())->toContain('Docker-first runtime')
             ->and($contents)->toContain('install_docker_engine_ubuntu')
@@ -256,7 +256,7 @@ describe('node:new', function (): void {
             ->and($result->errorOutput())->toContain('unknown option: --not-a-real-flag');
     });
 
-    it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
+    it('bootstraps the first gateway from an unconfigured operator node using a distinct bootstrap user', function (): void {
         $mockCaCert = $this->mockCaCert;
         $bootstrapInput = null;
         $localWireGuardConfig = null;
@@ -792,9 +792,12 @@ describe('node:new', function (): void {
     });
 
     it('provisions an app-dev node from a gateway caller', function (): void {
-        config(['orbit.is_gateway' => true]);
+        config([
+            'orbit.is_gateway' => true,
+            'orbit.operation_token_secret' => 'node-new-app-dev-test-secret',
+        ]);
 
-        DB::table('nodes')->insert([
+        $gatewayId = DB::table('nodes')->insertGetId([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'environment' => null,
@@ -809,8 +812,29 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
+        DB::table('node_roles')->insert([
+            [
+                'node_id' => $gatewayId,
+                'role' => 'gateway',
+                'status' => 'active',
+                'settings' => null,
+                'last_error' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'node_id' => $gatewayId,
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => null,
+                'last_error' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
         DB::table('wireguard_peers')->insert([
-            'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
+            'node_id' => $gatewayId,
             'public_key' => 'gateway-public-key',
             'private_key' => 'gateway-private-key',
             'pre_shared_key' => 'gateway-psk',
@@ -836,6 +860,10 @@ describe('node:new', function (): void {
 
             if (str_contains($command, 'wg show wg0 public-key')) {
                 return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            if (str_contains($command, 'internal:wg-easy:state')) {
+                return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
             }
 
             return Process::result();
@@ -903,9 +931,12 @@ describe('node:new', function (): void {
     });
 
     it('provisions an app-prod node with colocated ingress from a gateway caller', function (): void {
-        config(['orbit.is_gateway' => true]);
+        config([
+            'orbit.is_gateway' => true,
+            'orbit.operation_token_secret' => 'node-new-app-prod-test-secret',
+        ]);
 
-        DB::table('nodes')->insert([
+        $gatewayId = DB::table('nodes')->insertGetId([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'environment' => null,
@@ -920,8 +951,29 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
+        DB::table('node_roles')->insert([
+            [
+                'node_id' => $gatewayId,
+                'role' => 'gateway',
+                'status' => 'active',
+                'settings' => null,
+                'last_error' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'node_id' => $gatewayId,
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => null,
+                'last_error' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
         DB::table('wireguard_peers')->insert([
-            'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
+            'node_id' => $gatewayId,
             'public_key' => 'gateway-public-key',
             'private_key' => 'gateway-private-key',
             'pre_shared_key' => 'gateway-psk',
@@ -947,6 +999,10 @@ describe('node:new', function (): void {
 
             if (str_contains($command, 'wg show wg0 public-key')) {
                 return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            if (str_contains($command, 'internal:wg-easy:state')) {
+                return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
             }
 
             return Process::result();
@@ -1411,7 +1467,7 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('forwards app-node creation from a configured control node to the gateway API', function (): void {
+    it('forwards app-node creation from a configured operator node to the gateway API', function (): void {
         DB::table('nodes')->insert([
             'name' => 'control-1',
             'role' => 'control',
@@ -1892,7 +1948,7 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('enrolls a control node locally on a gateway without SSH side effects', function (): void {
+    it('enrolls an operator node locally on a gateway without SSH side effects', function (): void {
         config(['orbit.is_gateway' => true]);
 
         DB::table('nodes')->insert([

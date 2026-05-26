@@ -93,7 +93,7 @@ it('runs gateway api shim commands as the orbit runtime user', function (): void
 
 it('runs Docker gateway api shim commands directly inside orbit runtime', function (): void {
     $reflection = new ReflectionClass(E2EGatewayApi::class);
-    $method = $reflection->getMethod('tlsServerTinkerCode');
+    $method = $reflection->getMethod('tlsServerScript');
     $method->setAccessible(true);
 
     $script = $method->invoke(null, '/home/orbit/orbit', '10.6.0.2', '0.0.0.0', 'gateway', [], true);
@@ -101,6 +101,8 @@ it('runs Docker gateway api shim commands directly inside orbit runtime', functi
     expect($script)
         ->toContain("exec(\$script.' 2>&1'")
         ->toContain("\$process = popen(\$script.' 2>&1'")
+        ->toContain("\$GLOBALS['httpUpstream'] = \$httpUpstream;")
+        ->toContain("\$GLOBALS['wireguardIdentity'] = \$wireguardIdentity;")
         ->not->toContain('sudo -iu orbit bash -lc');
 });
 
@@ -236,7 +238,9 @@ it('starts Docker gateway API support through runtime container commands without
         ->toBeLessThan(array_search($tlsStart, $commands, strict: true));
 
     expect($httpStart)->toBeString()
-        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit');
+        ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->toContain('sh -lc')
+        ->toContain('/tmp/orbit-gateway-http.log 2>&1');
 
     expect($tlsWrite)->toBeString()
         ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
@@ -294,7 +298,23 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
 it('stops Docker gateway API HTTP processes after the runtime entrypoint execs artisan serve', function (): void {
     expect(gatewayStopScriptMatchesCommand(
         'php /home/orbit/orbit/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
-    ))->toBeTrue();
+    ))->toBeTrue()
+        ->and(gatewayStopScriptMatchesCommand(
+            '/usr/local/bin/php -S 0.0.0.0:80 /home/orbit/orbit/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
+        ))->toBeTrue()
+        ->and(gatewayStopScriptMatchesCommand(
+            '/usr/local/bin/php -S 0.0.0.0:8080 /home/orbit/orbit/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
+        ))->toBeFalse();
+});
+
+it('treats gateway API stop as idempotent when no matching process remains', function (): void {
+    $reflection = new ReflectionClass(E2EGatewayApi::class);
+    $method = $reflection->getMethod('stopServerShellScript');
+    $method->setAccessible(true);
+
+    $script = $method->invoke(null);
+
+    expect($script)->toContain('exit 0');
 });
 
 it('can split gateway wireguard identity from bind address and cert key', function (): void {
@@ -410,6 +430,16 @@ it('maps configured docker peer ips to canonical wireguard identities in the gat
 
 it('forwards raw peer ips in the default gateway tls proxy mode', function (): void {
     expect(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.61.42.4'))->toBe('10.61.42.4');
+});
+
+it('keeps the gateway tls shim listening after transient accept failures', function (): void {
+    $script = gatewayTlsServerScript();
+
+    expect($script)
+        ->toContain('while (true) {')
+        ->toContain('$connection = @stream_socket_accept($server, -1);')
+        ->toContain('if ($connection === false) {')
+        ->toContain('continue;');
 });
 
 /**

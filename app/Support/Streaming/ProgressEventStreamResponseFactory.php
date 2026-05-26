@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
-final class ProgressEventStreamResponseFactory
+final readonly class ProgressEventStreamResponseFactory
 {
     public function __construct(
-        private readonly string $sapi = PHP_SAPI,
+        private string $sapi = PHP_SAPI,
     ) {}
 
     /**

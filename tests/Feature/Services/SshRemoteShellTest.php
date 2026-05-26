@@ -118,13 +118,13 @@ it('runs remote nodes over ssh using wireguard address and steady state user', f
     });
 });
 
-it('uses the host when docker topology mode is dns-alias', function (): void {
+it('uses the host in Docker topology runs', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "ok\n"),
     ]);
 
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 
     try {
         $node = Node::factory()->create([
@@ -141,21 +141,21 @@ it('uses the host when docker topology mode is dns-alias', function (): void {
                 && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'");
         });
     } finally {
-        putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+        putenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
     }
 });
 
-it('uses the host when docker topology mode is loaded from laravel env', function (): void {
+it('uses the host when the Docker topology provider is loaded from laravel env', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "ok\n"),
     ]);
 
-    $previousServer = $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
-    $previousEnv = $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] ?? null;
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
-    $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = 'dns-alias';
-    $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = 'dns-alias';
+    $previousServer = $_SERVER['ORBIT_E2E_TOPOLOGY_PROVIDER'] ?? null;
+    $previousEnv = $_ENV['ORBIT_E2E_TOPOLOGY_PROVIDER'] ?? null;
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    $_ENV['ORBIT_E2E_TOPOLOGY_PROVIDER'] = 'docker';
+    $_SERVER['ORBIT_E2E_TOPOLOGY_PROVIDER'] = 'docker';
 
     try {
         $node = Node::factory()->create([
@@ -173,26 +173,26 @@ it('uses the host when docker topology mode is loaded from laravel env', functio
         });
     } finally {
         if ($previousEnv === null) {
-            unset($_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE']);
+            unset($_ENV['ORBIT_E2E_TOPOLOGY_PROVIDER']);
         } else {
-            $_ENV['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = $previousEnv;
+            $_ENV['ORBIT_E2E_TOPOLOGY_PROVIDER'] = $previousEnv;
         }
 
         if ($previousServer === null) {
-            unset($_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE']);
+            unset($_SERVER['ORBIT_E2E_TOPOLOGY_PROVIDER']);
         } else {
-            $_SERVER['ORBIT_E2E_DOCKER_TOPOLOGY_MODE'] = $previousServer;
+            $_SERVER['ORBIT_E2E_TOPOLOGY_PROVIDER'] = $previousServer;
         }
     }
 });
 
-it('uses the wireguard address by default when docker topology mode is not dns-alias', function (): void {
+it('uses the wireguard address by default outside Docker topology runs', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "ok\n"),
     ]);
 
-    putenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
 
     $node = Node::factory()->create([
         'host' => 'dev',

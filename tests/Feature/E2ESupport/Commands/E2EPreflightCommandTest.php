@@ -38,11 +38,10 @@ function e2eConfig(string $host = 'beast'): E2EConfig
         memory: '2GiB',
         topologyCpus: '1',
         topologyMemory: '2GiB',
+        topologyRootSize: '16GiB',
         topologyStateSize: '4GiB',
         incusStoragePool: '',
-        incusMaxVmsPerHost: 4,
         dockerHosts: ['local'],
-        dockerMaxContainersPerHost: 8,
         keep: false,
     );
 }

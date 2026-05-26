@@ -20,45 +20,25 @@ it('has correct enum string values', function (): void {
         ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator_gateway')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
+        ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
         ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress')?->value)->toBe('operator_gateway_app-prod_ingress')
         ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
         ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 });
 
-it('uses minimal strategy by default', function (): void {
+it('resolves requested topology kinds exactly', function (): void {
     withE2ETopologyEnvironment([], function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
+        $ingressKind = E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress');
 
-        expect($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGateway);
-    });
-});
-
-it('minimal strategy requests exact kind', function (): void {
-    withE2ETopologyEnvironment(['ORBIT_E2E_TOPOLOGY_STRATEGY' => 'minimal'], function (): void {
-        $factory = E2ETopologyFactory::fromEnvironment();
-
+        expect($ingressKind)->not->toBeNull();
         expect($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGateway)
             ->and($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::Control)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd);
-    });
-});
-
-it('superset strategy resolves smaller requests to ControlGatewayDevProd', function (): void {
-    withE2ETopologyEnvironment(['ORBIT_E2E_TOPOLOGY_STRATEGY' => 'superset'], function (): void {
-        $factory = E2ETopologyFactory::fromEnvironment();
-
-        expect($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
-    });
-});
-
-it('falls back to minimal for unknown strategy', function (): void {
-    withE2ETopologyEnvironment(['ORBIT_E2E_TOPOLOGY_STRATEGY' => 'unknown'], function (): void {
-        $factory = E2ETopologyFactory::fromEnvironment();
-
-        expect($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGateway);
+            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::ControlGatewayDev)
+            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd)
+            ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAgent))->toBe(E2ETopologyKind::OperatorGatewayAgent)
+            ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
     });
 });
 

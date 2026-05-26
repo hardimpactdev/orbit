@@ -10,7 +10,7 @@ use RuntimeException;
  * Verifies runtime reachability from inside an E2E topology — DNS resolution
  * and HTTP responses over WireGuard, as a real human or agent would experience.
  *
- * Always runs *from the control node* via SSH, not from the test host. The
+ * Always runs *from the operator node* via SSH, not from the test host. The
  * control container reaches the gateway over WG, asks gateway-side DNS to
  * resolve a TLD, and exercises the resulting URL. Verifying from the host
  * bypasses WG and proves nothing about the real path.

@@ -55,39 +55,40 @@ class GatewayApiRuntimeInstaller
 
         $this->ensureOrbitRuntimeContainer($orbitPath);
         $this->ensureOrbitCaddyContainer($wireguardAddress);
+
+        $caddyLeaf = $this->installCaddyReadableLeaf($leaf, $wireguardAddress);
+
         $this->runRequiredWithInput('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null', $this->gatewayApiCaddyfile(
-            wireguardAddress: $wireguardAddress,
-            certPath: $this->caddyVisiblePath($leaf['cert']),
-            keyPath: $this->caddyVisiblePath($leaf['key']),
+            certPath: $caddyLeaf['cert'],
+            keyPath: $caddyLeaf['key'],
         ), 'write Orbit API Caddy config');
         $this->runRequired(CaddyTool::reloadCommand($this->containerNames->caddy()), 'reload orbit-caddy container');
     }
 
     /**
-     * Translate a path that the runtime container sees under
-     * `/opt/orbit/...` into the host path that the same file lives at,
-     * so orbit-caddy can read it through its `/home` bind mount. When the
-     * installer is run outside the container (no ORBIT_HOST_PATH), the
-     * original path is returned unchanged.
+     * @param  array{cert: string, key: string}  $leaf
+     * @return array{cert: string, key: string}
      */
-    private function caddyVisiblePath(string $containerPath): string
+    private function installCaddyReadableLeaf(array $leaf, string $wireguardAddress): array
     {
-        $hostPath = trim((string) getenv('ORBIT_HOST_PATH'));
-        $sourcePath = '/opt/orbit';
+        $caddyLeaf = [
+            'cert' => "/etc/orbit/certs/{$wireguardAddress}.crt",
+            'key' => "/etc/orbit/certs/{$wireguardAddress}.key",
+        ];
 
-        if ($hostPath === '' || $hostPath === $sourcePath) {
-            return $containerPath;
-        }
+        $this->runRequired('sudo install -d -m 0755 /etc/orbit/certs', 'prepare Orbit Caddy certificate directory');
+        $this->runRequired(sprintf(
+            'sudo install -m 0644 %s %s',
+            escapeshellarg($leaf['cert']),
+            escapeshellarg($caddyLeaf['cert']),
+        ), 'install Orbit API certificate for orbit-caddy');
+        $this->runRequired(sprintf(
+            'sudo install -m 0644 %s %s',
+            escapeshellarg($leaf['key']),
+            escapeshellarg($caddyLeaf['key']),
+        ), 'install Orbit API certificate key for orbit-caddy');
 
-        if ($containerPath === $sourcePath) {
-            return $hostPath;
-        }
-
-        if (str_starts_with($containerPath, $sourcePath.'/')) {
-            return $hostPath.substr($containerPath, strlen($sourcePath));
-        }
-
-        return $containerPath;
+        return $caddyLeaf;
     }
 
     /**
@@ -129,7 +130,6 @@ class GatewayApiRuntimeInstaller
     }
 
     private function gatewayApiCaddyfile(
-        string $wireguardAddress,
         string $certPath,
         string $keyPath,
     ): string {
@@ -137,17 +137,33 @@ class GatewayApiRuntimeInstaller
         $port = self::RuntimeApiPort;
 
         return <<<CADDY
-https://{$wireguardAddress}:443 {
+:80 {
+    request_header -X-Forwarded-For
+    request_header -X-Real-IP
+    request_header -Forwarded
+    request_header -X-Orbit-WireGuard-Ip
+
+    reverse_proxy http://{$runtimeAlias}:{$port} {
+        flush_interval -1
+        header_up Host {host}
+        header_up X-Forwarded-Proto http
+        header_up X-Orbit-WireGuard-Ip {remote_host}
+    }
+}
+
+:443 {
     tls {$certPath} {$keyPath}
 
     request_header -X-Forwarded-For
     request_header -X-Real-IP
     request_header -Forwarded
+    request_header -X-Orbit-WireGuard-Ip
 
     reverse_proxy http://{$runtimeAlias}:{$port} {
         flush_interval -1
         header_up Host {host}
         header_up X-Forwarded-Proto https
+        header_up X-Orbit-WireGuard-Ip {remote_host}
     }
 }
 

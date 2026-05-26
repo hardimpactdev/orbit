@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Console\Attributes\Description;
@@ -21,7 +22,7 @@ class E2EPrepareDockerRuntimeCommand extends Command
     {
         $images = [
             [
-                'image' => 'orbit-e2e-topology-runtime:current',
+                'image' => DockerTopologyBuilder::runtimeImage(),
                 'action' => 'build',
                 'dockerfile' => base_path('docker/e2e/topology/Dockerfile'),
                 'context' => base_path(),
@@ -34,6 +35,10 @@ class E2EPrepareDockerRuntimeCommand extends Command
             ],
             [
                 'image' => OrbitCaddyContainer::Image,
+                'action' => 'pull',
+            ],
+            [
+                'image' => DockerTopologyBuilder::composerHelperImage(),
                 'action' => 'pull',
             ],
         ];

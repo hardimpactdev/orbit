@@ -377,4 +377,53 @@ describe('GET /api/me', function (): void {
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
     });
+
+    it('trusts the orbit-caddy supplied wireguard peer header only when gateway runtime proxy headers are enabled', function (): void {
+        config(['orbit.trust_wireguard_proxy_header' => true]);
+
+        DB::table('nodes')->insert(meNodeRow());
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'platform' => 'ubuntu_24-04',
+        ]));
+        assignMeGatewayRole($gatewayId);
+
+        $response = call(
+            'GET',
+            '/api/me',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => '172.18.0.3',
+                'HTTP_X_ORBIT_WIREGUARD_IP' => '10.6.0.8',
+            ],
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.self.name', 'peer-1');
+    });
+
+    it('rejects the orbit-caddy wireguard peer header when gateway runtime proxy headers are disabled', function (): void {
+        config(['orbit.trust_wireguard_proxy_header' => false]);
+
+        DB::table('nodes')->insert(meNodeRow());
+
+        $response = call(
+            'GET',
+            '/api/me',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => '172.18.0.3',
+                'HTTP_X_ORBIT_WIREGUARD_IP' => '10.6.0.8',
+            ],
+        );
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
 });

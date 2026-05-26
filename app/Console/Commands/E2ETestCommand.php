@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerHost;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyCapabilities;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyProviderPool;
@@ -15,6 +17,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Input\ArgvInput;
@@ -24,6 +27,7 @@ use Symfony\Component\Console\Output\ConsoleOutputInterface;
     {--lanes= : Comma-separated lanes to run. Defaults to ORBIT_E2E_LANES or docker,incus}
     {--canary : Restrict the Docker lane to the e2e-feature-canary group only}
     {--sequential-lanes : Run selected lanes one after another}
+    {--sequential-tests : Run selected tests without Pest parallel mode}
     {--dry-run : Print the lane commands without executing them}
     {--json : Output dry-run or failure details as JSON}')]
 #[Description('Run prepared-topology E2E lanes')]
@@ -76,8 +80,14 @@ class E2ETestCommand extends Command
             return $this->failCommand($exception->getMessage());
         }
 
-        if ($message = $this->validateLaneCapacity($plans)) {
-            return $this->failCommand($message);
+        try {
+            $capacityMessage = $this->validateLaneCapacity($plans);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failCommand($exception->getMessage());
+        }
+
+        if ($capacityMessage !== null) {
+            return $this->failCommand($capacityMessage);
         }
 
         if ((bool) $this->option('dry-run')) {
@@ -147,26 +157,28 @@ class E2ETestCommand extends Command
             return null;
         }
 
-        $config = E2EConfig::fromEnvironment();
+        return $this->withPlanEnvironment($plans['docker'], function () use ($plans): ?string {
+            $config = E2EConfig::fromEnvironment();
 
-        if ($config->dockerHostSlots === []) {
+            if ($config->dockerHostSlots === []) {
+                return 'Docker E2E capacity is not configured. Set ORBIT_E2E_DOCKER_TEST_RUNNERS=host:slots:containers.';
+            }
+
+            $containersPerWorker = $this->dockerLaneMaxContainerCount($plans['docker']['test_files'] ?? []);
+
+            foreach ($config->dockerHostSlots as $host => $slots) {
+                $requiredHostContainers = $slots * $containersPerWorker;
+                $hostContainerCap = $config->dockerMaxContainersForHost($host);
+
+                if ($hostContainerCap >= $requiredHostContainers) {
+                    continue;
+                }
+
+                return "Docker host [{$host}] needs a container cap of at least {$requiredHostContainers} for {$slots} Docker slots.";
+            }
+
             return null;
-        }
-
-        $totalSlots = array_sum($config->dockerHostSlots);
-        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 8);
-
-        if ($processes !== $totalSlots) {
-            return "ORBIT_E2E_PARALLEL_PROCESSES must match total Docker slots [{$totalSlots}] for the measured Docker lane.";
-        }
-
-        $requiredContainers = max($config->dockerHostSlots) * DockerTopologyProvider::maxContainerCountForAnyTopology();
-
-        if ($config->dockerMaxContainersPerHost < $requiredContainers) {
-            return "ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST must be at least {$requiredContainers} for the largest configured Docker host slot count.";
-        }
-
-        return null;
+        });
     }
 
     /**
@@ -188,31 +200,48 @@ class E2ETestCommand extends Command
             '--exclude-group=e2e-provider-incus',
         ];
 
-        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 8);
-
-        if ($processes > 1 && ! $this->hasListTestsArgument($passThroughArguments)) {
-            $command[] = '--parallel';
-            $command[] = "--processes={$processes}";
-        }
-
         if (! $this->hasExplicitTestPath($passThroughArguments)) {
             $testPath = 'tests/E2E/.docker-feature-tests/'.$this->dockerTestRunDirectory();
             $testFiles = $this->dockerTestFiles();
             $command[] = $testPath;
         }
 
+        $config = E2EConfig::fromEnvironment();
+        $this->ensureDockerCapacityConfigured($config);
+
+        $processes = $this->dockerRequestedProcessCount($config);
+        $environment = [
+            'ORBIT_E2E' => '1',
+            'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'docker',
+            'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'docker',
+            'ORBIT_E2E_GATEWAY_API' => '1',
+            'ORBIT_E2E_TOPOLOGY_CACHE' => $this->topologyCache(),
+            'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
+        ];
+        $environment = [
+            ...$environment,
+            ...$this->topologyCacheLimitEnvironment(),
+            ...$this->topologyArtifactEnvironment(),
+            ...$this->runtimeIsolationEnvironment(),
+        ];
+
+        $capacity = $this->dockerCapacityPlan($config, $testFiles, $processes);
+
+        if ($capacity !== null) {
+            $processes = $capacity['processes'];
+            $environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners($capacity['host_slots'], $config);
+            $environment['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $processes;
+        }
+
+        if ($this->shouldRunTestsInParallel($processes, $passThroughArguments)) {
+            $command[] = '--parallel';
+            $command[] = "--processes={$processes}";
+        }
+
         $plan = [
             'lane' => 'docker',
             'command' => [...$command, ...$passThroughArguments],
-            'environment' => [
-                'ORBIT_E2E' => '1',
-                'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'docker',
-                'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'docker',
-                'ORBIT_E2E_GATEWAY_API' => '1',
-                'ORBIT_E2E_TOPOLOGY_CACHE' => 'process',
-                'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
-                'ORBIT_E2E_TOPOLOGY_STRATEGY' => 'superset',
-            ],
+            'environment' => $environment,
         ];
 
         if ($testPath !== null) {
@@ -247,16 +276,19 @@ class E2ETestCommand extends Command
             '--exclude-group=e2e-feature-reachability',
         ];
 
-        $processes = $this->incusCachedWorkerCount(E2EConfig::fromEnvironment());
+        if (! $this->hasExplicitTestPath($passThroughArguments)) {
+            $testPath = 'tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
+            $testFiles = $this->incusTestFiles();
+        }
 
-        if ($processes > 1 && ! $this->hasListTestsArgument($passThroughArguments)) {
+        $processes = $this->incusCachedWorkerCount(E2EConfig::fromEnvironment(), $testFiles);
+
+        if ($this->shouldRunTestsInParallel($processes, $passThroughArguments)) {
             $command[] = '--parallel';
             $command[] = "--processes={$processes}";
         }
 
-        if (! $this->hasExplicitTestPath($passThroughArguments)) {
-            $testPath = 'tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
-            $testFiles = $this->incusTestFiles();
+        if ($testPath !== null) {
             $command[] = $testPath;
         }
 
@@ -268,9 +300,11 @@ class E2ETestCommand extends Command
                 'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
                 'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'incus',
                 'ORBIT_E2E_GATEWAY_API' => '1',
-                'ORBIT_E2E_TOPOLOGY_CACHE' => 'process',
+                'ORBIT_E2E_TOPOLOGY_CACHE' => $this->topologyCache(),
                 'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
-                'ORBIT_E2E_TOPOLOGY_STRATEGY' => 'superset',
+                ...$this->topologyCacheLimitEnvironment(),
+                ...$this->topologyArtifactEnvironment(),
+                ...$this->runtimeIsolationEnvironment(),
             ],
         ];
 
@@ -287,13 +321,242 @@ class E2ETestCommand extends Command
         return 'run_'.getmypid().'_'.bin2hex(random_bytes(4));
     }
 
-    private function incusCachedWorkerCount(E2EConfig $config): int
+    private function topologyCache(): string
+    {
+        $cache = getenv('ORBIT_E2E_TOPOLOGY_CACHE');
+
+        return is_string($cache) && $cache !== '' ? $cache : 'process';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function topologyCacheLimitEnvironment(): array
+    {
+        $limit = getenv('ORBIT_E2E_TOPOLOGY_CACHE_LIMIT');
+
+        if (is_string($limit) && $limit !== '') {
+            return ['ORBIT_E2E_TOPOLOGY_CACHE_LIMIT' => $limit];
+        }
+
+        return ['ORBIT_E2E_TOPOLOGY_CACHE_LIMIT' => '1'];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function topologyArtifactEnvironment(): array
+    {
+        $namespace = getenv('ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE');
+
+        if (! is_string($namespace) || $namespace === '') {
+            return [];
+        }
+
+        return ['ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => $namespace];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function runtimeIsolationEnvironment(): array
+    {
+        $instancePrefix = getenv('ORBIT_E2E_INSTANCE_PREFIX');
+
+        if (is_string($instancePrefix) && $instancePrefix !== '') {
+            return ['ORBIT_E2E_INSTANCE_PREFIX' => $instancePrefix];
+        }
+
+        return [
+            'ORBIT_E2E_INSTANCE_PREFIX' => E2ETopologyArtifactNamespace::runtimeInstancePrefix('orbit-e2e'),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     * @return array{host_slots: array<string, int>, processes: int}|null
+     */
+    private function dockerCapacityPlan(E2EConfig $config, array $testFiles, int $requestedProcesses): ?array
+    {
+        if ($config->dockerHostSlots === []) {
+            return null;
+        }
+
+        $containersPerWorker = $this->dockerLaneMaxContainerCount($testFiles);
+        $hostSlots = [];
+
+        foreach ($config->dockerHostSlots as $host => $slots) {
+            $capacitySlots = intdiv($config->dockerMaxContainersForHost($host), $containersPerWorker);
+
+            if ($capacitySlots < 1) {
+                return null;
+            }
+
+            $hostSlots[$host] = min($slots, $capacitySlots);
+        }
+
+        $hostSlots = $this->limitHostSlots($hostSlots, $requestedProcesses);
+
+        $processes = array_sum($hostSlots);
+
+        if ($processes < 1) {
+            return null;
+        }
+
+        return [
+            'host_slots' => $hostSlots,
+            'processes' => $processes,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $passThroughArguments
+     */
+    private function shouldRunTestsInParallel(int $processes, array $passThroughArguments): bool
+    {
+        return $processes > 1
+            && ! (bool) $this->option('sequential-tests')
+            && ! $this->hasListTestsArgument($passThroughArguments);
+    }
+
+    private function dockerRequestedProcessCount(E2EConfig $config): int
+    {
+        $configuredProcesses = $this->envIntOrNull('ORBIT_E2E_PARALLEL_PROCESSES');
+
+        if ($configuredProcesses !== null) {
+            return $configuredProcesses;
+        }
+
+        return max(1, array_sum($config->dockerHostSlots));
+    }
+
+    private function ensureDockerCapacityConfigured(E2EConfig $config): void
+    {
+        if ($config->dockerHostSlots !== []) {
+            return;
+        }
+
+        throw new \InvalidArgumentException(
+            'Docker E2E capacity is not configured. Set ORBIT_E2E_DOCKER_TEST_RUNNERS=host:slots:containers.',
+        );
+    }
+
+    /**
+     * @param  array<string, int>  $hostSlots
+     * @return array<string, int>
+     */
+    private function limitHostSlots(array $hostSlots, int $processes): array
+    {
+        while (array_sum($hostSlots) > $processes) {
+            $largestSlotCount = max($hostSlots);
+
+            foreach ($hostSlots as $host => $slots) {
+                if ($slots !== $largestSlotCount) {
+                    continue;
+                }
+
+                $hostSlots[$host] = $slots - 1;
+
+                break;
+            }
+        }
+
+        return array_filter(
+            $hostSlots,
+            fn (int $slots): bool => $slots > 0,
+        );
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     */
+    private function dockerLaneMaxContainerCount(array $testFiles): int
+    {
+        $kinds = $this->dockerLaneTopologyKinds($testFiles);
+
+        if ($kinds === []) {
+            return DockerTopologyProvider::maxContainerCountForAnyTopology();
+        }
+
+        return max(array_map(DockerTopologyProvider::containerCountFor(...), $kinds));
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     * @return list<E2ETopologyKind>
+     */
+    private function dockerLaneTopologyKinds(array $testFiles): array
+    {
+        $kinds = [];
+
+        foreach ($testFiles as $testFile) {
+            foreach ($this->topologyKindsInTestFile($testFile) as $kind) {
+                $kinds[$kind->value] = $kind;
+            }
+        }
+
+        return array_values($kinds);
+    }
+
+    /**
+     * @param  array<string, int>  $hostSlots
+     */
+    private function renderDockerTestRunners(array $hostSlots, E2EConfig $config): string
+    {
+        return implode(',', array_map(
+            fn (string $host, int $slots): string => "{$host}:{$slots}:{$config->dockerMaxContainersForHost($host)}",
+            array_keys($hostSlots),
+            array_values($hostSlots),
+        ));
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     */
+    private function incusCachedWorkerCount(E2EConfig $config, array $testFiles): int
     {
         $requested = $this->envInt('ORBIT_E2E_INCUS_PARALLEL_PROCESSES', 1);
-        $supersetSize = count(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent));
-        $capacityBound = intdiv($config->incusMaxVmsPerHost, $supersetSize);
+        $topologySize = $this->incusLaneMaxVmCount($testFiles);
+        $capacityBound = array_sum(array_map(
+            fn (string $host): int => intdiv($config->incusMaxVmsForHost($host), $topologySize),
+            $config->incusHostCandidates(),
+        ));
 
-        return max(1, min($requested, $capacityBound));
+        return max(1, min($requested, max(1, $capacityBound)));
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     */
+    private function incusLaneMaxVmCount(array $testFiles): int
+    {
+        $kinds = $this->incusLaneTopologyKinds($testFiles);
+
+        if ($kinds === []) {
+            return count(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent));
+        }
+
+        return max(array_map(
+            static fn (E2ETopologyKind $kind): int => count(IncusTopologyTemplate::rolesFor($kind)),
+            $kinds,
+        ));
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     * @return list<E2ETopologyKind>
+     */
+    private function incusLaneTopologyKinds(array $testFiles): array
+    {
+        $kinds = [];
+
+        foreach ($testFiles as $testFile) {
+            foreach ($this->topologyKindsInTestFile($testFile) as $kind) {
+                $kinds[$kind->value] = $kind;
+            }
+        }
+
+        return array_values($kinds);
     }
 
     /**
@@ -345,7 +608,7 @@ class E2ETestCommand extends Command
 
         sort($files);
 
-        return $files;
+        return $this->topologyBalancedTestFiles($files, 'incus');
     }
 
     /**
@@ -422,7 +685,92 @@ class E2ETestCommand extends Command
 
         sort($files);
 
-        return $files;
+        return $this->topologyBalancedTestFiles($files, 'docker');
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     * @return list<string>
+     */
+    private function topologyBalancedTestFiles(array $testFiles, string $provider): array
+    {
+        $buckets = [];
+
+        foreach ($testFiles as $testFile) {
+            $weight = $this->topologyWeightForTestFile($testFile, $provider);
+            $buckets[$weight] ??= [];
+            $buckets[$weight][] = $testFile;
+        }
+
+        krsort($buckets, SORT_NUMERIC);
+
+        $ordered = [];
+
+        while ($buckets !== []) {
+            foreach (array_keys($buckets) as $weight) {
+                $next = array_shift($buckets[$weight]);
+
+                if (is_string($next)) {
+                    $ordered[] = $next;
+                }
+
+                if ($buckets[$weight] === []) {
+                    unset($buckets[$weight]);
+                }
+            }
+        }
+
+        return $ordered;
+    }
+
+    private function topologyWeightForTestFile(string $testFile, string $provider): int
+    {
+        $kinds = $this->topologyKindsInTestFile($testFile);
+
+        if ($kinds === []) {
+            return 0;
+        }
+
+        return max(array_map(
+            fn (E2ETopologyKind $kind): int => $this->topologyWeight($kind, $provider),
+            $kinds,
+        ));
+    }
+
+    private function topologyWeight(E2ETopologyKind $kind, string $provider): int
+    {
+        return match ($provider) {
+            'docker' => DockerTopologyProvider::containerCountFor($kind),
+            'incus' => count(IncusTopologyTemplate::rolesFor($kind)),
+            default => 1,
+        };
+    }
+
+    /**
+     * @return list<E2ETopologyKind>
+     */
+    private function topologyKindsInTestFile(string $testFile): array
+    {
+        $contents = file_get_contents(base_path($testFile));
+
+        if (! is_string($contents)) {
+            return [];
+        }
+
+        $kinds = [];
+
+        foreach (E2ETopologyKind::cases() as $kind) {
+            $groups = [
+                $kind->featureGroup(),
+                ...$kind->deprecatedFeatureGroups(),
+            ];
+
+            if (array_any($groups, fn (string $group): bool => str_contains($contents, $group))) {
+                $kinds[$kind->value] = $kind;
+            }
+        }
+
+        return array_values($kinds);
     }
 
     /**
@@ -449,7 +797,7 @@ class E2ETestCommand extends Command
                 continue;
             }
 
-            if (in_array($token, ['--canary', '--dry-run', '--json', '--sequential-lanes'], true)) {
+            if (in_array($token, ['--canary', '--dry-run', '--json', '--sequential-lanes', '--sequential-tests'], true)) {
                 continue;
             }
 
@@ -494,7 +842,7 @@ class E2ETestCommand extends Command
     private function runPlans(array $plans): int
     {
         if ((bool) $this->option('sequential-lanes')) {
-            $plans = $this->skipUnavailablePlans($plans);
+            $plans = $this->preparePlansForExecution($plans);
 
             if ($plans === []) {
                 return self::SUCCESS;
@@ -506,7 +854,7 @@ class E2ETestCommand extends Command
         $startedAt = microtime(true);
 
         $this->emitCheckpoint('e2e.lanes', 'started');
-        $plans = $this->skipUnavailablePlans($plans);
+        $plans = $this->preparePlansForExecution($plans);
 
         if ($plans === []) {
             $this->emitCheckpoint('e2e.lanes', 'done', microtime(true) - $startedAt);
@@ -569,6 +917,116 @@ class E2ETestCommand extends Command
         $this->emitCheckpoint('e2e.lanes', 'failed', $duration);
 
         return self::FAILURE;
+    }
+
+    /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
+     */
+    private function preparePlansForExecution(array $plans): array
+    {
+        $plans = $this->filterUnavailableDockerRunners($plans);
+
+        return $this->skipUnavailablePlans($plans);
+    }
+
+    /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
+     */
+    private function filterUnavailableDockerRunners(array $plans): array
+    {
+        if (! isset($plans['docker'])) {
+            return $plans;
+        }
+
+        if (($plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? '') === '') {
+            return $plans;
+        }
+
+        /** @var array{host_slots: array<string, int>, processes: int, test_runners: string, unavailable: array<string, string>} $availability */
+        $availability = $this->withPlanEnvironment($plans['docker'], function (): array {
+            $config = E2EConfig::fromEnvironment();
+            $hostSlots = [];
+            $unavailable = [];
+
+            foreach ($config->dockerHostSlots as $host => $slots) {
+                $reason = $this->dockerRunnerUnavailableReason($config, $host);
+
+                if ($reason !== null) {
+                    $unavailable[$host] = $reason;
+
+                    continue;
+                }
+
+                $hostSlots[$host] = $slots;
+            }
+
+            return [
+                'host_slots' => $hostSlots,
+                'processes' => array_sum($hostSlots),
+                'test_runners' => $hostSlots === [] ? '' : $this->renderDockerTestRunners($hostSlots, $config),
+                'unavailable' => $unavailable,
+            ];
+        });
+
+        foreach ($availability['unavailable'] as $host => $reason) {
+            $this->line("E2E Docker runner [{$host}] ignored: {$reason}");
+        }
+
+        if ($availability['host_slots'] === []) {
+            $this->emitCheckpoint('e2e.lane.docker', 'skipped');
+            $this->line('E2E lane [docker] skipped: no configured Docker test runner is reachable.');
+            unset($plans['docker']);
+
+            return $plans;
+        }
+
+        $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $availability['test_runners'];
+        $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $availability['processes'];
+        $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $availability['processes']);
+
+        return $plans;
+    }
+
+    private function dockerRunnerUnavailableReason(E2EConfig $config, string $host): ?string
+    {
+        $dockerHost = new DockerHost($config, $host);
+
+        if (! $dockerHost->run('command -v docker >/dev/null', timeoutSeconds: 10)->successful()) {
+            return 'docker command is not available';
+        }
+
+        if (! $dockerHost->run('docker info >/dev/null', timeoutSeconds: 10)->successful()) {
+            return 'docker daemon is not reachable';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $command
+     * @return list<string>
+     */
+    private function applyPestProcessCount(array $command, int $processes): array
+    {
+        $command = array_values(array_filter(
+            $command,
+            fn (string $argument): bool => $argument !== '--parallel'
+                && ! str_starts_with($argument, '--processes='),
+        ));
+
+        if ($processes <= 1
+            || (bool) $this->option('sequential-tests')
+            || $this->hasListTestsArgument($command)
+        ) {
+            return $command;
+        }
+
+        $command[] = '--parallel';
+        $command[] = "--processes={$processes}";
+
+        return $command;
     }
 
     /**
@@ -759,7 +1217,7 @@ class E2ETestCommand extends Command
         return $results;
     }
 
-    private function flushProcessOutput(InvokedProcess $process): void
+    private function flushProcessOutput(InvokedProcess|FakeInvokedProcess $process): void
     {
         $output = $process->latestOutput();
 
@@ -835,11 +1293,18 @@ class E2ETestCommand extends Command
         foreach ($this->activeReaperCommands() as $lane => $command) {
             $this->emitCheckpoint("e2e.cleanup.{$lane}", 'started');
 
-            $result = Process::path(base_path())
-                ->forever()
-                ->run($command, function (string $type, string $output): void {
-                    $this->writeProcessOutput($type, $output);
-                });
+            $process = Process::path(base_path())
+                ->forever();
+
+            $environment = $this->activeReaperEnvironment($lane);
+
+            if ($environment !== []) {
+                $process = $process->env($environment);
+            }
+
+            $result = $process->run($command, function (string $type, string $output): void {
+                $this->writeProcessOutput($type, $output);
+            });
 
             $this->emitCheckpoint("e2e.cleanup.{$lane}", $result->successful() ? 'done' : 'failed');
         }
@@ -866,6 +1331,20 @@ class E2ETestCommand extends Command
         }
 
         return $commands;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function activeReaperEnvironment(string $lane): array
+    {
+        foreach ($this->activePlans as $plan) {
+            if ($plan['lane'] === $lane) {
+                return $plan['environment'];
+            }
+        }
+
+        return [];
     }
 
     /**
@@ -993,10 +1472,15 @@ class E2ETestCommand extends Command
 
     private function envInt(string $key, int $default): int
     {
+        return $this->envIntOrNull($key) ?? $default;
+    }
+
+    private function envIntOrNull(string $key): ?int
+    {
         $value = getenv($key);
 
         if (! is_string($value) || $value === '') {
-            return $default;
+            return null;
         }
 
         return max(1, (int) $value);

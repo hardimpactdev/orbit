@@ -107,4 +107,4 @@ requests.
 | --- | --- |
 | `tests/Feature/Commands/S3/S3UnpublishCommandTest.php` | Input validation, active s3/router prerequisites, authorization, destructive consent, idempotent absent behavior, owned-route denial, and cleanup failure handoff. |
 | `tests/Unit/Services/S3/S3RouteRegistrarTest.php` | In-memory removal from S3 public hosts, RustFS config, ingress routes, and router relay intent. |
-| `tests/E2E/S3IngressRouteTest.php` | Public S3 host removal through the `client-gateway-appdev-ingress-websocket-s3` topology. |
+| `tests/E2E/S3IngressRouteTest.php` | Planned public S3 host removal coverage once the S3 role runtime exists. |

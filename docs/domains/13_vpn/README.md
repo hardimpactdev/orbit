@@ -1,6 +1,6 @@
 # VPN Commands
 
-VPN commands administer the active `vpn` role runtime for human/operator access
+VPN commands administer the active `vpn` role runtime for operator access
 clients. In this version the `vpn` role is gateway-coupled. These commands run
 on the gateway host and do not use the normal node orchestration path.
 
@@ -34,7 +34,7 @@ These rules govern all VPN commands and their gateway-execution contract.
   active gateway node; `gateway-admin` (`*` on the gateway) also satisfies
   those checks. This SSH-over-WireGuard path is a VPN-role infrastructure
   exception and is not a general public SSH path.
-- `vpn-client:*` commands manage VPN clients for humans and operators, not Orbit node peers.
+- `vpn-client:*` commands manage VPN clients for operators, not Orbit node peers.
 
 Node identity is managed separately.
 

@@ -49,7 +49,7 @@ function setupNodeRemoveControlContractCaller(): void
     ])->save();
 }
 
-describe('node:remove on control node contract', function (): void {
+describe('node:remove on operator node contract', function (): void {
     it('preserves forwarded gateway warnings in the rendered JSON response', function (): void {
         setupNodeRemoveControlContractCaller();
 

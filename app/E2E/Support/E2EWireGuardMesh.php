@@ -32,10 +32,6 @@ final readonly class E2EWireGuardMesh
         ?string $agentPublicKey = null,
         ?string $ingressPrivateKey = null,
         ?string $ingressPublicKey = null,
-        ?string $websocketPrivateKey = null,
-        ?string $websocketPublicKey = null,
-        ?string $s3PrivateKey = null,
-        ?string $s3PublicKey = null,
     ): self {
         $peers = [
             'gateway' => self::peerRecord('10.6.0.2', $gatewayHostPrivateKey, $gatewayHostPublicKey),
@@ -56,14 +52,6 @@ final readonly class E2EWireGuardMesh
 
         if ($ingressPrivateKey !== null && $ingressPublicKey !== null) {
             $peers['ingress'] = self::peerRecord('10.6.0.7', $ingressPrivateKey, $ingressPublicKey);
-        }
-
-        if ($websocketPrivateKey !== null && $websocketPublicKey !== null) {
-            $peers['websocket'] = self::peerRecord('10.6.0.8', $websocketPrivateKey, $websocketPublicKey);
-        }
-
-        if ($s3PrivateKey !== null && $s3PublicKey !== null) {
-            $peers['s3'] = self::peerRecord('10.6.0.9', $s3PrivateKey, $s3PublicKey);
         }
 
         return new self($gatewayProviderIp, $wgEasyPublicKey, $peers);

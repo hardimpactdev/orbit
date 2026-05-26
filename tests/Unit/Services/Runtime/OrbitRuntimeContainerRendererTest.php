@@ -53,6 +53,7 @@ it('renders the gateway database bind mount and gateway env when a gateway datab
     expect($container->environment())->toMatchArray([
         'ORBIT_IS_GATEWAY' => '1',
         'ORBIT_SOURCE_PATH' => OrbitRuntimeContainer::SourcePath,
+        'ORBIT_TRUST_WIREGUARD_PROXY_HEADER' => '1',
     ])
         ->and($container->mounts())->toContain([
             'source' => '/home/orbit/orbit/database/database.sqlite',

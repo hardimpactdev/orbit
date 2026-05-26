@@ -15,7 +15,7 @@ Orbit has three supported test lanes:
    coverage.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
-control, or app nodes as verification targets.
+operator, or app nodes as verification targets.
 
 For the MONO local-executor migration, prepared Docker/Incus E2E is the primary
 verification path. Standing live infrastructure is diagnostic only. Prepared
@@ -58,7 +58,6 @@ installation, cloud-init, or host-level daemon behavior:
 composer e2e:preflight
 php artisan e2e:prepare-incus-images --role=blank --force
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
-composer e2e:prepare-topology -- --force operator_gateway_app-prod_ingress
 composer test:e2e:provision
 ```
 
@@ -72,31 +71,37 @@ Docker E2E unblock gate. The SMOKE/E2E gate convention still applies to newly
 ported commands.
 
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
-default). It builds one reusable blank image plus cumulative role templates
-with per-topology clean snapshots:
+default). It builds one reusable blank image plus prepared source snapshots:
 
 1. **Blank image** (`orbit-blank-ubuntu-26.04`). Built once via
    `php artisan e2e:prepare-incus-images --role=blank --force`. Ubuntu cloud
    + bootstrap user + sshd. Used by the provisioning lane's blank-VM
    lifecycle test and as the source for prepared topology roles.
-2. **Role templates** (`orbit-template-control`, `orbit-template-gateway`,
-   `orbit-template-dev`, `orbit-template-prod`, `orbit-template-agent`,
-   `orbit-template-ingress-control`, `orbit-template-ingress-gateway`,
-   `orbit-template-ingress`, and `orbit-template-ingress-prod`). Built by
-   `composer e2e:prepare-topology -- --force <kind>`. The command tars the
-   current checkout, ships it plus `bin/install-orbit` and
-   `bin/e2e-provision-node` to the host, installs Orbit on the control
+2. **Prepared source templates** (`orbit-template-control`,
+   `orbit-template-gateway`, `orbit-template-dev`, `orbit-template-prod`, and
+   `orbit-template-agent`). Built by
+   `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent`.
+   The command tars the current checkout, ships it plus `bin/install-orbit` and
+   `bin/e2e-provision-node` to the host, installs Orbit on the operator
    template from the blank image, snapshots `clean-operator`, then starts that
-   template and provisions the gateway through real `node:new`. It repeats
-   the chain for gateway, dev, prod, agent, and ingress roles as required by
-   the target kind. The dedicated ingress topology copies the
-   `operator_gateway` base into `orbit-template-ingress-control` and
-   `orbit-template-ingress-gateway`, and uses `orbit-template-ingress-prod`
-   for the private app-production backend. This keeps ingress refreshes from
-   deleting the standard app-prod/agent snapshots. Each topology kind is a
-   snapshot set such as `clean-operator_gateway_app-dev`, not a separate copy
-   of every role template. Tests clone the requested role templates from the
-   matching snapshot per run.
+   template and provisions the gateway through real `node:new`. After the
+   gateway is seeded, app-dev, app-prod, and agent are provisioned in parallel
+   before the five-role source snapshot is taken. App-dev carries database and
+   Redis state by default; app-prod carries the ingress role by default.
+
+For Incus, a topology kind is the requested active node set for a test, not a
+separate prepared source to build. Gateway-backed role subsets such as
+`operator_gateway_agent` and `operator_gateway_app-prod_ingress` use the
+`operator_gateway_app-dev_app-prod_agent` source snapshots. At acquisition time
+the harness clones and boots only the requested roles from that source, retargets
+WireGuard, and prunes gateway registry rows for roles that are not part of the
+requested topology. For example, `operator_gateway_agent` boots operator,
+gateway, and agent only; app-dev and app-prod stay off.
+
+The Incus template name `orbit-template-control` is a legacy fixture name for
+the operator node template. New Docker artifacts use `operator`; Incus keeps
+the legacy template name until those prepared templates are rebuilt and migrated
+without breaking existing hosts.
 
 Source code lives in the per-run bundle, not in the blank image. Forced
 topology preparation resumes from the highest complete canonical prerequisite
@@ -108,6 +113,17 @@ of rebuilding from blank. Delete the shared `orbit-template-*` instances before
 `--force` only when you intentionally need a fully cold rebuild from the
 current checkout. Rebuild the blank image only when the bootstrap image shape
 changes.
+
+The provisioning bundle also stages host-local `orbit-runtime:current`,
+`caddy:2-alpine`, and `4km3/dnsmasq:latest` Docker image archives when those
+images exist on the Incus host. `bin/install-orbit` loads those archives before
+falling back to Docker Hub and marks archive-seeded installs with
+`ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES=1` so `node:new` can forward the same
+local runtime images to freshly provisioned gateway and app nodes. This keeps
+provisioning benchmarks independent from Docker Hub rate limits without mutating
+the shared blank image or default topology snapshots. Forwarded archives and
+source bundles are staged under `/var/tmp` rather than `/tmp`; Ubuntu cloud VMs
+often mount `/tmp` as a small tmpfs that cannot hold Docker image archives.
 
 Every machine that runs the Incus lane must be able to reach the configured
 Incus host with ordinary non-interactive SSH and SCP. The harness runs Incus
@@ -128,7 +144,7 @@ Latest Beast prepared-topology measurement (May 21, 2026):
   falls back to slow cross-pool copies and `batch.copy-start` regresses from
   about 2s to about 100s per worker.
 - After the rebuild, `composer test:e2e:incus` passed with 10 tests /
-  85 assertions in `real 100.50s`, with two cached superset workers and
+  85 assertions in `real 100.50s`, with two cached five-node workers and
   `batch.copy-start` around 2s per worker.
 
 Use the following overrides to source the per-run bundle from a non-default
@@ -148,7 +164,7 @@ Forced topology preparation prints live phase checkpoints to STDERR with the
 `[orbit-e2e]` prefix. Each measured phase emits `started`, then `done <seconds>`
 or `failed <seconds> <exception>`. This keeps JSON responses on STDOUT
 parseable while still showing whether a long run is in bundle staging,
-control install, `node:new`, gateway API readiness, snapshotting, or cleanup.
+operator install, `node:new`, gateway API readiness, snapshotting, or cleanup.
 
 Environment overrides:
 
@@ -158,7 +174,8 @@ ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
-ORBIT_E2E_CONTROL_USER=control
+ORBIT_E2E_OPERATOR_USER=orbit
+ORBIT_E2E_CONTROL_USER=orbit # Legacy alias for older scripts.
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
 ORBIT_E2E_TIMEOUT_SECONDS=600
 ORBIT_E2E_KEEP=1
@@ -217,7 +234,7 @@ OS package/trust layer is the behavior under test.
 The ephemeral E2E suite is split into two explicit lanes at the Pest group level:
 
 - **`e2e-provision`** — opt-in tests that mutate disposable VMs from blank
-  images and exercise setup flows such as blank VM lifecycle, control node
+  images and exercise setup flows such as blank VM lifecycle, operator node
   readiness, gateway onboarding, and node provisioning. These tests are
   grouped with `pest()->group('e2e-provision')` at the file level and run
   via `composer test:e2e:provision`. Tests that previously launched from
@@ -237,26 +254,29 @@ Each prepared topology has its own contract group:
 
 | Topology | Contract group | Feature group |
 | --- | --- | --- |
-| `control` | `e2e-topology-contract-control` | `e2e-feature-control` |
-| `control-gateway` | `e2e-topology-contract-control-gateway` | `e2e-feature-control-gateway` |
-| `control-gateway-dev` | `e2e-topology-contract-control-gateway-dev` | `e2e-feature-control-gateway-dev` |
-| `control-gateway-dev-prod` | `e2e-topology-contract-control-gateway-dev-prod` | `e2e-feature-control-gateway-dev-prod` |
+| `operator` | `e2e-topology-contract-operator` | `e2e-feature-operator` |
+| `operator_gateway` | `e2e-topology-contract-operator_gateway` | `e2e-feature-operator_gateway` |
+| `operator_gateway_app-dev` | `e2e-topology-contract-operator_gateway_app-dev` | `e2e-feature-operator_gateway_app-dev` |
+| `operator_gateway_app-dev_app-prod` | `e2e-topology-contract-operator_gateway_app-dev_app-prod` | `e2e-feature-operator_gateway_app-dev_app-prod` |
+| `operator_gateway_agent` | `e2e-topology-contract-operator_gateway_agent` | `e2e-feature-operator_gateway_agent` |
+| `operator_gateway_app-prod_ingress` | `e2e-topology-contract-operator_gateway_app-prod_ingress` | `e2e-feature-operator_gateway_app-prod_ingress` |
 
 `composer test:e2e:topology-contract` proves the Docker
-`control-gateway-dev-prod` topology contract. It exists as a quick topology
-health check, while `composer test:e2e` excludes topology-contract tests and
-runs feature assertions only.
+`operator_gateway_app-dev_app-prod` topology contract. It exists as a quick
+topology health check, while `composer test:e2e` excludes topology-contract
+tests and runs feature assertions only.
 
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, but
 `composer test:e2e` runs only feature assertions. It delegates to
 `php artisan e2e:test`, which plans one or both prepared-topology lanes from
 `ORBIT_E2E_LANES` and runs selected lanes concurrently by default. Use
 `--sequential-lanes` for local debugging when interleaved output is hard to
-read.
+read. Use `--sequential-tests` when a worktree run should execute the selected
+Pest files in one process instead of Pest parallel mode.
 
 `composer test:e2e:docker` selects the Docker lane: all `e2e-feature` tests
 except `e2e-provider-incus` and topology-contract groups, using Docker, Pest
-parallel mode, and one cached Docker superset topology per worker.
+parallel mode, and cached requested Docker topologies per worker.
 
 Use `composer test:e2e:docker:canary` to run the representative Docker canary
 subset tagged `e2e-feature-canary`.
@@ -277,7 +297,7 @@ for inspection and print their names plus a reap command. Set
 `ORBIT_E2E_KEEP_ON_FAILURE=0` to restore cleanup-on-failure behavior.
 
 Live or standing infrastructure verification lanes are sunset. Do not use
-persistent gateway, control, or app nodes as verification targets.
+persistent gateway, operator, or app nodes as verification targets.
 
 ## Topology Kinds
 
@@ -285,15 +305,20 @@ The `e2e-feature` lane uses prepared topology clones. Choose the smallest topolo
 that covers the behavior under test:
 
 Legacy `control-*` aliases remain accepted for existing topology kinds. New
-topology kinds use the canonical `operator-*` spelling.
+topology kinds use the canonical `operator*` spelling.
+
+For Incus, these names describe the roles that should be booted for a test. They
+do not mean each kind has a separate Incus source build. Gateway-backed subsets
+use the prepared five-role source and start only the listed nodes.
 
 | Kind | Nodes | Use when |
 | --- | --- | --- |
-| `control` | 1 control | Fastest. Use for control-node-only commands. |
-| `control-gateway` | control + 1 gateway | Use for gateway trust, onboarding, or node-registry flows. |
-| `control-gateway-dev` | control + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
-| `control-gateway-dev-prod` | control + gateway + dev + 1 prod app | Full topology. Slowest but most realistic. Use for production-app flows or full-stack verification. |
-| `operator_gateway_app-prod_ingress` | control + gateway + 1 prod app + 1 ingress | Use for public production ingress and private app-production backend flows that do not need dev or agent nodes. |
+| `operator` | 1 operator node | Fastest. Use for operator-side commands. |
+| `operator_gateway` | operator + 1 gateway | Use for gateway trust, onboarding, or node-registry flows. |
+| `operator_gateway_app-dev` | operator + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
+| `operator_gateway_app-dev_app-prod` | operator + gateway + dev + 1 prod app | Full app topology. Use for production-app flows or full-stack verification. |
+| `operator_gateway_agent` | operator + gateway + 1 agent | Use for agent-node assertions that do not need app-dev or app-prod nodes. |
+| `operator_gateway_app-prod_ingress` | operator + gateway + 1 prod app carrying ingress | Use for public production ingress and private app-production backend flows that do not need dev or agent nodes. |
 
 ## Feature Checkout Overlay
 
@@ -322,35 +347,138 @@ The Pest-facing helpers in `tests/E2E/Support/Pest.php` wrap the lower-level
 topology lease API:
 
 ```php
-$topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd)
-    ->withCurrentCheckout(roles: ['control', 'gateway', 'dev', 'prod']);
+$topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod)
+    ->withCurrentCheckout(roles: ['operator', 'gateway', 'dev', 'prod']);
 
 try {
     $topology->ssh(
-        'control',
-        "cd {$topology->checkout('control')} && orbit node:list --json",
+        'operator',
+        "cd {$topology->checkout('operator')} && orbit node:list --json",
     );
 } finally {
     $topology->cleanup();
 }
 ```
 
-Use `roles: ['control']` when only the control-side command under test needs
+Use `roles: ['operator']` when only the operator-side command under test needs
 the branch checkout. Add `gateway`, `dev`, or `prod` when the branch changes
-code that runs on those nodes.
+code that runs on those nodes. `control` remains accepted by the harness as a
+legacy alias for the operator node while older tests are migrated.
 
 When `ORBIT_E2E_TOPOLOGY_CACHE=process`, `e2eTopology()` reuses the same
 prepared topology lease for matching requests in the current PHP process and
 cleans it up once at process shutdown. `composer test:e2e` combines this with
-Pest parallel mode and `ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so each worker
-pays the Docker container startup cost once for a full topology. It also enables
-`ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout once per
-node/user and gives each test an isolated hardlink copy with fresh runtime
-files. The checkout archive itself is cached across Pest workers under a
-git-tree hash, so only one worker should pay the local tar/gzip cost for an
-unchanged checkout. Because the current aggregate includes gateway-backed
-`node:list` tests, it also sets `ORBIT_E2E_GATEWAY_API=1` and starts the gateway
-API once per worker.
+Pest parallel mode and `ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the
+branch checkout once per node/user and gives each test an isolated hardlink copy
+with fresh runtime files. The checkout archive itself is cached across Pest
+workers under a git-tree hash, so only one worker should pay the local tar/gzip
+cost for an unchanged checkout. Because the current aggregate includes
+gateway-backed `node:list` tests, it also sets `ORBIT_E2E_GATEWAY_API=1` and
+starts the gateway API once per worker.
+
+Tests request the smallest topology kind that covers the behavior under test.
+The Docker provider starts the requested gateway-backed roles from the prepared
+`operator_gateway_app-dev_app-prod_agent` role images, prunes gateway registry
+rows for roles that were not requested, and primes the gateway API for the
+active container addresses. Docker does not run Composer for each requested
+topology; role images already carry the prepared checkout with vendor
+dependencies, and the per-test checkout overlay only falls back to Composer when
+the prepared dependency tree is missing or incompatible with the checkout under
+test.
+
+The Incus provider also honors the requested smallest topology kind, but it does
+not launch blank downstream VMs during feature acquisition. It clones only the
+selected roles from the prepared
+`operator_gateway_app-dev_app-prod_agent` snapshots, starts those VMs, retargets
+WireGuard, and prunes stale gateway registry rows for roles that were not
+booted. App-dev carries database/Redis registry state by default, and app-prod
+carries the ingress role on the prod node by default. The process topology cache
+then reuses the requested topology for later tests that request the same kind.
+
+Lane planning does not sort tests from smallest topology to largest topology.
+The generated Pest test directories are ordered by topology weight and
+round-robin those weight buckets, so Docker and Incus workers start with a mix
+of large, medium, and small topology files. When one topology size is exhausted,
+the remaining files continue filling the configured worker pool. Worker counts
+remain capacity-safe for the largest topology selected by that lane invocation;
+if a canary or filtered run excludes large topology files, the planner sizes the
+lane from the smaller selected set.
+
+During Incus preparation, the gateway remains the dependency barrier: after the
+operator and gateway are seeded, app-dev, app-prod, and agent are provisioned
+with parallel `node:new` commands before the five role snapshots are taken.
+Composer lanes set `ORBIT_E2E_TOPOLOGY_CACHE_LIMIT=1` by default so a worker does
+not hold one requested topology while blocking on capacity for the next topology
+kind. Consecutive same-kind tests still reuse the requested topology; switching
+kinds evicts the previous lease first. Set
+`ORBIT_E2E_TOPOLOGY_CACHE_LIMIT=<n>` only for diagnostics on hosts with enough
+spare capacity for multiple cached topology kinds per worker.
+
+The prepared topology lane supports the current composable role set:
+`operator`, `operator_gateway`, `operator_gateway_app-dev`,
+`operator_gateway_app-dev_app-prod`, `operator_gateway_agent`,
+`operator_gateway_app-dev_app-prod_agent`, and
+`operator_gateway_app-prod_ingress`. Legacy app-dev ingress and unimplemented
+service scaffold topology kinds are not part of the prepared feature lane;
+prepare commands reject them.
+
+Prepared topology artifacts use an explicit namespace by default. Docker
+topology images are tagged with `prepared-...`, the Docker topology runtime
+images are `orbit-e2e-topology-runtime:prepared-current` and
+`orbit-runtime:prepared-current`, and Incus template snapshots use
+`clean-prepared-...` on `orbit-template-prepared-*` template instances. Set
+`ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` to isolate a branch, benchmark,
+or worktree run without colliding with another prepared run. Keep the shared
+`prepared` namespace for normal branch work: ordinary Orbit CLI and gateway app
+changes are synced or refreshed inside prepared nodes and do not require custom
+images. Use a custom namespace only when the worktree changes the prepared
+artifact shape itself, such as base system packages, Dockerfiles, blank VM
+bootstrap, or a new dedicated role image. After that work is merged, rebuild the
+shared `prepared` artifacts and stop using the worktree namespace.
+
+Required prepared sources for the feature lanes:
+
+- `operator` for operator-only tests.
+- Docker role images from `operator_gateway_app-dev_app-prod_agent`: operator,
+  gateway, app-dev, app-prod, and agent. App-dev includes the database role;
+  app-prod includes the ingress role.
+- Docker runtime support images: `orbit-runtime:<namespace>-current`,
+  `orbit-e2e-topology-runtime:<namespace>-current`, and `caddy:2-alpine`.
+- `operator_gateway_app-dev_app-prod_agent` Incus role snapshots for selective
+  VM boot.
+
+Prepare the default sources with:
+
+```bash
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
+
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
+```
+
+Docker topology bakes install Composer dependencies inside transient runtime
+containers. By default those containers share a stable Docker volume keyed by
+the current lockfiles for `/tmp/orbit-composer-cache`, so repeated builds with
+the same dependencies reuse package cache state without baking that cache into
+the final topology images. Set
+`ORBIT_E2E_DOCKER_COMPOSER_CACHE=<path-on-build-host>` to bind an existing
+Composer cache from the Docker image build host instead. With
+`DOCKER_HOST=ssh://beast`, that path is resolved on `beast`, not on the local
+worktree machine. If the build container cannot reach GitHub reliably but the
+host cache is already warm, set
+`ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY=1` so Composer consumes the mounted
+cache without trying to update source mirrors from inside the topology network.
+
+The Docker lane sizes its worker pool from the largest topology actually
+selected for the lane. Docker runners are configured with
+`ORBIT_E2E_DOCKER_TEST_RUNNERS=host:slots:containers,...`. If a runner's
+container cap cannot fit every configured slot, the lane lowers the effective
+runner slot count for that run instead of mutating the local `.env.e2e` file.
+When no explicit process override is set, Pest worker count is derived from the
+effective runner slots. With `sidecar1:4:28,sidecar2:4:28`, the Docker canary
+keeps eight workers when its largest selected topology reserves five containers
+per worker. Adding `sidecar3:4:28` derives twelve workers. An app-production
+ingress test starts operator, gateway, and prod only, so it reserves four
+containers per worker.
 
 Topology state is reused by default inside a worker. Tests that intentionally
 mutate shared topology state must either clean up after themselves or call
@@ -379,38 +507,41 @@ Common requirements for every prepared topology:
   socket. Docker E2E must not use Docker-in-Docker.
 - tests may mutate clones, but must never mutate template instances;
 - cleanup deletes clones unless `ORBIT_E2E_KEEP=1`;
-- reset returns clones to the clean prepared state for the selected reset
-  strategy.
+- reset returns clones to the clean prepared state for the selected reset mode.
 
-`control`:
+`operator`:
 
-- one control clone is available through the `control` topology handle;
-- the control user is `ORBIT_E2E_CONTROL_USER` (`control` by default);
-- baseline Orbit is installed at `/home/<control-user>/orbit`;
-- commands can run from the control node through the `orbit` CLI;
-- the control registry contains the local control identity expected by
-  control-node commands.
+- one operator node clone is available through the `operator` topology
+  handle;
+- the operator user is `ORBIT_E2E_OPERATOR_USER` (`orbit` by default, falling
+  back to `ORBIT_E2E_CONTROL_USER` for older environments);
+- baseline Orbit is installed at `/home/orbit/orbit` for the default user;
+- commands can run from the operator node through the `orbit` CLI;
+- `control` remains a legacy topology handle alias for this same operator
+  client while older tests and artifacts are migrated.
 
-`control-gateway`:
+`operator_gateway`:
 
-- includes everything from `control`;
+- includes everything from `operator`;
 - one gateway clone is available through the `gateway` topology handle;
 - the gateway steady-state user is `orbit`, with Orbit installed at
   `/home/orbit/orbit`;
-- the gateway identity visible to control-node commands is named `gateway`;
-- the control identity seeded on the gateway is named `control-1`;
-- WireGuard test addresses are stable: gateway `10.6.0.2`, control
+- the gateway identity visible to operator-side commands is named `gateway`;
+- the operator identity seeded on the gateway uses WireGuard address
   `10.6.0.3`;
-- the control node can reach the gateway API over the synthetic WireGuard route;
-- `gateway:add 10.6.0.2 --json` has converged on the control node;
-- the control node stores gateway settings and trusts the gateway CA;
+- WireGuard test addresses are stable: gateway `10.6.0.2`, operator
+  `10.6.0.3`;
+- the operator node can reach the gateway API over the synthetic WireGuard
+  route;
+- `gateway:add 10.6.0.2 --json` has converged on the operator node;
+- the operator node stores gateway settings and trusts the gateway CA;
 - the gateway API exposes `/api/ca/root` over HTTP and `/api/me` over HTTPS.
 - the gateway API is served by gateway `orbit-caddy` forwarding to gateway
   `orbit-runtime` on the node Docker network.
 
-`control-gateway-dev`:
+`operator_gateway_app-dev`:
 
-- includes everything from `control-gateway`;
+- includes everything from `operator_gateway`;
 - one development app clone is available through the `devApp()` topology handle;
 - the development app node is named `app-dev-1`;
 - the gateway registry stores it as role `app`, environment `development`,
@@ -420,50 +551,49 @@ Common requirements for every prepared topology:
 - development TLD state exists for `test` and points at the development app's
   WireGuard address.
 
-`control-gateway-dev-prod`:
+`operator_gateway_app-dev_app-prod`:
 
-- includes everything from `control-gateway-dev`;
+- includes everything from `operator_gateway_app-dev`;
 - one production app clone is available through the `prodApp()` topology handle;
 - the production app node is named `app-prod-1`;
 - the gateway registry stores it as role `app`, environment `production`, no
   development TLD, user `orbit`, and gateway endpoint `10.6.0.2`;
-- production-app assertions can run without re-provisioning the control,
+- production-app assertions can run without re-provisioning the operator,
   gateway, or development app nodes.
 - production app runtime assertions use FrankenPHP app containers and Docker
   process runtime units behind the private `orbit-caddy` backend listener.
 
+`operator_gateway_agent`:
+
+- includes everything from `operator_gateway`;
+- skips development and production app clones;
+- one agent clone is available through the `agent()` topology handle;
+- the agent node is named `agent-1`;
+- the gateway registry stores it with the active `agent` role, TLD `agent`,
+  user `orbit`, and gateway endpoint `10.6.0.2`.
+
 `operator_gateway_app-prod_ingress`:
 
-- includes everything from `control-gateway`;
+- includes everything from `operator_gateway`;
 - skips development and agent clones;
 - one production app clone is available through the `prodApp()` topology handle;
-- one ingress clone is available through the `ingress()` topology
-  handle and the `ingress` topology role;
-- the ingress node is named `edge-1`;
-- the production app node is named `app-prod-1` and stores
-  `ingress_node_id` pointing at `edge-1`;
-- WireGuard test addresses are stable: production app `10.6.0.5`, public
-  ingress `10.6.0.7`.
+- the `ingress()` handle aliases the prod clone because the app-prod node
+  carries the ingress role;
+- the production app and ingress node name is `app-prod-1`;
+- WireGuard test addresses are stable: the production app and colocated ingress
+  use `10.6.0.5`;
 - public production HTTP assertions preserve the path
   `ingress -> router -> backend`; the backend is the private `orbit-caddy`
   listener that forwards to the app FrankenPHP container.
 
-### Downstream Service Topology Expectations
+### Hosted Service Expectations
 
-Small Docker E2E topologies must support downstream service assertions without
-changing the runtime contract:
+Prepared E2E topologies keep hosted service assertions on the owning app node:
 
-- WebSocket-capable HTTP services, such as Reverb, run as Docker sibling
-  containers and are exposed through tool-owned proxy routes. Public production
-  traffic still enters through `ingress`, flows to `router`, then reaches the
-  service/backend target.
-- S3-compatible services, such as MinIO, run as Docker sibling containers on
-  the owning node and expose private WireGuard service endpoints unless a
-  product doc explicitly gives them an HTTP proxy route.
-- Database, cache, mail, WebSocket, and S3 containers share the same Docker
-  substrate as app/workspace runtime containers; tests must not add host PHP,
-  host Composer, host Caddy, PHP-FPM, or host Supervisor to make those services
-  pass.
+- app-dev carries database and Redis registry state by default;
+- app-prod carries the ingress role by default;
+- hosted service assertions must not add host PHP, host Composer, host Caddy,
+  PHP-FPM, or host Supervisor to make those services pass.
 
 ## Commands
 
@@ -484,22 +614,20 @@ composer e2e:preflight
 # Build the reusable Incus blank image (bootstrap user + sshd, no Orbit source).
 php artisan e2e:prepare-incus-images --role=blank --force
 
-# Prepare or replace topology templates for the feature lane. Tars the current
-# checkout, installs Orbit on the control template, then provisions gateway/app
-# templates through node:new from control before snapshotting clean.
-composer e2e:prepare-topology -- --force control-gateway-dev-prod
-composer e2e:prepare-topology -- --force operator_gateway_app-prod_ingress
+# Prepare or replace the Incus source templates for the feature lane. Tars the
+# current checkout, installs Orbit on the operator template, provisions gateway,
+# then provisions app-dev, app-prod, and agent through node:new before taking
+# the five-role source snapshots used by smaller requested topologies.
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 
-# Prepare Docker feature topology images
+# Prepare Docker feature topology images on the current Docker daemon
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
-composer e2e:prepare-docker-topology -- --force operator_gateway_app-prod_ingress
 
-# Prepare Docker feature topology images on the build host, then import on Docker hosts
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
+# Ensure Docker feature topology images on the build host, then sync to runners
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod_agent
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 
 # Reap stale E2E resources
 composer e2e:reap-incus
@@ -522,22 +650,23 @@ exiting with the conventional signal code (`130` for Ctrl-C). If a run is killed
 with `SIGKILL` or the host dies, run the reaper commands manually.
 
 `composer test:e2e:docker` is the fast feature lane. It runs all Docker-eligible
-`e2e-feature` tests in parallel against cached Docker full topologies, one
-topology per Pest worker process.
+`e2e-feature` tests in parallel against cached requested Docker topologies.
+At live run start, the lane probes each configured Docker test runner with
+`docker info` and removes unreachable runners from that run's effective
+`ORBIT_E2E_DOCKER_TEST_RUNNERS` value before Pest workers are started. This lets
+optional runners such as a laptop on Ethernet be listed in `.env.e2e`; when the
+host is offline, Orbit logs that the runner was ignored and uses the remaining
+reachable capacity.
 
 `composer test:e2e:incus` runs only `e2e-provider-incus` feature tests against
-Incus prepared topology clones. It uses `ORBIT_E2E_TOPOLOGY_CACHE=process` and
-`ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so each Pest worker acquires one
-maximum prepared topology and reuses it for all Incus feature tests assigned to
-that worker. The lane caps Pest workers by `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`
-so cached superset leases cannot exhaust Beast. With the recommended local cap
-of 12 VMs and the five-node agent topology, the Incus feature lane runs two
-workers. Each disposable topology VM is capped at 1 vCPU through
-`ORBIT_E2E_TOPOLOGY_CPUS=1`. A healthy local Beast run should be near the
-May 21, 2026 baseline: 10 tests / 85 assertions in `real 100.50s`, with
-`batch.copy-start` around 2s per cached superset worker. If wall time moves back
-toward several minutes, first check stale `orbit-e2e-*` VMs and the prepared
-template storage pool before moving tests into or out of the lane.
+Incus prepared topology clones. It uses `ORBIT_E2E_TOPOLOGY_CACHE=process`, so
+each Pest worker reuses matching topology requests assigned to that
+worker. The lane caps Pest workers by the largest selected Incus topology kind
+and `ORBIT_E2E_INCUS_HOST_VM_CAPS`, so prepared VM leases cannot exhaust
+Beast. Each disposable topology VM is capped at 1 vCPU through
+`ORBIT_E2E_TOPOLOGY_CPUS=1`. If wall time moves back toward several minutes,
+first check stale `orbit-e2e-*` VMs and the prepared template storage pool before
+moving tests into or out of the lane.
 
 Use `composer test:e2e:topology-contract` when you want to prove the prepared
 Docker topology itself. Provisioning E2E leases Incus slots and remains
@@ -559,17 +688,16 @@ dependency changes, or when remote images look stale, first rebuild on Beast and
 refresh each configured Docker host:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
 For single-host local debugging, the lower-level equivalents are:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
-composer e2e:prepare-docker-topology -- --force operator_gateway_app-prod_ingress
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
 On this Mac, OrbStack provides the local Docker CLI and daemon. The active
@@ -605,15 +733,22 @@ Do not switch the E2E provider to `ssh host docker ...`; the supported remote
 Docker transport is `DOCKER_HOST=ssh://<host>`.
 
 The recommended local topology is to run Docker containers on `sidecar1` and
-`sidecar2`. Incus runs on `beast` only. Keep Beast out of the default Docker
-pool so the aggregate `composer test:e2e` run does not make Docker feature tests
-compete with Incus feature tests on the same machine. Add Beast to the Docker
-pool only as explicit overflow for Docker-only runs or when Incus is idle. Keep
-`ORBIT_E2E_EXCLUSIVE_HOSTS=beast` when Beast appears in both pools so Docker and
-Incus leases on Beast block each other. Docker exercises gateway API,
-certificate, and registry behavior over a WireGuard-shaped `10.6.0.0/16`
-Docker bridge, but it does not exercise real WireGuard interfaces, peer
-routing, VM boot, or systemd.
+`sidecar2`. Incus runs on `beast` only. Beast may also be added to the Docker
+runner pool as overflow capacity, as long as it is also listed in
+`ORBIT_E2E_EXCLUSIVE_HOSTS`. That setting makes the shared lease pool treat
+Beast as cross-backend exclusive: Docker workers may lease Beast only when no
+Incus worker currently holds a Beast lease, and Incus workers may lease Beast
+only when no Docker worker currently holds a Beast lease. When Beast is used as
+Docker overflow, list it after the sidecars, for example
+`ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28,beast:2:56`, so the
+Docker lane consumes sidecar capacity before attempting Beast. This is active
+lease exclusion, not queue priority; a queued Incus worker that has not yet
+acquired a Beast lease does not preempt an already-running Docker worker.
+Docker exercises gateway API, certificate, and registry behavior over isolated
+Docker bridge networks from the `10.90.N.0/24` pool, while DNS-alias mode
+preserves canonical `10.6.0.x` WireGuard identities inside seeded gateway state.
+Docker does not exercise real WireGuard interfaces, peer routing, VM boot, or
+systemd.
 
 Docker topologies are disposable containers seeded from per-role prepared
 images. They are useful for fast command, registry, gateway API, CA trust,
@@ -627,37 +762,45 @@ those capabilities must call
 so the provider pool refuses Docker for them.
 
 The Docker topology build context intentionally includes the local `vendor/`
-directory. Prepared topology source is copied into `orbit-runtime` sibling
-containers on the isolated `10.6.0.0/16` build network, where external egress
-may be unavailable on build hosts that also run Orbit VPN routes. Carrying
-`vendor/` in the topology image makes the guarded runtime dependency install a
-no-op during normal preparation, avoiding Packagist dependency downloads from
-inside that network.
+directory. Client prepared topology dependencies are installed or reused through
+transient `composer:2` helper containers and then persisted into the node image;
+gateway source is also synchronized to the gateway `orbit-runtime` sibling.
+Builds run on isolated `10.90.N.0/24` networks. The
+allocator derives `N` from the build/run id or ParaTest worker token and retries
+on Docker subnet overlap errors, so build networks do not collide with Beast's
+real Orbit WireGuard route. Carrying `vendor/` in the topology image makes the
+guarded runtime dependency install a no-op during normal preparation, avoiding
+Packagist dependency downloads from inside that network.
 
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*`
-runtime assertions because Docker topologies provide `orbit-runtime`,
-`orbit-caddy`, FrankenPHP app/workspace containers, Docker process runtime
-containers, and the gateway scheduler inside `orbit-runtime`. Docker topology
-nodes may use `tini` for container entrypoint supervision, but host Supervisor
-is not the PHP process runtime and the scheduler is not a host Supervisor
-program. Incus remains required for tests that depend on real VM behavior:
+runtime assertions because gateway-backed Docker topologies provide the gateway
+`orbit-runtime`, `orbit-caddy`, FrankenPHP app/workspace containers, Docker
+process runtime containers, and the gateway scheduler inside `orbit-runtime`.
+Client topology nodes run the Orbit CLI directly from the node container. Docker
+topology nodes may use `tini` for container entrypoint supervision, but host
+Supervisor is not the PHP process runtime and the scheduler is not a host
+Supervisor program. Incus remains required for tests that depend on real VM
+behavior:
 cloud-init, package installation, real SSH daemon behavior, sudo prompts,
 OS trust-store mutation, real WireGuard interfaces and peer routing, and host
 init itself.
 
-`composer test:e2e:docker` runs with Pest parallel mode. The script fallback
-process count is `8`; the shared local `.env.e2e` uses
-`ORBIT_E2E_PARALLEL_PROCESSES=8` to match the sidecar1 and sidecar2 slot pool.
-Keep the value within Docker host capacity: each topology role starts both a
-node container and an `orbit-runtime` sibling. The largest Docker topology has
-six roles, so it reserves twelve containers per worker; a host with four Docker
-slots needs `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=48` or higher.
+`composer test:e2e:docker` runs with Pest parallel mode. Its worker count is
+derived from the configured Docker runner slots after per-host container caps
+are applied. Each topology role starts one node container, and gateway-backed
+topologies start one additional `orbit-runtime` sibling for the gateway. The
+largest Docker topology has five active roles plus the gateway runtime sibling,
+so it reserves six containers per worker. A runner with four Docker slots
+should be configured as `host:4:28`, leaving capacity headroom above the
+required 24 containers. When hosts differ, define each daemon in
+`ORBIT_E2E_DOCKER_TEST_RUNNERS`, for example
+`ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28,beast:2:56`.
 
 Historical measurement on 2026-05-19 with the tarball-only DNS-alias checkout
-path, before runtime sibling containers were accounted for, passed the canary
-with `sidecar1:4,sidecar2:4`, `ORBIT_E2E_PARALLEL_PROCESSES=8`, and a 16
-container cap in `47.55s` real time. Docker-first runtime now needs a 48
-container cap for that pool.
+path, before the gateway runtime sibling was accounted for, passed the canary
+with eight Docker workers across `sidecar1:4,sidecar2:4` and a 16 container cap
+in `47.55s` real time. Docker-first runtime now needs a 28 container cap for
+that pool.
 The full Docker lane passed three consecutive runs with 81 tests / 727
 assertions in `113.45s`, `112.49s`, and `114.88s` real time
 (`113.61s` mean, `1.20s` sample stdev). A post-regression repair spot-check on
@@ -668,55 +811,79 @@ test copies, vendor, node_modules, and runtime state excluded from the archive
 and its cache hash.
 
 Earlier measurement at `sidecar1:5,sidecar2:5` with 10 workers regressed, so
-the recommended local sidecar pool stays at 8 workers. The Docker lane rejects
-measured runs where `ORBIT_E2E_PARALLEL_PROCESSES` does not match the total
-Docker host slots or where
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST < max(host slot count) * 12`.
+the recommended local sidecar pool stays at four slots per sidecar. The Docker
+lane derives worker count from those slots and lowers effective slots when a
+host's container cap cannot fit
+`host slot count * largest selected Docker topology container count`.
 
-For multi-host parallelism, use host slots and set the Pest worker count to the
-total slot count:
+For multi-host parallelism, set Docker test runners. Pest worker count follows
+the effective total slot count automatically:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
-ORBIT_E2E_PARALLEL_PROCESSES=8 \
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 composer test:e2e:docker
 ```
 
-The normal local pool is `sidecar1:4,sidecar2:4` with
-`ORBIT_E2E_PARALLEL_PROCESSES=8`. Up to four workers can lease `sidecar1` and
-four can lease `sidecar2`. The mapping is a blocking lease pool, not a
-worker-number map: a worker takes the first free Docker slot, waits when all
-slots are busy, and releases its slot during topology
-cleanup. Stale lease files are reclaimed after `ORBIT_E2E_SLOT_STALE_SECONDS`.
-Lease files are shared across Git worktrees by default: worktree runs resolve
-the lease directory to the main checkout's `storage/framework/e2e/leases`. Set
-`ORBIT_E2E_LEASE_DIRECTORY` only when a run should intentionally use an isolated
-lease pool.
+The normal local pool is `sidecar1:4,sidecar2:4`, which derives eight Docker
+workers. Up to four workers can lease `sidecar1` and four can lease `sidecar2`.
+The mapping is a blocking lease pool, not a worker-number map: a worker takes
+the first free Docker slot, waits when all slots are busy, and releases its slot
+during topology cleanup. Stale lease files are reclaimed after
+`ORBIT_E2E_SLOT_STALE_SECONDS`. Lease files are shared across Git worktrees by
+default: worktree runs resolve the lease directory to the main checkout's
+`storage/framework/e2e/leases`. Set `ORBIT_E2E_LEASE_DIRECTORY` only when a run
+should intentionally use an isolated lease pool. Set
+`ORBIT_E2E_PARALLEL_PROCESSES=<n>` only as a temporary Docker debugging cap; do
+not keep it in `.env.e2e` for normal runs.
 
-Each Pest worker gets a non-overlapping Docker subnet. Non-parallel runs keep
-the canonical `10.6.0.0/16` topology. Parallel workers use `10.61.0.0/16`,
-`10.62.0.0/16`, and so on, derived from ParaTest's `TEST_TOKEN`. Role addresses
-stay consistent within the worker subnet: gateway `.2`, control `.3`, dev `.4`,
-prod `.5`.
-
-Tests must reach Docker topology services through topology handles such as
-`$topology->control()->ssh(...)`, not by calling `https://10.6.0.x` directly
-from the Pest process. On macOS, Docker Desktop runs containers inside a Linux
-VM, so the bridge subnet is reachable from containers but not necessarily from
-the developer host.
-
-The non-parallel Docker bridge uses subnet `10.6.0.0/16` to match seeded
-WireGuard addresses. If you also run an Orbit VPN client locally on `10.6.0.x`,
-stop the tunnel before running non-parallel Docker E2E or Docker network
-creation will fail with a subnet overlap error.
-
-To target a single remote Docker daemon for ad hoc debugging, keep Pest running
-locally and override the Docker host list:
+To include an optional runner, add it to the same value with its own slots and
+container cap. It will contribute workers only when reachable at run start:
 
 ```bash
-ORBIT_E2E_DOCKER_HOSTS=beast \
-ORBIT_E2E_DOCKER_HOST_SLOTS=beast:1 \
-ORBIT_E2E_PARALLEL_PROCESSES=1 \
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28,macbook:2:16 \
+composer test:e2e:docker
+```
+
+For worktree debugging of a single file or a related file set, pass the file
+paths through the Composer script. Add `--sequential-tests` when the selected
+tests should stay in one Pest process:
+
+```bash
+composer test:e2e:docker -- --sequential-tests tests/E2E/AppListTest.php
+
+composer test:e2e:docker -- --sequential-tests \
+  tests/E2E/AppListTest.php \
+  tests/E2E/NodeListTopologyTest.php
+
+composer test:e2e:docker -- --sequential-tests \
+  --filter='lists apps' \
+  tests/E2E/AppListTest.php
+```
+
+Each Pest worker gets a non-overlapping Docker subnet from the `10.90.N.0/24`
+pool. Run-scoped topologies derive `N` from the run id and, in parallel mode,
+from ParaTest's `TEST_TOKEN`; if Docker reports a pool overlap, Orbit retries
+the next run-scoped subnet. Role host endings stay consistent within the worker
+subnet: gateway `.2`, operator `.3`, dev `.4`, prod `.5`, agent `.6`, and
+ingress `.7`. `control` is the legacy alias for the operator node address.
+
+Tests must reach Docker topology services through topology handles such as
+`$topology->operator()->ssh(...)`, not by calling `https://10.6.0.x` directly
+from the Pest process. The older `$topology->control()` handle is still
+accepted as an alias during migration. On macOS, Docker Desktop runs containers
+inside a Linux VM, so the bridge subnet is reachable from containers but not
+necessarily from the developer host.
+
+Docker bridge addresses are transport addresses only. DNS-alias topology state
+continues to use canonical `10.6.0.x` WireGuard identities, and the gateway API
+maps Docker bridge peer addresses back to those canonical identities for test
+traffic.
+
+To target a single remote Docker daemon for ad hoc debugging, keep Pest running
+locally and override the Docker runner list:
+
+```bash
+ORBIT_E2E_DOCKER_TEST_RUNNERS=beast:1:28 \
 composer test:e2e
 ```
 
@@ -731,21 +898,21 @@ images on `ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS` and import them into the
 configured Docker host pool:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4 \
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-dev_app-prod_agent
-composer e2e:prepare-docker-hosts -- --force --topology-mode=dns-alias operator_gateway_app-prod_ingress
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
-When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command imports into each unique
-slot host once. Otherwise it uses `ORBIT_E2E_DOCKER_HOSTS`. If
-`ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS` is unset, remote Docker pools default to the
-Incus image build host, which is normally `beast`. Configure exactly one Docker
-image build host, normally `ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast`; sidecars
-belong only in `ORBIT_E2E_DOCKER_HOST_SLOTS` or `ORBIT_E2E_DOCKER_HOSTS`. This
-keeps Docker layer sharing intact: runtime and prepared topology images are
-built on one daemon and imported as one combined image set. Use `--runtime-only`
-or `--topology-only` when only one image layer needs refreshing.
+The command checks the build host first. If the required runtime or topology
+images are missing, it builds them on the single configured build host; either
+way it then imports the full required image set into every Docker test runner.
+If `ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS` is unset, remote Docker pools default to
+the Incus image build host, which is normally `beast`. Configure exactly one
+Docker image build host, normally `ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast`;
+sidecars belong only in `ORBIT_E2E_DOCKER_TEST_RUNNERS`. This keeps Docker layer
+sharing intact: runtime and prepared topology images are built on one daemon and
+imported as one combined image set. Use `--runtime-only` or `--topology-only`
+when only one image layer needs refreshing.
 
 To run Docker feature E2E on temporary Hetzner capacity, use the hidden wrapper:
 
@@ -762,8 +929,9 @@ composer test:e2e:hcloud-docker -- --force --processes=3
 
 The wrapper creates a temporary Hetzner Cloud server with Docker installed,
 prepares the Docker runtime and topology images on that server, runs
-`composer test:e2e:docker` with `ORBIT_E2E_DOCKER_HOSTS=root@<server-ip>`, then deletes
-the server and temporary SSH key unless `--keep` is set. This is intentionally
+`composer test:e2e:docker` with
+`ORBIT_E2E_DOCKER_TEST_RUNNERS=root@<server-ip>:<processes>:<container-cap>`,
+then deletes the server and temporary SSH key unless `--keep` is set. This is intentionally
 separate from the always-on Docker host pool: use it when local/standing Docker
 capacity is unavailable or when CI needs disposable Docker capacity. When
 resource slots are configured, the wrapper leases one
@@ -817,15 +985,12 @@ ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
 ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for direct artisan/Pest runs
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
-ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2  # Recommended Docker daemon pool
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:4,sidecar2:4  # Docker feature-test lease pool
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28  # Docker host:slots:container-cap pool
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast # Build Docker images here, then import to Docker hosts
-ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias # Use Docker DNS aliases for transport
-ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=48  # Docker topology capacity per daemon
-ORBIT_E2E_PARALLEL_PROCESSES=8        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism
-ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Requested Pest workers for composer test:e2e:incus; lane caps to safe superset capacity
+ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12 # Required per-Incus-host VM caps for prepared topology clones
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Requested Pest workers for composer test:e2e:incus; lane caps by selected topology VM count
 ORBIT_E2E_HCLOUD_LOCATION_SLOTS=nbg1:2,fsn1:1  # Hetzner provisioning-test lease pool
 ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04:1  # Hetzner location/type/image pool
 ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1  # Pest workers for composer test:e2e:provision
@@ -835,18 +1000,17 @@ ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files afte
 ORBIT_E2E_LEASE_DIRECTORY=            # Optional override; default is shared across repo worktrees
 ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast # Build Incus images once here, then import to Incus hosts
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
-ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12   # VM quota per host; Incus superset lane caps to 2 five-node workers
-ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Default direct Pest/artisan topology selection; composer lanes override as needed
 ORBIT_E2E_TOPOLOGY_CACHE=process      # Reuse acquired topologies for the current PHP process
 ORBIT_E2E_CHECKOUT_CACHE=process      # Reuse branch checkout installs within one PHP process
 ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR= # Optional shared checkout archive cache directory
 ORBIT_E2E_DOCKER_PARALLEL_STARTS=0    # Optional; requires SSH ControlMaster capacity on sidecars
-ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
+ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset mode for topology clones
 ORBIT_E2E_TIMINGS=1                   # Print phase timings to STDERR (acquire / reset)
 ORBIT_E2E_CPUS=2                      # vCPUs for image-prep / provisioning VMs
 ORBIT_E2E_MEMORY=2GiB                 # Memory for image-prep / provisioning VMs
 ORBIT_E2E_TOPOLOGY_CPUS=1             # vCPUs for disposable topology clones
 ORBIT_E2E_TOPOLOGY_MEMORY=2GiB        # Memory for disposable topology clones
+ORBIT_E2E_TOPOLOGY_ROOT_SIZE=16GiB    # Root disk size for Incus topology templates and feature clones
 ORBIT_E2E_TOPOLOGY_STATE_SIZE=4GiB    # Root disk state size for stateful VM snapshots
 ```
 
@@ -878,7 +1042,7 @@ provisioning lease before creating Incus or Hetzner resources.
 
 `composer test:e2e:docker` and `composer test:e2e:provision` use separate
 lease namespaces in the same shared lease directory. Docker feature tests read
-`ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus provisioning tests read
+`ORBIT_E2E_DOCKER_TEST_RUNNERS`; Incus provisioning tests read
 `ORBIT_E2E_INCUS_HOST_SLOTS`; Hetzner Cloud provisioning tests read
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` first and fall back to
 `ORBIT_E2E_HCLOUD_LOCATION_SLOTS`. By default those namespaces do not block each
@@ -887,8 +1051,10 @@ in more than one backend pool and the backend families must not overlap. The
 local setup keeps Beast in `ORBIT_E2E_EXCLUSIVE_HOSTS` for the opt-in overflow
 case: Beast Docker overflow waits while Beast is running Incus E2E, and Incus
 waits while Docker is using Beast. Same-backend slots still run concurrently, so
-`beast:2` can host two Docker feature workers when its container cap is at least
-24 and no Incus lease is active.
+`beast:2:14` can host two Docker feature workers when no Incus lease is active.
+This is active lease exclusion, not queue priority: if an Incus run should have
+first claim on Beast, do not include Beast in the Docker runner pool for that
+run.
 
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` treats each key as
 `location/server-type/image` and applies all three values before creating
@@ -902,11 +1068,11 @@ Use the timing parser to summarize repeated Docker lane runs by `label` and
 `event`:
 
 ```bash
-ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+ORBIT_E2E_TIMINGS=1 \
   composer test:e2e:docker:canary \
   2>&1 | tee /tmp/e2e-canary.log | awk -f bin/e2e-timings.awk
 
-ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+ORBIT_E2E_TIMINGS=1 \
   composer test:e2e:docker \
   2>&1 | tee /tmp/e2e-full.log | awk -f bin/e2e-timings.awk
 ```
@@ -916,17 +1082,17 @@ identical conditions with unique `/tmp` log names and a wall-clock timer:
 
 ```bash
 /usr/bin/time -p -o /tmp/e2e-full-run1.time \
-  env ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  env ORBIT_E2E_TIMINGS=1 \
   composer test:e2e:docker \
   2>&1 | tee /tmp/e2e-full-run1.log | awk -f bin/e2e-timings.awk
 
 /usr/bin/time -p -o /tmp/e2e-full-run2.time \
-  env ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  env ORBIT_E2E_TIMINGS=1 \
   composer test:e2e:docker \
   2>&1 | tee /tmp/e2e-full-run2.log | awk -f bin/e2e-timings.awk
 
 /usr/bin/time -p -o /tmp/e2e-full-run3.time \
-  env ORBIT_E2E_TIMINGS=1 ORBIT_E2E_PARALLEL_PROCESSES=8 \
+  env ORBIT_E2E_TIMINGS=1 \
   composer test:e2e:docker \
   2>&1 | tee /tmp/e2e-full-run3.log | awk -f bin/e2e-timings.awk
 ```
@@ -934,8 +1100,9 @@ identical conditions with unique `/tmp` log names and a wall-clock timer:
 Commit a `## Docker lane baseline (YYYY-MM-DD)` section only when all three
 runs pass with unchanged exit status, test count, and assertion count. Record
 the three wall times, the wall mean plus sample standard deviation, and per-run
-`n / p50 / p95` summaries for `docker.start`, `docker.retarget`,
-`reset.delete.*`, `reset.start`, `reset.retarget`, and `checkout.*` when
+`n / p50 / p95` summaries for `docker.start`, `docker.prune`,
+`docker.primeGatewayApi`, `reset.delete.*`, `reset.start`, `reset.prune`,
+`reset.primeGatewayApi`, and `checkout.*` when
 those event groups are present. Downstream phases must beat the recorded wall
 baseline by more than `2 x stdev`.
 
@@ -984,30 +1151,29 @@ Prepared Incus feature tests do not use `ORBIT_E2E_INCUS_HOST_SLOTS`.
 `ORBIT_E2E_INCUS_HOST_SLOTS` is for provisioning/image-prep leases, where a
 test mutates Incus host state by creating new blank or base VMs. Prepared
 feature tests clone existing topology snapshots and choose a host through
-`ORBIT_E2E_INCUS_HOSTS` plus `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`.
-`composer test:e2e:incus` uses process-local cached superset topologies, so it
-caps the requested Pest worker count to the number of five-node superset leases
-that fit within the host VM cap. Direct Pest/artisan runs that bypass
-`php artisan e2e:test` do not get that lane cap automatically. Their
-concurrency is bounded by:
+`ORBIT_E2E_INCUS_HOSTS` plus `ORBIT_E2E_INCUS_HOST_VM_CAPS`.
+`composer test:e2e:incus` caps the requested Pest worker count from the largest
+selected topology kind. Direct Pest/artisan runs that bypass
+`php artisan e2e:test` do not get that lane cap automatically. Their concurrency
+is bounded by:
 
 - `ORBIT_E2E_INCUS_PARALLEL_PROCESSES`, the requested Pest worker count for the
   Incus lane.
-- `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, the maximum number of Orbit-owned
+- `ORBIT_E2E_INCUS_HOST_VM_CAPS`, the maximum number of Orbit-owned
   prepared-topology VMs allowed on an Incus host.
-- The cached topology size selected by the lane. The Incus feature lane uses
-  the five-node `operator_gateway_app-dev_app-prod_agent` superset so all Incus
-  feature tests assigned to a worker can share one lease.
+- The cached topology size selected by the lane. Each test clones only the roles
+  requested by its topology kind from prepared snapshots, so runs fit more
+  workers when selected tests do not need all five roles.
 
 For example, `ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3`,
-`ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12`, and
-`ORBIT_E2E_TOPOLOGY_CPUS=1` request three Incus workers, but
-`composer test:e2e:incus` caps the lane to two workers because two five-node
-superset leases use 10 of the 12 allowed VMs. `composer test:e2e` starts Docker
-and Incus lanes together; it is normal for Docker to finish first and for only
-the Incus lane to remain visible afterward.
+`ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12`, and
+`ORBIT_E2E_TOPOLOGY_CPUS=1` request three Incus workers. If the largest selected
+Incus topology has three roles, all three workers can fit within the 12 VM cap;
+if the largest selected topology has five roles, the lane caps to two workers.
+`composer test:e2e` starts Docker and Incus lanes together; it is normal for
+Docker to finish first and for only the Incus lane to remain visible afterward.
 
-`ORBIT_E2E_INCUS_MAX_VMS_PER_HOST` is enforced by the host pool. When a feature
+`ORBIT_E2E_INCUS_HOST_VM_CAPS` is enforced by the host pool. When a feature
 test asks for a topology, the pool walks the configured hosts and picks the
 first one that has both the prepared templates *and* enough free Orbit-owned
 slots (`max - runningE2EInstanceCount() >= roles required`). User-owned VMs are
@@ -1018,8 +1184,8 @@ counted. Recommended baseline:
 ORBIT_E2E_INCUS_HOSTS=beast
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # provisioning only
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e
-ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12
-ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # requested; composer test:e2e:incus caps to 2 with five-node superset leases
+ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # requested; lane caps by selected topology size
 ORBIT_E2E_TOPOLOGY_CPUS=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ```
@@ -1065,8 +1231,9 @@ clone to a known-clean state between sub-scenarios in the same test:
   role VMs to the captured warm state, including memory state and running
   services. It also applies `size.state=ORBIT_E2E_TOPOLOGY_STATE_SIZE` to the
   root disk before boot because Incus requires that value to be larger than
-  `limits.memory`. Use it only on hosts where stateful VM migration/snapshot
-  support has been verified.
+  `limits.memory`. `ORBIT_E2E_TOPOLOGY_ROOT_SIZE` remains the normal root disk
+  capacity for topology templates and feature clones. Use it only on hosts
+  where stateful VM migration/snapshot support has been verified.
 
 Unknown values continue to fall back to `fresh-clone`.
 

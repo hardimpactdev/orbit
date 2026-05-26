@@ -1,7 +1,7 @@
 # `orbit vpn-client:new <name>`
 
-Create a VPN client on the active `vpn` role runtime for human or operator
-access; the client is not an Orbit node.
+Create a VPN client on the active `vpn` role runtime for operator access; the
+client is not an Orbit node.
 
 ## Usage
 

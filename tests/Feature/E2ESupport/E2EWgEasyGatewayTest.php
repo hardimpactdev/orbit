@@ -48,6 +48,8 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
         ->and($commands[0])->toContain('docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0')
         ->and($commands[0])->toContain('docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0')
         ->and($commands[0])->toContain("UPDATE interfaces_table SET ipv4_cidr = '10.6.0.0/24'")
+        ->and($commands[0])->toContain('! command -v docker >/dev/null 2>&1 || ! command -v sqlite3 >/dev/null 2>&1')
+        ->and($commands[0])->toContain('command -v sqlite3 >/dev/null 2>&1 || packages="${packages} sqlite3"')
         ->and($commands[0])->toContain('INIT_HOST=10.231.0.11')
         ->and($commands[0])->toContain('INIT_PASSWORD=orbit-e2e-bootstrap-password')
         ->and($commands[0])->toContain('INSECURE=true');
@@ -73,6 +75,9 @@ it('persists and activates topology peers on wg-easy wg0', function (): void {
 
     expect($commands[0])->toContain('sqlite3 /home/orbit/.wg-easy/wg-easy.db')
         ->and($commands[0])->toContain('clients_table')
+        ->and($commands[0])->toContain("DELETE FROM clients_table WHERE name NOT IN ('gateway', 'control', 'dev')")
+        ->and($commands[0])->toContain('wg show wg0 peers')
+        ->and($commands[0])->toContain('wg set wg0 peer "$peer" remove')
         ->and($commands[0])->toContain('gateway-host-public')
         ->and($commands[0])->toContain('gateway-psk')
         ->and($commands[0])->not->toContain("'',")

@@ -42,8 +42,11 @@ it('prints help with --help', function (): void {
 
     expect($result->successful())->toBeTrue();
     expect($result->output())->toContain('usage: bin/e2e-provision-node');
-    expect($result->output())->toContain('--role=control|gateway|app');
+    expect($result->output())->toContain('--role=operator|gateway|app');
     expect($result->output())->toContain('--source-archive=PATH');
+    expect($result->output())->toContain('--runtime-image-archive=PATH');
+    expect($result->output())->toContain('--caddy-image-archive=PATH');
+    expect($result->output())->toContain('--dnsmasq-image-archive=PATH');
     expect($result->output())->toContain('Topology role being installed');
 });
 
@@ -58,6 +61,26 @@ it('runs install-orbit without role semantics', function (): void {
         ->and($installer)->toContain('--skip-prerequisites');
 });
 
+it('installs E2E base dependencies before running install-orbit', function (): void {
+    $provisioner = file_get_contents(provisionScript());
+
+    expect($provisioner)
+        ->toContain('install_e2e_dependencies')
+        ->toContain('"${SCRIPT_DIR}/_e2e-deps.sh" --base')
+        ->toContain('systemctl enable --now supervisor.service');
+});
+
+it('forwards staged Docker image archives without duplicating them in the guest tmp directory', function (): void {
+    $provisioner = file_get_contents(provisionScript());
+
+    expect($provisioner)
+        ->toContain('runtime_image_args=(--runtime-image-archive="$RUNTIME_IMAGE_ARCHIVE")')
+        ->toContain('caddy_image_args=(--caddy-image-archive="$CADDY_IMAGE_ARCHIVE")')
+        ->toContain('dnsmasq_image_args=(--dnsmasq-image-archive="$DNSMASQ_IMAGE_ARCHIVE")')
+        ->not->toContain('/tmp/orbit-runtime-image.tar')
+        ->not->toContain('/tmp/orbit-caddy-image.tar');
+});
+
 it('fails when --role is missing', function (): void {
     $result = Process::run([provisionScript()]);
 
@@ -69,25 +92,79 @@ it('fails when --role is invalid', function (): void {
     $result = Process::run([provisionScript(), '--role=invalid', '--source-archive=/tmp/missing']);
 
     expect($result->successful())->toBeFalse();
-    expect($result->errorOutput())->toContain('--role must be: control, gateway, or app');
+    expect($result->errorOutput())->toContain('--role must be: operator, gateway, or app');
 });
 
 it('fails when --source-archive is missing', function (): void {
-    $result = Process::run([provisionScript(), '--role=control']);
+    $result = Process::run([provisionScript(), '--role=operator']);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('--source-archive is required');
 });
 
 it('fails when source archive does not exist', function (): void {
-    $result = Process::run([provisionScript(), '--role=control', '--source-archive=/tmp/orbit-does-not-exist.tar.gz']);
+    $result = Process::run([provisionScript(), '--role=operator', '--source-archive=/tmp/orbit-does-not-exist.tar.gz']);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('source archive not found');
 });
 
+it('fails when caddy image archive does not exist', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+
+    try {
+        $result = Process::run([
+            provisionScript(),
+            '--role=operator',
+            "--source-archive={$source}",
+            '--caddy-image-archive=/tmp/orbit-caddy-does-not-exist.tar',
+        ]);
+
+        expect($result->successful())->toBeFalse();
+        expect($result->errorOutput())->toContain('caddy image archive not found');
+    } finally {
+        @unlink($source);
+    }
+});
+
+it('fails when runtime image archive does not exist', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+
+    try {
+        $result = Process::run([
+            provisionScript(),
+            '--role=operator',
+            "--source-archive={$source}",
+            '--runtime-image-archive=/tmp/orbit-runtime-does-not-exist.tar',
+        ]);
+
+        expect($result->successful())->toBeFalse();
+        expect($result->errorOutput())->toContain('runtime image archive not found');
+    } finally {
+        @unlink($source);
+    }
+});
+
+it('fails when dnsmasq image archive does not exist', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+
+    try {
+        $result = Process::run([
+            provisionScript(),
+            '--role=operator',
+            "--source-archive={$source}",
+            '--dnsmasq-image-archive=/tmp/orbit-dnsmasq-does-not-exist.tar',
+        ]);
+
+        expect($result->successful())->toBeFalse();
+        expect($result->errorOutput())->toContain('dnsmasq image archive not found');
+    } finally {
+        @unlink($source);
+    }
+});
+
 it('fails for unknown options', function (): void {
-    $result = Process::run([provisionScript(), '--role=control', '--source-archive=/tmp/x', '--mystery=1']);
+    $result = Process::run([provisionScript(), '--role=operator', '--source-archive=/tmp/x', '--mystery=1']);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('unknown option: --mystery=1');

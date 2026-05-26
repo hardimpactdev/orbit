@@ -200,6 +200,21 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($env)->toContain('WG_EASY_PASSWORD=');
     });
 
+    it('persists gateway local executor identity and operation token configuration', function (): void {
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+        ]);
+
+        $env = File::get(app()->environmentFilePath());
+
+        expect($env)
+            ->toContain('ORBIT_IS_GATEWAY=true')
+            ->toContain('ORBIT_NODE_IDENTITY=gateway-1')
+            ->toContain('ORBIT_OPERATION_TOKEN_SECRET=')
+            ->toContain('ORBIT_EXECUTOR_SECRET=');
+    });
+
     it('reuses an existing wg-easy admin password on re-bootstrap', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
@@ -265,7 +280,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->count())->toBe(1);
     });
 
-    it('keeps existing control nodes when creating the gateway record', function (): void {
+    it('keeps existing legacy control identities when creating the gateway record', function (): void {
         Node::query()->create([
             'name' => 'old-control',
             'role' => 'control',

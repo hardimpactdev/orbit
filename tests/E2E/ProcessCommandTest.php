@@ -135,6 +135,10 @@ function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string
 {
     $topology->ssh('dev', 'mkdir -p '.escapeshellarg($path), timeoutSeconds: 60);
 
+    if (e2eUsesDockerDnsAliasTopology()) {
+        processCommandSeedDockerHostPath($topology, $path);
+    }
+
     $script = <<<'PHP'
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 $node->update(['status' => 'active', 'platform' => 'ubuntu']);
@@ -182,6 +186,10 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
         timeoutSeconds: 120,
     );
 
+    if (e2eUsesDockerDnsAliasTopology()) {
+        processCommandRemoveDockerHostPath($topology, $path);
+    }
+
     $script = "if (\$app = \\App\\Models\\App::query()->where('name', '{$app}')->first()) { \$app->delete(); }";
 
     $topology->ssh(
@@ -197,4 +205,40 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
 function processCommandPayload(string $output): array
 {
     return json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
+function processCommandSeedDockerHostPath(E2ETopologyHarness $topology, string $path): void
+{
+    $topology->ssh(
+        'dev',
+        processCommandDockerHostPathScript('mkdir -p', $path),
+        timeoutSeconds: 120,
+    );
+}
+
+function processCommandRemoveDockerHostPath(E2ETopologyHarness $topology, string $path): void
+{
+    $topology->ssh(
+        'dev',
+        processCommandDockerHostPathScript('rm -rf', $path),
+        timeoutSeconds: 120,
+        allowFailure: true,
+    );
+}
+
+function processCommandDockerHostPathScript(string $operation, string $path): string
+{
+    $appRoot = '/home/orbit/apps/';
+
+    if (! str_starts_with($path, $appRoot)) {
+        throw new RuntimeException("Docker process E2E host-path setup only supports paths under {$appRoot}.");
+    }
+
+    $relativePath = substr($path, strlen($appRoot));
+
+    return sprintf(
+        'image="$(docker inspect -f %s "$HOSTNAME")" && docker run --rm -v /home/orbit/apps:/orbit-apps "$image" sh -lc %s',
+        escapeshellarg('{{.Config.Image}}'),
+        escapeshellarg($operation.' '.escapeshellarg("/orbit-apps/{$relativePath}")),
+    );
 }

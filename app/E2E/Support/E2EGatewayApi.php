@@ -156,11 +156,11 @@ PHP;
         $certKeyValue = var_export($certKey, true);
         $certSansValue = var_export(array_values($certSans), true);
         $viewCompiledPath = escapeshellarg("{$orbitPath}/storage/framework/views");
-        $dockerTopologyModeEnv = self::dockerTopologyModeEnvCommand();
+        $dockerTopologyProviderEnv = self::dockerTopologyProviderEnvCommand(dockerTopology: false);
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -203,24 +203,16 @@ PHP;
     public static function stop(E2EInstance $gateway): void
     {
         if (self::isDockerTopology($gateway)) {
-            E2ECommand::exec(
-                $gateway,
-                sprintf(
-                    'sudo docker exec %s sh -lc %s >/dev/null 2>&1 || true',
-                    escapeshellarg(self::runtimeContainerName($gateway)),
-                    escapeshellarg(self::stopServerShellScript()),
-                ),
-                'Could not stop gateway test servers',
-            );
+            $gateway->exec(sprintf(
+                'sudo docker exec %s sh -lc %s >/dev/null 2>&1 || true',
+                escapeshellarg(self::runtimeContainerName($gateway)),
+                escapeshellarg(self::stopServerShellScript()),
+            ));
 
             return;
         }
 
-        E2ECommand::exec(
-            $gateway,
-            'sh -lc '.escapeshellarg(self::stopServerShellScript()),
-            'Could not stop gateway test servers',
-        );
+        $gateway->exec('sh -lc '.escapeshellarg(self::stopServerShellScript()));
     }
 
     /**
@@ -240,12 +232,16 @@ PHP;
         $certKeyValue = var_export($certKey, true);
         $certSansValue = var_export(array_values($certSans), true);
         $viewCompiledPath = escapeshellarg("{$orbitPath}/storage/framework/views");
-        $dockerTopologyModeEnv = self::dockerTopologyModeEnvCommand();
+        $dockerTopologyProviderEnv = self::dockerTopologyProviderEnvCommand(dockerTopology: true);
         $runtimeContainer = escapeshellarg(self::runtimeContainerName($gateway));
         $scriptPath = "/tmp/orbit-{$label}-tls.php";
         $scriptPathArgument = escapeshellarg($scriptPath);
+        $httpServerCommand = sprintf(
+            'orbit serve --host=%s --port=80 --tries=1 --no-reload --quiet > /tmp/orbit-gateway-http.log 2>&1',
+            escapeshellarg($bindAddress),
+        );
 
-        $certificateCommand = "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_DOCKER_TOPOLOGY_MODE)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyModeEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';");
+        $certificateCommand = "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' .env > .env.tmp && mv .env.tmp .env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';");
 
         E2ECommand::exec(
             $gateway,
@@ -276,12 +272,12 @@ PHP;
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'sudo docker exec --detach --env %s --env %s --workdir %s %s orbit serve --host=%s --port=80 --tries=1 --no-reload --quiet',
+                'sudo docker exec --detach --env %s --env %s --workdir %s %s sh -lc %s',
                 escapeshellarg("VIEW_COMPILED_PATH={$orbitPath}/storage/framework/views"),
                 escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
                 $orbitPathArgument,
                 $runtimeContainer,
-                escapeshellarg($bindAddress),
+                escapeshellarg($httpServerCommand),
             ),
             'Could not start gateway HTTP API',
         );
@@ -416,7 +412,7 @@ PHP;
             ? "\$process = popen(\$script.' 2>&1', 'r');"
             : "\$process = popen('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', 'r');";
 
-        $script = "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\n".<<<'PHP_WRAP'
+        $script = "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\$GLOBALS['orbitPath'] = \$orbitPath;\n\$GLOBALS['wireguardIdentity'] = \$wireguardIdentity;\n\$GLOBALS['httpUpstream'] = \$httpUpstream;\n\$GLOBALS['peerIdentityMap'] = \$peerIdentityMap;\n\n".<<<'PHP_WRAP'
         
         function respond($connection, int $status, string $body, string $contentType = 'application/json'): void
         {
@@ -978,7 +974,13 @@ PHP;
             exit(1);
         }
         
-        while ($connection = @stream_socket_accept($server, -1)) {
+        while (true) {
+            $connection = @stream_socket_accept($server, -1);
+
+            if ($connection === false) {
+                continue;
+            }
+
             $requestLine = fgets($connection) ?: '';
             $headers = [];
         
@@ -1551,23 +1553,13 @@ PHP;
         return "{$instance->name()}-orbit-runtime";
     }
 
-    /**
-     * @param  array<string, string>  $peerIdentityMap
-     */
-    private static function tlsServerTinkerCode(string $orbitPath, string $wireguardIdentity, string $bindAddress, string $certKey, array $peerIdentityMap = [], bool $dockerRuntime = false): string
+    private static function dockerTopologyProviderEnvCommand(bool $dockerTopology): string
     {
-        $script = self::tlsServerScript($orbitPath, $wireguardIdentity, $bindAddress, $certKey, $peerIdentityMap, $dockerRuntime);
-
-        return preg_replace('/^<\?php\s*/', '', $script) ?? $script;
-    }
-
-    private static function dockerTopologyModeEnvCommand(): string
-    {
-        if (getenv('ORBIT_E2E_DOCKER_TOPOLOGY_MODE') !== 'dns-alias') {
+        if (! $dockerTopology) {
             return ':';
         }
 
-        return "printf '%s\\n' 'ORBIT_E2E_DOCKER_TOPOLOGY_MODE=dns-alias' >> .env";
+        return "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> .env";
     }
 
     private static function appKeyCommand(): string
@@ -1596,7 +1588,7 @@ for file in /proc/[0-9]*/cmdline; do
     command="$(tr '\000' ' ' < "$file" 2>/dev/null || true)"
 
     case "$command" in
-        */tmp/orbit-*-http-router.php*|*/tmp/orbit-*-tls.php*|*orbit\ serve\ --host=*--port=80*|*php\ *artisan\ serve\ --host=*--port=80*)
+        */tmp/orbit-*-http-router.php*|*/tmp/orbit-*-tls.php*|*orbit\ serve\ --host=*--port=80*|*php\ *artisan\ serve\ --host=*--port=80*|*php\ -S\ *:80\ */server.php*)
             pids="$pids $pid"
             kill -TERM "$pid" >/dev/null 2>&1 || true
             ;;
@@ -1608,6 +1600,8 @@ sleep 0.2
 for pid in $pids; do
     kill -KILL "$pid" >/dev/null 2>&1 || true
 done
+
+exit 0
 SH;
     }
 }

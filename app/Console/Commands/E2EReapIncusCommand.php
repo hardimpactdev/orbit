@@ -49,6 +49,7 @@ class E2EReapIncusCommand extends Command
 
         $allResources = [];
         $skippedNames = [];
+        $instancePrefix = rtrim($config->instancePrefix, '-').'-';
 
         foreach ($hosts as $host) {
             $result = $this->listInstances($host);
@@ -72,7 +73,7 @@ class E2EReapIncusCommand extends Command
                     continue;
                 }
 
-                if (! str_starts_with($name, 'orbit-e2e-')) {
+                if (! str_starts_with($name, $instancePrefix)) {
                     if (str_starts_with($name, 'orbit-template-') || str_starts_with($name, 'orbit-ready-')) {
                         $skippedNames[] = $name;
                     }
@@ -177,7 +178,7 @@ class E2EReapIncusCommand extends Command
     {
         $remoteCommand = sprintf(
             'bash -lc %s',
-            escapeshellarg("set -euo pipefail\nincus delete --force {$name}"),
+            escapeshellarg('set -euo pipefail'."\n".'incus delete --force '.escapeshellarg($name)),
         );
 
         return Process::timeout($host->config->timeoutSeconds)

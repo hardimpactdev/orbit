@@ -99,7 +99,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
         ->and($output)->toContain('Gateway is already provisioned.')
         ->and($output)->not->toContain('Gateway node gateway-1 already provisioned.')
         ->and($output)->not->toContain('Endpoint:')
-        ->and($output)->not->toContain('Control node:');
+        ->and($output)->not->toContain('Operator node:');
 
     File::deleteDirectory($storage);
 });

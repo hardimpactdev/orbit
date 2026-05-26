@@ -162,7 +162,7 @@ describe('node:remove interactive input mode contract', function (): void {
 
         $message = $method->invoke($command, 'control-1', true);
 
-        expect($message)->toBe('Remove this control node from the fleet? This machine will lose Orbit gateway access.');
+        expect($message)->toBe('Remove this operator node from the fleet? This machine will lose Orbit gateway access.');
     });
 
     it('fails with validation_failed when name is missing in non-interactive mode', function (): void {

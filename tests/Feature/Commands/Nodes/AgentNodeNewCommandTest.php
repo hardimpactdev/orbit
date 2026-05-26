@@ -9,6 +9,7 @@ use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\OrbitHostInstaller;
 use App\Services\OrbitHostInstallResult;
@@ -26,7 +27,10 @@ use Saloon\Http\Faking\MockResponse;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    config(['orbit.is_gateway' => true]);
+    config([
+        'orbit.is_gateway' => true,
+        'orbit.operation_token_secret' => 'agent-node-new-test-secret',
+    ]);
 
     $this->tempStorage = sys_get_temp_dir().'/orbit-agent-node-new-test-'.uniqid();
     app()->useStoragePath($this->tempStorage);
@@ -103,6 +107,16 @@ beforeEach(function (): void {
         'status' => 'active',
     ]);
 
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'vpn',
+        'status' => 'active',
+    ]);
+
     WireGuardPeer::query()->create([
         'node_id' => $gateway->id,
         'public_key' => 'gateway-public-key',
@@ -146,6 +160,10 @@ beforeEach(function (): void {
 
         if (str_contains($command, 'wg show wg0 public-key')) {
             return Process::result(output: "wg-easy-public-key\n");
+        }
+
+        if (str_contains($command, 'internal:wg-easy:state')) {
+            return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
         }
 
         return Process::result();
@@ -638,7 +656,7 @@ it('does not install tools when agent-tool is omitted', function (): void {
     expect($this->fakeToolInstaller->installCalls)->toHaveCount(0);
 });
 
-it('forwards agent setup inputs from control node to gateway', function (): void {
+it('forwards agent setup inputs from operator node to gateway', function (): void {
     config(['orbit.is_gateway' => false]);
 
     LocalGatewaySettings::current()->fill([

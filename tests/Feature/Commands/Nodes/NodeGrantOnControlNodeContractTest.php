@@ -95,7 +95,7 @@ function fakeNodeGrantControlGateway(array|string $body, int $status = 200): Moc
     ]);
 }
 
-describe('node:grant on control node contract', function (): void {
+describe('node:grant on operator node contract', function (): void {
     it('forwards configured control-node grants to the gateway without local target rows', function (): void {
         setupNodeGrantControlCaller();
 
@@ -164,7 +164,7 @@ describe('node:grant on control node contract', function (): void {
         expect(Artisan::output())->toContain("'control-1' already has access to 'app-1'");
     });
 
-    it('fails locally when missing preset or permissions on control node with json', function (): void {
+    it('fails locally when missing preset or permissions on operator node with json', function (): void {
         setupNodeGrantControlCaller();
 
         $exitCode = Artisan::call('node:grant', [

@@ -23,6 +23,8 @@ class WgEasyServiceInstaller
 
     private const string ACTION_ENSURE_WRITABLE = 'ensure-writable';
 
+    private const string ACTION_CONFIGURE_PEERS = 'configure-peers';
+
     private const array SAFE_WG_EASY_STATE_ERROR_CODES = [
         'database_missing',
         'database_unwritable',
@@ -125,54 +127,17 @@ class WgEasyServiceInstaller
 
         $this->waitUntilReady();
 
-        $statements = [];
+        $peerPayload = [];
         $runtimeCommands = [];
 
         foreach ($peers as $peer) {
-            $name = $this->sqliteString($peer['name']);
-            $address = $this->sqliteString($peer['address']);
-            $ipv6 = $this->sqliteString($this->ipv6For($peer['address']));
-            $privateKey = $this->sqliteString($peer['private_key']);
-            $publicKey = $this->sqliteString($peer['public_key']);
-            $preSharedKey = $this->sqliteString($peer['pre_shared_key']);
-            $allowedIps = $this->sqliteString('["0.0.0.0/0", "::/0"]');
-            $serverAllowedIps = $this->sqliteString('["'.$peer['address'].'/32"]');
-            $dns = $this->sqliteString('["10.6.0.1"]');
-
-            $statements[] = <<<SQL
-DELETE FROM clients_table WHERE name = {$name} OR public_key = {$publicKey} OR ipv4_address = {$address};
-INSERT INTO clients_table (
-    user_id,
-    interface_id,
-    name,
-    ipv4_address,
-    ipv6_address,
-    private_key,
-    public_key,
-    pre_shared_key,
-    allowed_ips,
-    server_allowed_ips,
-    persistent_keepalive,
-    mtu,
-    dns,
-    enabled
-) VALUES (
-    1,
-    'wg0',
-    {$name},
-    {$address},
-    {$ipv6},
-    {$privateKey},
-    {$publicKey},
-    {$preSharedKey},
-    {$allowedIps},
-    {$serverAllowedIps},
-    25,
-    1420,
-    {$dns},
-    1
-);
-SQL;
+            $peerPayload[] = [
+                'name' => $peer['name'],
+                'private_key' => $peer['private_key'],
+                'public_key' => $peer['public_key'],
+                'pre_shared_key' => $peer['pre_shared_key'],
+                'address' => $peer['address'],
+            ];
 
             $runtimeCommands[] = sprintf(
                 '$ORBIT_DOCKER exec wg-easy sh -lc %s',
@@ -186,18 +151,22 @@ SQL;
             );
         }
 
+        $this->runWgEasyStateAction(
+            action: self::ACTION_CONFIGURE_PEERS,
+            commandOptions: [
+                'peers-json' => '-',
+            ],
+            failureMessage: 'Failed to configure wg-easy peers.',
+            input: json_encode($peerPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        );
+
         $script = sprintf(
             <<<'SH'
 set -euo pipefail
 %s
-sqlite3 %s/wg-easy.db <<'ORBIT_WG_EASY_SQL'
-%s
-ORBIT_WG_EASY_SQL
 %s
 SH,
             $this->dockerShellPrefix(),
-            $this->statePathForShell(),
-            implode("\n", $statements),
             implode("\n", $runtimeCommands),
         );
 
@@ -205,7 +174,7 @@ SH,
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to configure wg-easy peers: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to activate wg-easy peers: '.trim($result->errorOutput().' '.$result->output())
             );
         }
     }
@@ -367,13 +336,6 @@ YAML;
         return "'".str_replace("'", "''", $value)."'";
     }
 
-    private function ipv6For(string $ipv4): string
-    {
-        $lastOctet = (int) substr(strrchr($ipv4, '.') ?: '.0', 1);
-
-        return 'fdcc:ad94:bacf:61a4::cafe:'.dechex($lastOctet);
-    }
-
     private function updateWgEasyUserConfig(string $host, string $defaultDns, int $defaultPersistentKeepalive): void
     {
         $this->runWgEasyStateAction(
@@ -410,22 +372,31 @@ YAML;
     /**
      * @param  array<string, bool|float|int|string>  $commandOptions
      */
-    private function runWgEasyStateAction(string $action, array $commandOptions, string $failureMessage): void
+    private function runWgEasyStateAction(string $action, array $commandOptions, string $failureMessage, ?string $input = null): void
     {
+        $transportOptions = [
+            'timeout' => 30,
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => (string) Str::uuid(),
+            ],
+            'redact_stdout' => true,
+            'redact_stderr' => true,
+        ];
+
+        if ($input !== null) {
+            $transportOptions['input'] = $input;
+        }
+
         $result = $this->localExecutor()->runInternal(
             node: $this->vpnNode(),
             commandName: self::WG_EASY_STATE_COMMAND,
             arguments: [],
             commandOptions: [
                 'action' => $action,
+                'database-path' => $this->statePath().'/wg-easy.db',
                 ...$commandOptions,
             ],
-            transportOptions: [
-                'timeout' => 30,
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => (string) Str::uuid(),
-                ],
-            ],
+            transportOptions: $transportOptions,
         );
 
         $this->assertWgEasyStateSucceeded($result, $failureMessage);

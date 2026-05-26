@@ -61,7 +61,7 @@ function fakeNodeUpdateControlContractGateway(array|string $body, int $status = 
     ]);
 }
 
-describe('node:update on control node contract', function (): void {
+describe('node:update on operator node contract', function (): void {
     it('preserves gateway tld role rejection for gateway targets before local side effects', function (): void {
         setupNodeUpdateControlContractCaller();
 

@@ -101,13 +101,15 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 
 ## Workload Roles
 
-**Client / control identity**
+**Client identity**
 
-Creates a joined node identity with no roles by default. This is the new
-baseline meaning of `node:new <name>` with no `--role` values.
+Creates a joined client identity with no hosted roles by default. This is the
+new baseline meaning of `node:new <name>` with no `--role` values. The
+`--role=operator` option uses this client identity shape for an operator
+node: a node that operates one or more nodes through the gateway by grant.
 
 Legacy `--role=control` is accepted for one compatibility cycle and maps to the
-same no-role identity. Human output warns when a legacy mapping is used.
+same client identity. Human output warns when a legacy mapping is used.
 
 **`app-dev` / `app-development`**
 

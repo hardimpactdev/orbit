@@ -104,7 +104,7 @@ it('updates the local checkout and every active non-control remote node from the
     }
 });
 
-it('excludes control nodes from remote update targets', function (): void {
+it('excludes legacy control identities from remote update targets', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',

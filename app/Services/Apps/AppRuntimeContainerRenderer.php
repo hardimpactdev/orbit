@@ -17,7 +17,7 @@ final readonly class AppRuntimeContainerRenderer
      * by `php artisan octane:install --server=frankenphp` and resolved
      * relative to the app's configured `document_root`.
      */
-    public const WorkerFileName = 'frankenphp-worker.php';
+    public const string WorkerFileName = 'frankenphp-worker.php';
 
     public function __construct(
         private PhpRuntimePolicy $phpRuntimePolicy,

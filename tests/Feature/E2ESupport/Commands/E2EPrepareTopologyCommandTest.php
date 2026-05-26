@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareTopologyCommand;
 use App\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
@@ -42,43 +43,75 @@ function fakeBundleProcessing(): void
 
 it('defaults to operator_gateway_app-dev_app-prod kind', function (): void {
     $this->artisan('e2e:prepare-topology')
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev_app-prod)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator_gateway_app-dev_app-prod)')
-        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator_gateway_app-dev_app-prod)')
-        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-operator_gateway_app-dev_app-prod)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
         ->assertSuccessful();
 });
 
 it('supports operator kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator)')
         ->assertSuccessful();
 });
 
 it('supports operator_gateway kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator_gateway)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway)')
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_app-dev kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev'])
-        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev)')
-        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-operator_gateway_app-dev)')
-        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-operator_gateway_app-dev)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->assertSuccessful();
+});
+
+it('supports operator_gateway_agent kind', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
+        ->expectsOutputToContain('requested roles: control, gateway, agent')
+        ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
+        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_app-prod_ingress kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
-        ->expectsOutputToContain('planned: orbit-template-ingress-control (snapshot: clean-operator_gateway_app-prod_ingress)')
-        ->expectsOutputToContain('planned: orbit-template-ingress-gateway (snapshot: clean-operator_gateway_app-prod_ingress)')
-        ->expectsOutputToContain('planned: orbit-template-ingress-prod (snapshot: clean-operator_gateway_app-prod_ingress)')
-        ->expectsOutputToContain('planned: orbit-template-ingress (snapshot: clean-operator_gateway_app-prod_ingress)')
-        ->doesntExpectOutputToContain('planned: orbit-template-dev')
-        ->doesntExpectOutputToContain('planned: orbit-template-agent')
+        ->expectsOutputToContain('requested roles: control, gateway, prod')
+        ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
+        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->doesntExpectOutputToContain('planned: orbit-template-prepared-ingress')
         ->assertSuccessful();
+});
+
+it('documents Incus topology templates in a separate namespace', function (): void {
+    withE2ETopologyEnvironment([], function (): void {
+        $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
+            ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+            ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+            ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+            ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+            ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+            ->doesntExpectOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev_app-prod_agent)')
+            ->assertSuccessful();
+    });
 });
 
 it('rejects invalid kind', function (): void {
@@ -94,7 +127,7 @@ it('defaults to dry run', function (): void {
 });
 
 it('outputs json for dry run with default kind', function (): void {
-    $kind = E2ETopologyKind::ControlGatewayDevProd;
+    $kind = E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::ControlGatewayDevProd);
     $templates = [];
 
     foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
@@ -111,6 +144,9 @@ it('outputs json for dry run with default kind', function (): void {
                 'provider' => 'incus',
                 'dry_run' => true,
                 'kind' => 'operator_gateway_app-dev_app-prod',
+                'source_kind' => $kind->value,
+                'requested_roles' => IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDevProd),
+                'source_roles' => IncusTopologyTemplate::rolesFor($kind),
                 'templates' => $templates,
             ],
         ],
@@ -121,17 +157,18 @@ it('outputs json for dry run with default kind', function (): void {
         ->assertSuccessful();
 });
 
-it('outputs json for each supported kind', function (string $kindValue, int $expectedRoleCount): void {
+it('outputs json for each supported kind', function (string $kindValue): void {
     $kind = E2ETopologyKind::tryFromInput($kindValue);
     expect($kind)->not->toBeNull();
 
+    $buildKind = E2EPreparedTopology::incusSourceKindFor($kind);
     $templates = [];
 
-    foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
+    foreach (IncusTopologyTemplate::rolesFor($buildKind) as $role) {
         $templates[] = [
             'role' => $role,
-            'name' => IncusTopologyTemplate::templateName($kind, $role),
-            'snapshot' => IncusTopologyTemplate::snapshotName($kind),
+            'name' => IncusTopologyTemplate::templateName($buildKind, $role),
+            'snapshot' => IncusTopologyTemplate::snapshotName($buildKind),
         ];
     }
 
@@ -141,6 +178,9 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
                 'provider' => 'incus',
                 'dry_run' => true,
                 'kind' => $kind->value,
+                'source_kind' => $buildKind->value,
+                'requested_roles' => IncusTopologyTemplate::rolesFor($kind),
+                'source_roles' => IncusTopologyTemplate::rolesFor($buildKind),
                 'templates' => $templates,
             ],
         ],
@@ -153,26 +193,24 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
         ->expectsOutput($expected)
         ->assertSuccessful();
 })->with([
-    ['operator', 1],
-    ['operator_gateway', 2],
-    ['operator_gateway_app-dev', 3],
-    ['operator_gateway_app-dev_ingress', 4],
-    ['operator_gateway_app-dev_websocket', 4],
-    ['operator_gateway_app-dev_s3', 4],
-    ['operator_gateway_app-dev_ingress_websocket_s3', 6],
-    ['operator_gateway_app-dev_app-prod', 4],
-    ['operator_gateway_app-prod_ingress', 4],
-    ['control', 1],
-    ['control-gateway', 2],
-    ['control-gateway-dev', 3],
-    ['control-gateway-dev-prod', 4],
+    ['operator'],
+    ['operator_gateway'],
+    ['operator_gateway_app-dev'],
+    ['operator_gateway_app-dev_app-prod'],
+    ['operator_gateway_agent'],
+    ['operator_gateway_app-dev_app-prod_agent'],
+    ['operator_gateway_app-prod_ingress'],
+    ['control'],
+    ['control-gateway'],
+    ['control-gateway-dev'],
+    ['control-gateway-dev-prod'],
 ]);
 
 it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_s3, operator_gateway_app-dev_ingress_websocket_s3, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress. Legacy control and client topology names are accepted as aliases.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_agent, operator_gateway_app-dev_app-prod_agent, and operator_gateway_app-prod_ingress.',
         ],
     ], JSON_THROW_ON_ERROR);
 
@@ -452,6 +490,9 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
                 'provider' => 'incus',
                 'dry_run' => false,
                 'kind' => 'operator',
+                'source_kind' => 'operator',
+                'requested_roles' => ['control'],
+                'source_roles' => ['control'],
                 'templates' => $manifest,
             ],
         ],

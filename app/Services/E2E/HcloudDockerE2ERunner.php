@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
+use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EResourceLease;
 use App\E2E\Support\E2EResourceLeasePool;
 use Illuminate\Support\Facades\File;
@@ -201,7 +202,7 @@ final readonly class HcloudDockerE2ERunner
         $this->runCommand(
             sprintf('composer e2e:prepare-docker-hosts -- --force %s', escapeshellarg($options->kind)),
             timeoutSeconds: $options->timeoutSeconds,
-            environment: ['ORBIT_E2E_DOCKER_HOSTS' => $dockerHost],
+            environment: ['ORBIT_E2E_DOCKER_TEST_RUNNERS' => $this->dockerTestRunner($dockerHost, $options)],
         );
     }
 
@@ -211,10 +212,17 @@ final readonly class HcloudDockerE2ERunner
             'composer test:e2e:docker',
             timeoutSeconds: $options->timeoutSeconds,
             environment: [
-                'ORBIT_E2E_DOCKER_HOSTS' => $dockerHost,
+                'ORBIT_E2E_DOCKER_TEST_RUNNERS' => $this->dockerTestRunner($dockerHost, $options),
                 'ORBIT_E2E_PARALLEL_PROCESSES' => (string) $options->processes,
             ],
         );
+    }
+
+    private function dockerTestRunner(string $dockerHost, HcloudDockerE2ERunOptions $options): string
+    {
+        $containers = max(1, $options->processes) * DockerTopologyProvider::maxContainerCountForAnyTopology();
+
+        return "{$dockerHost}:{$options->processes}:{$containers}";
     }
 
     /**

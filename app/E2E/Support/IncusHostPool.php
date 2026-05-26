@@ -13,21 +13,8 @@ final readonly class IncusHostPool
 
     public static function fromEnvironment(E2EConfig $config): self
     {
-        $hostsEnv = getenv('ORBIT_E2E_INCUS_HOSTS');
-
-        if (! is_string($hostsEnv) || $hostsEnv === '') {
-            if ($config->incusHostSlots !== []) {
-                return new self(array_map(
-                    fn (string $host): IncusHost => new IncusHost($config->forHost($host)),
-                    array_keys($config->incusHostSlots),
-                ));
-            }
-
-            return new self([new IncusHost($config)]);
-        }
-
         $hosts = [];
-        foreach (array_filter(array_map(trim(...), explode(',', $hostsEnv))) as $host) {
+        foreach ($config->incusHostCandidates() as $host) {
             $hosts[] = new IncusHost($config->forHost($host));
         }
 
@@ -69,8 +56,16 @@ final readonly class IncusHostPool
                 ];
             }
 
+            try {
+                $hostCap = $host->config->incusMaxVmsForHost($hostName);
+            } catch (\InvalidArgumentException $exception) {
+                $reasons[] = "{$hostName}: {$exception->getMessage()}";
+
+                continue;
+            }
+
             $running = $host->runningE2EInstanceCount();
-            $freeSlots = $host->config->incusMaxVmsPerHost - $running;
+            $freeSlots = $hostCap - $running;
 
             if ($freeSlots >= $requiredSlots) {
                 return [
@@ -79,7 +74,7 @@ final readonly class IncusHostPool
                 ];
             }
 
-            $reasons[] = "{$hostName} has {$freeSlots}/{$requiredSlots} free VM slots ({$running}/{$host->config->incusMaxVmsPerHost} Orbit E2E VMs running)";
+            $reasons[] = "{$hostName} has {$freeSlots}/{$requiredSlots} free VM slots ({$running}/{$hostCap} Orbit E2E VMs running)";
         }
 
         return [

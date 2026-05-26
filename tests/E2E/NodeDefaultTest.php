@@ -101,7 +101,7 @@ PHP;
     );
 }
 
-it('shows the current local default from a control node', function (): void {
+it('shows the current local default from an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -129,7 +129,7 @@ it('shows the current local default from a control node', function (): void {
     }
 });
 
-it('shows human output for the current local default from a control node', function (): void {
+it('shows human output for the current local default from an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -152,7 +152,7 @@ it('shows human output for the current local default from a control node', funct
     }
 });
 
-it('shows null default when no default is set on a control node', function (): void {
+it('shows null default when no default is set on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -177,7 +177,7 @@ it('shows null default when no default is set on a control node', function (): v
     }
 });
 
-it('sets a local default node by name on a control node', function (): void {
+it('sets a local default node by name on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -204,7 +204,7 @@ it('sets a local default node by name on a control node', function (): void {
     }
 });
 
-it('clears the local default node from a control node with was_set true', function (): void {
+it('clears the local default node from an operator node with was_set true', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -230,7 +230,7 @@ it('clears the local default node from a control node with was_set true', functi
     }
 });
 
-it('clears with was_set false when no default was set on a control node', function (): void {
+it('clears with was_set false when no default was set on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -256,7 +256,7 @@ it('clears with was_set false when no default was set on a control node', functi
     }
 });
 
-it('rejects name not found on a control node', function (): void {
+it('rejects name not found on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
         ->withCurrentCheckout(roles: ['control']);
 
@@ -282,7 +282,7 @@ it('rejects name not found on a control node', function (): void {
     }
 });
 
-it('sets a default node through the gateway api from a control node', function (): void {
+it('sets a default node through the gateway api from an operator node', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 

@@ -8,9 +8,13 @@ use App\E2E\Support\E2ETopologyKind;
 
 it('lists the agent node from a control caller against the agent-extended topology', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, withGatewayApi: true);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAgent, withGatewayApi: true);
 
     try {
+        expect($topology->lease()->devApp())->toBeNull()
+            ->and($topology->lease()->prodApp())->toBeNull()
+            ->and($topology->lease()->agent())->not->toBeNull();
+
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
@@ -39,4 +43,4 @@ it('lists the agent node from a control caller against the agent-extended topolo
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev_app-prod_agent');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_agent');

@@ -68,10 +68,10 @@ describe('internal wg-easy state command', function (): void {
         expect($exitCode)->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
                 'invalid_action',
-                'wg-easy state action must be one of: update-user, update-general, ensure-writable.',
+                'wg-easy state action must be one of: update-user, update-general, ensure-writable, configure-peers.',
                 [
                     'action' => 'evil',
-                    'allowed' => ['update-user', 'update-general', 'ensure-writable'],
+                    'allowed' => ['update-user', 'update-general', 'ensure-writable', 'configure-peers'],
                 ],
             ));
     });
@@ -129,6 +129,56 @@ describe('internal wg-easy state command', function (): void {
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
             ->and($row['setup_step'])->toBe(0);
+    });
+
+    it('configures peers with parameterized statements from a JSON payload', function (): void {
+        $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
+        createWgEasyClientsDatabase($databasePath);
+
+        $peers = [
+            [
+                'name' => "gateway-1', public_key = 'mutated",
+                'private_key' => 'gateway-private',
+                'public_key' => 'gateway-public',
+                'pre_shared_key' => 'gateway-psk',
+                'address' => '10.6.0.2',
+            ],
+            [
+                'name' => 'control-1',
+                'private_key' => 'control-private',
+                'public_key' => 'control-public',
+                'pre_shared_key' => 'control-psk',
+                'address' => '10.6.0.3',
+            ],
+        ];
+
+        [$exitCode, $output] = runWgEasyStateCommand($this, [
+            '--action' => 'configure-peers',
+            '--peers-json' => json_encode($peers, JSON_THROW_ON_ERROR),
+            '--operation-token' => wgEasyStateSignedOperationToken(),
+            '--json' => true,
+        ]);
+
+        $pdo = createWgEasyStateWritableSqliteDatabase($databasePath);
+        $rows = $pdo->query('select name, ipv4_address, ipv6_address, private_key, public_key, pre_shared_key, server_allowed_ips, dns from clients_table order by ipv4_address')->fetchAll(PDO::FETCH_ASSOC);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe(json_encode(
+                JsonEnvelope::success([
+                    'action' => 'configure-peers',
+                    'configured' => 2,
+                ]),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ))
+            ->and($rows)->toHaveCount(2)
+            ->and($rows[0]['name'])->toBe("gateway-1', public_key = 'mutated")
+            ->and($rows[0]['public_key'])->toBe('gateway-public')
+            ->and($rows[0]['pre_shared_key'])->toBe('gateway-psk')
+            ->and($rows[0]['ipv6_address'])->toBe('fdcc:ad94:bacf:61a4::cafe:2')
+            ->and($rows[0]['server_allowed_ips'])->toBe('["10.6.0.2/32"]')
+            ->and($rows[0]['dns'])->toBe('["10.6.0.1"]')
+            ->and($rows[1]['public_key'])->toBe('control-public')
+            ->and($rows[1]['pre_shared_key'])->toBe('control-psk');
     });
 
     it('returns success when the database file is writable', function (): void {
@@ -375,6 +425,30 @@ function createWgEasyGeneralDatabase(string $path): void
     $pdo = createWgEasyStateWritableSqliteDatabase($path);
     $pdo->exec('create table general_table (setup_step integer not null)');
     $pdo->exec('insert into general_table (setup_step) values (1)');
+}
+
+function createWgEasyClientsDatabase(string $path): void
+{
+    $pdo = createWgEasyStateWritableSqliteDatabase($path);
+    $pdo->exec(<<<'SQL'
+        create table clients_table (
+            user_id integer not null,
+            interface_id text not null,
+            name text not null,
+            ipv4_address text not null,
+            ipv6_address text not null,
+            private_key text not null,
+            public_key text not null,
+            pre_shared_key text not null,
+            allowed_ips text not null,
+            server_allowed_ips text not null,
+            persistent_keepalive integer not null,
+            mtu integer not null,
+            dns text not null,
+            enabled integer not null
+        )
+        SQL);
+    $pdo->exec("insert into clients_table (user_id, interface_id, name, ipv4_address, ipv6_address, private_key, public_key, pre_shared_key, allowed_ips, server_allowed_ips, persistent_keepalive, mtu, dns, enabled) values (1, 'wg0', 'old', '10.6.0.2', 'fdcc:ad94:bacf:61a4::cafe:2', 'old-private', 'old-public', 'old-psk', '[\"0.0.0.0/0\", \"::/0\"]', '[\"10.6.0.2/32\"]', 25, 1420, '[\"10.6.0.1\"]', 1)");
 }
 
 /**

@@ -14,9 +14,12 @@ final readonly class E2EWgEasyGateway
                 <<<'SH'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
-if ! command -v docker >/dev/null 2>&1; then
+if ! command -v docker >/dev/null 2>&1 || ! command -v sqlite3 >/dev/null 2>&1; then
     sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io sqlite3
+    packages=""
+    command -v docker >/dev/null 2>&1 || packages="${packages} docker.io"
+    command -v sqlite3 >/dev/null 2>&1 || packages="${packages} sqlite3"
+    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq ${packages}
 fi
 sudo systemctl enable --now docker
 docker rm -f wg-easy >/dev/null 2>&1 || true
@@ -71,8 +74,10 @@ SH,
      */
     public function configurePeers(E2EInstance $gateway, array $peers): void
     {
-        $statements = [];
-        $runtimeCommands = [];
+        $statements = [$this->pruneClientsStatement($peers)];
+        $runtimeCommands = [
+            'docker exec wg-easy sh -lc '.escapeshellarg('wg show wg0 peers | while read -r peer; do if [ -n "$peer" ]; then wg set wg0 peer "$peer" remove; fi; done'),
+        ];
 
         foreach ($peers as $peer) {
             $name = $this->sqliteString($peer['name']);
@@ -150,6 +155,23 @@ SH,
             "Could not configure wg-easy peers on {$gateway->name()}",
             timeoutSeconds: 120,
         );
+    }
+
+    /**
+     * @param  list<array{name: string, private_key: string, public_key: string, address: string, pre_shared_key?: string}>  $peers
+     */
+    private function pruneClientsStatement(array $peers): string
+    {
+        if ($peers === []) {
+            return 'DELETE FROM clients_table;';
+        }
+
+        $names = array_map(
+            fn (array $peer): string => $this->sqliteString($peer['name']),
+            $peers,
+        );
+
+        return 'DELETE FROM clients_table WHERE name NOT IN ('.implode(', ', $names).');';
     }
 
     private function sqliteString(string $value): string

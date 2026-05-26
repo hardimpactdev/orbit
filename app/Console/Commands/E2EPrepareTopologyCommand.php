@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
@@ -19,7 +20,7 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 #[Signature('e2e:prepare-topology
-    {kind=operator_gateway_app-dev_app-prod : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_s3|operator_gateway_app-dev_ingress_websocket_s3|operator_gateway_app-dev_app-prod|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
+    {kind=operator_gateway_app-dev_app-prod : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
     {--force : Create Incus topology templates}
     {--branch= : Build the source archive from the named git ref via git archive}
     {--source-archive= : Use this pre-built source archive instead of tarring the current checkout}
@@ -50,7 +51,7 @@ class E2EPrepareTopologyCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_s3, operator_gateway_app-dev_ingress_websocket_s3, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress. Legacy control and client topology names are accepted as aliases.");
+            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
         }
 
         $config = E2EConfig::fromEnvironment();
@@ -59,14 +60,20 @@ class E2EPrepareTopologyCommand extends Command
             return $this->failCommand('No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.');
         }
 
-        $roles = IncusTopologyTemplate::rolesFor($kind);
+        if (! E2EPreparedTopology::supportsKind($kind)) {
+            return $this->failValidation(E2EPreparedTopology::unsupportedKindMessage($kind));
+        }
+
+        $buildKind = E2EPreparedTopology::incusSourceKindFor($kind);
+        $requestedRoles = IncusTopologyTemplate::rolesFor($kind);
+        $sourceRoles = IncusTopologyTemplate::rolesFor($buildKind);
         $templates = [];
 
-        foreach ($roles as $role) {
+        foreach ($sourceRoles as $role) {
             $templates[] = [
                 'role' => $role,
-                'name' => IncusTopologyTemplate::templateName($kind, $role),
-                'snapshot' => IncusTopologyTemplate::snapshotName($kind),
+                'name' => IncusTopologyTemplate::templateName($buildKind, $role),
+                'snapshot' => IncusTopologyTemplate::snapshotName($buildKind),
             ];
         }
 
@@ -77,6 +84,9 @@ class E2EPrepareTopologyCommand extends Command
                 'provider' => 'incus',
                 'dry_run' => true,
                 'kind' => $kind->value,
+                'source_kind' => $buildKind->value,
+                'requested_roles' => $requestedRoles,
+                'source_roles' => $sourceRoles,
                 'templates' => $templates,
             ];
 
@@ -87,6 +97,13 @@ class E2EPrepareTopologyCommand extends Command
             }
 
             $this->line('Dry run. Pass --force to create Incus topology templates.');
+            $this->line("requested topology: {$kind->value}");
+            $this->line('requested roles: '.implode(', ', $requestedRoles));
+
+            if ($buildKind !== $kind) {
+                $this->line("source topology: {$buildKind->value}");
+                $this->line('source roles: '.implode(', ', $sourceRoles));
+            }
 
             foreach ($templates as $template) {
                 $this->line("planned: {$template['name']} (snapshot: {$template['snapshot']})");
@@ -116,7 +133,7 @@ class E2EPrepareTopologyCommand extends Command
 
             $builder->useBundle($remoteBundle);
 
-            $manifest = $timer->measure('builder.build', fn (): array => $builder->build($kind, replaceExisting: true));
+            $manifest = $timer->measure('builder.build', fn (): array => $builder->build($buildKind, replaceExisting: true));
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         } finally {
@@ -135,6 +152,9 @@ class E2EPrepareTopologyCommand extends Command
             'provider' => 'incus',
             'dry_run' => false,
             'kind' => $kind->value,
+            'source_kind' => $buildKind->value,
+            'requested_roles' => $requestedRoles,
+            'source_roles' => $sourceRoles,
             'templates' => $manifest,
         ];
 
@@ -145,6 +165,7 @@ class E2EPrepareTopologyCommand extends Command
         }
 
         $this->info("Built topology [{$kind->value}].");
+        $this->line("source topology: {$buildKind->value}");
 
         foreach ($manifest as $template) {
             $this->line("created: {$template['name']} (snapshot: {$template['snapshot']})");

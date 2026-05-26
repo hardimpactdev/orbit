@@ -57,6 +57,14 @@ final readonly class WireGuardIdentity
             }
         }
 
+        if ((bool) config('orbit.trust_wireguard_proxy_header', false)) {
+            $header = $request->headers->get('X-Orbit-WireGuard-Ip');
+
+            if (is_string($header) && filter_var($header, FILTER_VALIDATE_IP) !== false) {
+                return $header;
+            }
+        }
+
         return $request->ip();
     }
 }

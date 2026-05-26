@@ -13,6 +13,10 @@ Each term below has a precise meaning in the node command family.
 - **Client:** Node configured to use a gateway. A client stores local gateway
   configuration and WireGuard identity material. Any node can act as a client
   when it runs the Orbit CLI; the term emphasizes the CLI-caller perspective.
+- **Operator:** Node identity with the operator permission preset and grants to
+  operate one or more nodes through the gateway. It is not a node role and is
+  not mutually exclusive with workload roles; any gateway-known node can be an
+  operator when its grants allow that work.
 - **Node role:** A fixed code-defined bundle attached through a role
   assignment. The ten roles are `gateway` (singleton authority), `vpn` and
   `router` (gateway-coupled infrastructure), `app-development`,
@@ -41,7 +45,10 @@ Each term below has a precise meaning in the node command family.
   `ORBIT_IS_GATEWAY=true`, exports `ORBIT_REPO`, `ORBIT_APP`, and
   `ORBIT_HOST_CWD`, then dispatches to
   `${ORBIT_REPO}/apps/gateway/artisan` on gateway nodes or
-  `${ORBIT_REPO}/apps/cli/orbit` on other nodes.
+  `${ORBIT_REPO}/apps/cli/orbit` on other nodes. The CLI artifact owns native
+  gateway-client commands and temporarily invokes the root Artisan command
+  surface from the same checkout for commands that have not been ported to the
+  gateway-client artifact yet.
 - **Orbit runtime container:** One `orbit-runtime` container per node. On the
   gateway it is the resident gateway API and scheduler runtime. On app nodes it
   provides the Orbit PHP runtime baseline. App, workspace, and process
@@ -100,12 +107,11 @@ Each term below has a precise meaning in the node command family.
 
 ## Legacy Terminology
 
-Orbit now talks in nodes and role assignments. Earlier wording used
-"joined client", "hosted node", "operator node", and "control node" for what
-is now just a node — a machine with identity, possibly role assignments, and
-gateway-stored grants. Legacy terms remain only where migration compatibility
-still matters, such as persisted compatibility values, old CLI flags like
-`--control-name`, legacy JSON examples, or historical test and file names.
+Orbit now talks in nodes, clients, operators, and role assignments.
+Earlier wording used "control node" for the operator that operates the fleet.
+Legacy `control` terms remain only where migration compatibility still matters,
+such as persisted compatibility values, old CLI flags like `--control-name`,
+legacy JSON examples, or historical test and file names.
 
 ## Role Compatibility
 
@@ -240,7 +246,7 @@ Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
 All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
-They require Git, Docker Engine and CLI, the Orbit checkout, host PHP 8.4 CLI
+They require Git, Docker Engine and CLI, the Orbit checkout, host PHP 8.5 CLI
 for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`,
 `mbstring`, and `json`, the host `orbit` launcher, `orbit-runtime`,
 WireGuard/SSH identity material, and any role-specific non-PHP host tools such
@@ -272,8 +278,9 @@ These terms describe how nodes communicate and how authority is enforced.
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
   gateway-local, or a node with workload roles — to the gateway API. On
   non-gateway nodes, the launcher dispatches to host PHP through
-  `apps/cli/orbit`, which calls the gateway API. On the gateway, the launcher
-  dispatches directly to `apps/gateway/artisan`.
+  `apps/cli/orbit`, which calls the gateway API for native CLI commands and
+  keeps root Artisan compatibility for unported commands. On the gateway, the
+  launcher dispatches directly to `apps/gateway/artisan`.
 - **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
   from the gateway.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built

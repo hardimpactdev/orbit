@@ -301,11 +301,11 @@ class NodeNewCommand extends Command
         $controlName = $this->resolveControlName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
-            return $this->validationFailed('control_name', 'Control node name must be a valid node name.');
+            return $this->validationFailed('control_name', 'Operator node name must be a valid node name.');
         }
 
         if ($controlName === $name) {
-            return $this->validationFailed('control_name', 'Control node name must be different from gateway node name.');
+            return $this->validationFailed('control_name', 'Operator node name must be different from gateway node name.');
         }
 
         $gateway = $this->gatewayQuery()
@@ -529,7 +529,12 @@ class NodeNewCommand extends Command
         }
 
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
-        $wireguardAddress = $this->nextWireguardAddress();
+        $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
+
+        if (is_int($wireguardAddress)) {
+            return $wireguardAddress;
+        }
+
         $gatewayEndpoint = $this->gatewayEndpoint();
         $platform = 'ubuntu';
         $host = $requiresHostProvisioning ? $inputs['host'] : '';
@@ -1511,7 +1516,12 @@ SH;
             return $adoption;
         }
 
-        $wireguardAddress = $this->nextWireguardAddress();
+        $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
+
+        if (is_int($wireguardAddress)) {
+            return $wireguardAddress;
+        }
+
         $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($inputs['tld'], $wireguardAddress);
 
         if (is_int($developmentDnsMappingFailure)) {
@@ -2187,11 +2197,11 @@ SCRIPT,
         $controlName = $this->resolveControlName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
-            return $this->validationFailed('control_name', 'Control node name must be a valid node name.');
+            return $this->validationFailed('control_name', 'Operator node name must be a valid node name.');
         }
 
         if ($controlName === $name) {
-            return $this->validationFailed('control_name', 'Control node name must be different from gateway node name.');
+            return $this->validationFailed('control_name', 'Operator node name must be different from gateway node name.');
         }
 
         $sshUser = $this->resolveSshUser();
@@ -2511,7 +2521,7 @@ SCRIPT,
 
         $this->info("Created gateway node {$name}.");
         $this->line("Endpoint: {$host}");
-        $this->line("Control node: {$controlName}");
+        $this->line("Operator node: {$controlName}");
 
         return self::SUCCESS;
     }
@@ -3205,7 +3215,7 @@ SCRIPT,
         }
 
         return trim(text(
-            label: 'Control node name',
+            label: 'Operator node name',
             default: $default ?? '',
             required: true,
             validate: fn (string $value): ?string => $this->validatePromptControlName($value, $gatewayName),
@@ -3274,15 +3284,15 @@ SCRIPT,
         $controlName = trim($value);
 
         if ($controlName === '') {
-            return 'Control node name is required.';
+            return 'Operator node name is required.';
         }
 
         if (! $this->isValidNodeName($controlName)) {
-            return 'Control node name must be a valid node name.';
+            return 'Operator node name must be a valid node name.';
         }
 
         return $controlName === $gatewayName
-            ? 'Control node name must be different from gateway node name.'
+            ? 'Operator node name must be different from gateway node name.'
             : null;
     }
 
@@ -4128,14 +4138,41 @@ SCRIPT,
     /**
      * @param  array<int, string>  $excluding
      */
+    private function resolveProvisionedNodeWireguardAddress(array $excluding = []): string|int
+    {
+        $reservedAddress = $this->e2eReservedWireguardAddress();
+
+        if ($reservedAddress === null) {
+            return $this->nextWireguardAddress($excluding);
+        }
+
+        if (! $this->isManagedWireguardAddress($reservedAddress)) {
+            return $this->validationFailed(
+                'wireguard_address',
+                'Prepared topology WireGuard address must be in the managed 10.6.0.3-10.6.0.254 range.',
+            );
+        }
+
+        if (in_array($reservedAddress, $this->usedWireguardAddresses($excluding), true)) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "WireGuard address '{$reservedAddress}' is already assigned.",
+                meta: [
+                    'field' => 'wireguard_address',
+                    'value' => $reservedAddress,
+                ],
+            );
+        }
+
+        return $reservedAddress;
+    }
+
+    /**
+     * @param  array<int, string>  $excluding
+     */
     private function nextWireguardAddress(array $excluding = []): string
     {
-        $used = Node::query()
-            ->whereNotNull('wireguard_address')
-            ->pluck('wireguard_address')
-            ->all();
-
-        $used = array_merge($used, $excluding);
+        $used = $this->usedWireguardAddresses($excluding);
 
         for ($octet = 3; $octet <= 254; $octet++) {
             $candidate = "10.6.0.{$octet}";
@@ -4146,6 +4183,52 @@ SCRIPT,
         }
 
         throw new RuntimeException('No available WireGuard addresses remain in 10.6.0.0/24.');
+    }
+
+    /**
+     * @param  array<int, string>  $excluding
+     * @return list<string>
+     */
+    private function usedWireguardAddresses(array $excluding = []): array
+    {
+        $used = Node::query()
+            ->whereNotNull('wireguard_address')
+            ->pluck('wireguard_address')
+            ->all();
+
+        return array_values(array_unique(array_merge($used, $excluding)));
+    }
+
+    private function e2eReservedWireguardAddress(): ?string
+    {
+        $e2e = getenv('ORBIT_E2E');
+
+        if (! is_string($e2e) || $e2e === '' || $e2e === '0') {
+            return null;
+        }
+
+        $address = getenv('ORBIT_E2E_NODE_WIREGUARD_ADDRESS');
+
+        if (! is_string($address) || trim($address) === '') {
+            return null;
+        }
+
+        return trim($address);
+    }
+
+    private function isManagedWireguardAddress(string $address): bool
+    {
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return false;
+        }
+
+        $parts = array_map(intval(...), explode('.', $address));
+
+        return $parts[0] === 10
+            && $parts[1] === 6
+            && $parts[2] === 0
+            && $parts[3] >= 3
+            && $parts[3] <= 254;
     }
 
     private function validationFailed(string $field, string $message): int

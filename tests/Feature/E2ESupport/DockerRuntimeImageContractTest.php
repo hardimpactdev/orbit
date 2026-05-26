@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerTopologyBuilder;
 use Symfony\Component\Process\Process;
 
 pest()->group('e2e', 'e2e-docker-image-contract');
@@ -132,17 +133,19 @@ it('passes non-orbit entrypoint commands through unchanged', function (): void {
 });
 
 it('does not ship persisted orbit certificate material in the runtime image', function (): void {
+    $image = DockerTopologyBuilder::runtimeImage();
+
     $availability = new Process([
         'docker',
         'image',
         'inspect',
-        'orbit-e2e-topology-runtime:current',
+        $image,
     ]);
 
     $availability->run();
 
     if ($availability->getExitCode() !== 0) {
-        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current is not available.');
+        test()->markTestSkipped("Docker runtime image {$image} is not available.");
     }
 
     $forbiddenPaths = [
@@ -165,7 +168,7 @@ it('does not ship persisted orbit certificate material in the runtime image', fu
         'docker',
         'run',
         '--rm',
-        'orbit-e2e-topology-runtime:current',
+        $image,
         'bash',
         '-c',
         sprintf('set -e; %s; echo OK', $assertions),
@@ -180,17 +183,19 @@ it('does not ship persisted orbit certificate material in the runtime image', fu
 });
 
 it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in the topology image', function (): void {
+    $image = DockerTopologyBuilder::runtimeImage();
+
     $availability = new Process([
         'docker',
         'image',
         'inspect',
-        'orbit-e2e-topology-runtime:current',
+        $image,
     ]);
 
     $availability->run();
 
     if ($availability->getExitCode() !== 0) {
-        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current is not available.');
+        test()->markTestSkipped("Docker runtime image {$image} is not available.");
     }
 
     $label = new Process([
@@ -199,13 +204,13 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
         'inspect',
         '--format',
         '{{ index .Config.Labels "org.orbit.e2e.substrate" }}',
-        'orbit-e2e-topology-runtime:current',
+        $image,
     ]);
 
     $label->run();
 
     if (trim($label->getOutput()) !== 'docker-first') {
-        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current was not built from the Docker-first topology Dockerfile.');
+        test()->markTestSkipped("Docker runtime image {$image} was not built from the Docker-first topology Dockerfile.");
     }
 
     $sourceLabel = new Process([
@@ -214,26 +219,26 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
         'inspect',
         '--format',
         '{{ index .Config.Labels "org.orbit.e2e.source" }}',
-        'orbit-e2e-topology-runtime:current',
+        $image,
     ]);
 
     $sourceLabel->run();
 
     if (trim($sourceLabel->getOutput()) !== 'prepared-checkout') {
-        test()->markTestSkipped('Docker runtime image orbit-e2e-topology-runtime:current was not built from the source-less topology Dockerfile.');
+        test()->markTestSkipped("Docker runtime image {$image} was not built from the source-less topology Dockerfile.");
     }
 
     $process = new Process([
         'docker',
         'run',
         '--rm',
-        'orbit-e2e-topology-runtime:current',
+        $image,
         'bash',
         '-c',
         implode(' && ', [
             'command -v docker',
             'command -v php',
-            'php --version | grep -q "^PHP 8[.]4[.]"',
+            'php --version | grep -q "^PHP 8[.]5[.]"',
             'php -r \'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }\'',
             '! command -v python3',
             '! command -v sqlite3',

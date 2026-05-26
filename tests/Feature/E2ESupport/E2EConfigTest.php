@@ -83,41 +83,102 @@ it('uses explicit topology providers without changing provisioning providers', f
     });
 });
 
-it('parses docker topology hosts independently from incus hosts', function (): void {
+it('parses docker test runners into hosts slots and container caps', function (): void {
     withE2EConfigEnvironment([
-        'ORBIT_E2E_DOCKER_HOSTS' => 'beast,sidecar1,sidecar2',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:8:56, sidecar1:4:28, sidecar2:3:20',
     ], function (): void {
         $config = E2EConfig::fromEnvironment();
 
         expect($config->dockerHosts)->toBe(['beast', 'sidecar1', 'sidecar2'])
-            ->and($config->forHost('sidecar1')->dockerHosts)->toBe(['beast', 'sidecar1', 'sidecar2']);
+            ->and($config->dockerHostSlots)->toBe([
+                'beast' => 8,
+                'sidecar1' => 4,
+                'sidecar2' => 3,
+            ])
+            ->and($config->dockerHostContainerCaps)->toBe([
+                'beast' => 56,
+                'sidecar1' => 28,
+                'sidecar2' => 20,
+            ])
+            ->and($config->dockerMaxContainersForHost('beast'))->toBe(56)
+            ->and($config->dockerMaxContainersForHost('sidecar1'))->toBe(28)
+            ->and($config->dockerMaxContainersForHost('sidecar2'))->toBe(20)
+            ->and($config->forHost('sidecar1')->dockerHosts)->toBe(['beast', 'sidecar1', 'sidecar2'])
+            ->and($config->forHost('sidecar1')->dockerHostSlots)->toBe([
+                'beast' => 8,
+                'sidecar1' => 4,
+                'sidecar2' => 3,
+            ])
+            ->and($config->forHost('sidecar1')->dockerHostContainerCaps)->toBe([
+                'beast' => 56,
+                'sidecar1' => 28,
+                'sidecar2' => 20,
+            ]);
     });
 });
 
-it('defaults docker max containers per host', function (): void {
+it('requires explicit docker container caps per host', function (): void {
     withE2EConfigEnvironment([], function (): void {
         $config = E2EConfig::fromEnvironment();
 
-        expect($config->dockerMaxContainersPerHost)->toBe(16)
-            ->and($config->forHost('sidecar1')->dockerMaxContainersPerHost)->toBe(16);
+        expect(fn () => $config->dockerMaxContainersForHost('sidecar1'))
+            ->toThrow(InvalidArgumentException::class, 'Missing Docker container cap for host [sidecar1]');
     });
 });
 
-it('parses docker host slots for the lease pool', function (): void {
+it('rejects invalid docker test runner entries', function (): void {
     withE2EConfigEnvironment([
-        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2, sidecar2:2, beast:3',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4',
+    ], function (): void {
+        expect(fn () => E2EConfig::fromEnvironment())
+            ->toThrow(InvalidArgumentException::class, 'Invalid Docker test runner entry [sidecar1:4]. Expected host:slots:containers.');
+    });
+});
+
+it('parses incus host specific vm caps', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS' => 'beast, sidecar1',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12, sidecar1:6',
     ], function (): void {
         $config = E2EConfig::fromEnvironment();
 
-        expect($config->dockerHostSlots)->toBe([
-            'sidecar1' => 2,
-            'sidecar2' => 2,
-            'beast' => 3,
-        ])->and($config->forHost('beast')->dockerHostSlots)->toBe([
-            'sidecar1' => 2,
-            'sidecar2' => 2,
-            'beast' => 3,
-        ]);
+        expect($config->incusHosts)->toBe(['beast', 'sidecar1'])
+            ->and($config->incusHostCandidates())->toBe(['beast', 'sidecar1'])
+            ->and($config->incusHostVmCaps)->toBe([
+                'beast' => 12,
+                'sidecar1' => 6,
+            ])
+            ->and($config->incusMaxVmsForHost('beast'))->toBe(12)
+            ->and($config->incusMaxVmsForHost('sidecar1'))->toBe(6)
+            ->and($config->forHost('beast')->incusHostVmCaps)->toBe([
+                'beast' => 12,
+                'sidecar1' => 6,
+            ]);
+    });
+});
+
+it('requires explicit incus vm caps per host', function (): void {
+    withE2EConfigEnvironment([], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect(fn () => $config->incusMaxVmsForHost('beast'))
+            ->toThrow(InvalidArgumentException::class, 'Missing Incus VM cap for host [beast]');
+    });
+});
+
+it('rejects invalid docker test runner slot and container counts', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:two:28',
+    ], function (): void {
+        expect(fn () => E2EConfig::fromEnvironment())
+            ->toThrow(InvalidArgumentException::class, 'Invalid Docker test runner slot count [two] for host [sidecar1].');
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:many',
+    ], function (): void {
+        expect(fn () => E2EConfig::fromEnvironment())
+            ->toThrow(InvalidArgumentException::class, 'Invalid Docker test runner container cap [many] for host [sidecar1].');
     });
 });
 

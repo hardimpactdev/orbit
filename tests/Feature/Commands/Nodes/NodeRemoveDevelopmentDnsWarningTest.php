@@ -421,7 +421,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
             ->and($fake->mappingCalls)->toBe(1)
             ->and($fake->removeCalls)->toBe(0);
     })->with([
-        'control node' => [['role' => 'control', 'environment' => null, 'tld' => null]],
+        'legacy control identity' => [['role' => 'control', 'environment' => null, 'tld' => null]],
         'production app node' => [['environment' => 'production']],
     ]);
 });

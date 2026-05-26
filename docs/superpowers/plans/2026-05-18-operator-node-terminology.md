@@ -1,10 +1,17 @@
-# Operator Node Terminology Implementation Plan
+# Operator Terminology Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace Orbit's `control` / `control node` terminology with `operator` / `operator node`, while preserving the product meaning: an operator node is a joined Orbit node that can operate part or all of the topology through gateway identity and grants.
+**Goal:** Replace Orbit's `control` / `control node` terminology with
+`operator` / `operator node`, while preserving the product meaning: every node
+can be a client of the Orbit network, and an operator is a node that operates
+one or more nodes through gateway identity and grants.
 
-**Architecture:** Treat `operator` as a node capability/identity term, not a hosted role. Operator nodes may have no hosted roles, but a node with hosted roles can also act as an operator when it has gateway identity and grants. Keep compatibility aliases during the migration where existing flags, persisted rows, E2E provider inputs, or external scripts still say `control`.
+**Architecture:** Treat `operator` as a node capability/identity term, not a
+hosted role. An operator may have no hosted roles, but a node with hosted roles
+can also act as an operator when it has gateway identity and grants. Keep
+compatibility aliases during the migration where existing flags, persisted
+rows, E2E provider inputs, or external scripts still say `control`.
 
 **Tech Stack:** Laravel 13, Pest, existing E2E topology harness, Orbit command docs, Laravel Pint.
 
@@ -16,7 +23,8 @@ This plan is intentionally added on `main` so it does not contaminate the dirty 
 
 ## Product Vocabulary
 
-- **Operator node:** a joined Orbit node that can operate the topology through gateway API identity and grants.
+- **Operator:** a gateway-known node identity that can operate the
+  topology through gateway API identity and grants.
 - **Gateway node:** the singleton authority node that owns durable Orbit state and policy.
 - **Hosted node:** a node with hosted role assignments such as app development, app production, or database.
 - **Operator capability:** any joined node can act as an operator when it has gateway identity and grants. A hosted app-development node can therefore also be an operator.
@@ -87,11 +95,11 @@ Keep old group names and enum values as deprecated aliases for one migration win
 
 ### Phase 2: Rename Product Language In Docs
 
-- [ ] Replace product-facing `control node` language with `operator node` in architecture, concepts, building blocks, command docs, and abstraction docs.
+- [ ] Replace product-facing `control node` language with `operator` / `operator node` in architecture, concepts, building blocks, command docs, and abstraction docs.
 - [ ] Clarify that operator is not mutually exclusive with hosted roles: a hosted node can also be an operator when it has identity and grants.
 - [ ] Keep a short "Legacy control terminology" note in node concepts and migration-sensitive command docs.
 - [ ] Run: `php tool/docs-linter/docs-linter.php`
-- [ ] Commit: `docs: rename control nodes to operator nodes`.
+- [ ] Commit: `docs: rename control nodes to operators`.
 
 ### Phase 3: Rename Command And API Messages
 
@@ -99,7 +107,7 @@ Keep old group names and enum values as deprecated aliases for one migration win
 - [ ] Rename internal authorization helpers only when the rename improves clarity, for example `authorizeControlCaller` to `authorizeOperatorCaller`.
 - [ ] Preserve JSON error codes unless they explicitly contain `control`; error-code churn should be avoided unless the code is wrong.
 - [ ] Run narrow tests for the touched command/API families.
-- [ ] Commit: `refactor: use operator node command terminology`.
+- [ ] Commit: `refactor: use operator command terminology`.
 
 ### Phase 4: Rename E2E Topology Concepts
 
@@ -116,7 +124,7 @@ Keep old group names and enum values as deprecated aliases for one migration win
 - [ ] Keep `control-1` only in tests explicitly proving backward compatibility.
 - [ ] Update assertions for human text, JSON role labels, activity messages, and gateway grant errors.
 - [ ] Run narrow tests by modified family, then `php artisan test --compact`.
-- [ ] Commit: `test: align operator node expectations`.
+- [ ] Commit: `test: align operator expectations`.
 
 ### Phase 6: Final Sweep
 

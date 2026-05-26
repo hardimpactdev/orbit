@@ -72,14 +72,12 @@ Required environment knobs:
 ORBIT_E2E=1
 ORBIT_E2E_PROVIDER=incus
 ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2
-ORBIT_E2E_TOPOLOGY_STRATEGY=minimal
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone
 ```
 
-Strategy values:
+Prepared topology acquisition now uses one default mode: boot the roles needed
+by the requested topology from prepared artifacts.
 
-- `minimal`: clone exactly the smallest topology requested by each test.
-- `superset`: allow `control-gateway-dev-prod` to satisfy smaller topology requests in a suite cycle.
 
 Reset values:
 
@@ -350,9 +348,8 @@ Initial behavior:
 
 - [ ] Add feature tests for:
   - enum values;
-  - `minimal` strategy returns requested topology kind;
-  - `superset` strategy may substitute `ControlGatewayDevProd` for smaller feature topologies;
-  - unknown strategy falls back to `minimal`.
+  - each feature test resolves to the requested prepared topology kind;
+  - unknown reset mode values fall back to `fresh-clone`.
 
 - [ ] Run:
 
@@ -661,20 +658,12 @@ Expected: pass.
 
 - Modify: `tests/E2E/Support/E2ETopologyFactory.php`
 - Modify: `tests/E2E/Support/E2ETopologyLease.php`
-- Create: `tests/Feature/E2ETopologyStrategyTest.php`
+- Create: `tests/Feature/E2ETopologyPreparedModeTest.php`
 
 Behavior:
 
-- `minimal`: request `ControlGateway` clones a `ControlGateway` template.
-- `superset`: request `ControlGateway`, `ControlGatewayDev`, or `Control` may clone `ControlGatewayDevProd` if that template exists.
-
-Do not share one mutable lease between parallel Pest tests. Superset means “use bigger template”, not “reuse same live VMs across unrelated tests”.
-
-Add environment parsing:
-
-```php
-ORBIT_E2E_TOPOLOGY_STRATEGY=minimal|superset
-```
+- requests boot only the roles needed by the selected prepared topology;
+- no prepared topology lease is shared between parallel Pest tests.
 
 - [ ] Run:
 
@@ -811,7 +800,6 @@ ORBIT_E2E=1
 ORBIT_E2E_PROVIDER=incus
 ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
-ORBIT_E2E_TOPOLOGY_STRATEGY=minimal
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone
 ```
 

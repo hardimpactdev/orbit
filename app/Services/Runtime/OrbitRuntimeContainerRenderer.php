@@ -26,6 +26,7 @@ class OrbitRuntimeContainerRenderer
 
         if ($gatewayDatabasePath !== null) {
             $resolvedEnvironment['ORBIT_IS_GATEWAY'] = '1';
+            $resolvedEnvironment['ORBIT_TRUST_WIREGUARD_PROXY_HEADER'] = '1';
         }
 
         $mounts = [

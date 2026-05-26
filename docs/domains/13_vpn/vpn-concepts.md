@@ -48,7 +48,7 @@ These terms define how VPN clients are identified and classified.
 - **VPN client name:** Stable VPN client identifier supplied to `vpn-client:*`
   commands. It must be unique among backend clients and must not collide with
   an active Orbit node name.
-- **Admin VPN client:** VPN client for a human or operator, created by
+- **Admin VPN client:** VPN client for an operator, created by
   `vpn-client:new`; it is not an Orbit node. It has `kind=admin`, may receive a
   generated WireGuard client configuration, and does not create an Orbit node
   record, Orbit node identity, or node access grant.
@@ -97,7 +97,7 @@ credential storage.
 These boundaries define what the VPN command domain owns and what it must not touch.
 
 - **VPN-domain boundaries:** VPN commands own VPN-role runtime administration
-  for human/operator clients and the VPN web UI credential. They do not own a
+  for operators and the VPN web UI credential. They do not own a
   state family, create `doctor --family=vpn`, manage Orbit node identity or
   node peer drift, or create node access grants. They also do not create app
   routes, proxy routes, Cloudflare records, gateway development DNS mappings,
