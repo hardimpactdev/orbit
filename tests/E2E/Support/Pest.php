@@ -554,7 +554,7 @@ function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): b
 function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $role): bool
 {
     return e2eRoleUsesDockerTopologyNode($topology, $role)
-        && in_array($role, ['dev', 'prod', 'agent', 'ingress'], true);
+        && in_array($role, ['operator', 'control', 'dev', 'prod', 'agent', 'ingress'], true);
 }
 
 function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string

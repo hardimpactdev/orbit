@@ -18,7 +18,6 @@ ORBIT_E2E_BASE_PACKAGES=(
     gnupg
     openssh-client
     openssh-server
-    sqlite3
     supervisor
     tar
     unzip

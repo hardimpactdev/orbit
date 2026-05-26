@@ -691,7 +691,7 @@ PHP;
 
     private static function topologyRoleUsesHostLauncher(string $role): bool
     {
-        return in_array($role, ['dev', 'prod', 'agent', 'ingress'], true);
+        return in_array($role, ['operator', 'control', 'dev', 'prod', 'agent', 'ingress'], true);
     }
 
     /**

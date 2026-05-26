@@ -24,8 +24,6 @@ RUN apt-get update \
         php8.5-curl \
         php8.5-sqlite3 \
         php8.5-xml \
-        python3 \
-        sqlite3 \
         sudo \
     && update-alternatives --set php /usr/bin/php8.5 \
     && php --version | grep -q '^PHP 8.5.' \

@@ -510,7 +510,7 @@ it('skips root app bootstrapping for Docker host launcher checkout nodes', funct
         ->not->toContain('composer install');
 });
 
-it('keeps Docker operator checkouts on the runtime wrapper while app roles use the host launcher', function (): void {
+it('uses the host launcher for Docker operator and app checkouts while the gateway uses the runtime wrapper', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -531,11 +531,15 @@ it('keeps Docker operator checkouts on the runtime wrapper while app roles use t
         rebuild: fn () => throw new RuntimeException('not expected'),
     );
 
-    E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'dev']);
+    E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
 
     $operatorInstallCommands = implode("\n", array_values(array_filter(
         $commands,
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-operator'"),
+    )));
+    $gatewayInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'"),
     )));
     $devInstallCommands = implode("\n", array_values(array_filter(
         $commands,
@@ -543,6 +547,11 @@ it('keeps Docker operator checkouts on the runtime wrapper while app roles use t
     )));
 
     expect($operatorInstallCommands)
+        ->not->toContain('key:generate')
+        ->not->toContain('migrate --force')
+        ->toContain('/home/orbit/orbit/apps/cli/vendor')
+        ->and($gatewayInstallCommands)
+        ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->toContain('key:generate')
         ->toContain('migrate --force')
         ->and($devInstallCommands)

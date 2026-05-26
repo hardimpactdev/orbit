@@ -13,7 +13,7 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
 });
 
-it('defines the Docker topology host PHP 8.5 CLI baseline with required test helper binaries', function (): void {
+it('defines the Docker topology host PHP 8.5 CLI baseline without ad hoc helper CLIs', function (): void {
     $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
@@ -27,8 +27,6 @@ it('defines the Docker topology host PHP 8.5 CLI baseline with required test hel
         ->toContain('php8.5-curl')
         ->toContain('php8.5-sqlite3')
         ->toContain('php8.5-xml')
-        ->toContain('python3')
-        ->toContain('sqlite3')
         ->toContain('update-alternatives --set php /usr/bin/php8.5')
         ->toContain('php --version')
         ->toContain('PHP 8.5.')
@@ -46,7 +44,8 @@ it('defines the Docker topology host PHP 8.5 CLI baseline with required test hel
         ->not->toContain('/opt/orbit-source')
         ->not->toContain('cp -a /opt/orbit-source');
 
-    expect(preg_match('/(?:^|\s)sqlite3(?:\s|\\\\|$)/m', $dockerfile))->toBe(1);
+    expect(preg_match('/(?:^|\s)python3(?:\s|\\\\|$)/m', $dockerfile))->toBe(0)
+        ->and(preg_match('/(?:^|\s)sqlite3(?:\s|\\\\|$)/m', $dockerfile))->toBe(0);
 });
 
 it('starts Docker build topology client nodes with the host Docker socket and no runtime sibling', function (): void {

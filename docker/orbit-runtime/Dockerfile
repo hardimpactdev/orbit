@@ -16,7 +16,6 @@ RUN apt-get update \
         libzip-dev \
         openssh-client \
         procps \
-        sqlite3 \
         sudo \
         tini \
         unzip \

@@ -70,6 +70,16 @@ it('installs E2E base dependencies before running install-orbit', function (): v
         ->toContain('systemctl enable --now supervisor.service');
 });
 
+it('keeps the E2E dependency helper off the SQLite CLI', function (): void {
+    $basePackages = Process::run([depsScript(), '--base']);
+    $phpPackages = Process::run([depsScript(), '--php']);
+
+    expect($basePackages->successful())->toBeTrue()
+        ->and($basePackages->output())->not->toMatch('/^sqlite3$/m')
+        ->and($phpPackages->successful())->toBeTrue()
+        ->and($phpPackages->output())->toContain('php8.5-sqlite3');
+});
+
 it('forwards staged Docker image archives without duplicating them in the guest tmp directory', function (): void {
     $provisioner = file_get_contents(provisionScript());
 
