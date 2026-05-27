@@ -77,6 +77,6 @@ Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php` | Command contract for authorization denial, zone resolution, app-name resolution, provider authorization, provider failures, and no deploy or proxy mutations. |
-| `tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php` | Interactive zone prompt and non-interactive missing-zone failure. |
-| `tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php` | Command contract for authorization denial, zone resolution, app-name resolution, provider authorization, provider failures, and no deploy or proxy mutations. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php` | Interactive zone prompt and non-interactive missing-zone failure. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

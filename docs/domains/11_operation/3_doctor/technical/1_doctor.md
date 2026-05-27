@@ -196,10 +196,10 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
-| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-development/app-production workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
-| `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
-| `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
+| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
+| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-development/app-production workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 
 Test mapping for each family lives in its family doctor contract, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).

@@ -90,5 +90,5 @@ reads. Secret values must not be written to activity properties.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/S3/S3CredentialsCommandTest.php` | Active s3/router prerequisites, authorization, credential payload, no mutation, missing credential failure, and gateway-unavailable behavior. |
-| `tests/E2E/S3PrivateRouteTest.php` | Planned private S3 endpoint and credentials coverage once the S3 role runtime exists. |
+| `apps/gateway/tests/Feature/Commands/S3/S3CredentialsCommandTest.php` | Active s3/router prerequisites, authorization, credential payload, no mutation, missing credential failure, and gateway-unavailable behavior. |
+| `apps/gateway/tests/E2E/S3PrivateRouteTest.php` | Planned private S3 endpoint and credentials coverage once the S3 role runtime exists. |

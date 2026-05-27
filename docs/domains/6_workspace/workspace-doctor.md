@@ -146,11 +146,11 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
-| `tests/Unit/Services/Workspaces/WorkspacesProbeTest.php` | In-memory workspace probe diff behavior; see detail below. |
-| `tests/E2E/Read/WorkspacesDoctorTest.php` | Real read-only `doctor --family=workspace --json` against registered workspaces. |
-| `tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --fix --family=workspace --restore` repair of safe workspace runtime drift. |
-| `tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --fix --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime configuration adoption. |
+| `apps/gateway/tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspacesProbeTest.php` | In-memory workspace probe diff behavior; see detail below. |
+| `apps/gateway/tests/E2E/Read/WorkspacesDoctorTest.php` | Real read-only `doctor --family=workspace --json` against registered workspaces. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --fix --family=workspace --restore` repair of safe workspace runtime drift. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --fix --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime configuration adoption. |
 
 `WorkspacesProbeTest.php` covers registry configuration, parent app eligibility,
 source path, workspace path policy, PHP runtime, runtime container configuration,

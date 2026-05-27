@@ -87,7 +87,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessEditCommandTest.php` | Process update contract, grant authorization denial, required editable fields, app resolution, re-rendering derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
-| `tests/Feature/Commands/Processes/ProcessEditInputContractTest.php` | Required inputs, editable field validation, enum validation, no-op rejection, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessEditCommandTest.php` | Process update contract, grant authorization denial, required editable fields, app resolution, re-rendering derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessEditInputContractTest.php` | Required inputs, editable field validation, enum validation, no-op rejection, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

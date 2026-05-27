@@ -181,6 +181,6 @@ document-root updates.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppRootCommandTest.php` | Input resolution, gateway-side `app.invalid_root` validation (empty, absolute, lexical escape via `..`), no-op idempotent re-application with `changed=false`, configuration write with `changed=true`, authorization, and exhaustive error codes. |
-| `tests/Unit/Actions/Apps/UpdateAppRootActionTest.php` | Core logic for resolving `root` lexically against `app_path`, deciding `changed`, and selecting affected re-application artifacts. |
-| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-application of runtime container (including container restart) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.runtime_container_mismatch` warning payload shape in `success.meta.warnings[]`. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppRootCommandTest.php` | Input resolution, gateway-side `app.invalid_root` validation (empty, absolute, lexical escape via `..`), no-op idempotent re-application with `changed=false`, configuration write with `changed=true`, authorization, and exhaustive error codes. |
+| `apps/gateway/tests/Unit/Actions/Apps/UpdateAppRootActionTest.php` | Core logic for resolving `root` lexically against `app_path`, deciding `changed`, and selecting affected re-application artifacts. |
+| `apps/gateway/tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-application of runtime container (including container restart) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.runtime_container_mismatch` warning payload shape in `success.meta.warnings[]`. |

@@ -4,10 +4,12 @@ includes:
 parameters:
     level: 5
     paths:
-        - app
-        - config
-        - database
+        - apps/gateway/app
+        - apps/gateway/config
+        - apps/gateway/database
     tmpDir: build/phpstan
+    bootstrapFiles:
+        - apps/gateway/bootstrap/phpstan.php
     checkModelProperties: true
     treatPhpDocTypesAsCertain: false
     parallel:

@@ -57,5 +57,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Gateway-local grant creation, idempotence, policy enforcement, and node-not-found validation. |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Integration: grant creation and idempotence. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Gateway-local grant creation, idempotence, policy enforcement, and node-not-found validation. |
+| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Integration: grant creation and idempotence. |

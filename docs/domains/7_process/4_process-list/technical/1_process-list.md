@@ -79,7 +79,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, grant-scoped visibility, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
-| `tests/Feature/Commands/Processes/ProcessListInputContractTest.php` | App and workspace input resolution, missing context failures, ambiguous context failures, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, grant-scoped visibility, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessListInputContractTest.php` | App and workspace input resolution, missing context failures, ambiguous context failures, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

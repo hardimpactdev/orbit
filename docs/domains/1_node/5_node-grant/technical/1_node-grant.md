@@ -167,9 +167,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Grant success, idempotence, validation failures, elevated-grant consent, self-grants, client forwarding, authorization failure, JSON envelope, and warning payloads. |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
-| `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, `node:grant` authorization on a gateway grant, gateway-unavailable failure, and result rendering. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Grant success, idempotence, validation failures, elevated-grant consent, self-grants, client forwarding, authorization failure, JSON envelope, and warning payloads. |
+| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, `node:grant` authorization on a gateway grant, gateway-unavailable failure, and result rendering. |
 
 Renderer-specific test mapping lives in:
 

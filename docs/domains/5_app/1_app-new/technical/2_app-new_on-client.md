@@ -31,5 +31,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppNewOnControlNodeContractTest.php` | Operator-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH apply routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct app-role SSH. |
-| `tests/E2E/Ephemeral/AppNewControlForwardingTest.php` | Real-environment smoke coverage proving `app:new` invoked from a client forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppNewOnControlNodeContractTest.php` | Operator-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH apply routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct app-role SSH. |
+| `apps/gateway/tests/E2E/Ephemeral/AppNewControlForwardingTest.php` | Real-environment smoke coverage proving `app:new` invoked from a client forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |

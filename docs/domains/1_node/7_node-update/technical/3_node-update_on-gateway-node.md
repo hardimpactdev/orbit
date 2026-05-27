@@ -65,5 +65,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Gateway-local update, field validation, role-conditional field rules including `tld`, no-op success, artifact re-applying reporting, and warning payload shape for partial-success drift. |
-| `tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Gateway-local non-interactive TLD success, production-effective app rejection, production-to-development plus TLD success, duplicate-TLD conflict, and invalid-TLD syntax. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Gateway-local update, field validation, role-conditional field rules including `tld`, no-op success, artifact re-applying reporting, and warning payload shape for partial-success drift. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Gateway-local non-interactive TLD success, production-effective app rejection, production-to-development plus TLD success, duplicate-TLD conflict, and invalid-TLD syntax. |

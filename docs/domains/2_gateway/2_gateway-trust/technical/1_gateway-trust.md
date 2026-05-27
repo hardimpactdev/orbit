@@ -183,11 +183,11 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured endpoint resolution, missing gateway failure, root CA fetch, PEM validation, trust-store side effect, metadata persistence, idempotent already-trusted success, and the no-write guarantees listed below. |
-| `tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php` | Local gateway settings read failures before network or trust-store side effects, including actionable `node.local_config_read_failed` reasons and human prose. |
-| `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
-| `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported client platform, including local metadata persistence and idempotent convergence. |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured endpoint resolution, missing gateway failure, root CA fetch, PEM validation, trust-store side effect, metadata persistence, idempotent already-trusted success, and the no-write guarantees listed below. |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php` | Local gateway settings read failures before network or trust-store side effects, including actionable `node.local_config_read_failed` reasons and human prose. |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
+| `apps/gateway/tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported client platform, including local metadata persistence and idempotent convergence. |
 
 `GatewayTrustCommandTest.php` also verifies that the command performs no
 gateway config writes, no `/api/me` verification, no public gateway override,

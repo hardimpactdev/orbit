@@ -251,9 +251,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior (see breakdown below). |
-| `tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-role provisioning and development TLD mapping. |
-| `tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-role provisioning without development TLD mapping. |
+| `apps/gateway/tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior (see breakdown below). |
+| `apps/gateway/tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-role provisioning and development TLD mapping. |
+| `apps/gateway/tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-role provisioning without development TLD mapping. |
 
 `NodeNewCommandTest.php` covers:
 

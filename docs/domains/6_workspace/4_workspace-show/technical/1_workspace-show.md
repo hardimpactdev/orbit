@@ -142,7 +142,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php` | Command contract: input resolution, ambiguity handling via `--app`, gateway forwarding, workspace lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php` | Command contract: input resolution, ambiguity handling via `--app`, gateway forwarding, workspace lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
 
 Input-mode-specific test mapping lives in:
 

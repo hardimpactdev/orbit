@@ -61,4 +61,4 @@ state until reviewed through [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseDetachCommandTest.php` | Target-scope validation, mapping-not-found behavior, and no immediate `.env` rewrite. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php` | Target-scope validation, mapping-not-found behavior, and no immediate `.env` rewrite. |

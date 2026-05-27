@@ -67,4 +67,4 @@ convergence stay with [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php` | Target resolution, ambiguity handling, SQLite locality, and schema inspection failure codes. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php` | Target resolution, ambiguity handling, SQLite locality, and schema inspection failure codes. |

@@ -94,7 +94,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Client caller forwarding, grant authorization, destructive consent, and result rendering (full list below). |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Client caller forwarding, grant authorization, destructive consent, and result rendering (full list below). |
 
 `NodeRemoveOnControlNodeContractTest` covers client caller forwarding over
 HTTPS (no SSH-to-gateway path), forwarded payload, grant authorization

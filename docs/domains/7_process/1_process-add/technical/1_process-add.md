@@ -96,7 +96,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, runtime rendering, optional start, repairable warnings, and no write on validation failure. |
-| `tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, runtime rendering, optional start, repairable warnings, and no write on validation failure. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

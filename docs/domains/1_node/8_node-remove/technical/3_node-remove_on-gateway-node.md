@@ -54,5 +54,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Gateway-local removal, destructive consent coverage, grant cleanup, peer teardown, structured warning reporting for failed peer teardown, any-gateway-node refusal. |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Integration: grants and peer removed together. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Gateway-local removal, destructive consent coverage, grant cleanup, peer teardown, structured warning reporting for failed peer teardown, any-gateway-node refusal. |
+| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Integration: grants and peer removed together. |

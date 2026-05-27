@@ -36,4 +36,4 @@ The JSON renderer returns the same message with `error.code:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-host denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-host denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |

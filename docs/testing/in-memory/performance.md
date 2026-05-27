@@ -8,7 +8,7 @@ behavior under test is the boundary itself.
 Use a file or filter while developing:
 
 ```bash
-php artisan test --compact tests/Feature/E2ESupport/VerificationScriptsTest.php
+php artisan test --compact apps/gateway/tests/Feature/E2ESupport/VerificationScriptsTest.php
 php artisan test --compact --filter='documents the supported verification lanes'
 ```
 

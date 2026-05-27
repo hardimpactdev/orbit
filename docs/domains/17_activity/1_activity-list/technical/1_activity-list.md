@@ -121,6 +121,6 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Activity/ActivityListCommandTest.php` | Gateway-history read behavior, filter validation, gateway-side authorization behavior, empty result success, newest-first ordering, read-only guarantee, no live probes, and no repair side effects. |
-| `tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php` | JSON renderer selection, success envelope, activity DTO shape, filter metadata, empty result shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php` | Human renderer table, empty result prose, no-progress-tree behavior, validation failure prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |
+| `apps/gateway/tests/Feature/Commands/Activity/ActivityListCommandTest.php` | Gateway-history read behavior, filter validation, gateway-side authorization behavior, empty result success, newest-first ordering, read-only guarantee, no live probes, and no repair side effects. |
+| `apps/gateway/tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php` | JSON renderer selection, success envelope, activity DTO shape, filter metadata, empty result shape, every `error.code` value, and `--json` forcing non-interactive mode. |
+| `apps/gateway/tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php` | Human renderer table, empty result prose, no-progress-tree behavior, validation failure prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |

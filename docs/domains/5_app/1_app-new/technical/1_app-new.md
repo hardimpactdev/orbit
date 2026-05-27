@@ -191,12 +191,12 @@ slice.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppNewCommandTest.php` | Signature validation, input resolution logic, collision checks, source-creation failure before gateway registry writes, successful gateway registry writes, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation path: access-policy authorization, source creation through gateway-owned `RemoteShell`, registry configuration write after source success, and structured success/error envelopes. |
-| `tests/Unit/Actions/Apps/CreateAppActionTest.php` | Internal action logic, default value assignment, and resolution chain. |
-| `tests/E2E/Ephemeral/AppNewTest.php` | End-to-end creation of a development app with source directory creation. |
-| `tests/E2E/Ephemeral/AppNewProductionTest.php` | End-to-end creation of a production app with domain activation. |
-| `tests/E2E/Ephemeral/AppNewRepoTest.php` | End-to-end creation from a git repository. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppNewCommandTest.php` | Signature validation, input resolution logic, collision checks, source-creation failure before gateway registry writes, successful gateway registry writes, and warning payload shape for `success.meta.warnings[]`. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation path: access-policy authorization, source creation through gateway-owned `RemoteShell`, registry configuration write after source success, and structured success/error envelopes. |
+| `apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php` | Internal action logic, default value assignment, and resolution chain. |
+| `apps/gateway/tests/E2E/Ephemeral/AppNewTest.php` | End-to-end creation of a development app with source directory creation. |
+| `apps/gateway/tests/E2E/Ephemeral/AppNewProductionTest.php` | End-to-end creation of a production app with domain activation. |
+| `apps/gateway/tests/E2E/Ephemeral/AppNewRepoTest.php` | End-to-end creation from a git repository. |
 
 Context-specific behavior and test mapping live in:
 

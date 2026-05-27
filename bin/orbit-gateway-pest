@@ -5,8 +5,21 @@ set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/_orbit-gateway-paths.sh"
 
 ROOT="$(orbit_repo_root)"
-APP_ROOT="$(orbit_gateway_app_path "$ROOT")"
+VENDOR_PATH="$(orbit_gateway_vendor_path "$ROOT")"
+TEST_DIRECTORY="apps/gateway/tests"
 
-cd "$APP_ROOT"
+for argument in "$@"; do
+    if [ "$argument" = "--test-directory" ] || [[ "$argument" == --test-directory=* ]]; then
+        TEST_DIRECTORY=""
 
-exec php -d "memory_limit=${ORBIT_PEST_MEMORY_LIMIT:-512M}" vendor/pestphp/pest/bin/pest "$@"
+        break
+    fi
+done
+
+cd "$ROOT"
+
+if [ -n "$TEST_DIRECTORY" ]; then
+    exec php -d "memory_limit=${ORBIT_PEST_MEMORY_LIMIT:-512M}" "${VENDOR_PATH}/pestphp/pest/bin/pest" "--test-directory=${TEST_DIRECTORY}" "$@"
+fi
+
+exec php -d "memory_limit=${ORBIT_PEST_MEMORY_LIMIT:-512M}" "${VENDOR_PATH}/pestphp/pest/bin/pest" "$@"

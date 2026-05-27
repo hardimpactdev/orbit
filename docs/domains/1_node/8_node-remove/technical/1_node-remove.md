@@ -195,10 +195,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract for `node:remove` lifecycle; see detail below. |
-| `tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded client rendering paths. |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Client-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require a covering grant, and no SSH-to-gateway path is used. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract for `node:remove` lifecycle; see detail below. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded client rendering paths. |
+| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Client-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require a covering grant, and no SSH-to-gateway path is used. |
 
 `NodeRemoveCommandTest.php` covers node removal, grant cleanup, WireGuard peer
 teardown, warning payload shape for partial detach, DNS mapping cleanup,

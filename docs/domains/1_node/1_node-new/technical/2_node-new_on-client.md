@@ -123,9 +123,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Client-caller behavior across input, bootstrap, and forwarding paths; see detail below. |
-| `tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from an client; see detail below. |
-| `tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for client execution after `gateway:add`, proving gateway convergence or adoption, app-role creation, and client enrollment are forwarded to the gateway over WireGuard instead of applied locally. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeNewOnControlNodeContractTest.php` | Client-caller behavior across input, bootstrap, and forwarding paths; see detail below. |
+| `apps/gateway/tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from an client; see detail below. |
+| `apps/gateway/tests/E2E/Ephemeral/NodeNewControlForwardingTest.php` | Real-node smoke coverage for client execution after `gateway:add`, proving gateway convergence or adoption, app-role creation, and client enrollment are forwarded to the gateway over WireGuard instead of applied locally. |
 
 `NodeNewOnControlNodeContractTest.php` covers post-input path eligibility,
 first-gateway bootstrap eligibility, complete local onboarding for the

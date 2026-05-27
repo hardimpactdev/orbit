@@ -223,9 +223,9 @@ workspace runtime container. The wrapper itself does not:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceExecCommandTest.php` | Gateway-mode and control-mode paths end to end (see notes). |
-| `tests/Feature/Http/Api/WorkspaceExecControllerTest.php` | API surface and HTTP status mapping (see notes). |
-| `tests/Unit/Services/Runtime/OrbitHostCwdResolverTest.php` | Workspace-preference resolution including `..` normalization (see notes). |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceExecCommandTest.php` | Gateway-mode and control-mode paths end to end (see notes). |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceExecControllerTest.php` | API surface and HTTP status mapping (see notes). |
+| `apps/gateway/tests/Unit/Services/Runtime/OrbitHostCwdResolverTest.php` | Workspace-preference resolution including `..` normalization (see notes). |
 
 `WorkspaceExecCommandTest` must cover the points below.
 

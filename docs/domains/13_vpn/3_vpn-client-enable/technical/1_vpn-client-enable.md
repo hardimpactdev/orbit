@@ -76,5 +76,5 @@ active `vpn` role.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: grant denial, non-gateway SSH, runtime execution, TOTP, enablement, idempotent success, missing-client failure, node-peer protection, and no node writes. |
-| `tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
+| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: grant denial, non-gateway SSH, runtime execution, TOTP, enablement, idempotent success, missing-client failure, node-peer protection, and no node writes. |
+| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

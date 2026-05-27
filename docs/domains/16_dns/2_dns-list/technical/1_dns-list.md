@@ -98,7 +98,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: gateway-node rejection, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
-| `tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` | JSON renderer selection, success envelope, empty result shape, resolver entry DTO shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, gateway-node rejection prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
-| `tests/E2E/DnsListTest.php` | Incus-backed Linux client feature gate: install the current checkout into a disposable control VM, seed an Orbit-managed local resolver override, and verify `php artisan dns:list --json` reports it. |
+| `apps/gateway/tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: gateway-node rejection, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
+| `apps/gateway/tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` | JSON renderer selection, success envelope, empty result shape, resolver entry DTO shape, every `error.code` value, and `--json` forcing non-interactive mode. |
+| `apps/gateway/tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, gateway-node rejection prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
+| `apps/gateway/tests/E2E/DnsListTest.php` | Incus-backed Linux client feature gate: install the current checkout into a disposable control VM, seed an Orbit-managed local resolver override, and verify `php artisan dns:list --json` reports it. |

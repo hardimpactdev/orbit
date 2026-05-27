@@ -177,11 +177,11 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, probe-layer selection, issue codes (including deployment health), fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
-| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior (see breakdown below). |
-| `tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
-| `tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
-| `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |
+| `apps/gateway/tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, probe-layer selection, issue codes (including deployment health), fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
+| `apps/gateway/tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior (see breakdown below). |
+| `apps/gateway/tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
+| `apps/gateway/tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
+| `apps/gateway/tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |
 
 `AppsProbeTest` covers registry configuration, owning node eligibility, source
 path, document root, PHP runtime, runtime container configuration, runtime

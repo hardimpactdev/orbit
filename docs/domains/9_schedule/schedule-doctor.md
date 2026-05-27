@@ -90,10 +90,10 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/ScheduleFamilyDoctorContractTest.php` | Schedule-family dispatch, probe-layer selection, schedule issue codes, fix map, denied adopt cases, scope filtering, and assertion that `schedule.runtime_backend_unavailable` short-circuits downstream scheduler layer checks. |
-| `tests/Unit/Services/Schedules/ScheduleProbeTest.php` | In-memory probe diff behavior across registry, eligibility, runtime, scheduler, and history layers (scope below). |
-| `tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
-| `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --fix --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
+| `apps/gateway/tests/Feature/Doctor/ScheduleFamilyDoctorContractTest.php` | Schedule-family dispatch, probe-layer selection, schedule issue codes, fix map, denied adopt cases, scope filtering, and assertion that `schedule.runtime_backend_unavailable` short-circuits downstream scheduler layer checks. |
+| `apps/gateway/tests/Unit/Services/Schedules/ScheduleProbeTest.php` | In-memory probe diff behavior across registry, eligibility, runtime, scheduler, and history layers (scope below). |
+| `apps/gateway/tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
+| `apps/gateway/tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --fix --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
 
 `ScheduleProbeTest` covers registry configuration, target eligibility, gateway
 scheduler process manager availability, scheduler presence, scheduler

@@ -70,5 +70,5 @@ schedule registry reads.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | Command contract for filter validation, gateway authorization, read-only boundary, run-history summary inclusion, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, filter rules, and schedule entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | Command contract for filter validation, gateway authorization, read-only boundary, run-history summary inclusion, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, filter rules, and schedule entity mapping. |

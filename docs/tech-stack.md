@@ -53,7 +53,7 @@ The sections below walk through each layer of the stack in the same order as the
 |---|---|
 | Application | Laravel 13 application mounted into `orbit-runtime` |
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
-| Persistent state | SQLite at `~/orbit/database/database.sqlite`, mounted into `orbit-runtime` on the gateway |
+| Persistent state | SQLite at `~/orbit/apps/gateway/database/database.sqlite`, mounted into `orbit-runtime` on the gateway |
 | Gateway API | `orbit-caddy` to `orbit-runtime` over the node Docker network; exposed only over WireGuard |
 | Gateway to node | SSH through `RemoteShell`, classified by execution lane |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
@@ -101,7 +101,7 @@ and must not replace FrankenPHP app/workspace containers.
 
 ### Persistent state
 
-The gateway holds Orbit's durable source of truth: a single SQLite database at `~/orbit/database/database.sqlite`. Every state family writes here. Non-gateway nodes have a local SQLite present because Orbit ships a single codebase that boots the same migrations on every machine, but they hold only minimal local state — none of the durable state families live there. The gateway is authoritative for every configuration row, registry record, and history entry.
+The gateway holds Orbit's durable source of truth: a single SQLite database at `~/orbit/apps/gateway/database/database.sqlite`. Every state family writes here. Non-gateway nodes have a local SQLite present because Orbit ships a single codebase that boots the same migrations on every machine, but they hold only minimal local state — none of the durable state families live there. The gateway is authoritative for every configuration row, registry record, and history entry.
 
 See [Architecture: State Model](architecture.md#state-model) and [Architecture: State Families](architecture.md#state-families) for the conceptual model. A few implementation notes:
 

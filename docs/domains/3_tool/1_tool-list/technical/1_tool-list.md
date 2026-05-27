@@ -67,5 +67,5 @@ tool registry reads.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Tools/ToolListCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Tools/ToolCommandContractTest.php` | `ToolPayloadMapper` canonical entity mapping, `ToolRegistry` target/filter behavior, and registry model shape for non-live tool-list output. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolListCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | `ToolPayloadMapper` canonical entity mapping, `ToolRegistry` target/filter behavior, and registry model shape for non-live tool-list output. |

@@ -158,8 +158,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Revocation success, idempotent absence, node-not-found validation, client forwarding, authorization failure, confirmation, and `--force` behavior. |
-| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, `node:revoke` authorization on a gateway grant, self-lockout, destructive consent, and result rendering. |
+| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Revocation success, idempotent absence, node-not-found validation, client forwarding, authorization failure, confirmation, and `--force` behavior. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, `node:revoke` authorization on a gateway grant, self-lockout, destructive consent, and result rendering. |
 
 Input-mode-specific test mapping lives in:
 

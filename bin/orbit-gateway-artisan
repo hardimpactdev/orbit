@@ -9,4 +9,10 @@ ARTISAN="$(orbit_gateway_artisan_path "$ROOT")"
 
 cd "$ROOT"
 
+if [ "${1:-}" = "test" ]; then
+    shift
+
+    exec "${ROOT}/bin/orbit-gateway-pest" "$@"
+fi
+
 exec php "$ARTISAN" "$@"

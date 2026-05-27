@@ -19,4 +19,4 @@ a peer the gateway identifies as a **client**.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Verification of gateway client request and identity propagation. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Verification of gateway client request and identity propagation. |

@@ -88,8 +88,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for `process:logs` behavior; see detail below. |
-| `tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for `process:logs` behavior; see detail below. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
 
 `ProcessLogsCommandTest.php` covers context resolution, grant authorization,
 missing-grant denial, bounded log reads, follow-mode streaming, line

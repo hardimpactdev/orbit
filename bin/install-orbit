@@ -739,10 +739,10 @@ bootstrap_runtime() {
         run cp "$TARGET_DIR/.env.example" "$TARGET_DIR/.env"
     fi
 
-    run mkdir -p "$TARGET_DIR/database"
+    run mkdir -p "$TARGET_DIR/apps/gateway/database"
 
-    if [ ! -f "$TARGET_DIR/database/database.sqlite" ]; then
-        run touch "$TARGET_DIR/database/database.sqlite"
+    if [ ! -f "$TARGET_DIR/apps/gateway/database/database.sqlite" ]; then
+        run touch "$TARGET_DIR/apps/gateway/database/database.sqlite"
     fi
 
     ensure_operation_token_secret

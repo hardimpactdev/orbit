@@ -16,19 +16,19 @@ secret or unbounded payloads to `RemoteSecretFile` or another explicit channel.
 
 | Path | Variables | Classification | Target |
 | --- | --- | --- | --- |
-| `app/Services/Apps/AppsProbe.php` | `ORBIT_APP_SPEC` | Non-secret generated probe spec; may exceed metadata limits | Replace env with explicit probe payload transport, likely stdin or temp file |
-| `app/Services/Processes/ProcessesProbe.php` | `ORBIT_PROCESS_UNITS`, `ORBIT_PROCESS_EVENT_NOTIFIER` | Non-secret generated probe specs; may exceed metadata limits | Replace env with explicit probe payload transport, likely stdin or temp file |
-| `app/Services/Workspaces/WorkspacesProbe.php` | `ORBIT_WORKSPACE_SPEC` | Non-secret generated probe spec; may exceed metadata limits | Replace env with explicit probe payload transport, likely stdin or temp file |
-| `app/Services/Proxy/ProxyRouteProbe.php` | `ORBIT_PROXY_DOMAIN` | Non-secret metadata | Candidate for `withMetadata()` after whitelist expansion |
-| `app/Services/Tools/ToolsProbe.php` | `ORBIT_TOOL_BINARY`, `ORBIT_TOOL_SERVICE`, `ORBIT_TOOL_CONFIG_PATH`, `ORBIT_TOOL_SECRET_PATH` | Mixed non-secret paths; secret path is sensitive metadata | Move secret path to `RemoteSecretFile`-backed flow or avoid exposing it as env; remaining keys need whitelist decision |
-| `app/Services/Deploy/DeployManager.php` | `ORBIT_DEPLOY_*` generated from deployment context | Non-secret deployment context by intent, but dynamic key set | Needs code change before `withMetadata()` because keys are not a closed whitelist |
-| `app/Services/Workspaces/WorkspaceSetupStepRunner.php` | Workspace setup env from `SetupWorkspace::workspaceEnv()` | User step context, non-secret by contract | Candidate for `withMetadata()` after closed workspace-key whitelist |
-| `app/Actions/Workspaces/RemoveWorkspace.php` | Workspace teardown env | User step context, non-secret by contract | Candidate for `withMetadata()` after closed workspace-key whitelist |
-| `app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php::resolveOpenCode` | `ORBIT_WORKSPACE_PATH`, `ORBIT_APP_PATH` | Non-secret path metadata | Candidate for `withMetadata()` after whitelist expansion |
-| `app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php::resolvePolyscope` | `ORBIT_WORKSPACE_PATH`, `ORBIT_APP_PATH` | Non-secret path metadata | Candidate for `withMetadata()` after whitelist expansion |
-| `app/Services/Workspaces/OpenCodeWorkspaceDriver.php` | `ORBIT_WORKSPACE_PATH`, `ORBIT_WORKSPACE_NAME`, `ORBIT_WORKSPACE_BASE` | Non-secret workspace metadata | Candidate for `withMetadata()` after whitelist expansion |
-| `app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php` | `ORBIT_POLYSCOPE_WORKSPACE_ID`, `ORBIT_POLYSCOPE_WORKSPACE_PATH`, `ORBIT_WORKSPACE_NAME` | Adapter metadata; workspace ID may be sensitive operational metadata | Needs whitelist/security decision before migration |
-| `app/Services/Workspaces/PolyscopeWorkspaceDriver.php` | `ORBIT_APP_PATH` | Non-secret path metadata | Candidate for `withMetadata()` after whitelist expansion |
+| `apps/gateway/app/Services/Apps/AppsProbe.php` | `ORBIT_APP_SPEC` | Non-secret generated probe spec; may exceed metadata limits | Replace env with explicit probe payload transport, likely stdin or temp file |
+| `apps/gateway/app/Services/Processes/ProcessesProbe.php` | `ORBIT_PROCESS_UNITS`, `ORBIT_PROCESS_EVENT_NOTIFIER` | Non-secret generated probe specs; may exceed metadata limits | Replace env with explicit probe payload transport, likely stdin or temp file |
+| `apps/gateway/app/Services/Workspaces/WorkspacesProbe.php` | `ORBIT_WORKSPACE_SPEC` | Non-secret generated probe spec; may exceed metadata limits | Replace env with explicit probe payload transport, likely stdin or temp file |
+| `apps/gateway/app/Services/Proxy/ProxyRouteProbe.php` | `ORBIT_PROXY_DOMAIN` | Non-secret metadata | Candidate for `withMetadata()` after whitelist expansion |
+| `apps/gateway/app/Services/Tools/ToolsProbe.php` | `ORBIT_TOOL_BINARY`, `ORBIT_TOOL_SERVICE`, `ORBIT_TOOL_CONFIG_PATH`, `ORBIT_TOOL_SECRET_PATH` | Mixed non-secret paths; secret path is sensitive metadata | Move secret path to `RemoteSecretFile`-backed flow or avoid exposing it as env; remaining keys need whitelist decision |
+| `apps/gateway/app/Services/Deploy/DeployManager.php` | `ORBIT_DEPLOY_*` generated from deployment context | Non-secret deployment context by intent, but dynamic key set | Needs code change before `withMetadata()` because keys are not a closed whitelist |
+| `apps/gateway/app/Services/Workspaces/WorkspaceSetupStepRunner.php` | Workspace setup env from `SetupWorkspace::workspaceEnv()` | User step context, non-secret by contract | Candidate for `withMetadata()` after closed workspace-key whitelist |
+| `apps/gateway/app/Actions/Workspaces/RemoveWorkspace.php` | Workspace teardown env | User step context, non-secret by contract | Candidate for `withMetadata()` after closed workspace-key whitelist |
+| `apps/gateway/app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php::resolveOpenCode` | `ORBIT_WORKSPACE_PATH`, `ORBIT_APP_PATH` | Non-secret path metadata | Candidate for `withMetadata()` after whitelist expansion |
+| `apps/gateway/app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php::resolvePolyscope` | `ORBIT_WORKSPACE_PATH`, `ORBIT_APP_PATH` | Non-secret path metadata | Candidate for `withMetadata()` after whitelist expansion |
+| `apps/gateway/app/Services/Workspaces/OpenCodeWorkspaceDriver.php` | `ORBIT_WORKSPACE_PATH`, `ORBIT_WORKSPACE_NAME`, `ORBIT_WORKSPACE_BASE` | Non-secret workspace metadata | Candidate for `withMetadata()` after whitelist expansion |
+| `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php` | `ORBIT_POLYSCOPE_WORKSPACE_ID`, `ORBIT_POLYSCOPE_WORKSPACE_PATH`, `ORBIT_WORKSPACE_NAME` | Adapter metadata; workspace ID may be sensitive operational metadata | Needs whitelist/security decision before migration |
+| `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceDriver.php` | `ORBIT_APP_PATH` | Non-secret path metadata | Candidate for `withMetadata()` after whitelist expansion |
 
 ## Follow-up Rules
 

@@ -30,4 +30,4 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupOnControlNodeTest.php` | Operator-caller forwarding to the gateway, identity propagation, local-context resolution before forwarding, and progress streaming back to the local TTY. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnControlNodeTest.php` | Operator-caller forwarding to the gateway, identity propagation, local-context resolution before forwarding, and progress streaming back to the local TTY. |

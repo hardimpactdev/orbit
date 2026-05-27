@@ -6,18 +6,18 @@
 >
     <testsuites>
         <testsuite name="Unit">
-            <directory>tests/Unit</directory>
+            <directory>apps/gateway/tests/Unit</directory>
         </testsuite>
         <testsuite name="Feature">
-            <directory>tests/Feature</directory>
+            <directory>apps/gateway/tests/Feature</directory>
         </testsuite>
         <testsuite name="E2E">
-            <directory>tests/E2E</directory>
+            <directory>apps/gateway/tests/E2E</directory>
         </testsuite>
     </testsuites>
     <source>
         <include>
-            <directory>app</directory>
+            <directory>apps/gateway/app</directory>
         </include>
     </source>
     <php>

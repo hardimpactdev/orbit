@@ -151,5 +151,5 @@ mutations.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodePermissionsCommandTest.php` | Mode selection, authorization, read/replace/add/remove semantics, missing-grant create-or-fail rules, mode conflicts, exhaustive `error.code` coverage, JSON envelope, and warning payload shape under `success.meta.warnings[]`. |
-| `tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php` | Exactly one top-level `success` key on success and exactly one top-level `error` key on failure. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsCommandTest.php` | Mode selection, authorization, read/replace/add/remove semantics, missing-grant create-or-fail rules, mode conflicts, exhaustive `error.code` coverage, JSON envelope, and warning payload shape under `success.meta.warnings[]`. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php` | Exactly one top-level `success` key on success and exactly one top-level `error` key on failure. |

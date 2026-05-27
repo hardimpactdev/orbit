@@ -85,4 +85,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, forwarded payload, `node:grant` authorization, gateway-unavailable failure, authorization failure, and result rendering. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, forwarded payload, `node:grant` authorization, gateway-unavailable failure, authorization failure, and result rendering. |

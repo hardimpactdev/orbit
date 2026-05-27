@@ -74,5 +74,5 @@ deployment policy when reporting `app.deployment_pipeline_invalid`.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php` | Command contract for production app lookup, grant denial before side effects, authorization, step lookup, destructive consent, policy removal, history preservation, failure codes, and app-doctor handoff behavior. |
-| `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, step lookup by id or title, destructive consent mapping, reorder rules, and removed step entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php` | Command contract for production app lookup, grant denial before side effects, authorization, step lookup, destructive consent, policy removal, history preservation, failure codes, and app-doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, step lookup by id or title, destructive consent mapping, reorder rules, and removed step entity mapping. |

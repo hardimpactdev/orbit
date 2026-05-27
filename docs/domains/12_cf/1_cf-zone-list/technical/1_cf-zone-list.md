@@ -62,5 +62,5 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php` | Command contract for authorization denial, gateway forwarding, provider authorization, Cloudflare token failures, empty zone lists, and no Orbit state writes. |
-| `tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php` | Command contract for authorization denial, gateway forwarding, provider authorization, Cloudflare token failures, empty zone lists, and no Orbit state writes. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

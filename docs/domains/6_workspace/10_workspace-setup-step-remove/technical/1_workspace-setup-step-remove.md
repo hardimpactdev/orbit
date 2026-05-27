@@ -176,10 +176,10 @@ setup-step removal attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php` | Atomic delete + order-compaction within `(app, phase=setup)`, refusal to remove a `phase=teardown` step, and rejection of step records that do not belong to the resolved app. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found handling, destructive consent (`--force` and `--json` interaction), and runtime-lock absence (full scope below). |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
-| `tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php` | Real gateway delete against a registered app with steps, verification of contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight `workspace:setup` run continues using its start-of-run snapshot. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php` | Atomic delete + order-compaction within `(app, phase=setup)`, refusal to remove a `phase=teardown` step, and rejection of step records that do not belong to the resolved app. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found handling, destructive consent (`--force` and `--json` interaction), and runtime-lock absence (full scope below). |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php` | Real gateway delete against a registered app with steps, verification of contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight `workspace:setup` run continues using its start-of-run snapshot. |
 
 `WorkspaceSetupStepRemoveCommandTest` covers:
 

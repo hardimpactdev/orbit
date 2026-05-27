@@ -102,5 +102,5 @@ schedule creation attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php` | Command contract for input validation, mutually exclusive target and execution-source rules, authorization, gateway configuration write, scheduler-pickup handoff, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, target resolution, interval normalization, execution source mapping, and schedule entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php` | Command contract for input validation, mutually exclusive target and execution-source rules, authorization, gateway configuration write, scheduler-pickup handoff, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, target resolution, interval normalization, execution source mapping, and schedule entity mapping. |

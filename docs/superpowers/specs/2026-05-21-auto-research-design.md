@@ -150,10 +150,10 @@ repo_path: ~/orbit
 default_base: origin/main
 
 immutable_paths:
-  - tests/E2E/**/*.php
+  - apps/gateway/tests/E2E/**/*.php
 
 default_forbidden_scope:
-  - tests/E2E/**/*.php
+  - apps/gateway/tests/E2E/**/*.php
 
 verification_profiles:
   docs:
@@ -196,18 +196,18 @@ worktree:
   path: ~/auto-research/projects/orbit/worktrees/e2e-docker-speed
 
 immutable_paths:
-  - tests/E2E/**/*.php
+  - apps/gateway/tests/E2E/**/*.php
 
 allowed_scope:
-  - app/**
+  - apps/gateway/app/**
   - bin/**
   - composer.json
   - docs/testing/README.md
-  - tests/E2E/Support/**
+  - apps/gateway/tests/E2E/Support/**
 
 forbidden_scope:
-  - tests/E2E/**/*.php
-  - tests/Feature/**
+  - apps/gateway/tests/E2E/**/*.php
+  - apps/gateway/tests/Feature/**
 
 baseline:
   command: >

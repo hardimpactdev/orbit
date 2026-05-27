@@ -66,5 +66,5 @@ The gateway API endpoint emits an activity entry for successful and failed regis
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Firewall/FirewallListCommandTest.php` | Command contract for input validation, gateway authorization, filter behavior, read-only side-effect boundary, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, node filter rules, and firewall-rule entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Firewall/FirewallListCommandTest.php` | Command contract for input validation, gateway authorization, filter behavior, read-only side-effect boundary, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, node filter rules, and firewall-rule entity mapping. |

@@ -9,7 +9,7 @@ storage/framework/views/*
 storage/app/orbit/ca/**
 storage/app/orbit/certs/**
 storage/app/orbit/keys/**
-database/database.sqlite*
+apps/gateway/database/database.sqlite*
 *.log
 .env
 .env.*
@@ -17,5 +17,5 @@ database/database.sqlite*
 docs/superpowers/plans/solo-orchestration
 .agents
 docker
-tests/E2E
+apps/gateway/tests/E2E
 Dockerfile*

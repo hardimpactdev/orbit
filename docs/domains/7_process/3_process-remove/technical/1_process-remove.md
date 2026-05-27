@@ -86,7 +86,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Grant authorization denial, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
-| `tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php` | Required inputs, app resolution, `--force` destructive consent behavior, `--json` not granting consent, and cancelled confirmation behavior. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Grant authorization denial, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php` | Required inputs, app resolution, `--force` destructive consent behavior, `--json` not granting consent, and cancelled confirmation behavior. |
 
 Renderer and input-mode test mapping lives in the split companion files.

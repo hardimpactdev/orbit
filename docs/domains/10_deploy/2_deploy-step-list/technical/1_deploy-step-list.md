@@ -65,5 +65,5 @@ app health checks that may incorporate deployment pipeline validity.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployStepListCommandTest.php` | Command contract for production app lookup, authorization, ordered step listing, empty list behavior, read-only side-effect boundary, failure codes, and app-doctor handoff behavior. |
-| `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, app selector resolution, ordered list rules, and deploy-step entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php` | Command contract for production app lookup, authorization, ordered step listing, empty list behavior, read-only side-effect boundary, failure codes, and app-doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, app selector resolution, ordered list rules, and deploy-step entity mapping. |

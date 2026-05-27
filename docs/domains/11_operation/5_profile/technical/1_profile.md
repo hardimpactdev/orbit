@@ -168,8 +168,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, gateway authorization by peer role, request-origin selection, completion semantics, non-2xx success, failure diagnostics, and read-only guarantee. |
-| `tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
+| `apps/gateway/tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, gateway authorization by peer role, request-origin selection, completion semantics, non-2xx success, failure diagnostics, and read-only guarantee. |
+| `apps/gateway/tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
 
 Input-mode-specific test mapping lives in:
 

@@ -80,7 +80,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Tools/ToolLogsCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `tests/Feature/Commands/Tools/ToolLogsJsonRendererTest.php` | JSON renderer shape, finite metadata, `--follow --json` rejection, missing target metadata, and gateway error preservation. |
-| `tests/Feature/Commands/Tools/ToolLogsTargetResolutionTest.php` | Target hierarchy, app selector forms, selector mismatch metadata, node default, gateway-known self, and no only-visible-node fallback. |
-| `tests/Feature/Http/Api/ToolLogsControllerTest.php` | Gateway API target resolver rejects missing explicit target instead of using visible-node cardinality. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolLogsCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolLogsJsonRendererTest.php` | JSON renderer shape, finite metadata, `--follow --json` rejection, missing target metadata, and gateway error preservation. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolLogsTargetResolutionTest.php` | Target hierarchy, app selector forms, selector mismatch metadata, node default, gateway-known self, and no only-visible-node fallback. |
+| `apps/gateway/tests/Feature/Http/Api/ToolLogsControllerTest.php` | Gateway API target resolver rejects missing explicit target instead of using visible-node cardinality. |

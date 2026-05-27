@@ -172,7 +172,7 @@ teardown-step removal attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Workspaces/RemoveTeardownStepActionTest.php` | Atomic delete and order-compaction within `(app, phase=teardown)`, refusal to remove a `phase=setup` step, and rejection of step records that do not belong to the resolved app. |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found as hard validation failure, destructive consent, `--json` never implying `--force`, no runtime lock against in-flight `workspace:remove`, and no history mutation. |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
-| `tests/E2E/Ephemeral/WorkspaceTeardownStepRemoveTest.php` | Real gateway delete against a registered app with teardown steps, contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight teardown run continues using its start-of-phase snapshot. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/RemoveTeardownStepActionTest.php` | Atomic delete and order-compaction within `(app, phase=teardown)`, refusal to remove a `phase=setup` step, and rejection of step records that do not belong to the resolved app. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found as hard validation failure, destructive consent, `--json` never implying `--force`, no runtime lock against in-flight `workspace:remove`, and no history mutation. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceTeardownStepRemoveTest.php` | Real gateway delete against a registered app with teardown steps, contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight teardown run continues using its start-of-phase snapshot. |

@@ -126,7 +126,7 @@ removal attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Configuration removal, dependent artifact deletion logic, and self-targeting detection. |
-| `tests/Unit/Concerns/ResolvesAppFromPathTest.php` | App resolution from name, hostname, and current working directory context. |
-| `tests/Feature/Http/Api/AppRemoveControllerTest.php` | Gateway API removal authorization with `app:remove`, destructive consent, configuration cleanup, and structured success/error envelopes. |
-| `tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |
+| `apps/gateway/tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Configuration removal, dependent artifact deletion logic, and self-targeting detection. |
+| `apps/gateway/tests/Unit/Concerns/ResolvesAppFromPathTest.php` | App resolution from name, hostname, and current working directory context. |
+| `apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php` | Gateway API removal authorization with `app:remove`, destructive consent, configuration cleanup, and structured success/error envelopes. |
+| `apps/gateway/tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

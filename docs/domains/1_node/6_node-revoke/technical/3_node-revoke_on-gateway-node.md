@@ -44,4 +44,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Gateway-local revocation, destructive consent coverage, idempotent absent success, node-not-found validation, and grant deletion. |
+| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Gateway-local revocation, destructive consent coverage, idempotent absent success, node-not-found validation, and grant deletion. |

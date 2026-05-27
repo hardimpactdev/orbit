@@ -88,7 +88,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Tools/ToolInstallCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `tests/Feature/Commands/Tools/ToolInstallJsonRendererTest.php` | JSON envelope shape, unsupported status metadata, missing target metadata, gateway error pass-through, and `--expected-version` rejection. |
-| `tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway-side install validation for unsupported status, rejected install-time version intent, and required explicit target selectors. |
-| `tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolInstallCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolInstallJsonRendererTest.php` | JSON envelope shape, unsupported status metadata, missing target metadata, gateway error pass-through, and `--expected-version` rejection. |
+| `apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway-side install validation for unsupported status, rejected install-time version intent, and required explicit target selectors. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

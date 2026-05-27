@@ -74,4 +74,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessEventStreamCommandTest.php` | Internal stream contract, scope filters, resume behavior, initial snapshot, durable event streaming, unverifiable snapshot items, pre-stream error envelopes, terminal `process.event_stream_failed` frames, authorization failure, and no process configuration mutation. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessEventStreamCommandTest.php` | Internal stream contract, scope filters, resume behavior, initial snapshot, durable event streaming, unverifiable snapshot items, pre-stream error envelopes, terminal `process.event_stream_failed` frames, authorization failure, and no process configuration mutation. |

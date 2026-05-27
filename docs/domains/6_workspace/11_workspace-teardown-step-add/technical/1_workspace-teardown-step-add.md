@@ -177,7 +177,7 @@ teardown-step creation attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Workspaces/AddTeardownStepActionTest.php` | Registry write for `(app, phase=teardown, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Input resolution chain, `--before`/`--after` mutual exclusivity, `--timeout` positive validation including `0` rejection, additive re-run behavior, `success.meta.warnings[]` shape, and no runtime lock against in-flight `workspace:remove`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
-| `tests/E2E/Ephemeral/WorkspaceTeardownStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification for `phase=teardown`, and JSON envelope alignment. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/AddTeardownStepActionTest.php` | Registry write for `(app, phase=teardown, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Input resolution chain, `--before`/`--after` mutual exclusivity, `--timeout` positive validation including `0` rejection, additive re-run behavior, `success.meta.warnings[]` shape, and no runtime lock against in-flight `workspace:remove`. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceTeardownStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification for `phase=teardown`, and JSON envelope alignment. |

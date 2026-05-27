@@ -18,8 +18,6 @@ cd "$ROOT"
 
 source "${ROOT}/bin/_orbit-gateway-paths.sh"
 
-APP_ROOT="$(orbit_gateway_app_path "$ROOT")"
-
 FIX_MODE=0
 if [ "${1:-}" = "--fix" ]; then
     FIX_MODE=1
@@ -51,7 +49,7 @@ run_bg rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
 run_bg pint bin/orbit-gateway-vendor-bin pint "${PINT_ARGS[@]}"
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
-(cd "$APP_ROOT" && php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@")
+bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
 pest_exit=$?
 
 wait "$docs_lint_PID" 2>/dev/null

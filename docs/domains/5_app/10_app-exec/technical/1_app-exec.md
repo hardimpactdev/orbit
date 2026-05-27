@@ -218,9 +218,9 @@ container. The wrapper itself does not:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppExecCommandTest.php` | Gateway-mode and control-mode paths end to end (see notes). |
-| `tests/Feature/Http/Api/AppExecControllerTest.php` | API surface and HTTP status mapping (see notes). |
-| `tests/Unit/Services/Runtime/OrbitHostCwdResolverTest.php` | Host cwd resolution including `..` normalization (see notes). |
+| `apps/gateway/tests/Feature/Commands/Apps/AppExecCommandTest.php` | Gateway-mode and control-mode paths end to end (see notes). |
+| `apps/gateway/tests/Feature/Http/Api/AppExecControllerTest.php` | API surface and HTTP status mapping (see notes). |
+| `apps/gateway/tests/Unit/Services/Runtime/OrbitHostCwdResolverTest.php` | Host cwd resolution including `..` normalization (see notes). |
 
 `AppExecCommandTest` must cover the points below.
 

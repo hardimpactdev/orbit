@@ -261,13 +261,13 @@ all documented command failures exit with the standard command failure status
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution across CWD outcomes and adapter probe branches, `workspace.path_is_app_root` pre-side-effect failure, `--path` absolute-validation, gateway-applied peer allowance, interactive prompts, JSON envelope alignment, and `success.meta.warnings[]` shape. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupPathResolutionTest.php` | CWD path-ownership outcomes (`workspace`, `app_root`, `inside_app`, `unregistered`); adapter-probe single/none/ambiguous/error branches; adapter-mismatch rejection against explicit `--app`/`[name]`; adapter-driven adoption recording `agent_ide` and `agent_ide_workspace_id`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` authorization failures before side effects. |
-| `tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
-| `tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
-| `tests/E2E/Ephemeral/WorkspaceSetupStepExecutionTest.php` | Real step execution with lifecycle env verification and step-failure reporting. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution across CWD outcomes and adapter probe branches, `workspace.path_is_app_root` pre-side-effect failure, `--path` absolute-validation, gateway-applied peer allowance, interactive prompts, JSON envelope alignment, and `success.meta.warnings[]` shape. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupPathResolutionTest.php` | CWD path-ownership outcomes (`workspace`, `app_root`, `inside_app`, `unregistered`); adapter-probe single/none/ambiguous/error branches; adapter-mismatch rejection against explicit `--app`/`[name]`; adapter-driven adoption recording `agent_ide` and `agent_ide_workspace_id`. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` authorization failures before side effects. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepExecutionTest.php` | Real step execution with lifecycle env verification and step-failure reporting. |
 
 Role-specific behavior and test mapping live in:
 

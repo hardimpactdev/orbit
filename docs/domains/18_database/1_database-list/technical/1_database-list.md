@@ -81,5 +81,5 @@ The gateway API emits an activity entry for successful and failed list requests.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseListCommandTest.php` | Filter combinations, scope validation, authorization handoff, and side-effect boundaries. |
-| `tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php` | JSON envelope shape, entity list shape, and validation failure payload. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php` | Filter combinations, scope validation, authorization handoff, and side-effect boundaries. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php` | JSON envelope shape, entity list shape, and validation failure payload. |

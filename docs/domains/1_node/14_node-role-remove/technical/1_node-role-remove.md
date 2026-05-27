@@ -66,8 +66,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRoleRemoveCommandTest.php` | Blocked removal, destructive consent through `--force`, purge behavior, missing `--purge-data` consent validation, and JSON success/failure shapes. |
-| `tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php` | Exactly one top-level `success` key on remove success and exactly one top-level `error` key on remove validation failure. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleRemoveCommandTest.php` | Blocked removal, destructive consent through `--force`, purge behavior, missing `--purge-data` consent validation, and JSON success/failure shapes. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php` | Exactly one top-level `success` key on remove success and exactly one top-level `error` key on remove validation failure. |
 
 ## Failure Semantics
 

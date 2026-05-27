@@ -91,5 +91,5 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Proxy/ProxyRemoveCommandTest.php` | Command contract for input validation, gateway authorization, destructive consent, custom-only removal, owned-route denial, cleanup failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, route ownership checks, destructive consent mapping, and proxy route entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveCommandTest.php` | Command contract for input validation, gateway authorization, destructive consent, custom-only removal, owned-route denial, cleanup failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, route ownership checks, destructive consent mapping, and proxy route entity mapping. |

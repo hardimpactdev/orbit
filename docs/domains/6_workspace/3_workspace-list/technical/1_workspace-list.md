@@ -132,9 +132,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceListCommandTest.php` | Command contract: listing all visible workspaces, app filtering, node filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
-| `tests/Feature/Commands/Workspaces/WorkspaceListJsonRendererTest.php` | JSON envelope shape, success payload with workspace array, sort ordering, filter error JSON shape, and lifecycle status taxonomy. |
-| `tests/Feature/Commands/Workspaces/WorkspaceListHumanRendererTest.php` | Human renderer selection, table grouping by app within node, success prose, filter error prose, and authorization failure prose. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListCommandTest.php` | Command contract: listing all visible workspaces, app filtering, node filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListJsonRendererTest.php` | JSON envelope shape, success payload with workspace array, sort ordering, filter error JSON shape, and lifecycle status taxonomy. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListHumanRendererTest.php` | Human renderer selection, table grouping by app within node, success prose, filter error prose, and authorization failure prose. |
 
 Renderer-specific test mapping lives in:
 

@@ -74,5 +74,5 @@ schedule detail reads.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php` | Command contract for schedule lookup, filter validation, gateway authorization, read-only boundary, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, lookup rules, and schedule entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php` | Command contract for schedule lookup, filter validation, gateway authorization, read-only boundary, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, lookup rules, and schedule entity mapping. |

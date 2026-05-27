@@ -102,4 +102,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Configured caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded `tld` payload, gateway-preserved TLD role rejection, grant authorization failures, self-update detection, gateway-unavailable failure, and result rendering. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Configured caller forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded `tld` payload, gateway-preserved TLD role rejection, grant authorization failures, self-update detection, gateway-unavailable failure, and result rendering. |

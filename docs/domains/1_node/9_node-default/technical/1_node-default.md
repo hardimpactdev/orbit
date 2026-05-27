@@ -176,11 +176,11 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract (see scope below). |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Configured-client contract: show and clear local-only, choose/set without identity preflight, and gateway-host rejection. |
-| `tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
-| `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
-| `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract (see scope below). |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Configured-client contract: show and clear local-only, choose/set without identity preflight, and gateway-host rejection. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
 
 `NodeDefaultCommandTest` covers:
 

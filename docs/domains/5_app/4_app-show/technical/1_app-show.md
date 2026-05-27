@@ -136,7 +136,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppShowCommandTest.php` | Command contract: input resolution (name vs hostname tiebreak), CWD-default fallback chain, app lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppShowCommandTest.php` | Command contract: input resolution (name vs hostname tiebreak), CWD-default fallback chain, app lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
 
 Input-mode-specific test mapping lives in:
 

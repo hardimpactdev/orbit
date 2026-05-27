@@ -68,4 +68,4 @@ The command reads family state only. Drift and repair stay with
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseShowCommandTest.php` | Resolution, not-found behavior, authorization handoff, and side-effect boundaries. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php` | Resolution, not-found behavior, authorization handoff, and side-effect boundaries. |

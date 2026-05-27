@@ -172,11 +172,11 @@ registration attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Configuration convergence, adoption logic, path-collision rejection, and apply dispatch. |
-| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Input resolution, authorization failure forwarding, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for runtime container, runtime configuration, and proxy route handoff behavior using mocked node execution. |
-| `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-apply refresh. |
-| `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |
+| `apps/gateway/tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Configuration convergence, adoption logic, path-collision rejection, and apply dispatch. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Input resolution, authorization failure forwarding, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
+| `apps/gateway/tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for runtime container, runtime configuration, and proxy route handoff behavior using mocked node execution. |
+| `apps/gateway/tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-apply refresh. |
+| `apps/gateway/tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |
 
 Context-specific behavior and test mapping live in:
 

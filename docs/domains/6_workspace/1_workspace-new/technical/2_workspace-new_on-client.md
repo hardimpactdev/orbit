@@ -35,5 +35,5 @@ When run from a client, `workspace:new` acts as a gateway client:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Client input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct SSH from the client. |
-| `tests/E2E/Ephemeral/WorkspaceNewControlForwardingTest.php` | Real-environment smoke coverage: `workspace:new` invoked from a client forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Client input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct SSH from the client. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceNewControlForwardingTest.php` | Real-environment smoke coverage: `workspace:new` invoked from a client forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |

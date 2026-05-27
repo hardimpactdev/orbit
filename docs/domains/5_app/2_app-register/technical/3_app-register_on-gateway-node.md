@@ -23,4 +23,4 @@ a peer the gateway identifies as a **gateway node**.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway-peer authorization without a client-side shortcut, active app-role target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-role path resolution over gateway-owned SSH, and app-role artifact application through `RemoteShell`. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway-peer authorization without a client-side shortcut, active app-role target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-role path resolution over gateway-owned SSH, and app-role artifact application through `RemoteShell`. |

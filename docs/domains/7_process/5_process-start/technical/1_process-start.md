@@ -85,8 +85,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessStartCommandTest.php` | Context resolution, grant authorization, process selection, runtime-unit derivation, successful start, durable event recording, partial bulk failure, and authorization failure (full scope below). |
-| `tests/Feature/Commands/Processes/ProcessStartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessStartCommandTest.php` | Context resolution, grant authorization, process selection, runtime-unit derivation, successful start, durable event recording, partial bulk failure, and authorization failure (full scope below). |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessStartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
 `ProcessStartCommandTest` covers context resolution, self-grant allowance,
 missing-grant denial, named and all-process selection, process-order execution,

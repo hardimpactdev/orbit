@@ -157,7 +157,7 @@ setup-step creation attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Workspaces/AddSetupStepActionTest.php` | Registry write for `(app, phase=setup, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php` | Input resolution (explicit `--app`, `.orbit/config` marker, gateway path lookup, interactive prompt, non-interactive failure), mutual exclusivity of `--before` / `--after`, strict positive `--timeout` validation including `0` rejection, additive (non-converging) re-run behavior, and absence of runtime lock against in-flight `workspace:setup`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
-| `tests/E2E/Ephemeral/WorkspaceSetupStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification, and JSON envelope alignment. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/AddSetupStepActionTest.php` | Registry write for `(app, phase=setup, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php` | Input resolution (explicit `--app`, `.orbit/config` marker, gateway path lookup, interactive prompt, non-interactive failure), mutual exclusivity of `--before` / `--after`, strict positive `--timeout` validation including `0` rejection, additive (non-converging) re-run behavior, and absence of runtime lock against in-flight `workspace:setup`. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification, and JSON envelope alignment. |

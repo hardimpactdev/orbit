@@ -98,5 +98,5 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Proxy/ProxyAddCommandTest.php` | Command contract for input validation, mutually exclusive route shape, gateway authorization, target resolution, replacement consent, failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, custom-route entity mapping, route ownership conflict detection, and target resolution rules. |
+| `apps/gateway/tests/Feature/Commands/Proxy/ProxyAddCommandTest.php` | Command contract for input validation, mutually exclusive route shape, gateway authorization, target resolution, replacement consent, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, custom-route entity mapping, route ownership conflict detection, and target resolution rules. |

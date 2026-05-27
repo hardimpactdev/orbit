@@ -57,5 +57,5 @@ and trust configuration only.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Non-gateway host behavior: first add flow, local onboarding path, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and gateway-host rejection. |
-| `tests/E2E/GatewayAddTest.php` | Real-node client join flow via `gateway:add`, including omitted-argument gateway IP derivation and idempotent convergence. |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Non-gateway host behavior: first add flow, local onboarding path, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and gateway-host rejection. |
+| `apps/gateway/tests/E2E/GatewayAddTest.php` | Real-node client join flow via `gateway:add`, including omitted-argument gateway IP derivation and idempotent convergence. |

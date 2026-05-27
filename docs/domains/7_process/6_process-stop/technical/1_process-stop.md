@@ -85,8 +85,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessStopCommandTest.php` | Command contract for `process:stop` behavior; see detail below. |
-| `tests/Feature/Commands/Processes/ProcessStopInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessStopCommandTest.php` | Command contract for `process:stop` behavior; see detail below. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessStopInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
 `ProcessStopCommandTest.php` covers context resolution, grant authorization,
 missing-grant denial, named and all-process selection, process-order

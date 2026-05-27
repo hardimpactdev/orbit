@@ -34,4 +34,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Gateway-host rejection before local default mutation. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Gateway-host rejection before local default mutation. |

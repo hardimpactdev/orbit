@@ -75,8 +75,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php` | Add success, role validation including the `vpn` and `agent` rejection paths, tld validation, conflict validation, and configured-caller forwarding. |
-| `tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php` | Exactly one top-level `success` key on add success and exactly one top-level `error` key on add validation failure. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php` | Add success, role validation including the `vpn` and `agent` rejection paths, tld validation, conflict validation, and configured-caller forwarding. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php` | Exactly one top-level `success` key on add success and exactly one top-level `error` key on add validation failure. |
 
 ## Failure Semantics
 

@@ -181,9 +181,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php` | Action contract: setting/clearing adapter, `inherit` semantics, adapter validation, and workspace cleanup side effects. |
-| `tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php` | Command contract: signature, input resolution, destructive consent logic, success/failure reporting, JSON alignment, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Feature/Http/Api/AppAgentIdeControllerTest.php` | Gateway API authorization with `app:agent`, adapter validation, destructive cleanup consent, cleanup execution, and activity logging. |
+| `apps/gateway/tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php` | Action contract: setting/clearing adapter, `inherit` semantics, adapter validation, and workspace cleanup side effects. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php` | Command contract: signature, input resolution, destructive consent logic, success/failure reporting, JSON alignment, and warning payload shape for `success.meta.warnings[]`. |
+| `apps/gateway/tests/Feature/Http/Api/AppAgentIdeControllerTest.php` | Gateway API authorization with `app:agent`, adapter validation, destructive cleanup consent, cleanup execution, and activity logging. |
 
 Input-mode-specific test mapping lives in:
 

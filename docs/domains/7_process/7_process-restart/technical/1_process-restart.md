@@ -85,8 +85,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, grant authorization, process selection, runtime-unit derivation, successful restart, durable event recording, partial bulk failure, and authorization failure (full scope below). |
-| `tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Context resolution, grant authorization, process selection, runtime-unit derivation, successful restart, durable event recording, partial bulk failure, and authorization failure (full scope below). |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
 `ProcessRestartCommandTest` covers context resolution, grant authorization,
 missing-grant denial, named and all-process selection, process-order

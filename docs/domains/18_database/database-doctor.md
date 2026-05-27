@@ -112,7 +112,7 @@ Required implementation test coverage:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/DatabaseConnectionsFamilyDoctorContractTest.php` | Database-family dispatch, issue codes, restore map, adopt map, rollout adoption semantics, denied restore/adopt cases, and scope filtering. |
-| `tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php` | In-memory `.env` diff behavior, supported-prefix parsing, unverifiable groups, and exclusion of unrelated `.env` keys from drift. |
-| `tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php` | `.env` rewrite behavior, mapped-prefix updates, preservation of unrelated keys/comments, and no deletion without explicit target mapping. |
-| `tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php` | Supported-prefix adoption, existing app/workspace rollout adoption, connection/target upsert behavior, and encrypted credential storage for passwords. |
+| `apps/gateway/tests/Feature/Doctor/DatabaseConnectionsFamilyDoctorContractTest.php` | Database-family dispatch, issue codes, restore map, adopt map, rollout adoption semantics, denied restore/adopt cases, and scope filtering. |
+| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php` | In-memory `.env` diff behavior, supported-prefix parsing, unverifiable groups, and exclusion of unrelated `.env` keys from drift. |
+| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php` | `.env` rewrite behavior, mapped-prefix updates, preservation of unrelated keys/comments, and no deletion without explicit target mapping. |
+| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php` | Supported-prefix adoption, existing app/workspace rollout adoption, connection/target upsert behavior, and encrypted credential storage for passwords. |

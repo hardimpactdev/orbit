@@ -119,8 +119,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppListCommandTest.php` | Command contract: listing all visible apps with nested workspaces, node filtering, environment filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
-| `tests/E2E/Read/AppListTest.php` | Real read-only `app:list --json` against registered apps. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppListCommandTest.php` | Command contract: listing all visible apps with nested workspaces, node filtering, environment filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
+| `apps/gateway/tests/E2E/Read/AppListTest.php` | Real read-only `app:list --json` against registered apps. |
 
 Renderer-specific test mapping lives in:
 

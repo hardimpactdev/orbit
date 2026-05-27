@@ -100,6 +100,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Tools/ToolRestartCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `tests/Feature/Commands/Tools/ToolRestartTargetResolutionTest.php` | Target hierarchy for `--app` selector forms, strict `--app` plus `--node` matching, `node:default`, gateway-known self fallback, and no visible-node cardinality fallback. |
-| `tests/Feature/Commands/Tools/ToolRestartJsonRendererTest.php` | JSON envelope shape, success metadata, validation failures, gateway error preservation, remote-action diagnostics, and non-interactive `--json` target behavior. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolRestartCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolRestartTargetResolutionTest.php` | Target hierarchy for `--app` selector forms, strict `--app` plus `--node` matching, `node:default`, gateway-known self fallback, and no visible-node cardinality fallback. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolRestartJsonRendererTest.php` | JSON envelope shape, success metadata, validation failures, gateway error preservation, remote-action diagnostics, and non-interactive `--json` target behavior. |

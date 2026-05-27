@@ -130,9 +130,9 @@ deployment status when reporting `app.latest_deployment_failed` or
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering the deploy-run lifecycle; see detail below. |
-| `tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Container routing for PHP/Composer/Artisan steps, host path translation, built-in warmup steps, and HTTP warmup behavior. |
-| `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |
+| `apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering the deploy-run lifecycle; see detail below. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Container routing for PHP/Composer/Artisan steps, host path translation, built-in warmup steps, and HTTP warmup behavior. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |
 
 `DeployCommandTest.php` covers production app lookup, grant denial before
 side effects, authorization, empty pipeline failure, run creation,

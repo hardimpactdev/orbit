@@ -65,4 +65,4 @@ materializes changed mapped values into target `.env` files.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php` | Update validation, slug collision, secret replacement and clearing, and side-effect boundaries. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php` | Update validation, slug collision, secret replacement and clearing, and side-effect boundaries. |

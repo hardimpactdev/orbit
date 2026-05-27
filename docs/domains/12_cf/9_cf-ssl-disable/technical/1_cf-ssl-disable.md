@@ -74,5 +74,5 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php` | Command contract for authorization denial, zone resolution, destructive consent, `--force`, provider authorization, provider failures, and no origin/proxy artifact mutation. |
-| `tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php` | Command contract for authorization denial, zone resolution, destructive consent, `--force`, provider authorization, provider failures, and no origin/proxy artifact mutation. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

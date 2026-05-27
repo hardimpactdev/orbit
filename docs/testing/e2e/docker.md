@@ -116,15 +116,15 @@ the Composer script. Add `--sequential-tests` when the selected tests should sta
 in one Pest process:
 
 ```bash
-composer test:e2e:docker -- --sequential-tests tests/E2E/AppListTest.php
+composer test:e2e:docker -- --sequential-tests apps/gateway/tests/E2E/AppListTest.php
 
 composer test:e2e:docker -- --sequential-tests \
-  tests/E2E/AppListTest.php \
-  tests/E2E/NodeListTopologyTest.php
+  apps/gateway/tests/E2E/AppListTest.php \
+  apps/gateway/tests/E2E/NodeListTopologyTest.php
 
 composer test:e2e:docker -- --sequential-tests \
   --filter='lists apps' \
-  tests/E2E/AppListTest.php
+  apps/gateway/tests/E2E/AppListTest.php
 ```
 
 Each Pest worker gets a non-overlapping Docker subnet from the `10.90.N.0/24`

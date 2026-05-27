@@ -74,5 +74,5 @@ app health checks that may incorporate latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php` | Command contract for production app lookup, authorization, ordered run listing, empty history behavior, default limit and cap behavior, read-only side-effect boundary, failure codes, and app-doctor handoff behavior. |
-| `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, app selector resolution, newest-first ordering, limit validation, and run entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php` | Command contract for production app lookup, authorization, ordered run listing, empty history behavior, default limit and cap behavior, read-only side-effect boundary, failure codes, and app-doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, app selector resolution, newest-first ordering, limit validation, and run entity mapping. |

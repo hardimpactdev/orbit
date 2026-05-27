@@ -76,5 +76,5 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php` | Command contract for authorization denial, zone resolution, address-record eligibility, destructive consent, `--force`, provider authorization, provider failures, and no Orbit configuration deletion. |
-| `tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php` | Command contract for authorization denial, zone resolution, address-record eligibility, destructive consent, `--force`, provider authorization, provider failures, and no Orbit configuration deletion. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

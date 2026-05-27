@@ -222,7 +222,7 @@ would be naming theater.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppWorkerCommandTest.php` | Action validation, app resolution, show/enable/disable state mutations, readiness failure leaves state unchanged, and the `app.not_found` and `app.worker_unsupported_runtime` paths. |
-| `tests/Feature/Http/Api/AppWorkerControllerTest.php` | API surface for `show`, `enable`, `disable`; HTTP status mapping; `app:worker` vs `app:read` permission split; `app.not_found` 404; readiness failure 422. |
-| `tests/Unit/Services/Apps/AppWorkerReadinessTest.php` | Probe token vocabulary and false-positive guards: bare composer.json, missing vendor, comment-only configuration (line and block), and the trailing-comment positive case. |
-| `tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | Worker-mode runtime env vars consumed by FrankenPHP and Octane, the `worker` directive shape for `auto` and integer worker counts, the configured `document_root` worker-file path, and the spec hash change on toggle. |
+| `apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php` | Action validation, app resolution, show/enable/disable state mutations, readiness failure leaves state unchanged, and the `app.not_found` and `app.worker_unsupported_runtime` paths. |
+| `apps/gateway/tests/Feature/Http/Api/AppWorkerControllerTest.php` | API surface for `show`, `enable`, `disable`; HTTP status mapping; `app:worker` vs `app:read` permission split; `app.not_found` 404; readiness failure 422. |
+| `apps/gateway/tests/Unit/Services/Apps/AppWorkerReadinessTest.php` | Probe token vocabulary and false-positive guards: bare composer.json, missing vendor, comment-only configuration (line and block), and the trailing-comment positive case. |
+| `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | Worker-mode runtime env vars consumed by FrankenPHP and Octane, the `worker` directive shape for `auto` and integer worker counts, the configured `document_root` worker-file path, and the spec hash change on toggle. |

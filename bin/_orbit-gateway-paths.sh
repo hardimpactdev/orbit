@@ -41,3 +41,18 @@ orbit_gateway_artisan_path() {
 
     printf '%s\n' "${root}/artisan"
 }
+
+orbit_gateway_vendor_path() {
+    local root="$1"
+    local app_root
+
+    app_root="$(orbit_gateway_app_path "$root")"
+
+    if [ -f "${root}/vendor/autoload.php" ]; then
+        printf '%s\n' "${root}/vendor"
+
+        return
+    fi
+
+    printf '%s\n' "${app_root}/vendor"
+}

@@ -147,8 +147,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepListCommandTest.php` | Parent-app resolution chain, `order ASC` sort, full-dump shape matching `workspace-setup-step:add`, empty-list behavior for apps with no steps, `workspace.app_not_found`, `authorization_failed`, and read-only guarantee. |
-| `tests/E2E/WorkspaceStepListTest.php` | Real read-only `workspace-setup-step:list --json` against a registered app with steps, including ordering and envelope alignment. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListCommandTest.php` | Parent-app resolution chain, `order ASC` sort, full-dump shape matching `workspace-setup-step:add`, empty-list behavior for apps with no steps, `workspace.app_not_found`, `authorization_failed`, and read-only guarantee. |
+| `apps/gateway/tests/E2E/WorkspaceStepListTest.php` | Real read-only `workspace-setup-step:list --json` against a registered app with steps, including ordering and envelope alignment. |
 
 Renderer-specific test mapping lives in:
 

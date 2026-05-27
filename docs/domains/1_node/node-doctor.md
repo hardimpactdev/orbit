@@ -343,8 +343,8 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior (see breakdown below). |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Node-family dispatch through the global doctor command, drift-detected exit semantics, healthy and unhealthy human/JSON output for the node family, and rejection of unsupported node-family flag combinations. |
+| `apps/gateway/tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior (see breakdown below). |
+| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Node-family dispatch through the global doctor command, drift-detected exit semantics, healthy and unhealthy human/JSON output for the node family, and rejection of unsupported node-family flag combinations. |
 
 `NodesProbeTest` covers diff behavior for registry configuration, role
 assignment compatibility and status, access grant integrity, WireGuard

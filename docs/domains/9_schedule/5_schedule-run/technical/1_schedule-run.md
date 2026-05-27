@@ -91,5 +91,5 @@ manual schedule run attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php` | Command contract for lookup, filter validation, gateway authorization, execution request shape, run-history persistence, non-zero scheduled exit handling, failure codes, and doctor boundary. |
-| `tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, run request mapping, captured output mapping, and run-history entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php` | Command contract for lookup, filter validation, gateway authorization, execution request shape, run-history persistence, non-zero scheduled exit handling, failure codes, and doctor boundary. |
+| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, run request mapping, captured output mapping, and run-history entity mapping. |

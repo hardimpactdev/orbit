@@ -201,8 +201,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
-| `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Docker process runtime units. |
+| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
+| `apps/gateway/tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Docker process runtime units. |
 
 Role-specific behavior and test mapping live in:
 

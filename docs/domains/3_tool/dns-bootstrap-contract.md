@@ -164,10 +164,10 @@ These pointers locate the current Orbit code paths that implement this contract.
 
 These files implement the bootstrap, builder, reconciler, and probe described above.
 
-- `app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php` — current bootstrap path.
-- `app/Services/Vpn/WgEasyServiceInstaller.php` — wg-easy install service.
-- `app/Services/Dns/DnsmasqConfigBuilder.php` — pure builder.
-- `app/Services/Dns/OrbitDnsServiceInstaller.php` — orbit-dns install service.
-- `app/Services/Dns/DnsmasqReconciler.php` — reconciler.
-- `app/Services/Doctor/` — DNS runtime probe (`DnsRuntimeProbe`).
-- `app/Tools/DnsTool.php` — `dns` tool definition.
+- `apps/gateway/app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php` — current bootstrap path.
+- `apps/gateway/app/Services/Vpn/WgEasyServiceInstaller.php` — wg-easy install service.
+- `apps/gateway/app/Services/Dns/DnsmasqConfigBuilder.php` — pure builder.
+- `apps/gateway/app/Services/Dns/OrbitDnsServiceInstaller.php` — orbit-dns install service.
+- `apps/gateway/app/Services/Dns/DnsmasqReconciler.php` — reconciler.
+- `apps/gateway/app/Services/Doctor/` — DNS runtime probe (`DnsRuntimeProbe`).
+- `apps/gateway/app/Tools/DnsTool.php` — `dns` tool definition.

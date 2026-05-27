@@ -111,12 +111,12 @@ Primary existing test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/UpdateCommandTest.php` | Bootstrap implementation coverage for local update command execution. Must be expanded to cover renderer selection, JSON output, fast-forward pull failure, `orbit-runtime` dependency failure, migration failure, and no remote side effects. |
+| `apps/gateway/tests/Feature/Commands/UpdateCommandTest.php` | Bootstrap implementation coverage for local update command execution. Must be expanded to cover renderer selection, JSON output, fast-forward pull failure, `orbit-runtime` dependency failure, migration failure, and no remote side effects. |
 
 Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/UpdateCommandTest.php` | Local update contract: no required inputs, no prompts, local-only side-effect boundary, update step ordering, success status, and handled failure status. |
-| `tests/Feature/Commands/Operations/UpdateJsonRendererTest.php` | JSON renderer selection, success envelope, error envelope, `error.code` values, and failure metadata. |
-| `tests/Feature/Commands/Operations/UpdateHumanRendererTest.php` | Human renderer progress tree, success output, and failure output. |
+| `apps/gateway/tests/Feature/Commands/Operations/UpdateCommandTest.php` | Local update contract: no required inputs, no prompts, local-only side-effect boundary, update step ordering, success status, and handled failure status. |
+| `apps/gateway/tests/Feature/Commands/Operations/UpdateJsonRendererTest.php` | JSON renderer selection, success envelope, error envelope, `error.code` values, and failure metadata. |
+| `apps/gateway/tests/Feature/Commands/Operations/UpdateHumanRendererTest.php` | Human renderer progress tree, success output, and failure output. |

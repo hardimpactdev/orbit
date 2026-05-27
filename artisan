@@ -1,18 +1,30 @@
 #!/usr/bin/env php
 <?php
 
-use Illuminate\Foundation\Application;
-use Symfony\Component\Console\Input\ArgvInput;
+declare(strict_types=1);
 
-define('LARAVEL_START', microtime(true));
+$artisan = __DIR__.'/apps/gateway/artisan';
 
-// Register the Composer autoloader...
-require __DIR__.'/vendor/autoload.php';
+if (! is_file($artisan)) {
+    fwrite(STDERR, "Orbit gateway artisan not found at {$artisan}\n");
 
-// Bootstrap Laravel and handle the command...
-/** @var Application $app */
-$app = require_once __DIR__.'/bootstrap/app.php';
+    exit(1);
+}
 
-$status = $app->handleCommand(new ArgvInput);
+if (($_SERVER['argv'][1] ?? null) === 'test') {
+    $pest = __DIR__.'/bin/orbit-gateway-pest';
+    $arguments = array_map('escapeshellarg', array_slice($_SERVER['argv'], 2));
+    $command = escapeshellarg($pest);
 
-exit($status);
+    if ($arguments !== []) {
+        $command .= ' '.implode(' ', $arguments);
+    }
+
+    passthru($command, $status);
+
+    exit($status);
+}
+
+$_SERVER['argv'][0] = $artisan;
+
+require $artisan;

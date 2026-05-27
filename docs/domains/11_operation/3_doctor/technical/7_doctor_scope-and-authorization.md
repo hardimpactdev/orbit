@@ -36,5 +36,5 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Scope resolution, mutually exclusive flag rejection, family-key validation, and gateway authorization failures. |
-| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Rejection of family selections outside the target node's active-role category set. |
+| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Scope resolution, mutually exclusive flag rejection, family-key validation, and gateway authorization failures. |
+| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Rejection of family selections outside the target node's active-role category set. |

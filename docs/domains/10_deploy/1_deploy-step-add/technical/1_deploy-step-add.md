@@ -84,5 +84,5 @@ policy when reporting `app.deployment_pipeline_invalid`.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php` | Command contract for input validation, production-app eligibility, grant denial before side effects, authorization, deployment policy write, order insertion, timeout metadata, retention metadata, failure codes, and app-doctor handoff behavior. |
-| `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, production app resolution, order insertion rules, timeout validation, retention validation, and deploy-step entity mapping. |
+| `apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php` | Command contract for input validation, production-app eligibility, grant denial before side effects, authorization, deployment policy write, order insertion, timeout metadata, retention metadata, failure codes, and app-doctor handoff behavior. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, production app resolution, order insertion rules, timeout validation, retention validation, and deploy-step entity mapping. |

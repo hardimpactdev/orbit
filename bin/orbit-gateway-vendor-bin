@@ -14,8 +14,8 @@ TOOL="$1"
 shift
 
 ROOT="$(orbit_repo_root)"
-APP_ROOT="$(orbit_gateway_app_path "$ROOT")"
+VENDOR_PATH="$(orbit_gateway_vendor_path "$ROOT")"
 
-cd "$APP_ROOT"
+cd "$ROOT"
 
-exec "vendor/bin/${TOOL}" "$@"
+exec "${VENDOR_PATH}/bin/${TOOL}" "$@"

@@ -80,5 +80,5 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php` | Command contract for authorization denial, app lookup, zone resolution, matching rule removal, missing rule failure, destructive consent, `--force`, provider authorization, and no app/proxy mutations. |
-| `tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php` | Command contract for authorization denial, app lookup, zone resolution, matching rule removal, missing rule failure, destructive consent, `--force`, provider authorization, and no app/proxy mutations. |
+| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

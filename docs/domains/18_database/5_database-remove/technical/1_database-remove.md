@@ -68,4 +68,4 @@ drift review belongs with [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php` | Destructive consent, mapping cascade semantics, and removal failure codes. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php` | Destructive consent, mapping cascade semantics, and removal failure codes. |

@@ -152,9 +152,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, environment filtering, combined filters, `--doctor` secondary operation, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no configuration mutation). |
-| `tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` | JSON envelope shape, success payload with node array, `--doctor` meta attachment, filter error JSON shape, and enum values. |
-| `tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` | Human renderer selection, table grouping by role, success prose, filter error prose, and `--doctor` summary prose. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, environment filtering, combined filters, `--doctor` secondary operation, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no configuration mutation). |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` | JSON envelope shape, success payload with node array, `--doctor` meta attachment, filter error JSON shape, and enum values. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` | Human renderer selection, table grouping by role, success prose, filter error prose, and `--doctor` summary prose. |
 
 Renderer-specific test mapping lives in:
 

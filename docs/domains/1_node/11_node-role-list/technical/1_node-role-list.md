@@ -54,7 +54,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php` | JSON and human output, missing node validation, and role payload fields. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php` | JSON and human output, missing node validation, and role payload fields. |
 
 ## Failure Semantics
 

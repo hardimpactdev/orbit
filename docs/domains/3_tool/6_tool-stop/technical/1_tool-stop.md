@@ -79,6 +79,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Tools/ToolStopCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `tests/Feature/Commands/Tools/ToolStopJsonRendererTest.php` | JSON envelope shape, canonical tool entity, renderer metadata, non-interactive target validation, and gateway error preservation. |
-| `tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared tool-family behavior such as canonical entity mapping, registry-only observed-state rules, registry target/filter behavior, and shared failure shape. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolStopCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `apps/gateway/tests/Feature/Commands/Tools/ToolStopJsonRendererTest.php` | JSON envelope shape, canonical tool entity, renderer metadata, non-interactive target validation, and gateway error preservation. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared tool-family behavior such as canonical entity mapping, registry-only observed-state rules, registry target/filter behavior, and shared failure shape. |

@@ -63,4 +63,4 @@ to write the mapped prefix into the target `.env` file.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseAttachCommandTest.php` | Target-scope validation, prefix conflicts, and no immediate `.env` rewrite. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php` | Target-scope validation, prefix conflicts, and no immediate `.env` rewrite. |

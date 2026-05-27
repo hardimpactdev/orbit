@@ -103,4 +103,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, forwarded payload, `node:revoke` authorization, self-lockout, destructive consent, and result rendering. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, forwarded payload, `node:revoke` authorization, self-lockout, destructive consent, and result rendering. |

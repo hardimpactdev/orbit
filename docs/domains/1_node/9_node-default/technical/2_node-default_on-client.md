@@ -100,5 +100,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Client-context choose, show, set, and clear behavior; configured vs unconfigured CLI for choose/set; stale default handling. |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Configured-client local-only show/clear behavior, choose/set without identity preflight, gateway choices for choose, gateway validation for set, gateway-host rejection, and no gateway configuration mutation. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Client-context choose, show, set, and clear behavior; configured vs unconfigured CLI for choose/set; stale default handling. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Configured-client local-only show/clear behavior, choose/set without identity preflight, gateway choices for choose, gateway validation for set, gateway-host rejection, and no gateway configuration mutation. |

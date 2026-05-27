@@ -80,4 +80,4 @@ materialize that intent into target `.env` files later.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Database/DatabaseAddCommandTest.php` | Driver validation, slug uniqueness, encrypted credential handling, and side-effect boundaries. |
+| `apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php` | Driver validation, slug uniqueness, encrypted credential handling, and side-effect boundaries. |

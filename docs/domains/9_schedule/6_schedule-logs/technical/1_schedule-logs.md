@@ -81,5 +81,5 @@ schedule run-log reads.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php` | Command contract for lookup, filter validation, run selection, line limiting, gateway authorization, read-only boundary, failure codes, and doctor boundary. |
-| `tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, run-history lookup rules, captured output mapping, and log line limiting. |
+| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php` | Command contract for lookup, filter validation, run selection, line limiting, gateway authorization, read-only boundary, failure codes, and doctor boundary. |
+| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, run-history lookup rules, captured output mapping, and log line limiting. |
