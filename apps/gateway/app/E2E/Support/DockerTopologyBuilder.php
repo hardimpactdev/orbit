@@ -66,7 +66,7 @@ final readonly class DockerTopologyBuilder
                     $this->mustRun($this->composerHelperRunCommand($container, $role, $composerCacheVolume), "Could not start {$this->composerHelperContainerName($container)}");
                 }
 
-                $dependencyKey = $this->runtimeDependencyKeyForRole($role);
+                $dependencyKey = $this->runtimeDependencyKey();
                 $dependencySource = $runtimeDependencySources[$dependencyKey] ?? null;
 
                 $this->prepareRoleSource($container, $role, $dependencySource);
@@ -450,7 +450,7 @@ final readonly class DockerTopologyBuilder
             return;
         }
 
-        $orbitStatePath = "{$this->orbitPathForRole($role)}/storage/app/orbit";
+        $orbitStatePath = "{$this->orbitPathForRole($role)}/apps/gateway/storage/app/orbit";
 
         $this->mustRun(
             sprintf(
@@ -527,7 +527,6 @@ final readonly class DockerTopologyBuilder
         $user = $this->userForRole($role);
 
         $commands = [
-            $this->gatewayArtifactCompatibilityCommand($role),
             $this->gatewayEnvironmentCommand($role),
             $chownSource ? sprintf('chown -R %s:%s %s', escapeshellarg($user), escapeshellarg($user), escapeshellarg($sourcePath)) : '',
             sprintf('chmod 0755 %s', escapeshellarg("{$sourcePath}/bin/orbit")),
@@ -535,31 +534,6 @@ final readonly class DockerTopologyBuilder
         ];
 
         return implode(' && ', array_filter($commands));
-    }
-
-    private function gatewayArtifactCompatibilityCommand(string $role): string
-    {
-        if ($role !== 'gateway') {
-            return '';
-        }
-
-        $sourcePath = $this->orbitPathForRole($role);
-        $gatewayDirectory = escapeshellarg("{$sourcePath}/apps/gateway");
-        $gatewayArtisan = escapeshellarg("{$sourcePath}/apps/gateway/artisan");
-        $rootArtisan = escapeshellarg("{$sourcePath}/artisan");
-
-        return <<<SH
-if [ ! -f {$gatewayArtisan} ] && [ -f {$rootArtisan} ]; then
-    mkdir -p {$gatewayDirectory}
-    cat > {$gatewayArtisan} <<'PHP'
-#!/usr/bin/env php
-<?php
-
-require __DIR__.'/../../artisan';
-PHP
-    chmod 0755 {$gatewayArtisan}
-fi
-SH;
     }
 
     private function gatewayEnvironmentCommand(string $role): string
@@ -572,16 +546,16 @@ SH;
 
         return <<<SH
 cd {$sourcePath}
-if [ ! -f .env ]; then
-    if [ -f .env.example ]; then
-        cp .env.example .env
+if [ ! -f apps/gateway/.env ]; then
+    if [ -f apps/gateway/.env.example ]; then
+        cp apps/gateway/.env.example apps/gateway/.env
     else
-        touch .env
+        touch apps/gateway/.env
     fi
 fi
-grep -Ev '^ORBIT_IS_GATEWAY=' .env > .env.tmp || true
-mv .env.tmp .env
-printf '%s\\n' 'ORBIT_IS_GATEWAY=true' >> .env
+grep -Ev '^ORBIT_IS_GATEWAY=' apps/gateway/.env > apps/gateway/.env.tmp || true
+mv apps/gateway/.env.tmp apps/gateway/.env
+printf '%s\\n' 'ORBIT_IS_GATEWAY=true' >> apps/gateway/.env
 SH;
     }
 
@@ -614,12 +588,12 @@ SH;
         $sourcePath = $this->orbitPathForRole($role);
 
         return sprintf(
-            'docker exec %s tar -C %s -cf - vendor apps/cli/vendor | docker exec -i %s sh -lc %s',
+            'docker exec %s tar -C %s -cf - apps/gateway/vendor apps/cli/vendor | docker exec -i %s sh -lc %s',
             escapeshellarg($sourceRuntimeContainer),
             escapeshellarg($sourcePath),
             escapeshellarg($targetRuntimeContainer),
             escapeshellarg(sprintf(
-                'cd %s && rm -rf vendor apps/cli/vendor && tar -xf -',
+                'cd %s && rm -rf apps/gateway/vendor apps/cli/vendor && tar -xf -',
                 escapeshellarg($sourcePath),
             )),
         );
@@ -629,20 +603,11 @@ SH;
     {
         $composerInstall = $this->composerConfigCommand().' && git config --global --add safe.directory '.escapeshellarg('*').' >/dev/null && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress';
         $commands = [
-            sprintf('cd %s && %s', escapeshellarg($sourcePath), $composerInstall),
+            sprintf('cd %s && %s', escapeshellarg("{$sourcePath}/apps/gateway"), $composerInstall),
         ];
 
-        if (is_file(base_path('apps/cli/composer.json'))) {
+        if (is_file(repo_path('apps/cli/composer.json'))) {
             $commands[] = sprintf('cd %s && %s', escapeshellarg("{$sourcePath}/apps/cli"), $composerInstall);
-        }
-
-        if ($role === 'gateway' && $this->hasRelocatedGatewayApp()) {
-            $commands[] = sprintf(
-                'if [ -f %s ]; then cd %s && %s; fi',
-                escapeshellarg("{$sourcePath}/apps/gateway/composer.json"),
-                escapeshellarg("{$sourcePath}/apps/gateway"),
-                $composerInstall,
-            );
         }
 
         return implode(' && ', $commands);
@@ -669,30 +634,9 @@ SH;
         );
     }
 
-    private function runtimeDependencyKeyForRole(string $role): string
+    private function runtimeDependencyKey(): string
     {
-        if ($role === 'gateway' && $this->hasRelocatedGatewayApp()) {
-            return 'gateway';
-        }
-
-        return $this->runtimeDependencyPathForRole($role);
-    }
-
-    private function runtimeDependencyPathForRole(string $role): string
-    {
-        $sourcePath = $this->orbitPathForRole($role);
-
-        if ($role === 'gateway' && $this->hasRelocatedGatewayApp()) {
-            return "{$sourcePath}/apps/gateway";
-        }
-
-        return "{$sourcePath}/apps/cli";
-    }
-
-    private function hasRelocatedGatewayApp(): bool
-    {
-        return is_file(base_path('apps/gateway/composer.json'))
-            && is_file(base_path('apps/gateway/artisan'));
+        return 'orbit-monorepo';
     }
 
     private function copyPathBetweenContainersCommand(string $sourceContainer, string $targetContainer, string $parentPath, string $pathName): string
@@ -1233,8 +1177,8 @@ SH;
     {
         $paths = [
             base_path('composer.lock'),
-            base_path('apps/cli/composer.lock'),
-            base_path('apps/gateway/composer.lock'),
+            repo_path('apps/cli/composer.lock'),
+            repo_path('apps/gateway/composer.lock'),
         ];
         $context = hash_init('sha256');
         $found = false;

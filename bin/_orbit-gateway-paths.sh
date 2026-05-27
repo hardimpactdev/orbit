@@ -27,32 +27,19 @@ orbit_gateway_app_path() {
         return
     fi
 
-    printf '%s\n' "$root"
+    printf 'orbit: gateway app not found at %s\n' "${root}/apps/gateway" >&2
+
+    return 1
 }
 
 orbit_gateway_artisan_path() {
     local root="$1"
 
-    if [ -f "${root}/apps/gateway/artisan" ]; then
-        printf '%s\n' "${root}/apps/gateway/artisan"
-
-        return
-    fi
-
-    printf '%s\n' "${root}/artisan"
+    printf '%s\n' "${root}/apps/gateway/artisan"
 }
 
 orbit_gateway_vendor_path() {
     local root="$1"
-    local app_root
 
-    app_root="$(orbit_gateway_app_path "$root")"
-
-    if [ -f "${root}/vendor/autoload.php" ]; then
-        printf '%s\n' "${root}/vendor"
-
-        return
-    fi
-
-    printf '%s\n' "${app_root}/vendor"
+    printf '%s\n' "${root}/apps/gateway/vendor"
 }

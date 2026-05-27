@@ -554,6 +554,9 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
         ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind)')
         ->toContain('--public-host=%s --skip-runtime-install')
+        ->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local')
+        ->toContain('php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev')
+        ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('/orbit/apps/cli')
         ->toContain('ORBIT_GATEWAY_URL=%%s')
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
@@ -569,6 +572,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
         ->toContain('escapeshellarg(self::ProdWireGuardIp)')
         ->toContain('escapeshellarg(self::AgentWireGuardIp)')
         ->toContain("foreach (['dev', 'prod', 'agent', 'ingress'] as \$role)")
+        ->not->toContain('cd /home/orbit/orbit && php artisan')
         ->not->toContain('prepared.node-new')
         ->not->toContain('launchPreparedBaseRole')
         ->not->toContain('& PID_');

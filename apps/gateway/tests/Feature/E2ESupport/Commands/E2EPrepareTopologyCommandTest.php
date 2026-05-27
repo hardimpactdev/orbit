@@ -406,7 +406,7 @@ it('--force excludes persisted orbit runtime state from the source archive', fun
     ])->assertSuccessful();
 
     expect($tarCommand)
-        ->toContain("--exclude='./storage/app/orbit/*'")
+        ->toContain("--exclude='./apps/gateway/storage/app/orbit/*'")
         ->toContain("--exclude='./apps/gateway/bootstrap/cache/*.php'");
 });
 

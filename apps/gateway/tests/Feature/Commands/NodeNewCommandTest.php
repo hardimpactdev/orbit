@@ -218,7 +218,7 @@ describe('node:new', function (): void {
     });
 
     it('ships a Docker-first local installer for operator nodes', function (): void {
-        $installer = base_path('bin/install-orbit');
+        $installer = repo_path('bin/install-orbit');
         $contents = file_get_contents($installer);
 
         expect($installer)->toBeFile()
@@ -249,7 +249,7 @@ describe('node:new', function (): void {
     });
 
     it('renders installer failures with Orbit-style progress and stable error codes', function (): void {
-        $installer = base_path('bin/install-orbit');
+        $installer = repo_path('bin/install-orbit');
         $result = Process::run(escapeshellarg($installer).' --not-a-real-flag');
 
         expect($result->failed())->toBeTrue()

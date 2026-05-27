@@ -15,7 +15,7 @@ it('stops a managed system service tool on an app node from the gateway', functi
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:stop supervisor --node=app-dev-1 --json',
+                'cd %s && php apps/gateway/artisan tool:stop supervisor --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -57,7 +57,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

@@ -19,6 +19,8 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
 
     private const string CONTAINER = 'orbit-runtime';
 
+    private const string ARTISAN = 'php apps/gateway/artisan';
+
     public function __construct(
         private RemoteShellScriptComposer $scripts,
         private SshCommandBuilder $ssh,
@@ -233,15 +235,15 @@ final readonly class RemoteOrbitRuntimeExecutor implements RemoteExecutor
         }
 
         if ($command === 'artisan') {
-            return 'php artisan';
+            return self::ARTISAN;
         }
 
         if (str_starts_with($command, 'artisan ')) {
-            return $this->safeDirectCommand('php artisan '.substr($command, strlen('artisan ')));
+            return $this->safeDirectCommand(self::ARTISAN.' '.substr($command, strlen('artisan ')));
         }
 
         if ($command === 'php artisan' || str_starts_with($command, 'php artisan ')) {
-            return $this->safeDirectCommand($command);
+            return $this->safeDirectCommand(self::ARTISAN.substr($command, strlen('php artisan')));
         }
 
         return $this->safeDirectCommand($command);

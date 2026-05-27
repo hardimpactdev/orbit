@@ -4,14 +4,14 @@
 
 List nodes registered in the gateway.
 
-Provides a fleet-wide overview of all nodes, their roles, and their environments.
+Provides a fleet-wide overview of all nodes and their roles.
 Useful for operators and CI scripts to audit infrastructure state and verify node
 availability.
 
 ## Usage
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|s3|app|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|s3>] [--doctor] [--json]
 ```
 
 Run from any node with gateway visibility. No arguments are required.
@@ -23,9 +23,8 @@ orbit node:list
 orbit node:list --role=vpn
 orbit node:list --role=router
 orbit node:list --role=app-production
-orbit node:list --environment=development
 orbit node:list --doctor
-orbit node:list --role=app --environment=development --json
+orbit node:list --role=app-development --json
 ```
 
 ## Arguments and options
@@ -37,10 +36,6 @@ This section defines each accepted filter and output flag for `node:list`.
 Filters by effective role assignment. Accepts a single role value:
 `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`,
 `agent`, `ingress`, `websocket`, or `s3`. Comma-separated input is rejected.
-
-### `--environment`
-
-Filters nodes by environment. Accepts a single value, one of `development` or `production`. Comma-separated input is rejected.
 
 ### `--doctor`
 

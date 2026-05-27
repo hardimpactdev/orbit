@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process;
 pest()->group('e2e', 'e2e-docker-image-contract');
 
 it('defines the orbit runtime image dependency and command contract', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/orbit-runtime/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/orbit-runtime/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('FROM php:8.5-cli-bookworm')
@@ -37,21 +37,21 @@ it('defines the orbit runtime image dependency and command contract', function (
 });
 
 it('includes the Docker Compose CLI plugin for Compose-backed Orbit services', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/orbit-runtime/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/orbit-runtime/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('COPY --from=docker:cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose');
 });
 
 it('keeps the orbit runtime image build context narrowed to the entrypoint', function (): void {
-    $dockerignore = file_get_contents(base_path('docker/orbit-runtime/Dockerfile.dockerignore'));
+    $dockerignore = file_get_contents(repo_path('docker/orbit-runtime/Dockerfile.dockerignore'));
 
     expect($dockerignore)
         ->toContain('**')
         ->toContain('!docker/orbit-runtime/entrypoint.sh')
-        ->toContain('storage/app/orbit/ca/**')
-        ->toContain('storage/app/orbit/certs/**')
-        ->toContain('storage/app/orbit/keys/**')
+        ->toContain('apps/gateway/storage/app/orbit/ca/**')
+        ->toContain('apps/gateway/storage/app/orbit/certs/**')
+        ->toContain('apps/gateway/storage/app/orbit/keys/**')
         ->toContain('.env*')
         ->toContain('vendor/**')
         ->toContain('node_modules/**');
@@ -66,7 +66,6 @@ it('runs mounted Orbit commands through the entrypoint orbit shim', function ():
     mkdir("{$source}/apps/gateway", recursive: true);
     mkdir($bin, recursive: true);
 
-    file_put_contents("{$source}/artisan", "<?php\n");
     file_put_contents("{$source}/apps/gateway/artisan", "<?php\n");
     file_put_contents("{$bin}/php", <<<'BASH'
 #!/usr/bin/env bash
@@ -75,7 +74,7 @@ printf 'host_cwd=%s\n' "${ORBIT_HOST_CWD:-}" >> "$PHP_CAPTURE"
 BASH);
     chmod("{$bin}/php", 0755);
 
-    $entrypoint = base_path('docker/orbit-runtime/entrypoint.sh');
+    $entrypoint = repo_path('docker/orbit-runtime/entrypoint.sh');
     $orbit = "{$root}/orbit";
     symlink($entrypoint, $orbit);
 
@@ -105,7 +104,7 @@ BASH);
 
 it('fails clearly when the orbit source mount is missing', function (): void {
     $process = new Process(
-        ['bash', base_path('docker/orbit-runtime/entrypoint.sh'), 'orbit', 'about'],
+        ['bash', repo_path('docker/orbit-runtime/entrypoint.sh'), 'orbit', 'about'],
         null,
         ['ORBIT_SOURCE_PATH' => '/missing/orbit/source'],
     );
@@ -118,7 +117,7 @@ it('fails clearly when the orbit source mount is missing', function (): void {
         ->toContain('Orbit source is not mounted at /missing/orbit/source');
 });
 
-it('falls back to the root artisan shim when a relocated gateway artisan is unavailable', function (): void {
+it('does not fall back to the root artisan shim when the gateway artisan is unavailable', function (): void {
     $root = sys_get_temp_dir().'/orbit-runtime-entrypoint-root-'.bin2hex(random_bytes(6));
     $source = "{$root}/source";
     $bin = "{$root}/bin";
@@ -136,7 +135,7 @@ BASH);
 
     try {
         $process = new Process(
-            ['bash', base_path('docker/orbit-runtime/entrypoint.sh'), 'orbit', 'about'],
+            ['bash', repo_path('docker/orbit-runtime/entrypoint.sh'), 'orbit', 'about'],
             null,
             [
                 'ORBIT_SOURCE_PATH' => $source,
@@ -148,9 +147,11 @@ BASH);
         $process->run();
 
         expect($process->getExitCode())
-            ->toBe(0, $process->getOutput().$process->getErrorOutput())
-            ->and(file_get_contents($capture))
-            ->toContain("argv={$source}/artisan about");
+            ->toBe(1, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain("Orbit source is not mounted at {$source}")
+            ->and(file_exists($capture))
+            ->toBeFalse();
     } finally {
         (new Process(['rm', '-rf', $root]))->run();
     }
@@ -162,11 +163,12 @@ it('loads gateway app classes ahead of stale root Composer autoload mappings', f
 
     mkdir("{$gateway}/app/Console", recursive: true);
     mkdir("{$gateway}/bootstrap", recursive: true);
-    mkdir("{$gateway}/stale/app/Console", recursive: true);
     mkdir("{$gateway}/symfony/Input", recursive: true);
     mkdir("{$gateway}/vendor", recursive: true);
+    mkdir("{$root}/stale/app/Console", recursive: true);
+    mkdir("{$root}/vendor", recursive: true);
 
-    file_put_contents("{$gateway}/artisan", file_get_contents(base_path('apps/gateway/artisan')));
+    file_put_contents("{$gateway}/artisan", file_get_contents(repo_path('apps/gateway/artisan')));
     chmod("{$gateway}/artisan", 0755);
 
     file_put_contents("{$gateway}/bootstrap/app.php", <<<'PHP'
@@ -191,7 +193,7 @@ class Kernel
 }
 PHP);
 
-    file_put_contents("{$gateway}/stale/app/Console/Kernel.php", <<<'PHP'
+    file_put_contents("{$root}/stale/app/Console/Kernel.php", <<<'PHP'
 <?php
 
 namespace App\Console;
@@ -226,6 +228,22 @@ spl_autoload_register(static function (string $class): void {
     }
 
     if ($class === 'App\\Console\\Kernel') {
+        require __DIR__.'/../app/Console/Kernel.php';
+    }
+}, prepend: true);
+PHP);
+
+    file_put_contents("{$root}/vendor/autoload.php", <<<'PHP'
+<?php
+
+spl_autoload_register(static function (string $class): void {
+    if ($class === 'Symfony\\Component\\Console\\Input\\ArgvInput') {
+        require __DIR__.'/../apps/gateway/symfony/Input/ArgvInput.php';
+
+        return;
+    }
+
+    if ($class === 'App\\Console\\Kernel') {
         require __DIR__.'/../stale/app/Console/Kernel.php';
     }
 }, prepend: true);
@@ -247,7 +265,7 @@ PHP);
 it('passes non-orbit entrypoint commands through unchanged', function (): void {
     $process = new Process([
         'bash',
-        base_path('docker/orbit-runtime/entrypoint.sh'),
+        repo_path('docker/orbit-runtime/entrypoint.sh'),
         'printf',
         'ok',
     ]);
@@ -277,15 +295,15 @@ it('does not ship persisted orbit certificate material in the runtime image', fu
     }
 
     $forbiddenPaths = [
-        '/opt/orbit-source/storage/app/orbit/ca',
-        '/opt/orbit-source/storage/app/orbit/certs',
-        '/opt/orbit-source/storage/app/orbit/keys',
-        '/home/control/orbit/storage/app/orbit/ca',
-        '/home/control/orbit/storage/app/orbit/certs',
-        '/home/control/orbit/storage/app/orbit/keys',
-        '/home/orbit/orbit/storage/app/orbit/ca',
-        '/home/orbit/orbit/storage/app/orbit/certs',
-        '/home/orbit/orbit/storage/app/orbit/keys',
+        '/opt/orbit-source/apps/gateway/storage/app/orbit/ca',
+        '/opt/orbit-source/apps/gateway/storage/app/orbit/certs',
+        '/opt/orbit-source/apps/gateway/storage/app/orbit/keys',
+        '/home/control/orbit/apps/gateway/storage/app/orbit/ca',
+        '/home/control/orbit/apps/gateway/storage/app/orbit/certs',
+        '/home/control/orbit/apps/gateway/storage/app/orbit/keys',
+        '/home/orbit/orbit/apps/gateway/storage/app/orbit/ca',
+        '/home/orbit/orbit/apps/gateway/storage/app/orbit/certs',
+        '/home/orbit/orbit/apps/gateway/storage/app/orbit/keys',
     ];
 
     $assertions = collect($forbiddenPaths)
@@ -377,7 +395,9 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
             '! command -v orbit',
             '! test -e /opt/orbit-source',
             '! test -f /home/control/orbit/artisan',
+            '! test -f /home/control/orbit/apps/gateway/artisan',
             '! test -f /home/orbit/orbit/artisan',
+            '! test -f /home/orbit/orbit/apps/gateway/artisan',
             'echo OK',
         ]),
     ]);

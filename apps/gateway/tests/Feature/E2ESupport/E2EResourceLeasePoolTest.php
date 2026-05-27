@@ -172,7 +172,7 @@ it('uses the main checkout lease directory for git worktrees', function (): void
 
     try {
         expect(E2EResourceLeasePool::defaultDirectoryFor($worktree))
-            ->toBe("{$main}/storage/framework/e2e/leases");
+            ->toBe("{$main}/apps/gateway/storage/framework/e2e/leases");
     } finally {
         exec('rm -rf '.escapeshellarg($main));
         exec('rm -rf '.escapeshellarg($worktree));

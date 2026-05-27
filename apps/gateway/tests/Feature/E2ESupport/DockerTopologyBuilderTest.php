@@ -14,7 +14,7 @@ beforeEach(function (): void {
 });
 
 it('defines the Docker topology host PHP 8.5 CLI baseline without ad hoc helper CLIs', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('FROM ubuntu:24.04')
@@ -78,7 +78,7 @@ it('starts Docker build topology client nodes with the host Docker socket and no
         ->toContain("--env 'COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache'")
         ->toContain("--env 'COMPOSER_HOME=/tmp/orbit-composer-home'")
         ->toContain("--env 'COMPOSER_ALLOW_SUPERUSER=1'")
-        ->toContain("cd '\\''/home/orbit/orbit'\\''")
+        ->toContain("cd '\\''/home/orbit/orbit/apps/gateway'\\''")
         ->toContain('/home/orbit/orbit/apps/cli')
         ->toContain('mkdir -p')
         ->toContain('/tmp/orbit-composer-home/config.json')
@@ -231,20 +231,19 @@ it('syncs the current checkout into each Docker topology node before installing 
     $gatewaySync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-gateway'")
         && str_contains($command, "tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit'")
         && str_contains($command, 'orbit-current-')), $commands, strict: true);
-    $gatewayInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit'")
-        && str_contains($command, "'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-gateway-orbit-runtime'")
-        && str_contains($command, '/home/orbit/orbit/apps/gateway')
-        && str_contains($command, 'composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')), $commands, strict: true);
+    $gatewayReuse = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator-composer'")
+        && str_contains($command, "tar -C '/home/orbit/orbit' -cf - apps/gateway/vendor apps/cli/vendor")
+        && str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-gateway-orbit-runtime'")), $commands, strict: true);
 
     expect($controlSync)->toBeInt()
         ->and($controlInstall)->toBeInt()
         ->and($controlSync)->toBeLessThan($controlInstall)
         ->and($gatewaySync)->toBeInt()
-        ->and($gatewayInstall)->toBeInt()
-        ->and($gatewaySync)->toBeLessThan($gatewayInstall);
+        ->and($gatewayReuse)->toBeInt()
+        ->and($gatewaySync)->toBeLessThan($gatewayReuse);
 });
 
-it('stages relocated gateway dependencies separately while reusing Docker CLI dependencies across app roles', function (): void {
+it('installs monorepo dependencies once and reuses them across Docker topology roles', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -266,35 +265,36 @@ it('stages relocated gateway dependencies separately while reusing Docker CLI de
     $cliInstallCommands = $composerInstallCommands
         ->filter(fn (string $command): bool => str_contains($command, '/apps/cli'))
         ->values();
-    $rootInstallCommands = $composerInstallCommands
-        ->filter(fn (string $command): bool => str_contains($command, "cd '\\''/home/orbit/orbit'\\''"))
-        ->values();
     $gatewayInstallCommands = $composerInstallCommands
         ->filter(fn (string $command): bool => str_contains($command, '/home/orbit/orbit/apps/gateway'))
         ->values();
     $reuseCommands = collect($commands)
-        ->filter(fn (string $command): bool => str_contains($command, "tar -C '/home/orbit/orbit' -cf - vendor apps/cli/vendor")
-            && str_contains($command, 'rm -rf vendor apps/cli/vendor && tar -xf -'))
+        ->filter(fn (string $command): bool => str_contains($command, "tar -C '/home/orbit/orbit' -cf - apps/gateway/vendor apps/cli/vendor")
+            && str_contains($command, 'rm -rf apps/gateway/vendor apps/cli/vendor && tar -xf -'))
         ->values();
 
-    expect($composerInstallCommands)->toHaveCount(2)
-        ->and($rootInstallCommands)->toHaveCount(2)
-        ->and($cliInstallCommands)->toHaveCount(2)
+    expect($composerInstallCommands)->toHaveCount(1)
+        ->and($cliInstallCommands)->toHaveCount(1)
         ->and($cliInstallCommands[0])->toContain('/home/orbit/orbit/apps/cli')
         ->and($gatewayInstallCommands)->toHaveCount(1)
         ->and($gatewayInstallCommands[0])->toContain('/home/orbit/orbit/apps/gateway')
-        ->and($reuseCommands)->toHaveCount(3)
+        ->and($reuseCommands)->toHaveCount(4)
         ->and($reuseCommands[0])->toContain("docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator-composer'")
-        ->and($reuseCommands[0])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-dev-composer'")
+        ->and($reuseCommands[0])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-gateway-orbit-runtime'")
         ->and($reuseCommands[1])->toContain("docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator-composer'")
-        ->and($reuseCommands[1])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-prod-composer'")
+        ->and($reuseCommands[1])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-dev-composer'")
         ->and($reuseCommands[2])->toContain("docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator-composer'")
-        ->and($reuseCommands[2])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-agent-composer'");
+        ->and($reuseCommands[2])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-prod-composer'")
+        ->and($reuseCommands[3])->toContain("docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator-composer'")
+        ->and($reuseCommands[3])->toContain("docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-agent-composer'");
 
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'dev-composer')
         && str_contains($process->command, 'composer install'));
 
+    Process::assertNotRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'gateway-orbit-runtime')
+        && str_contains($process->command, 'composer install'));
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'prod-orbit-runtime')
         && str_contains($process->command, 'composer install'));
@@ -304,9 +304,12 @@ it('stages relocated gateway dependencies separately while reusing Docker CLI de
 });
 
 it('builds Docker checkout sync archives without gitignored local secrets', function (): void {
-    $secretPath = base_path('storage/t384-topology-secret.key');
+    $secretPath = base_path('storage/app/orbit/t384-topology-secret.key');
     $archive = null;
 
+    if (! is_dir(dirname($secretPath))) {
+        mkdir(dirname($secretPath), recursive: true);
+    }
     file_put_contents($secretPath, 'secret');
     Process::preventStrayProcesses(false);
 
@@ -317,8 +320,8 @@ it('builds Docker checkout sync archives without gitignored local secrets', func
 
         expect($exitCode)->toBe(0)
             ->and($entries)->toContain('composer.json')
-            ->and($entries)->not->toContain('storage/t384-topology-secret.key')
-            ->and($entries)->not->toContain('./storage/t384-topology-secret.key');
+            ->and($entries)->not->toContain('apps/gateway/storage/app/orbit/t384-topology-secret.key')
+            ->and($entries)->not->toContain('./apps/gateway/storage/app/orbit/t384-topology-secret.key');
     } finally {
         Process::preventStrayProcesses();
 
@@ -467,7 +470,7 @@ it('normalizes persisted gateway orbit state ownership before committing prepare
     $persist = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -xf -"));
     $ownership = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway'")
         && str_contains($command, 'chown -R orbit:orbit')
-        && str_contains($command, '/home/orbit/orbit/storage/app/orbit'));
+        && str_contains($command, '/home/orbit/orbit/apps/gateway/storage/app/orbit'));
     $commit = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker commit')
         && str_contains($command, "'orbit-e2e-prepared-build-operator_gateway-gateway'")
         && str_contains($command, 'gateway_base'));

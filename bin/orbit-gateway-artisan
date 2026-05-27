@@ -5,9 +5,10 @@ set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/_orbit-gateway-paths.sh"
 
 ROOT="$(orbit_repo_root)"
+APP_ROOT="$(orbit_gateway_app_path "$ROOT")"
 ARTISAN="$(orbit_gateway_artisan_path "$ROOT")"
 
-cd "$ROOT"
+cd "$APP_ROOT"
 
 if [ "${1:-}" = "test" ]; then
     shift

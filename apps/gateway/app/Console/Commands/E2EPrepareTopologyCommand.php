@@ -256,7 +256,7 @@ class E2EPrepareTopologyCommand extends Command
         if ($branch !== null) {
             $command = sprintf(
                 'git -C %s archive --format=tar.gz --output=%s %s',
-                escapeshellarg(base_path()),
+                escapeshellarg(repo_path()),
                 escapeshellarg($archive),
                 escapeshellarg($branch),
             );
@@ -277,12 +277,19 @@ class E2EPrepareTopologyCommand extends Command
             './apps/gateway/database/*.sqlite-*',
             './apps/gateway/bootstrap/cache/*.php',
             './node_modules',
-            './storage/app/orbit/*',
-            './storage/framework/cache/data/*',
-            './storage/framework/sessions/*',
-            './storage/framework/testing/*',
-            './storage/framework/views/*',
-            './storage/logs/*',
+            './apps/gateway/node_modules',
+            './apps/gateway/public/build',
+            './apps/gateway/public/hot',
+            './apps/gateway/public/storage',
+            './apps/gateway/storage/app/orbit/*',
+            './apps/gateway/storage/framework/cache/data/*',
+            './apps/gateway/storage/framework/e2e/*',
+            './apps/gateway/storage/framework/sessions/*',
+            './apps/gateway/storage/framework/ssh-known-hosts/*',
+            './apps/gateway/storage/framework/testing/*',
+            './apps/gateway/storage/framework/views/*',
+            './apps/gateway/storage/logs/*',
+            './apps/gateway/storage/pail',
             './vendor',
         ];
 
@@ -295,7 +302,7 @@ class E2EPrepareTopologyCommand extends Command
             'COPYFILE_DISABLE=1 tar %s -czf %s -C %s .',
             $excludeArgs,
             escapeshellarg($archive),
-            escapeshellarg(base_path()),
+            escapeshellarg(repo_path()),
         );
 
         $result = Process::timeout(300)->run($command);
@@ -309,7 +316,7 @@ class E2EPrepareTopologyCommand extends Command
 
     private function stageBundleScript(string $bundleDir, string $name): void
     {
-        $source = base_path('bin/'.$name);
+        $source = repo_path('bin/'.$name);
 
         if (! is_file($source)) {
             throw new RuntimeException("Required bin script missing: {$source}");

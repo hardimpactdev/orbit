@@ -7,7 +7,7 @@ use Symfony\Component\Process\Process;
 
 describe('install-orbit role-aware launcher contract', function (): void {
     it('keeps the installed host command pointed at the checkout launcher wrapper', function (): void {
-        $installer = File::get(base_path('bin/install-orbit'));
+        $installer = File::get(repo_path('bin/install-orbit'));
 
         expect($installer)
             ->toContain('ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"')
@@ -67,7 +67,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
     });
 
     it('documents the production repository default for installed orbit nodes', function (): void {
-        $launcher = File::get(base_path('bin/orbit'));
+        $launcher = File::get(repo_path('bin/orbit'));
 
         expect($launcher)
             ->toContain('ORBIT_REPO')
@@ -75,7 +75,7 @@ describe('install-orbit role-aware launcher contract', function (): void {
     });
 
     it('fails clearly when the local CLI artifact dependencies are missing', function (): void {
-        $cli = File::get(base_path('apps/cli/orbit'));
+        $cli = File::get(repo_path('apps/cli/orbit'));
 
         expect($cli)
             ->toContain("__DIR__.'/vendor/autoload.php'")
@@ -84,14 +84,15 @@ describe('install-orbit role-aware launcher contract', function (): void {
     });
 
     it('keeps unported command compatibility inside the local CLI artifact', function (): void {
-        $cli = File::get(base_path('apps/cli/orbit'));
+        $cli = File::get(repo_path('apps/cli/orbit'));
 
         expect($cli)
-            ->toContain('fallbackToRootArtisanWhenCommandIsUnported')
-            ->toContain("dirname(__DIR__, 2).'/artisan'")
+            ->toContain('fallbackToGatewayArtisanWhenCommandIsUnported')
+            ->toContain("dirname(__DIR__, 2).'/apps/gateway/artisan'")
             ->toContain('passthruCommand(PHP_BINARY')
             ->toContain("'gateway:status'")
-            ->toContain("'internal:executor:verify'");
+            ->toContain("'internal:executor:verify'")
+            ->not->toContain("dirname(__DIR__, 2).'/artisan'");
     });
 });
 
@@ -155,7 +156,7 @@ function orbitLauncherPrepareFakeCheckout(string $repo, string $fakeBin): void
     File::ensureDirectoryExists("{$repo}/apps/cli");
     File::ensureDirectoryExists($fakeBin);
 
-    File::copy(base_path('bin/orbit'), "{$repo}/bin/orbit");
+    File::copy(repo_path('bin/orbit'), "{$repo}/bin/orbit");
     chmod("{$repo}/bin/orbit", 0755);
 
     orbitLauncherWriteExecutable("{$repo}/apps/gateway/artisan", orbitLauncherCaptureScript());
@@ -167,7 +168,7 @@ function orbitLauncherWriteGatewayEnvironment(string $repo, bool $isGateway): vo
 {
     $value = $isGateway ? 'true' : 'false';
 
-    File::put("{$repo}/.env", implode(PHP_EOL, [
+    File::put("{$repo}/apps/gateway/.env", implode(PHP_EOL, [
         "ORBIT_IS_GATEWAY={$value}",
         'ORBIT_EXECUTOR_SECRET=executor-secret',
         'ORBIT_NODE_IDENTITY=gateway-1',

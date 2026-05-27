@@ -8,7 +8,7 @@ final readonly class E2ENodeProbe
 {
     public static function assertOrbitInstalled(E2EInstance $instance): void
     {
-        $install = $instance->exec('test -d /home/orbit/orbit && test -f /home/orbit/orbit/artisan');
+        $install = $instance->exec('test -d /home/orbit/orbit && test -f /home/orbit/orbit/apps/gateway/artisan');
         $version = $instance->exec("sudo -iu orbit bash -lc 'orbit --version >/dev/null'");
 
         if (! $install->successful()) {

@@ -9,8 +9,8 @@ Run these gates while developing unless the change needs a narrower file or
 filter first.
 
 ```bash
-php artisan test --compact
-vendor/bin/pint --dirty --format agent
+bin/orbit-gateway-pest --compact
+bin/orbit-gateway-vendor-bin pint --dirty --format agent --config ../../pint.json
 composer docs-lint
 ```
 

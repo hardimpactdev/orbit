@@ -57,10 +57,10 @@ assignments. Supported platforms are tracked in
 Nodes may run the Orbit CLI as a stateless gateway client through the host
 `orbit` launcher, which dispatches to the role-aware artifact: host PHP
 `apps/cli/orbit` on non-gateway nodes. The CLI artifact owns native
-gateway-client commands and keeps root Artisan compatibility for commands that
-have not been ported to that artifact yet. Nodes do not own fleet state or run
-a local Orbit capability layer. They run workload services, call the gateway
-when a local command is invoked, and receive gateway-applied changes over SSH.
+gateway-client commands and forwards unported commands to the gateway Artisan
+surface in `apps/gateway/artisan`. Nodes do not own fleet state or run a local
+Orbit capability layer. They run workload services, call the gateway when a
+local command is invoked, and receive gateway-applied changes over SSH.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`

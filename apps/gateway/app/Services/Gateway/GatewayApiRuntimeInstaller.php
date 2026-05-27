@@ -99,7 +99,7 @@ class GatewayApiRuntimeInstaller
      */
     private function ensureOrbitRuntimeContainer(string $orbitPath): void
     {
-        $resolvedPath = $orbitPath !== '' ? $orbitPath : base_path();
+        $resolvedPath = $orbitPath !== '' ? $orbitPath : repo_path();
         $databasePath = $resolvedPath.'/apps/gateway/database/database.sqlite';
 
         $container = $this->runtimeRenderer->render(

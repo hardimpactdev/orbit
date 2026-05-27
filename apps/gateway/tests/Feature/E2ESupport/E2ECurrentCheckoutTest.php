@@ -101,16 +101,16 @@ it('reuses prepared vendor packages while rebuilding checkout local autoload fil
 
     $commandOutput = implode("\n", $commands);
 
-    expect($commandOutput)->toContain("cmp -s '/home/orbit/orbit/composer.lock' composer.lock")
-        ->and($commandOutput)->toContain("[ -d '/home/orbit/orbit/vendor/composer' ]")
-        ->and($commandOutput)->toContain('rm -rf vendor')
-        ->and($commandOutput)->toContain("find '/home/orbit/orbit/vendor' -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} vendor/ \\;")
-        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/vendor/composer' vendor/composer")
-        ->and($commandOutput)->toContain("cp '/home/orbit/orbit/vendor/autoload.php' vendor/autoload.php")
-        ->and($commandOutput)->toContain('if command -v composer >/dev/null 2>&1; then composer dump-autoload --no-interaction --optimize; fi')
+    expect($commandOutput)->toContain("cmp -s '/home/orbit/orbit/apps/gateway/composer.lock' apps/gateway/composer.lock")
+        ->and($commandOutput)->toContain("[ -d '/home/orbit/orbit/apps/gateway/vendor/composer' ]")
+        ->and($commandOutput)->toContain('rm -rf apps/gateway/vendor')
+        ->and($commandOutput)->toContain("find '/home/orbit/orbit/apps/gateway/vendor' -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} apps/gateway/vendor/ \\;")
+        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/apps/gateway/vendor/composer' apps/gateway/vendor/composer")
+        ->and($commandOutput)->toContain("cp '/home/orbit/orbit/apps/gateway/vendor/autoload.php' apps/gateway/vendor/autoload.php")
+        ->and($commandOutput)->toContain('cd apps/gateway && composer dump-autoload --no-interaction --optimize')
         ->and($commandOutput)->not->toContain("ln -s '/home/orbit/orbit/vendor' vendor")
-        ->and($commandOutput)->toContain('elif command -v composer >/dev/null 2>&1; then composer install --no-interaction --prefer-dist --optimize-autoloader')
-        ->and($commandOutput)->toContain('Composer is not installed and prepared vendor dependencies could not be reused.');
+        ->and($commandOutput)->toContain('elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader')
+        ->and($commandOutput)->toContain('Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.');
 });
 
 it('can seed the current checkout from prepared topology state', function (): void {
@@ -126,9 +126,9 @@ it('can seed the current checkout from prepared topology state', function (): vo
 
     $commandOutput = implode("\n", $commands);
 
-    expect($commandOutput)->toContain("cp '/home/orbit/orbit/.env' .env")
+    expect($commandOutput)->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env")
         ->and($commandOutput)->toContain("rm -f apps/gateway/database/database.sqlite apps/gateway/database/database.sqlite-* && cp '/home/orbit/orbit/apps/gateway/database/database.sqlite' apps/gateway/database/database.sqlite")
-        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/storage/app' storage/app");
+        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/apps/gateway/storage/app' apps/gateway/storage/app");
 });
 
 it('records checkout phase timings while installing the current checkout', function (): void {
@@ -259,7 +259,7 @@ it('makes the checkout archive readable before copying it into an instance', fun
 });
 
 it('excludes persisted orbit certificate material from checkout archive manifests', function (): void {
-    $certificatePath = base_path('storage/app/orbit/ca/e2e-test-certificate.pem');
+    $certificatePath = repo_path('apps/gateway/storage/app/orbit/ca/e2e-test-certificate.pem');
     $manifestEntries = [];
 
     if (! is_dir(dirname($certificatePath))) {
@@ -288,7 +288,7 @@ it('excludes persisted orbit certificate material from checkout archive manifest
     try {
         E2ECurrentCheckout::install($instance, 'orbit', $key);
 
-        expect($manifestEntries)->not->toContain('storage/app/orbit/ca/e2e-test-certificate.pem');
+        expect($manifestEntries)->not->toContain('apps/gateway/storage/app/orbit/ca/e2e-test-certificate.pem');
     } finally {
         @unlink($certificatePath);
     }
@@ -296,8 +296,8 @@ it('excludes persisted orbit certificate material from checkout archive manifest
 
 it('builds checkout archives from tracked and unignored files only', function (): void {
     $suffix = bin2hex(random_bytes(4));
-    $includedPath = base_path("tmp-e2e-archive-manifest-{$suffix}.txt");
-    $ignoredPath = base_path("tmp-e2e-archive-manifest-{$suffix}.log");
+    $includedPath = repo_path("tmp-e2e-archive-manifest-{$suffix}.txt");
+    $ignoredPath = repo_path("tmp-e2e-archive-manifest-{$suffix}.log");
     $manifestEntries = [];
 
     file_put_contents($includedPath, 'included');
@@ -325,7 +325,7 @@ it('builds checkout archives from tracked and unignored files only', function ()
 
         expect($manifestEntries)
             ->toContain(basename($includedPath))
-            ->toContain('.env.example')
+            ->toContain('apps/gateway/.env.example')
             ->not->toContain(basename($ignoredPath));
     } finally {
         @unlink($includedPath);
@@ -340,19 +340,24 @@ it('publishes the checkout archive excludes for tarball construction', function 
             './.worktrees',
             './.env',
             './build',
-            './storage/app/orbit/ca/*',
-            './storage/app/orbit/certs/*',
-            './storage/app/orbit/keys/*',
-            './storage/framework/e2e/*',
+            './apps/gateway/.env',
+            './apps/gateway/public/build',
+            './apps/gateway/public/hot',
+            './apps/gateway/public/storage',
+            './apps/gateway/storage/app/orbit/ca/*',
+            './apps/gateway/storage/app/orbit/certs/*',
+            './apps/gateway/storage/app/orbit/keys/*',
+            './apps/gateway/storage/framework/e2e/*',
             './apps/gateway/database/*.sqlite',
             './apps/gateway/database/*.sqlite-*',
             './apps/gateway/tests/E2E/.docker-feature-tests/*',
-            './vendor',
+            './apps/gateway/tests/E2E/.incus-feature-tests/*',
+            './apps/gateway/vendor',
         );
 });
 
 it('includes untracked path identity in the checkout tree hash', function (): void {
-    $directory = base_path('tmp-e2e-tree-hash-'.bin2hex(random_bytes(4)));
+    $directory = repo_path('tmp-e2e-tree-hash-'.bin2hex(random_bytes(4)));
 
     mkdir($directory, 0777, true);
     file_put_contents("{$directory}/alpha.txt", 'same-content');
@@ -385,7 +390,7 @@ it('runs the runtime-state phase from inside the remote checkout directory', fun
     E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
     expect($commands[3])->toStartWith("cd '/home/orbit/orbit-current' && ")
-        ->and($commands[3])->toContain("cp '/home/orbit/orbit/.env' .env");
+        ->and($commands[3])->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
 });
 
 it('marks Docker topology checkout env files with the Docker provider', function (): void {
@@ -423,9 +428,9 @@ it('regenerates empty app keys while preparing remote checkout env files', funct
     E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/home/orbit/orbit');
 
     expect($commands[3])
-        ->toContain("grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env")
-        ->toContain("grep -Eq '^APP_KEY=base64:.+' .env || php artisan key:generate --force --no-interaction --ansi")
-        ->toContain("grep -Eq '^APP_KEY=base64:.+' .env");
+        ->toContain("grep -q '^APP_KEY=' apps/gateway/.env || printf '%s\\n' 'APP_KEY=' >> apps/gateway/.env")
+        ->toContain("grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env || php apps/gateway/artisan key:generate --force --no-interaction --ansi")
+        ->toContain("grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env");
 });
 
 it('installs the current checkout on Docker topology nodes through the runtime container', function (): void {
@@ -457,6 +462,8 @@ it('installs the current checkout on Docker topology nodes through the runtime c
         ->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->toContain('key:generate --force --no-interaction --ansi')
         ->toContain('/home/orbit/orbit-current/apps/gateway/artisan')
+        ->toContain('apps/gateway/.env')
+        ->toContain('apps/gateway/storage/framework/views')
         ->toContain('migrate --force --ansi')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('rm -rf apps/cli/vendor')
@@ -478,7 +485,7 @@ it('installs the current checkout on Docker topology nodes through the runtime c
         ->and($wrapperCopyCommands)->toHaveCount(1);
 });
 
-it('bootstraps root app state for Docker host launcher checkout nodes without root composer installs', function (): void {
+it('bootstraps gateway app state for Docker host launcher checkout nodes without root composer installs', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -505,12 +512,12 @@ it('bootstraps root app state for Docker host launcher checkout nodes without ro
     )));
 
     expect($nodeInstallCommands)
-        ->toContain('/home/orbit/orbit/vendor/autoload.php')
-        ->toContain('/home/orbit/orbit/vendor')
-        ->toContain('rm -rf vendor')
-        ->toContain('php artisan key:generate --force --no-interaction --ansi')
-        ->toContain('php artisan migrate --force --ansi')
-        ->toContain('php artisan tinker --execute')
+        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
+        ->toContain('/home/orbit/orbit/apps/gateway/vendor')
+        ->toContain('rm -rf apps/gateway/vendor')
+        ->toContain('php apps/gateway/artisan key:generate --force --no-interaction --ansi')
+        ->toContain('php apps/gateway/artisan migrate --force --ansi')
+        ->toContain('php apps/gateway/artisan tinker --execute')
         ->toContain('LocalGatewaySettings::current()')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('rm -rf apps/cli/vendor')
@@ -557,12 +564,12 @@ it('uses the host launcher for Docker operator and app checkouts while the gatew
     )));
 
     expect($operatorInstallCommands)
-        ->toContain('php artisan key:generate')
-        ->toContain('php artisan migrate --force')
-        ->toContain('php artisan tinker --execute')
+        ->toContain('php apps/gateway/artisan key:generate')
+        ->toContain('php apps/gateway/artisan migrate --force')
+        ->toContain('php apps/gateway/artisan tinker --execute')
         ->toContain('LocalGatewaySettings::current()')
-        ->toContain('/home/orbit/orbit/vendor/autoload.php')
-        ->toContain('rm -rf vendor')
+        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
+        ->toContain('rm -rf apps/gateway/vendor')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->not->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->and($gatewayInstallCommands)
@@ -570,12 +577,12 @@ it('uses the host launcher for Docker operator and app checkouts while the gatew
         ->toContain('key:generate')
         ->toContain('migrate --force')
         ->and($devInstallCommands)
-        ->toContain('php artisan key:generate')
-        ->toContain('php artisan migrate --force')
-        ->toContain('php artisan tinker --execute')
+        ->toContain('php apps/gateway/artisan key:generate')
+        ->toContain('php apps/gateway/artisan migrate --force')
+        ->toContain('php apps/gateway/artisan tinker --execute')
         ->toContain('LocalGatewaySettings::current()')
-        ->toContain('/home/orbit/orbit/vendor/autoload.php')
-        ->toContain('rm -rf vendor')
+        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
+        ->toContain('rm -rf apps/gateway/vendor')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->not->toContain('orbit-e2e-run123-dev-orbit-runtime');
 });
@@ -677,17 +684,17 @@ it('can cache the checkout install and clone isolated runtime paths', function (
             ->and($secondPath)->toStartWith('/home/orbit/orbit-current-')
             ->and($secondPath)->not->toBe($firstPath)
             ->and(substr_count($commandOutput, 'tar --warning=no-unknown-keyword'))->toBe(1)
-            ->and($commandOutput)->toContain('! -name vendor ! -name storage ! -name .env -exec sh -c')
+            ->and($commandOutput)->toContain('! -name .env -exec sh -c')
             ->and($commandOutput)->toContain('cp -al "$path" "$target"/')
             ->and($commandOutput)->toContain('dest="$target/$(basename "$path")"')
             ->and($commandOutput)->toContain('rm -rf "$dest"; cp -a --reflink=always')
             ->and($commandOutput)->toContain('rm -rf "$dest"; cp -a "$path" "$target"/')
             ->and($commandOutput)->toContain('cp -a --reflink=always')
             ->and($commandOutput)->toContain("ln -s '/home/orbit/orbit-current-base-")
-            ->and($commandOutput)->toContain("/vendor' '{$firstPath}/vendor")
-            ->and($commandOutput)->toContain("/vendor' '{$secondPath}/vendor")
+            ->and($commandOutput)->toContain("/apps/gateway/vendor' '{$firstPath}/apps/gateway/vendor")
+            ->and($commandOutput)->toContain("/apps/gateway/vendor' '{$secondPath}/apps/gateway/vendor")
             ->and($commandOutput)->not->toContain('chmod -R a-w')
-            ->and($commandOutput)->toContain('! -name composer ! -name autoload.php -exec ln -s {} vendor/')
+            ->and($commandOutput)->toContain('! -name composer ! -name autoload.php -exec ln -s {} apps/gateway/vendor/')
             ->and(substr_count($commandOutput, 'copy '))->toBe(1)
             ->and($commandOutput)->not->toMatch("/cp -al '\\/home\\/orbit\\/orbit-current-base-[0-9a-f]+' '\\/home\\/orbit\\/orbit-current-[^']+'/")
             ->and($commandOutput)->toContain("/apps/gateway/database/database.sqlite '{$firstPath}'/apps/gateway/database/database.sqlite")
@@ -696,8 +703,8 @@ it('can cache the checkout install and clone isolated runtime paths', function (
             ->and($commandOutput)->toContain("rm -f '{$secondPath}'/apps/gateway/database/database.sqlite")
             ->and($commandOutput)->not->toContain("/storage' '{$firstPath}/storage")
             ->and($commandOutput)->not->toContain("/storage' '{$secondPath}/storage")
-            ->and($commandOutput)->toContain("/storage/app' '{$firstPath}/storage/app")
-            ->and($commandOutput)->toContain("/storage/app' '{$secondPath}/storage/app");
+            ->and($commandOutput)->toContain("/apps/gateway/storage/app' '{$firstPath}/apps/gateway/storage/app")
+            ->and($commandOutput)->toContain("/apps/gateway/storage/app' '{$secondPath}/apps/gateway/storage/app");
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_CHECKOUT_CACHE');
@@ -839,15 +846,15 @@ it('can install the current checkout on selected topology roles', function (): v
         'agent' => '/home/orbit/orbit-current',
     ]);
 
-    expect(implode("\n", $controlCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
-    expect(implode("\n", $gatewayCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
-    expect(implode("\n", $gatewayCommands))->toContain('php artisan orbit:internal:pin-node-host-keys --json');
-    expect(implode("\n", $devCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
-    expect(implode("\n", $devCommands))->not->toContain('php artisan orbit:internal:pin-node-host-keys --json');
-    expect(implode("\n", $prodCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
-    expect(implode("\n", $prodCommands))->not->toContain('php artisan orbit:internal:pin-node-host-keys --json');
-    expect(implode("\n", $agentCommands))->toContain("cp '/home/orbit/orbit/.env' .env");
-    expect(implode("\n", $agentCommands))->not->toContain('php artisan orbit:internal:pin-node-host-keys --json');
+    expect(implode("\n", $controlCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $gatewayCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $gatewayCommands))->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
+    expect(implode("\n", $devCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $devCommands))->not->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
+    expect(implode("\n", $prodCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $prodCommands))->not->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
+    expect(implode("\n", $agentCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $agentCommands))->not->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
 });
 
 it('passes checkout timing through topology installation', function (): void {

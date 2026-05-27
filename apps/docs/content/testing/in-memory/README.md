@@ -21,9 +21,9 @@ host-level mutation.
 Use focused files and filters before escalating to the full default suite.
 
 ```bash
-php artisan test --compact apps/gateway/tests/Feature/Commands/Nodes/NodeListCommandTest.php
-php artisan test --compact --filter='lists nodes'
-vendor/bin/pint --dirty --format agent
+bin/orbit-gateway-pest --compact tests/Feature/Commands/Nodes/NodeListCommandTest.php
+bin/orbit-gateway-pest --compact --filter='lists nodes'
+bin/orbit-gateway-vendor-bin pint --dirty --format agent --config ../../pint.json
 ```
 
 The default Composer test lane excludes `e2e` and `slow` groups, uses Pest

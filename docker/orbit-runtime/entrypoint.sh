@@ -17,12 +17,7 @@ truthy() {
 }
 
 orbit_artisan() {
-    if [ -f "${source_path}/apps/gateway/artisan" ]; then
-        printf '%s\n' "${source_path}/apps/gateway/artisan"
-        return
-    fi
-
-    printf '%s\n' "${source_path}/artisan"
+    printf '%s\n' "${source_path}/apps/gateway/artisan"
 }
 
 run_orbit() {
@@ -39,7 +34,7 @@ run_orbit() {
 }
 
 wait_for_source() {
-    while [ ! -f "${source_path}/apps/gateway/artisan" ] && [ ! -f "${source_path}/artisan" ]; do
+    while [ ! -f "${source_path}/apps/gateway/artisan" ]; do
         printf 'orbit-runtime: waiting for Orbit source at %s\n' "$source_path" >&2
         sleep 1
     done

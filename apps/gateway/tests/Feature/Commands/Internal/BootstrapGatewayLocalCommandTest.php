@@ -194,9 +194,9 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('keeps gateway bootstrap aligned with the host launcher install contract', function (): void {
-        $installer = File::get(base_path('bin/install-orbit'));
+        $installer = File::get(repo_path('bin/install-orbit'));
 
-        expect(File::exists(base_path('bin/orbit')))->toBeTrue()
+        expect(File::exists(repo_path('bin/orbit')))->toBeTrue()
             ->and($installer)->toContain('ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"')
             ->and($installer)->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
     });

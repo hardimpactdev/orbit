@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-it('defines a gateway composer boundary before the app is moved', function (): void {
-    $path = base_path('apps/gateway/composer.json');
+it('defines a self-contained gateway composer boundary', function (): void {
+    $path = repo_path('apps/gateway/composer.json');
 
     expect($path)->toBeFile();
 
@@ -39,16 +39,15 @@ it('defines a gateway composer boundary before the app is moved', function (): v
         ]);
 });
 
-it('keeps the gateway script surface ready for root forwarding shims', function (): void {
+it('keeps the gateway script surface app-local', function (): void {
     $composer = json_decode(
-        (string) file_get_contents(base_path('apps/gateway/composer.json')),
+        (string) file_get_contents(repo_path('apps/gateway/composer.json')),
         true,
         flags: JSON_THROW_ON_ERROR,
     );
 
     expect(array_keys($composer['scripts']))
         ->toContain(
-            'docs-lint',
             'test',
             'test:slow',
             'test:e2e',
@@ -61,5 +60,6 @@ it('keeps the gateway script surface ready for root forwarding shims', function 
             'rector',
             'quality-check',
             'quality-check:fix',
-        );
+        )
+        ->not->toContain('docs-lint');
 });

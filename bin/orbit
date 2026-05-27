@@ -33,7 +33,7 @@ resolve_default_repo() {
 gateway_flag() {
     local env_file
 
-    env_file="${ORBIT_REPO}/.env"
+    env_file="${ORBIT_REPO}/apps/gateway/.env"
 
     if [ ! -f "$env_file" ]; then
         return
@@ -44,7 +44,7 @@ gateway_flag() {
 
 env_value() {
     local key="$1"
-    local env_file="${ORBIT_REPO}/.env"
+    local env_file="${ORBIT_REPO}/apps/gateway/.env"
 
     if [ ! -f "$env_file" ]; then
         return
@@ -144,11 +144,7 @@ fi
 if [ "$(gateway_flag)" = "true" ]; then
     export ORBIT_APP="gateway"
 
-    if [ -f "${ORBIT_REPO}/apps/gateway/artisan" ]; then
-        exec php "${ORBIT_REPO}/apps/gateway/artisan" "$@"
-    fi
-
-    exec php "${ORBIT_REPO}/artisan" "$@"
+    exec php "${ORBIT_REPO}/apps/gateway/artisan" "$@"
 fi
 
 export ORBIT_APP="cli"

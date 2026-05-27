@@ -29,7 +29,7 @@ it('lists the agent node from a control caller against the agent-extended topolo
         $result = $topology->ssh(
             'control',
             sprintf(
-                'cd %s && php artisan node:list --role=agent --json',
+                'cd %s && php apps/gateway/artisan node:list --role=agent --json',
                 escapeshellarg($topology->checkout('control')),
             ),
             timeoutSeconds: 120,

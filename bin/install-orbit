@@ -519,7 +519,7 @@ install_source() {
     if [ -n "$SOURCE_ARCHIVE" ]; then
         [ -f "$SOURCE_ARCHIVE" ] || fail validation_failed "source archive not found: $SOURCE_ARCHIVE"
 
-        if [ -e "$TARGET_DIR" ] && [ ! -f "$TARGET_DIR/artisan" ]; then
+        if [ -e "$TARGET_DIR" ] && [ ! -f "$TARGET_DIR/apps/gateway/artisan" ]; then
             fail validation_failed "$TARGET_DIR exists and does not look like an Orbit checkout"
         fi
 
@@ -653,9 +653,9 @@ read_env_var() {
     local key="$1"
     local value
 
-    [ -f "$TARGET_DIR/.env" ] || return 1
+    [ -f "$TARGET_DIR/apps/gateway/.env" ] || return 1
 
-    value="$(grep -E "^${key}=" "$TARGET_DIR/.env" | tail -n 1 | cut -d= -f2- || true)"
+    value="$(grep -E "^${key}=" "$TARGET_DIR/apps/gateway/.env" | tail -n 1 | cut -d= -f2- || true)"
 
     if [ -z "$value" ]; then
         return 1
@@ -684,7 +684,7 @@ if (preg_match("/^".preg_quote($key, "/")."=/m", $contents) === 1) {
 }
 
 file_put_contents($path, $contents);
-' "$TARGET_DIR/.env" "$key" >>"$LOG_FILE" 2>&1
+' "$TARGET_DIR/apps/gateway/.env" "$key" >>"$LOG_FILE" 2>&1
 }
 
 generate_operation_token_secret() {
@@ -740,8 +740,8 @@ clear_laravel_bootstrap_cache() {
 bootstrap_runtime() {
     require_docker
 
-    if [ ! -f "$TARGET_DIR/.env" ]; then
-        run cp "$TARGET_DIR/.env.example" "$TARGET_DIR/.env"
+    if [ ! -f "$TARGET_DIR/apps/gateway/.env" ]; then
+        run cp "$TARGET_DIR/apps/gateway/.env.example" "$TARGET_DIR/apps/gateway/.env"
     fi
 
     run mkdir -p "$TARGET_DIR/apps/gateway/database"
@@ -758,6 +758,7 @@ bootstrap_runtime() {
     run docker_cli run --rm \
         --pull never \
         -v "$TARGET_DIR":/opt/orbit \
+        --workdir /opt/orbit/apps/gateway \
         orbit-runtime:current \
         composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
@@ -771,6 +772,7 @@ bootstrap_runtime() {
     run docker_cli run --rm \
         --pull never \
         -v "$TARGET_DIR":/opt/orbit \
+        --workdir /opt/orbit/apps/gateway \
         orbit-runtime:current \
         bash -lc "grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction"
 }
@@ -872,7 +874,7 @@ run_migrations_in_container() {
         --pull never \
         -v "$TARGET_DIR":/opt/orbit \
         orbit-runtime:current \
-        php /opt/orbit/artisan migrate --force --no-interaction
+        php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction
 }
 
 link_orbit() {

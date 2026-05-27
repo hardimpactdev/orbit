@@ -44,13 +44,13 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'docker/e2e/topology/Dockerfile')
         && str_contains($process->command, 'orbit-e2e-topology-runtime:prepared-current')
-        && str_contains($process->command, base_path()));
+        && str_contains($process->command, repo_path()));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'docker/orbit-runtime/Dockerfile')
         && str_contains($process->command, 'orbit-runtime:prepared-current')
-        && str_contains($process->command, base_path()));
+        && str_contains($process->command, repo_path()));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
@@ -108,7 +108,7 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
 });
 
 it('keeps the Docker topology runtime image source-less without a baked orbit launcher', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('LABEL org.orbit.e2e.source="prepared-checkout"')
@@ -124,7 +124,7 @@ it('keeps the Docker topology runtime image source-less without a baked orbit la
 });
 
 it('starts sshd for gateway to app node remote shell coverage', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('openssh-client')
@@ -135,7 +135,7 @@ it('starts sshd for gateway to app node remote shell coverage', function (): voi
 });
 
 it('uses a Docker CLI host substrate without host PHP Composer Caddy PHP-FPM or Supervisor', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('docker.io')

@@ -54,7 +54,7 @@ Incus only.
 
 ## Lane variables
 
-`composer test:e2e` runs `php artisan e2e:test`, which reads `ORBIT_E2E_LANES`
+`composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which reads `ORBIT_E2E_LANES`
 and starts selected prepared-topology lanes concurrently. The lane aliases set
 `ORBIT_E2E_LANES` before invoking the same orchestrator:
 `composer test:e2e:docker` selects `docker`, and `composer test:e2e:incus`

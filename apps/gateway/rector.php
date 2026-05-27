@@ -6,6 +6,6 @@ use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
     ->withPaths([
-        __DIR__.'/apps/gateway/app',
+        __DIR__.'/app',
     ])
     ->withPhpSets();

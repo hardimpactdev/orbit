@@ -231,7 +231,7 @@ it('forwards control callers to the gateway through orbit runtime executor', fun
     expect($command)->toContain('docker exec -i');
     expect($command)->toContain('--workdir');
     expect($command)->toContain(OrbitRuntimeContainer::SourcePath);
-    expect($command)->toContain('orbit-runtime /opt/orbit/artisan vpn-client:list --json');
+    expect($command)->toContain('orbit-runtime php apps/gateway/artisan vpn-client:list --json');
     expect((bool) preg_match("/bash -lc '\\''php artisan/", $command))->toBeFalse();
 });
 
@@ -289,7 +289,7 @@ it('forwards escaped arguments through an absolute orbit runtime artisan path', 
 
     expect($command)->toContain('docker exec -i');
     expect($command)->toContain('orbit-runtime sh -c');
-    expect($command)->toContain('/opt/orbit/artisan vpn-client:new');
+    expect($command)->toContain('php apps/gateway/artisan vpn-client:new');
     expect($command)->toContain('laptop');
     expect($command)->not->toContain('php artisan');
     expect((bool) preg_match("/bash -lc '\\''php artisan/", $command))->toBeFalse();

@@ -16,7 +16,7 @@ it('builds vpn forwarding scripts for the runtime executor without host php arti
         'config' => false,
     ]);
 
-    expect(str_starts_with($script, '/opt/orbit/artisan vpn-client:list'))->toBeTrue();
+    expect(str_starts_with($script, 'php apps/gateway/artisan vpn-client:list'))->toBeTrue();
     expect($script)->toContain('--totp=');
     expect($script)->toContain('123456');
     expect($script)->toContain('--json');
@@ -29,7 +29,7 @@ it('builds escaped vpn forwarding arguments against the absolute runtime artisan
 
     $script = $command->exposeGatewayScript('vpn-client:new', ['laptop'], []);
 
-    expect($script)->toBe("/opt/orbit/artisan vpn-client:new 'laptop' --json");
+    expect($script)->toBe("php apps/gateway/artisan vpn-client:new 'laptop' --json");
     expect($script)->not->toMatch('/\bphp\s+artisan\b/');
     expect($script)->not->toMatch('/\bphp\s+\$/');
 });

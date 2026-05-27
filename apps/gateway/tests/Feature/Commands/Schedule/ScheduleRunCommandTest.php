@@ -119,12 +119,12 @@ it('runs orbit scoped schedules locally on the gateway', function (): void {
     Schedule::factory()->orbit()->create([
         'name' => 'gateway-maintenance',
         'schedule_key' => 'orbit:gateway:gateway-maintenance',
-        'execution_value' => 'php artisan orbit:cleanup',
+        'execution_value' => 'php apps/gateway/artisan orbit:cleanup',
     ]);
     $remoteShell = new ScheduleRunRecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
     Process::fake([
-        'php artisan orbit:cleanup' => Process::result(output: "clean\n"),
+        'php apps/gateway/artisan orbit:cleanup' => Process::result(output: "clean\n"),
     ]);
     Process::preventStrayProcesses();
 
@@ -139,7 +139,7 @@ it('runs orbit scoped schedules locally on the gateway', function (): void {
         ->and($payload['success']['data']['output']['stdout'])->toBe("clean\n")
         ->and($remoteShell->scripts)->toBe([]);
 
-    Process::assertRan('php artisan orbit:cleanup');
+    Process::assertRan('php apps/gateway/artisan orbit:cleanup');
 });
 
 it('forwards non-gateway schedule runs through the typed gateway request', function (): void {

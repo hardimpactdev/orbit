@@ -59,7 +59,7 @@ Required envs / settings:
 
 - `INIT_ENABLED=true` — enables the unattended setup flow in wg-easy v15.
 - `INIT_USERNAME=orbit` and `INIT_PASSWORD=<generated>` — bootstrap the admin
-  account. The generated password is persisted in the gateway's `.env` as
+  account. The generated password is persisted in `apps/gateway/.env` as
   `WG_EASY_PASSWORD=...` so future runs are idempotent and so
   `tool:credentials wg-easy` can later expose it.
 - `INIT_HOST=<public host>` — the gateway's public IPv4 or DNS name.

@@ -9,6 +9,8 @@ use RuntimeException;
 
 final class E2ECurrentCheckout
 {
+    private const string GatewayArtisanRelativePath = 'apps/gateway/artisan';
+
     private static ?string $cachedArchive = null;
 
     private static bool $cachedArchiveIsShared = false;
@@ -152,7 +154,7 @@ final class E2ECurrentCheckout
 
     private static function gatewayArtisanPath(string $checkout): string
     {
-        return "{$checkout}/apps/gateway/artisan";
+        return "{$checkout}/".self::GatewayArtisanRelativePath;
     }
 
     private static function checkoutCacheEnabled(): bool
@@ -239,7 +241,7 @@ final class E2ECurrentCheckout
         $dockerTopology = self::usesDockerRuntime($instance);
         $dockerRuntimeContainer = $dockerTopology ? self::dockerRuntimeContainerName($instance) : null;
         $runBootstrapInDockerRuntime = $dockerTopology && ! $hostLauncher;
-        $requiresRootApplication = ! ($dockerTopology && $hostLauncher);
+        $requiresGatewayApplication = ! ($dockerTopology && $hostLauncher);
 
         self::runInstallPhase(
             $timer,
@@ -254,7 +256,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.vendor',
-            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology, $dockerRuntimeContainer, $requiresRootApplication),
+            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology, $dockerRuntimeContainer, $requiresGatewayApplication),
             $instance,
             $user,
             $keyPair,
@@ -327,28 +329,28 @@ final class E2ECurrentCheckout
         ]);
     }
 
-    private static function vendorInstallCommand(string $remotePath, string $vendorSourcePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, bool $requiresRootApplication = true): string
+    private static function vendorInstallCommand(string $remotePath, string $vendorSourcePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, bool $requiresGatewayApplication = true): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
             $dockerTopology
-                ? self::reuseRuntimeDependenciesCommand($vendorSourcePath, $remotePath, $dockerRuntimeContainer, $requiresRootApplication)
+                ? self::reuseRuntimeDependenciesCommand($vendorSourcePath, $remotePath, $dockerRuntimeContainer, $requiresGatewayApplication)
                 : self::installComposerDependenciesCommand($vendorSourcePath),
         ]);
     }
 
-    private static function reuseRuntimeDependenciesCommand(string $vendorSourcePath, string $remotePath, ?string $dockerRuntimeContainer = null, bool $requiresRootApplication = true): string
+    private static function reuseRuntimeDependenciesCommand(string $vendorSourcePath, string $remotePath, ?string $dockerRuntimeContainer = null, bool $requiresGatewayApplication = true): string
     {
-        $sourceVendor = escapeshellarg("{$vendorSourcePath}/vendor");
-        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/vendor/autoload.php");
+        $sourceVendor = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor");
+        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor/autoload.php");
         $sourceCliVendor = escapeshellarg("{$vendorSourcePath}/apps/cli/vendor");
         $sourceCliEnv = escapeshellarg("{$vendorSourcePath}/apps/cli/.env");
         $commands = [];
 
-        if ($requiresRootApplication) {
-            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf vendor && ln -s {$sourceVendor} vendor; else ".self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer).'; fi';
+        if ($requiresGatewayApplication) {
+            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf apps/gateway/vendor && ln -s {$sourceVendor} apps/gateway/vendor; else ".self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer).'; fi';
         } else {
-            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf vendor && ln -s {$sourceVendor} vendor; else echo 'Prepared root vendor dependencies are required for Docker host-launcher checkout.' >&2; exit 127; fi";
+            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf apps/gateway/vendor && ln -s {$sourceVendor} apps/gateway/vendor; else echo 'Prepared gateway vendor dependencies are required for Docker host-launcher checkout.' >&2; exit 127; fi";
         }
 
         $commands[] = "if [ -d {$sourceCliVendor} ]; then rm -rf apps/cli/vendor && ln -s {$sourceCliVendor} apps/cli/vendor; fi";
@@ -360,7 +362,7 @@ final class E2ECurrentCheckout
     private static function runtimeComposerInstallCommand(string $remotePath, ?string $dockerRuntimeContainer): string
     {
         if ($dockerRuntimeContainer === null) {
-            return 'composer install --no-interaction --prefer-dist --optimize-autoloader';
+            return 'cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader';
         }
 
         $environment = [
@@ -392,7 +394,7 @@ final class E2ECurrentCheckout
         return sprintf(
             'sudo docker exec %s --workdir %s %s sh -lc %s',
             $environmentFlags,
-            escapeshellarg($remotePath),
+            escapeshellarg("{$remotePath}/apps/gateway"),
             escapeshellarg($dockerRuntimeContainer),
             escapeshellarg($composerConfig.' && (git config --global --add safe.directory '.escapeshellarg('*').' >/dev/null 2>&1 || true) && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress'),
         );
@@ -400,40 +402,40 @@ final class E2ECurrentCheckout
 
     private static function installComposerDependenciesCommand(string $vendorSourcePath): string
     {
-        $sourceLock = escapeshellarg("{$vendorSourcePath}/composer.lock");
-        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/vendor/autoload.php");
-        $sourceComposer = escapeshellarg("{$vendorSourcePath}/vendor/composer");
-        $sourceVendor = escapeshellarg("{$vendorSourcePath}/vendor");
+        $sourceLock = escapeshellarg("{$vendorSourcePath}/apps/gateway/composer.lock");
+        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor/autoload.php");
+        $sourceComposer = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor/composer");
+        $sourceVendor = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor");
         $reuseVendor = implode(' && ', [
-            'rm -rf vendor',
-            'mkdir -p vendor',
-            "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} vendor/ \\;",
-            "cp -a {$sourceComposer} vendor/composer",
-            "cp {$sourceAutoload} vendor/autoload.php",
-            'if command -v composer >/dev/null 2>&1; then composer dump-autoload --no-interaction --optimize; fi',
+            'rm -rf apps/gateway/vendor',
+            'mkdir -p apps/gateway/vendor',
+            "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} apps/gateway/vendor/ \\;",
+            "cp -a {$sourceComposer} apps/gateway/vendor/composer",
+            "cp {$sourceAutoload} apps/gateway/vendor/autoload.php",
+            'if command -v composer >/dev/null 2>&1; then cd apps/gateway && composer dump-autoload --no-interaction --optimize; fi',
         ]);
 
-        return "if [ -f {$sourceAutoload} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} composer.lock; then {$reuseVendor}; elif command -v composer >/dev/null 2>&1; then composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Composer is not installed and prepared vendor dependencies could not be reused.' >&2; exit 127; fi";
+        return "if [ -f {$sourceAutoload} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} apps/gateway/composer.lock; then {$reuseVendor}; elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127; fi";
     }
 
     private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null): string
     {
         $runArtisanInDockerRuntime ??= $dockerTopology;
-        $runtimeDirectories = 'mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs';
+        $runtimeDirectories = 'mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs';
 
         if ($seedFrom === null) {
-            return "cp .env.example .env && mkdir -p apps/gateway/database && touch apps/gateway/database/database.sqlite && {$runtimeDirectories} && ".self::dockerTopologyProviderEnvCommand($dockerTopology).' && '.self::artisanCommand('key:generate --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
+            return "cp apps/gateway/.env.example apps/gateway/.env && mkdir -p apps/gateway/database && touch apps/gateway/database/database.sqlite && {$runtimeDirectories} && ".self::dockerTopologyProviderEnvCommand($dockerTopology).' && '.self::artisanCommand('key:generate --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
         }
 
-        $seedEnv = escapeshellarg("{$seedFrom}/.env");
+        $seedEnv = escapeshellarg("{$seedFrom}/apps/gateway/.env");
         $seedDatabase = escapeshellarg("{$seedFrom}/apps/gateway/database/database.sqlite");
-        $seedStorageApp = escapeshellarg("{$seedFrom}/storage/app");
+        $seedStorageApp = escapeshellarg("{$seedFrom}/apps/gateway/storage/app");
 
         return implode(' && ', [
-            "if [ -f {$seedEnv} ]; then cp {$seedEnv} .env; else cp .env.example .env; fi",
+            "if [ -f {$seedEnv} ]; then cp {$seedEnv} apps/gateway/.env; else cp apps/gateway/.env.example apps/gateway/.env; fi",
             'mkdir -p apps/gateway/database',
             "if [ -f {$seedDatabase} ]; then rm -f apps/gateway/database/database.sqlite apps/gateway/database/database.sqlite-* && cp {$seedDatabase} apps/gateway/database/database.sqlite; else touch apps/gateway/database/database.sqlite; fi",
-            "if [ -d {$seedStorageApp} ]; then mkdir -p storage && rm -rf storage/app && cp -a {$seedStorageApp} storage/app; fi",
+            "if [ -d {$seedStorageApp} ]; then mkdir -p apps/gateway/storage && rm -rf apps/gateway/storage/app && cp -a {$seedStorageApp} apps/gateway/storage/app; fi",
             $runtimeDirectories,
             self::dockerTopologyProviderEnvCommand($dockerTopology),
             self::appKeyCommand($runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer),
@@ -443,9 +445,9 @@ final class E2ECurrentCheckout
     private static function appKeyCommand(bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null): string
     {
         return implode(' && ', [
-            "(grep -q '^APP_KEY=' .env || printf '%s\\n' 'APP_KEY=' >> .env)",
-            "(grep -Eq '^APP_KEY=base64:.+' .env || ".self::artisanCommand('key:generate --force --no-interaction --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer).')',
-            "grep -Eq '^APP_KEY=base64:.+' .env",
+            "(grep -q '^APP_KEY=' apps/gateway/.env || printf '%s\\n' 'APP_KEY=' >> apps/gateway/.env)",
+            "(grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env || ".self::artisanCommand('key:generate --force --no-interaction --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer).')',
+            "grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env",
         ]);
     }
 
@@ -456,9 +458,9 @@ final class E2ECurrentCheckout
         }
 
         return implode(' && ', [
-            "grep -Ev '^(ORBIT_E2E_TOPOLOGY_PROVIDER)=' .env > .env.tmp",
-            'mv .env.tmp .env',
-            "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> .env",
+            "grep -Ev '^(ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp",
+            'mv apps/gateway/.env.tmp apps/gateway/.env',
+            "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> apps/gateway/.env",
         ]);
     }
 
@@ -563,7 +565,7 @@ PHP;
     private static function artisanCommand(string $arguments, bool $dockerTopology, ?string $remotePath = null, ?string $dockerRuntimeContainer = null): string
     {
         if (! $dockerTopology) {
-            return 'php artisan '.$arguments;
+            return 'php apps/gateway/artisan '.$arguments;
         }
 
         if ($remotePath === null || $dockerRuntimeContainer === null) {
@@ -599,9 +601,10 @@ PHP;
             "sudo rm -rf {$quotedRemotePath}",
             "mkdir -p {$quotedRemotePath}",
             "cd {$quotedBasePath}",
-            "find . -mindepth 1 -maxdepth 1 ! -name vendor ! -name storage ! -name .env -exec sh -c 'target=\$1; shift; for path do dest=\"\$target/\$(basename \"\$path\")\"; rm -rf \"\$dest\"; cp -al \"\$path\" \"\$target\"/ 2>/dev/null || { rm -rf \"\$dest\"; cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null; } || { rm -rf \"\$dest\"; cp -a \"\$path\" \"\$target\"/; }; done' sh {$quotedRemotePath} {} +",
+            "find . -mindepth 1 -maxdepth 1 ! -name .env -exec sh -c 'target=\$1; shift; for path do dest=\"\$target/\$(basename \"\$path\")\"; rm -rf \"\$dest\"; cp -al \"\$path\" \"\$target\"/ 2>/dev/null || { rm -rf \"\$dest\"; cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null; } || { rm -rf \"\$dest\"; cp -a \"\$path\" \"\$target\"/; }; done' sh {$quotedRemotePath} {} +",
+            "rm -rf {$quotedRemotePath}/apps/gateway/vendor {$quotedRemotePath}/apps/gateway/storage {$quotedRemotePath}/apps/gateway/.env",
             self::cloneCachedVendorCommand($basePath, $remotePath),
-            "if [ -f {$quotedBasePath}/.env ]; then cp {$quotedBasePath}/.env {$quotedRemotePath}/.env; fi",
+            "if [ -f {$quotedBasePath}/apps/gateway/.env ]; then cp {$quotedBasePath}/apps/gateway/.env {$quotedRemotePath}/apps/gateway/.env; fi",
             "mkdir -p {$quotedRemotePath}/apps/gateway/database",
             "if [ -f {$quotedBasePath}/apps/gateway/database/database.sqlite ]; then rm -f {$quotedRemotePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite-* && cp {$quotedBasePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite; else touch {$quotedRemotePath}/apps/gateway/database/database.sqlite; fi",
             self::cloneCachedStorageCommand($basePath, $remotePath),
@@ -610,17 +613,19 @@ PHP;
 
     private static function cloneCachedVendorCommand(string $basePath, string $remotePath): string
     {
-        $baseVendor = escapeshellarg("{$basePath}/vendor");
-        $remoteVendor = escapeshellarg("{$remotePath}/vendor");
+        $baseVendor = escapeshellarg("{$basePath}/apps/gateway/vendor");
+        $remoteVendor = escapeshellarg("{$remotePath}/apps/gateway/vendor");
+        $baseCliVendor = escapeshellarg("{$basePath}/apps/cli/vendor");
+        $remoteCliVendor = escapeshellarg("{$remotePath}/apps/cli/vendor");
 
-        return "if [ -d {$baseVendor} ]; then ln -s {$baseVendor} {$remoteVendor}; fi";
+        return "if [ -d {$baseVendor} ]; then ln -s {$baseVendor} {$remoteVendor}; fi && if [ -d {$baseCliVendor} ]; then rm -rf {$remoteCliVendor} && ln -s {$baseCliVendor} {$remoteCliVendor}; fi";
     }
 
     private static function cloneCachedStorageCommand(string $basePath, string $remotePath): string
     {
-        $baseStorageApp = escapeshellarg("{$basePath}/storage/app");
-        $remoteStorage = escapeshellarg("{$remotePath}/storage");
-        $remoteStorageApp = escapeshellarg("{$remotePath}/storage/app");
+        $baseStorageApp = escapeshellarg("{$basePath}/apps/gateway/storage/app");
+        $remoteStorage = escapeshellarg("{$remotePath}/apps/gateway/storage");
+        $remoteStorageApp = escapeshellarg("{$remotePath}/apps/gateway/storage/app");
 
         return implode(' && ', [
             "mkdir -p {$remoteStorage}/framework/cache/data {$remoteStorage}/framework/sessions {$remoteStorage}/framework/testing {$remoteStorage}/framework/views {$remoteStorage}/logs",
@@ -725,7 +730,7 @@ PHP;
             $result = Process::timeout(300)->run(sprintf(
                 'COPYFILE_DISABLE=1 tar --null -czf %s -C %s -T %s',
                 escapeshellarg($tarball),
-                escapeshellarg(base_path()),
+                escapeshellarg(repo_path()),
                 escapeshellarg($manifest),
             ));
 
@@ -773,21 +778,28 @@ PHP;
             './apps/gateway/database/*.sqlite',
             './apps/gateway/database/*.sqlite-*',
             './node_modules',
-            './public/build',
-            './public/hot',
-            './public/storage',
-            './storage/framework/e2e/*',
-            './storage/app/orbit/ca/*',
-            './storage/app/orbit/certs/*',
-            './storage/app/orbit/keys/*',
-            './storage/framework/cache/data/*',
-            './storage/framework/sessions/*',
-            './storage/framework/testing/*',
-            './storage/framework/views/*',
-            './storage/logs/*',
-            './storage/pail',
+            './apps/gateway/.env',
+            './apps/gateway/.env.e2e',
+            './apps/gateway/.env.local',
+            './apps/gateway/public/build',
+            './apps/gateway/public/hot',
+            './apps/gateway/public/storage',
+            './apps/gateway/storage/framework/e2e/*',
+            './apps/gateway/storage/app/orbit/ca/*',
+            './apps/gateway/storage/app/orbit/certs/*',
+            './apps/gateway/storage/app/orbit/keys/*',
+            './apps/gateway/storage/framework/cache/data/*',
+            './apps/gateway/storage/framework/sessions/*',
+            './apps/gateway/storage/framework/ssh-known-hosts/*',
+            './apps/gateway/storage/framework/testing/*',
+            './apps/gateway/storage/framework/views/*',
+            './apps/gateway/storage/logs/*',
+            './apps/gateway/storage/pail',
             './apps/gateway/tests/E2E/.docker-feature-tests/*',
-            './vendor',
+            './apps/gateway/tests/E2E/.incus-feature-tests/*',
+            './apps/gateway/vendor',
+            './apps/cli/vendor',
+            './apps/docs/vendor',
         ];
     }
 
@@ -861,7 +873,7 @@ PHP;
         $manifest = '';
 
         foreach (self::archiveManifest() as $path) {
-            $absolutePath = base_path($path);
+            $absolutePath = repo_path($path);
             $manifest .= $path."\0".hash_file('sha256', $absolutePath)."\n";
         }
 
@@ -896,7 +908,7 @@ PHP;
      */
     private static function archiveManifest(): array
     {
-        $output = (string) shell_exec('git ls-files -z --cached --others --exclude-standard 2>/dev/null');
+        $output = (string) shell_exec('git -C '.escapeshellarg(repo_path()).' ls-files -z --full-name --cached --others --exclude-standard 2>/dev/null');
         $paths = array_values(array_filter(explode("\0", $output), fn (string $path): bool => $path !== ''));
 
         $paths = array_values(array_filter($paths, self::shouldIncludeArchivePath(...)));
@@ -911,7 +923,7 @@ PHP;
     {
         $path = self::normalizeArchivePath($path);
 
-        if ($path === '' || ! is_file(base_path($path))) {
+        if ($path === '' || ! is_file(repo_path($path))) {
             return false;
         }
 

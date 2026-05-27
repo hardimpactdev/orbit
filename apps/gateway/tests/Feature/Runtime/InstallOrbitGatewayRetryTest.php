@@ -144,7 +144,7 @@ BASH;
         escapeshellarg($stateDir),
         escapeshellarg($logFile),
         escapeshellarg($targetDir),
-        escapeshellarg(base_path('bin/install-orbit')),
+        escapeshellarg(repo_path('bin/install-orbit')),
         escapeshellarg($gatewayMode),
     );
 

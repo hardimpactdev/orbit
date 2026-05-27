@@ -22,7 +22,7 @@ function baseImageOptions(bool $force = false): IncusBaseImagePreparationOptions
         cpus: 2,
         memory: '2GiB',
         timeoutSeconds: 600,
-        depsScriptPath: base_path('bin/_e2e-deps.sh'),
+        depsScriptPath: repo_path('bin/_e2e-deps.sh'),
     );
 }
 

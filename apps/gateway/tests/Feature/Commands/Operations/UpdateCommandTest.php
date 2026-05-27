@@ -43,7 +43,7 @@ it('is local only with no remote side effects', function (): void {
 
     expect($exitCode)->toBe(0);
 
-    Process::assertRan(fn ($process): bool => $process->path === base_path()
+    Process::assertRan(fn ($process): bool => $process->path === repo_path()
         && (is_string($process->command) && str_contains($process->command, 'git pull --ff-only')));
 });
 

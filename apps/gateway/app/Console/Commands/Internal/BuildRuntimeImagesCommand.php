@@ -61,9 +61,9 @@ class BuildRuntimeImagesCommand extends Command
 
         $result = Process::timeout(1800)->run(sprintf(
             'docker build -f %s -t %s %s',
-            escapeshellarg(base_path('docker/orbit-runtime/Dockerfile')),
+            escapeshellarg(repo_path('docker/orbit-runtime/Dockerfile')),
             escapeshellarg($image),
-            escapeshellarg(base_path()),
+            escapeshellarg(repo_path()),
         ));
 
         if (! $result->successful()) {

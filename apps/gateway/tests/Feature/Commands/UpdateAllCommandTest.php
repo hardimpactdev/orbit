@@ -75,13 +75,13 @@ it('updates the local checkout and every active non-control remote node from the
         expect($payload['success']['data']['updates'][1]['target'])->toBe('beast');
 
         Process::assertRanTimes(fn (): bool => true, 3);
-        Process::assertRan(fn ($process): bool => $process->path === base_path()
+        Process::assertRan(fn ($process): bool => $process->path === repo_path()
             && $process->command === 'git pull --ff-only');
-        Process::assertRan(fn ($process): bool => $process->path === base_path()
+        Process::assertRan(fn ($process): bool => $process->path === repo_path()
             && is_array($process->command)
             && in_array('install', $process->command)
             && in_array('--no-interaction', $process->command));
-        Process::assertRan(fn ($process): bool => $process->path === base_path()
+        Process::assertRan(fn ($process): bool => $process->path === repo_path()
             && is_array($process->command)
             && in_array('migrate', $process->command)
             && in_array('--force', $process->command));

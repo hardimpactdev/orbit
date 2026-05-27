@@ -100,8 +100,8 @@ it('runs gateway api shim commands as the orbit runtime user', function (): void
 
     expect($script)
         ->toContain('sudo -iu orbit bash -lc')
-        ->toContain('mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs')
-        ->toContain('VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/storage/framework/views\').\' \'.$command;')
+        ->toContain('mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs')
+        ->toContain('VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/apps/gateway/storage/framework/views\').\' \'.$command;')
         ->toContain('orbit node:new')
         ->not->toContain('php artisan');
 });
@@ -189,12 +189,12 @@ it('prepares runtime environment before issuing gateway api certificates', funct
     E2EGatewayApi::start($instance, 'runtime-env', '/home/orbit/orbit-current', '10.6.0.2');
 
     expect($instance->commands[0])
-        ->toContain('([ -f .env ] || cp .env.example .env)')
+        ->toContain('([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env)')
         ->toContain("APP_KEY='")
         ->toContain('printf')
         ->toContain('APP_KEY=base64:.+')
         ->toContain('orbit key:generate --force --no-interaction')
-        ->not->toContain("grep -q '^APP_KEY=base64:' .env");
+        ->not->toContain("grep -q '^APP_KEY=base64:' apps/gateway/.env");
 });
 
 it('starts Docker gateway API support through runtime container commands without host PHP or host Caddy', function (): void {
@@ -263,7 +263,7 @@ it('starts Docker gateway API support through runtime container commands without
         ->toContain('cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519');
 
     expect($certificateSetup)->toBeString()
-        ->toContain('([ -f .env ] || cp .env.example .env)')
+        ->toContain('([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env)')
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
         ->toContain('--workdir')
         ->not->toContain('sudo -iu orbit');
@@ -323,7 +323,7 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
         ->toContain('/tmp/orbit-')
         ->toContain('-tls.php')
         ->toContain('orbit\ serve\ --host=')
-        ->toContain('php\ *artisan\ serve\ --host=')
+        ->not->toContain('php\ *artisan\ serve\ --host=')
         ->toContain('php\ */apps/gateway/artisan\ serve\ --host=');
 
     expect($tlsStart)->toBeString()
@@ -335,16 +335,19 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
 
 it('stops Docker gateway API HTTP processes after the runtime entrypoint execs artisan serve', function (): void {
     expect(gatewayStopScriptMatchesCommand(
-        'php /home/orbit/orbit/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
+        'php /home/orbit/orbit/apps/gateway/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
     ))->toBeTrue()
         ->and(gatewayStopScriptMatchesCommand(
-            'php /home/orbit/orbit/apps/gateway/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
+            'php /home/orbit/orbit/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
+        ))->toBeFalse()
+        ->and(gatewayStopScriptMatchesCommand(
+            '/usr/local/bin/php -S 0.0.0.0:80 /home/orbit/orbit/apps/gateway/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
         ))->toBeTrue()
         ->and(gatewayStopScriptMatchesCommand(
             '/usr/local/bin/php -S 0.0.0.0:80 /home/orbit/orbit/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
-        ))->toBeTrue()
+        ))->toBeFalse()
         ->and(gatewayStopScriptMatchesCommand(
-            '/usr/local/bin/php -S 0.0.0.0:8080 /home/orbit/orbit/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
+            '/usr/local/bin/php -S 0.0.0.0:8080 /home/orbit/orbit/apps/gateway/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
         ))->toBeFalse();
 });
 
@@ -415,7 +418,7 @@ it('can split gateway wireguard identity from bind address and cert key', functi
         ->and(implode("\n", $instance->commands))
         ->toContain('php -d display_errors=0 -S 0.0.0.0:80')
         ->toContain('$certKey = \'gateway\'')
-        ->toContain('/storage/app/orbit/certs/')
+        ->toContain('/apps/gateway/storage/app/orbit/certs/')
         ->toContain('$wireguardIdentity = \'10.6.0.2\'')
         ->toContain('$bindAddress = \'0.0.0.0\'')
         ->toContain("stream_socket_server('tls://'.\$bindAddress.':443'")

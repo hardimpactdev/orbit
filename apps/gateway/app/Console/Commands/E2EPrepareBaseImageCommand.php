@@ -104,7 +104,7 @@ class E2EPrepareBaseImageCommand extends Command
                 cpus: (int) $buildHostConfig->cpus,
                 memory: $buildHostConfig->memory,
                 timeoutSeconds: $buildHostConfig->timeoutSeconds,
-                depsScriptPath: base_path('bin/_e2e-deps.sh'),
+                depsScriptPath: repo_path('bin/_e2e-deps.sh'),
             );
 
             $preparer = $this->preparerFactory !== null

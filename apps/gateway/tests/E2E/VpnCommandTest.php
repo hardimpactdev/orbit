@@ -112,7 +112,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && (grep -v '^ORBIT_VPN_FAKE_BACKEND_PATH=' .env 2>/dev/null || true) > .env.vpn-e2e && printf '%s\n' ORBIT_VPN_FAKE_BACKEND_PATH=".escapeshellarg($backendPath).' >> .env.vpn-e2e && mv .env.vpn-e2e .env',
+        "cd {$checkout} && (grep -v '^ORBIT_VPN_FAKE_BACKEND_PATH=' apps/gateway/.env 2>/dev/null || true) > apps/gateway/.env.vpn-e2e && printf '%s\n' ORBIT_VPN_FAKE_BACKEND_PATH=".escapeshellarg($backendPath).' >> apps/gateway/.env.vpn-e2e && mv apps/gateway/.env.vpn-e2e apps/gateway/.env',
         timeoutSeconds: 60,
     );
 }

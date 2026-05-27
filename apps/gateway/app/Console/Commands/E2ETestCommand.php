@@ -203,7 +203,7 @@ class E2ETestCommand extends Command
         ];
 
         if (! $this->hasExplicitTestPath($passThroughArguments)) {
-            $testPath = 'apps/gateway/tests/E2E/.docker-feature-tests/'.$this->dockerTestRunDirectory();
+            $testPath = 'tests/E2E/.docker-feature-tests/'.$this->dockerTestRunDirectory();
             $testFiles = $this->dockerTestFiles();
             $command[] = $testPath;
         }
@@ -278,7 +278,7 @@ class E2ETestCommand extends Command
         ];
 
         if (! $this->hasExplicitTestPath($passThroughArguments)) {
-            $testPath = 'apps/gateway/tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
+            $testPath = 'tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
             $testFiles = $this->incusTestFiles();
         }
 
@@ -568,7 +568,7 @@ class E2ETestCommand extends Command
      */
     private function incusTestFiles(): array
     {
-        $directory = base_path('apps/gateway/tests/E2E');
+        $directory = repo_path('apps/gateway/tests/E2E');
 
         if (! is_dir($directory)) {
             return [];
@@ -646,7 +646,7 @@ class E2ETestCommand extends Command
      */
     private function dockerTestFiles(): array
     {
-        $directory = base_path('apps/gateway/tests/E2E');
+        $directory = repo_path('apps/gateway/tests/E2E');
 
         if (! is_dir($directory)) {
             return [];
@@ -822,8 +822,8 @@ class E2ETestCommand extends Command
 
     private function normalizePassThroughArgument(string $argument): string
     {
-        if ($argument === 'tests/E2E' || str_starts_with($argument, 'tests/E2E/')) {
-            return 'apps/gateway/'.$argument;
+        if ($argument === 'apps/gateway/tests/E2E' || str_starts_with($argument, 'apps/gateway/tests/E2E/')) {
+            return substr($argument, strlen('apps/gateway/'));
         }
 
         return $argument;
@@ -1384,7 +1384,7 @@ class E2ETestCommand extends Command
                 throw new \RuntimeException("Could not create E2E test suite directory [{$directory}].");
             }
 
-            $supportDirectory = base_path('apps/gateway/tests/E2E/Support');
+            $supportDirectory = repo_path('apps/gateway/tests/E2E/Support');
 
             if (is_dir($supportDirectory)) {
                 $generatedSupportDirectory = $directory.'/Support';

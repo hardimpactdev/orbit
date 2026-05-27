@@ -2524,7 +2524,7 @@ SCRIPT,
                     'wireguard_address' => $controlAddress,
                     'gateway_endpoint' => $host,
                     'user' => get_current_user(),
-                    'orbit_path' => base_path(),
+                    'orbit_path' => repo_path(),
                     'status' => 'active',
                 ],
             );

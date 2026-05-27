@@ -8,8 +8,8 @@ behavior under test is the boundary itself.
 Use a file or filter while developing:
 
 ```bash
-php artisan test --compact apps/gateway/tests/Feature/E2ESupport/VerificationScriptsTest.php
-php artisan test --compact --filter='documents the supported verification lanes'
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/VerificationScriptsTest.php
+bin/orbit-gateway-pest --compact --filter='documents the supported verification lanes'
 ```
 
 Use `composer test` when the touched surface crosses command families, shared
@@ -21,7 +21,7 @@ services, renderers, or support helpers.
 and `slow`, enables parallel mode, and uses compact output:
 
 ```bash
-php -d memory_limit=512M vendor/pestphp/pest/bin/pest \
+bin/orbit-gateway-pest \
   --exclude-group=e2e \
   --exclude-group=slow \
   --parallel \

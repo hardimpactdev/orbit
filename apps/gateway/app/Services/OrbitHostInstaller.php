@@ -51,7 +51,7 @@ class OrbitHostInstaller
 
             $executionUser = $this->pinnedNode instanceof Node ? $runtimeUser : $sshUser;
 
-            $scriptUpload = $this->scp(base_path('bin/install-orbit'), $executionUser, $host, $remoteInstaller);
+            $scriptUpload = $this->scp(repo_path('bin/install-orbit'), $executionUser, $host, $remoteInstaller);
 
             if (! $scriptUpload->successful()) {
                 return new OrbitHostInstallResult(
@@ -328,9 +328,9 @@ SCRIPT,
         $archive = $this->localTempPath('orbit-source-'.Str::lower(Str::random(8)).'.tar.gz');
 
         $result = Process::timeout(120)->run(sprintf(
-            "tar --exclude='.git' --exclude='node_modules' --exclude='vendor' --exclude='storage/logs/*' --exclude='storage/framework/cache/*' --exclude='storage/framework/sessions/*' --exclude='storage/framework/views/*' --exclude='apps/gateway/database/*.sqlite*' --exclude='.env' -czf %s -C %s .",
+            "tar --exclude='.git' --exclude='.env' --exclude='.env.*' --exclude='node_modules' --exclude='vendor' --exclude='apps/gateway/.env' --exclude='apps/gateway/.env.e2e' --exclude='apps/gateway/.env.local' --exclude='apps/gateway/.env.backup' --exclude='apps/gateway/.env.production' --exclude='apps/gateway/node_modules' --exclude='apps/gateway/public/build' --exclude='apps/gateway/public/hot' --exclude='apps/gateway/public/storage' --exclude='apps/gateway/storage/logs/*' --exclude='apps/gateway/storage/framework/cache/*' --exclude='apps/gateway/storage/framework/e2e/*' --exclude='apps/gateway/storage/framework/sessions/*' --exclude='apps/gateway/storage/framework/testing/*' --exclude='apps/gateway/storage/framework/views/*' --exclude='apps/gateway/storage/pail' --exclude='apps/gateway/database/*.sqlite*' -czf %s -C %s .",
             escapeshellarg($archive),
-            escapeshellarg(base_path()),
+            escapeshellarg(repo_path()),
         ));
 
         if (! $result->successful()) {

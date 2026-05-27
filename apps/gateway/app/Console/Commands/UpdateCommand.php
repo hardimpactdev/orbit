@@ -95,7 +95,7 @@ class UpdateCommand extends Command implements Loggable
                     return $this->jsonError(
                         code: 'local_checkout_unavailable',
                         message: 'Local Orbit checkout cannot be updated.',
-                        meta: ['path' => base_path()],
+                        meta: ['path' => repo_path()],
                     );
                 }
 

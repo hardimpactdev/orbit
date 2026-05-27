@@ -18,15 +18,15 @@ consistency, find contradictions, or align documentation.
 These docs are authoritative in this exact order. A downstream doc that
 contradicts an upstream doc is drift, regardless of how recently it was edited.
 
-1. `docs/mission.md`
-2. `docs/architecture.md`
-3. `docs/concepts.md` (concept routing index)
-4. `docs/tech-stack.md`
-5. `docs/domains/*/README.md` and `docs/domains/*/*-concepts.md`
-6. `docs/domains/*/**/technical/**.md`
+1. `apps/docs/content/mission.md`
+2. `apps/docs/content/architecture.md`
+3. `apps/docs/content/concepts.md` (concept routing index)
+4. `apps/docs/content/tech-stack.md`
+5. `apps/docs/content/domains/*/README.md` and `apps/docs/content/domains/*/*-concepts.md`
+6. `apps/docs/content/domains/*/**/technical/**.md`
 
-`docs/superpowers/**` and `docs/porting/**` are out of scope — they are
-historical or process docs, not product authority.
+`docs/superpowers/**` and `apps/docs/content/porting/**` are out of scope —
+they are historical or process docs, not product authority.
 
 ## Severity Buckets
 
@@ -48,9 +48,10 @@ decision because of this?* If yes, A. If they just feel uncertain, B.
 
 ### 1. Read authority docs (in order)
 
-Read `mission.md`, `architecture.md`, `concepts.md`, `tech-stack.md`,
-`docs/domains/README.md` in full. Build a mental model of what the docs
-*claim* before checking what they *say*.
+Read `apps/docs/content/mission.md`, `apps/docs/content/architecture.md`,
+`apps/docs/content/concepts.md`, `apps/docs/content/tech-stack.md`,
+`apps/docs/content/domains/README.md` in full. Build a mental model of what
+the docs *claim* before checking what they *say*.
 
 Key things to extract:
 
@@ -63,7 +64,7 @@ Key things to extract:
 
 ### 2. Read every domain README and concepts file
 
-For each `docs/domains/N_*/`:
+For each `apps/docs/content/domains/N_*/`:
 
 - `README.md` — domain rules, state ownership claims, JSON entity, caller-role wording.
 - `<family>-concepts.md` — vocabulary and invariants.
@@ -82,27 +83,27 @@ Run these greps from the repo root:
 
 ```bash
 # Broken architecture/tech-stack anchors
-grep -rn "architecture\.md#\|tech-stack\.md#" docs/ --include="*.md" \
-  | grep -v "superpowers\|porting"
+grep -rn "architecture\.md#\|tech-stack\.md#" apps/docs/content/ --include="*.md" \
+  | grep -v "porting"
 
 # Then for each anchor target, confirm the heading exists:
-grep -n "^#" docs/architecture.md docs/tech-stack.md
+grep -n "^#" apps/docs/content/architecture.md apps/docs/content/tech-stack.md
 
 # Legacy terminology still in current docs
 grep -rn "hosted node\|hosted host\|hosted role\|joined client\|operator node\|control node" \
-  docs/ --include="*.md" | grep -v "superpowers\|porting\|Legacy\|legacy"
+  apps/docs/content/ --include="*.md" | grep -v "porting\|Legacy\|legacy"
 
 # Caller-role leakage
 grep -rn "caller_role_not_allowed\|Caller Role Rule\|control.*callers\|app callers\|unknown callers" \
-  docs/domains/ --include="*.md"
+  apps/docs/content/domains/ --include="*.md"
 
 # Per-target scheduler model leakage
 grep -rn "target node.*scheduler\|scheduler on the target\|node.*scheduler" \
-  docs/domains/9_schedule/ --include="*.md"
+  apps/docs/content/domains/9_schedule/ --include="*.md"
 
 # Node-level vs role-assignment TLD
 grep -rn "node\.tld\|<node-tld>\|node\.tld_in_use" \
-  docs/ --include="*.md" | grep -v "superpowers\|porting"
+  apps/docs/content/ --include="*.md" | grep -v "porting"
 ```
 
 Add domain-specific sweeps as you spot patterns.
@@ -111,8 +112,8 @@ Add domain-specific sweeps as you spot patterns.
 
 The architecture's state-families list is the source of truth. Confirm:
 
-- Every family is enumerated in `domains/11_operation/README.md` doctor-routing list.
-- Every family is enumerated in `domains/17_activity/README.md` doctor-handoff bullets.
+- Every family is enumerated in `apps/docs/content/domains/11_operation/README.md` doctor-routing list.
+- Every family is enumerated in `apps/docs/content/domains/17_activity/README.md` doctor-handoff bullets.
 - Each `<family>-concepts.md` matches the architecture's family description.
 - Each `<family>-doctor.md` technical contract returns the correct singular family key (`node`, not `nodes`).
 
@@ -149,8 +150,8 @@ Tag the scratchpad with `["docs-audit", "review-input"]`.
 Spawn a Codex agent in Solo with this exact prompt template:
 
 ```
-You are reviewing a docs consistency audit I performed across /Users/nckrtl/orbit/docs/
-(excluding superpowers and porting subdirs).
+You are reviewing a docs consistency audit I performed across /Users/nckrtl/orbit/apps/docs/content/
+(excluding the porting subdir, and /Users/nckrtl/orbit/docs/superpowers/).
 
 My findings are in Solo scratchpad `docs-audit-findings-claude` (scratchpad_id N).
 Read it first using scratchpad_read with scratchpad_id=N.
@@ -159,7 +160,7 @@ Authority order used: mission > architecture > concepts > tech-stack > domain RE
 
 Your job:
 1. Read my findings.
-2. Independently verify each finding by reading the cited docs at /Users/nckrtl/orbit/docs/.
+2. Independently verify each finding by reading the cited docs at /Users/nckrtl/orbit/apps/docs/content/.
 3. Tell me: which of my findings are correct, which are wrong/overstated, and what I MISSED.
 4. Write your review to a new Solo scratchpad named `docs-audit-review-codex` so I can read it back.
    Use scratchpad_write to create it.

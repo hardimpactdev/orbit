@@ -4,10 +4,12 @@ Orbit is a clean Laravel 13 codebase.
 
 ## Current Shape
 
-- Laravel 13 CLI application.
-- Entry point: `php artisan`; installed as `orbit` through the local symlink on
-  managed machines.
-- Database: SQLite at the normal Laravel path.
+- Laravel 13 gateway application under `apps/gateway/`, plus separate
+  `apps/docs/` and `apps/cli/` applications.
+- Gateway entry point: `php apps/gateway/artisan` from the repository root, or
+  `php artisan` from `apps/gateway/`. The host `orbit` launcher dispatches to
+  the gateway or CLI artifact based on the node role.
+- Gateway database: SQLite at `apps/gateway/database/database.sqlite`.
 
 ## Product Authority
 
@@ -57,8 +59,8 @@ provisioning tests, host pools, cache strategy, and performance baselines.
 Run the narrowest useful check while developing:
 
 ```bash
-php artisan test --compact
-vendor/bin/pint --dirty --format agent
+bin/orbit-gateway-pest --compact
+bin/orbit-gateway-vendor-bin pint --dirty --format agent --config ../../pint.json
 ```
 
 Before handing off a code change that should be broadly safe, run:
@@ -168,16 +170,25 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Artisan
 
-- Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
-- Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
-- Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
-- To check environment variables, read the `.env` file directly.
+- Run gateway Artisan commands from the repo root with `bin/orbit-gateway-artisan`
+  (e.g., `bin/orbit-gateway-artisan route:list`). Use
+  `bin/orbit-gateway-artisan list` to discover available commands and
+  `bin/orbit-gateway-artisan [command] --help` to check parameters.
+- Inspect routes with `bin/orbit-gateway-artisan route:list`. Filter with:
+  `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`,
+  `--only-vendor`.
+- Read gateway configuration values from the repo root using dot notation:
+  `bin/orbit-gateway-artisan config:show app.name`,
+  `bin/orbit-gateway-artisan config:show database.default`. Or read config
+  files directly from `apps/gateway/config/`.
+- To check gateway environment variables, read `apps/gateway/.env` directly.
 
 ## Tinker
 
 - Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
-- Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
+- Always use single quotes to prevent shell expansion:
+  `bin/orbit-gateway-artisan tinker --execute 'Your::code();'`
+  - Double quotes for PHP strings inside: `bin/orbit-gateway-artisan tinker --execute 'User::where("active", true)->count();'`
 
 === php rules ===
 
@@ -201,7 +212,10 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 # Test Enforcement
 
 - Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
-- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
+- Run the minimum number of tests needed to ensure code quality and speed. From
+  the repo root, use `bin/orbit-gateway-pest --compact` with a specific
+  filename or filter, or run `php artisan test --compact` from inside
+  `apps/gateway`.
 
 === laravel/core rules ===
 
@@ -244,9 +258,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Pest
 
-- This project uses Pest for testing. Create tests: `php artisan make:test --pest {name}`.
+- This project uses Pest for testing. From the repo root, create gateway tests
+  with `bin/orbit-gateway-artisan make:test --pest {name}`, or run
+  `php artisan make:test --pest {name}` from inside `apps/gateway`.
 - The `{name}` argument should not include the test suite directory. Use `php artisan make:test --pest SomeFeatureTest` instead of `php artisan make:test --pest Feature/SomeFeatureTest`.
-- Run tests: `php artisan test --compact` or filter: `php artisan test --compact --filter=testName`.
+- Run gateway tests from the repo root with `bin/orbit-gateway-pest --compact`
+  or filter with `bin/orbit-gateway-pest --compact --filter=testName`.
 - Do NOT delete tests without approval.
 
 === spatie/guidelines-skills rules ===

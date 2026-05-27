@@ -41,14 +41,13 @@ Each term below has a precise meaning in the node command family.
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
-  resolves `ORBIT_REPO`, reads `${ORBIT_REPO}/.env` for
+  resolves `ORBIT_REPO`, reads `${ORBIT_REPO}/apps/gateway/.env` for
   `ORBIT_IS_GATEWAY=true`, exports `ORBIT_REPO`, `ORBIT_APP`, and
   `ORBIT_HOST_CWD`, then dispatches to
   `${ORBIT_REPO}/apps/gateway/artisan` on gateway nodes or
   `${ORBIT_REPO}/apps/cli/orbit` on other nodes. The CLI artifact owns native
-  gateway-client commands and temporarily invokes the root Artisan command
-  surface from the same checkout for commands that have not been ported to the
-  gateway-client artifact yet.
+  gateway-client commands and temporarily invokes the gateway Artisan command
+  surface from the same checkout for commands that have not been ported yet.
 - **Orbit runtime container:** One `orbit-runtime` container per node. On the
   gateway it is the resident gateway API and scheduler runtime. On app nodes it
   provides the Orbit PHP runtime baseline. App, workspace, and process
@@ -271,8 +270,8 @@ These terms describe how nodes communicate and how authority is enforced.
   gateway-local, or a node with workload roles — to the gateway API. On
   non-gateway nodes, the launcher dispatches to host PHP through
   `apps/cli/orbit`, which calls the gateway API for native CLI commands and
-  keeps root Artisan compatibility for unported commands. On the gateway, the
-  launcher dispatches directly to `apps/gateway/artisan`.
+  forwards unported commands to the gateway Artisan surface. On the gateway,
+  the launcher dispatches directly to `apps/gateway/artisan`.
 - **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
   from the gateway.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built

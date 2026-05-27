@@ -381,7 +381,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-            'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
+            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
             escapeshellarg(self::GatewayWireGuardIp),
             escapeshellarg($gateway->waitForIpv4()),
         ), timeoutSeconds: 120);
@@ -391,7 +391,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -401,7 +401,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['ingress'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 escapeshellarg(self::IngressWireGuardIp),
                 escapeshellarg(self::IngressWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -411,7 +411,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         if (isset($instances['prod'])) {
             if (E2EPreparedTopology::prodHostsIngressRole($kind) && ! isset($instances['ingress'])) {
                 E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                    'cd /home/orbit/orbit && php artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     escapeshellarg(self::ProdWireGuardIp),
                     escapeshellarg(self::ProdWireGuardIp),
                     escapeshellarg(self::GatewayWireGuardIp),
@@ -425,7 +425,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             };
 
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -435,7 +435,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['agent'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-agent-node agent-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --tld=agent',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --tld=agent',
                 escapeshellarg(self::AgentWireGuardIp),
                 escapeshellarg(self::AgentWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -464,7 +464,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $gateway,
             'orbit',
             $sshKeyPair,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
     }
@@ -502,7 +502,7 @@ PHP;
             $control,
             $config->controlUser,
             $sshKeyPair,
-            'cd /home/'.$config->controlUser.'/orbit && php artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/'.$config->controlUser.'/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
 
@@ -528,7 +528,7 @@ PHP;
             $gateway,
             'orbit',
             $sshKeyPair,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
             timeoutSeconds: 120,
         );
     }

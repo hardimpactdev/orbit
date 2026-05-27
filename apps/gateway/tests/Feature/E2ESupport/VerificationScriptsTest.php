@@ -14,24 +14,24 @@ use App\E2E\Support\E2ECurrentCheckout;
 use Symfony\Component\Process\Process;
 
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
-    expect(base_path('bin/e2e'))->not->toBeFile();
+    expect(repo_path('bin/e2e'))->not->toBeFile();
 });
 
 it('does not expose a standing live smoke test lane', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect(base_path('bin/live-smoke'))->not->toBeFile()
+    expect(repo_path('bin/live-smoke'))->not->toBeFile()
         ->and($composer['scripts'])->not->toHaveKey('test:live');
 });
 
 it('keeps composer test:live and bin/live-smoke out of every doc surface agents read', function (): void {
     $files = collect([
-        base_path('AGENTS.md'),
-        base_path('README.md'),
+        repo_path('AGENTS.md'),
+        repo_path('README.md'),
     ]);
 
     foreach (['.agents/skills', 'docs/superpowers/plans'] as $relative) {
-        $absolute = base_path($relative);
+        $absolute = repo_path($relative);
 
         if (! is_dir($absolute)) {
             continue;
@@ -49,7 +49,7 @@ it('keeps composer test:live and bin/live-smoke out of every doc surface agents 
         ->mapWithKeys(fn (string $path): array => [$path => (string) file_get_contents($path)])
         ->filter(fn (string $contents): bool => str_contains($contents, 'composer test:live') || str_contains($contents, 'bin/live-smoke'))
         ->keys()
-        ->map(fn (string $path): string => str_replace(base_path().'/', '', $path))
+        ->map(fn (string $path): string => str_replace(repo_path().'/', '', $path))
         ->sort()
         ->values()
         ->all();
@@ -58,7 +58,7 @@ it('keeps composer test:live and bin/live-smoke out of every doc surface agents 
 });
 
 it('reports command docs lint severities in agent format', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
     $docsLintScript = implode("\n", (array) $composer['scripts']['docs-lint']);
 
     expect($docsLintScript)
@@ -70,7 +70,7 @@ it('reports command docs lint severities in agent format', function (): void {
 });
 
 it('keeps the aggregate quality gate complete', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     // The gate fans out docs-lint, phpstan, rector, and pint concurrently while
     // the default Pest suite runs in parallel through `bin/quality-check.sh`.
@@ -79,7 +79,7 @@ it('keeps the aggregate quality gate complete', function (): void {
         'bin/quality-check.sh',
     ]);
 
-    $script = (string) file_get_contents(base_path('bin/quality-check.sh'));
+    $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
 
     expect($script)
         ->toContain('librarian:lint')
@@ -87,6 +87,10 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('bin/orbit-gateway-vendor-bin pint')
+        ->toContain('bin/orbit-cli-pest')
+        ->toContain('bin/orbit-docs-pest')
+        ->toContain('cd apps/cli && vendor/bin/pint --config ../../pint.json')
+        ->toContain('cd apps/docs && vendor/bin/pint --config ../../pint.json')
         ->toContain('bin/orbit-gateway-pest')
         ->toContain('--exclude-group=e2e')
         ->toContain('--exclude-group=slow')
@@ -95,7 +99,7 @@ it('keeps the aggregate quality gate complete', function (): void {
 });
 
 it('runs default ephemeral e2e through prepared topology lanes', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts']['test'])
         ->sequence(
@@ -105,6 +109,8 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
                 ->toContain('pest --exclude-group=e2e')
                 ->toContain('--parallel')
                 ->toContain('--compact'),
+            fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
+            fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
         );
 
     $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args';
@@ -136,12 +142,12 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
 it('documents the supported verification lanes', function (): void {
     $testing = implode("\n", [
-        file_get_contents(base_path('apps/docs/content/testing/README.md')),
-        file_get_contents(base_path('apps/docs/content/testing/in-memory/README.md')),
-        file_get_contents(base_path('apps/docs/content/testing/e2e/README.md')),
+        file_get_contents(repo_path('apps/docs/content/testing/README.md')),
+        file_get_contents(repo_path('apps/docs/content/testing/in-memory/README.md')),
+        file_get_contents(repo_path('apps/docs/content/testing/e2e/README.md')),
     ]);
 
-    expect(base_path('TESTING.md'))->not->toBeFile();
+    expect(repo_path('TESTING.md'))->not->toBeFile();
 
     expect($testing)
         ->toContain('# In-memory tests')
@@ -159,7 +165,7 @@ it('documents the supported verification lanes', function (): void {
 });
 
 it('documents the e2e docker benchmark protocol', function (): void {
-    $testing = file_get_contents(base_path('apps/docs/content/testing/e2e/performance.md'));
+    $testing = file_get_contents(repo_path('apps/docs/content/testing/e2e/performance.md'));
 
     expect($testing)
         ->toContain('## E2E Docker lane - benchmark protocol')
@@ -177,8 +183,8 @@ it('documents the e2e docker benchmark protocol', function (): void {
 });
 
 it('keeps active testing and orchestration docs on current e2e script names', function (): void {
-    $testing = file_get_contents(base_path('apps/docs/content/testing/e2e/README.md'));
-    $orchestration = file_get_contents(base_path('docs/superpowers/plans/solo-orchestration/README.md'));
+    $testing = file_get_contents(repo_path('apps/docs/content/testing/e2e/README.md'));
+    $orchestration = file_get_contents(repo_path('docs/superpowers/plans/solo-orchestration/README.md'));
 
     expect($testing)
         ->toContain('composer test:e2e')
@@ -197,7 +203,7 @@ it('keeps active testing and orchestration docs on current e2e script names', fu
 
 it('keeps reusable e2e support code free of Pest-only expectations', function (): void {
     $supportFiles = collect(new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator(base_path('apps/gateway/app/E2E/Support')),
+        new RecursiveDirectoryIterator(repo_path('apps/gateway/app/E2E/Support')),
     ))
         ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php')
         ->mapWithKeys(fn (SplFileInfo $file): array => [
@@ -208,24 +214,24 @@ it('keeps reusable e2e support code free of Pest-only expectations', function ()
 });
 
 it('does not expose hetzner e2e support', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts'])
         ->not->toHaveKey('test:e2e:hcloud-docker')
         ->not->toHaveKey('e2e:reap-hcloud')
         ->not->toHaveKey('e2e:prepare-hcloud-images');
 
-    expect(is_file(base_path('apps/gateway/app/Console/Commands/E2EReapHcloudCommand.php')))->toBeFalse()
-        ->and(is_file(base_path('apps/gateway/app/Console/Commands/E2ETestHcloudDockerCommand.php')))->toBeFalse()
-        ->and(is_file(base_path('apps/gateway/app/E2E/Support/HcloudProvider.php')))->toBeFalse()
-        ->and(is_file(base_path('apps/gateway/app/E2E/Support/HcloudInstance.php')))->toBeFalse()
-        ->and(is_file(base_path('apps/gateway/app/Services/E2E/HcloudE2EReaper.php')))->toBeFalse()
-        ->and(is_file(base_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunner.php')))->toBeFalse()
-        ->and(is_file(base_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunOptions.php')))->toBeFalse();
+    expect(is_file(repo_path('apps/gateway/app/Console/Commands/E2EReapHcloudCommand.php')))->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Console/Commands/E2ETestHcloudDockerCommand.php')))->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/E2E/Support/HcloudProvider.php')))->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/E2E/Support/HcloudInstance.php')))->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudE2EReaper.php')))->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunner.php')))->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunOptions.php')))->toBeFalse();
 });
 
 it('exposes e2e preflight, preparation, and cleanup helpers', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     $e2eEnvPrefix = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a;';
 
@@ -251,28 +257,28 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
 
 it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
     $appFiles = collect(new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator(base_path('apps/gateway/app'), FilesystemIterator::SKIP_DOTS),
+        new RecursiveDirectoryIterator(repo_path('apps/gateway/app'), FilesystemIterator::SKIP_DOTS),
     ))
         ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php');
 
     $offenders = $appFiles
         ->filter(fn (SplFileInfo $file): bool => str_contains((string) file_get_contents($file->getPathname()), 'Tests\\E2E\\Support'))
-        ->map(fn (SplFileInfo $file): string => str_replace(base_path().'/', '', $file->getPathname()))
+        ->map(fn (SplFileInfo $file): string => str_replace(repo_path().'/', '', $file->getPathname()))
         ->values()
         ->all();
 
     expect($offenders)->toBe([]);
 
-    expect(is_file(base_path('apps/gateway/app/Console/Commands/E2EPrepareHcloudImagesCommand.php')))->toBeFalse();
+    expect(is_file(repo_path('apps/gateway/app/Console/Commands/E2EPrepareHcloudImagesCommand.php')))->toBeFalse();
 });
 
 it('registers ephemeral e2e as a guarded Pest group', function (): void {
-    $phpunit = file_get_contents(base_path('phpunit.xml'));
-    $pest = file_get_contents(base_path('apps/gateway/tests/Pest.php'));
+    $phpunit = file_get_contents(repo_path('apps/gateway/phpunit.xml'));
+    $pest = file_get_contents(repo_path('apps/gateway/tests/Pest.php'));
 
     expect($phpunit)
         ->toContain('<testsuite name="E2E">')
-        ->toContain('<directory>apps/gateway/tests/E2E</directory>')
+        ->toContain('<directory>tests/E2E</directory>')
         ->and($pest)
         ->toContain('ORBIT_E2E')
         ->toContain("->group('e2e')")
@@ -280,23 +286,23 @@ it('registers ephemeral e2e as a guarded Pest group', function (): void {
 });
 
 it('keeps persisted orbit certificate material out of the docker build context', function (): void {
-    $dockerignore = file_get_contents(base_path('docker/e2e/topology/Dockerfile.dockerignore'));
+    $dockerignore = file_get_contents(repo_path('docker/e2e/topology/Dockerfile.dockerignore'));
 
     expect($dockerignore)
-        ->toContain('storage/app/orbit/ca/**')
-        ->toContain('storage/app/orbit/certs/**')
-        ->toContain('storage/app/orbit/keys/**');
+        ->toContain('apps/gateway/storage/app/orbit/ca/**')
+        ->toContain('apps/gateway/storage/app/orbit/certs/**')
+        ->toContain('apps/gateway/storage/app/orbit/keys/**');
 });
 
 it('keeps local composer dependencies in the docker topology build context', function (): void {
-    $dockerignore = file_get_contents(base_path('docker/e2e/topology/Dockerfile.dockerignore'));
+    $dockerignore = file_get_contents(repo_path('docker/e2e/topology/Dockerfile.dockerignore'));
     $ignoredPaths = preg_split('/\R/', trim($dockerignore));
 
     expect(in_array('vendor', $ignoredPaths, true))->toBeFalse();
 });
 
 it('keeps persisted orbit certificate material out of source-less docker topology preparation', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
         ->toContain('LABEL org.orbit.e2e.source="prepared-checkout"')
@@ -305,13 +311,13 @@ it('keeps persisted orbit certificate material out of source-less docker topolog
         ->not->toContain('cp -a /opt/orbit-source/. /home/orbit/orbit/');
 
     expect(E2ECurrentCheckout::archiveExcludePatterns())
-        ->toContain('./storage/app/orbit/ca/*')
-        ->toContain('./storage/app/orbit/certs/*')
-        ->toContain('./storage/app/orbit/keys/*');
+        ->toContain('./apps/gateway/storage/app/orbit/ca/*')
+        ->toContain('./apps/gateway/storage/app/orbit/certs/*')
+        ->toContain('./apps/gateway/storage/app/orbit/keys/*');
 });
 
 it('keeps the docker topology host image free of host Composer dependencies', function (): void {
-    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+    $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
 
     expect($dockerfile)
         ->not->toContain('COPY --from=composer')
@@ -353,7 +359,7 @@ it('registers the e2e artisan commands', function (): void {
 });
 
 it('installs Docker via docker.com and host PHP through the Ubuntu PPA package path', function (): void {
-    $script = file_get_contents(base_path('bin/install-orbit'));
+    $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)
         ->toContain('download.docker.com')
@@ -368,7 +374,7 @@ it('installs Docker via docker.com and host PHP through the Ubuntu PPA package p
 });
 
 it('waits for cloud-init before mutating apt on Ubuntu', function (): void {
-    $script = file_get_contents(base_path('bin/install-orbit'));
+    $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)->toContain('cloud-init status --wait');
 });
@@ -388,7 +394,7 @@ TEXT;
     $process = new Process([
         'awk',
         '-f',
-        base_path('bin/e2e-timings.awk'),
+        repo_path('bin/e2e-timings.awk'),
     ]);
     $process->setInput($input);
     $process->mustRun();
@@ -407,7 +413,7 @@ TEXT;
 });
 
 it('does not install host Supervisor because runtime processes live inside Docker containers', function (): void {
-    $script = file_get_contents(base_path('bin/install-orbit'));
+    $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)
         ->not->toContain('supervisor')
@@ -415,13 +421,13 @@ it('does not install host Supervisor because runtime processes live inside Docke
 });
 
 it('installs the SSH client as a control-node provisioning prerequisite', function (): void {
-    $script = file_get_contents(base_path('bin/install-orbit'));
+    $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)->toContain('openssh-client');
 });
 
 it('does not install the SQLite CLI while providing host PHP SQLite support for the CLI executor', function (): void {
-    $script = file_get_contents(base_path('bin/install-orbit'));
+    $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
         ->and($script)->not->toContain('php8.4-sqlite3')
@@ -430,7 +436,7 @@ it('does not install the SQLite CLI while providing host PHP SQLite support for 
 });
 
 it('aligns orbit checkout ownership with the home parent so non-root users can write', function (): void {
-    $script = file_get_contents(base_path('bin/install-orbit'));
+    $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)
         ->toContain('finalize_target_ownership')
@@ -439,7 +445,7 @@ it('aligns orbit checkout ownership with the home parent so non-root users can w
 });
 
 it('documents e2e topology timing event names', function (): void {
-    $testing = file_get_contents(base_path('apps/docs/content/testing/e2e/performance.md'));
+    $testing = file_get_contents(repo_path('apps/docs/content/testing/e2e/performance.md'));
 
     expect($testing)
         ->toContain('batch.copy-start')
@@ -450,7 +456,7 @@ it('documents e2e topology timing event names', function (): void {
 });
 
 it('does not expose stale per-topology feature e2e aliases', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts'])
         ->not->toHaveKey('test:e2e:features:control')
@@ -462,7 +468,7 @@ it('does not expose stale per-topology feature e2e aliases', function (): void {
 });
 
 it('runs the topology contract against the Docker full topology by default', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts']['test:e2e:topology-contract'])->toBe([
         'Composer\\Config::disableProcessTimeout',

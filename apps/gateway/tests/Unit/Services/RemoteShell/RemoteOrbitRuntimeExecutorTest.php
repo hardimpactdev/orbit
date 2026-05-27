@@ -31,7 +31,7 @@ it('wraps plain commands in docker exec on orbit-runtime', function (): void {
     ));
 });
 
-it('normalizes artisan commands to php artisan inside orbit-runtime', function (string $script): void {
+it('normalizes artisan commands to the gateway artisan path inside orbit-runtime', function (string $script): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "migrated\n"),
@@ -41,7 +41,7 @@ it('normalizes artisan commands to php artisan inside orbit-runtime', function (
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains(
         (string) $process->command,
-        'docker exec -i orbit-runtime php artisan migrate --force',
+        'docker exec -i orbit-runtime php apps/gateway/artisan migrate --force',
     ));
 })->with([
     'artisan migrate --force',
@@ -66,83 +66,83 @@ it('unwraps docker exec variants that already target orbit-runtime', function (s
         return $containsExpectedFragments
             && substr_count($command, ' orbit-runtime ') === 1
             && ! str_contains($command, 'orbit-runtime docker exec')
-            && str_contains($command, 'orbit-runtime php artisan migrate --force');
+            && str_contains($command, 'orbit-runtime php apps/gateway/artisan migrate --force');
     });
 })->with([
     'no options' => [
-        'docker exec orbit-runtime php artisan migrate --force',
+        'docker exec orbit-runtime php apps/gateway/artisan migrate --force',
         [],
     ],
     'short interactive' => [
-        'docker exec -i orbit-runtime php artisan migrate --force',
+        'docker exec -i orbit-runtime php apps/gateway/artisan migrate --force',
         [],
     ],
     'long interactive' => [
-        'docker exec --interactive orbit-runtime php artisan migrate --force',
+        'docker exec --interactive orbit-runtime php apps/gateway/artisan migrate --force',
         [],
     ],
     'tty' => [
-        'docker exec -t orbit-runtime php artisan migrate --force',
+        'docker exec -t orbit-runtime php apps/gateway/artisan migrate --force',
         ['--tty'],
     ],
     'combined interactive tty' => [
-        'docker exec -it orbit-runtime php artisan migrate --force',
+        'docker exec -it orbit-runtime php apps/gateway/artisan migrate --force',
         ['--tty'],
     ],
     'user before container' => [
-        'docker exec -i --user orbit orbit-runtime php artisan migrate --force',
+        'docker exec -i --user orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['--user', 'orbit'],
     ],
     'workdir before container' => [
-        'docker exec -i --workdir /opt/orbit orbit-runtime php artisan migrate --force',
+        'docker exec -i --workdir /opt/orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['--workdir', '/opt/orbit'],
     ],
     'env before container' => [
-        'docker exec -e KEY=val orbit-runtime php artisan migrate --force',
+        'docker exec -e KEY=val orbit-runtime php apps/gateway/artisan migrate --force',
         ['--env', 'KEY=val'],
     ],
     'equals user syntax' => [
-        'docker exec --user=orbit orbit-runtime php artisan migrate --force',
+        'docker exec --user=orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['--user', 'orbit'],
     ],
     'short user syntax' => [
-        'docker exec -u orbit orbit-runtime php artisan migrate --force',
+        'docker exec -u orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['--user', 'orbit'],
     ],
     'equals workdir syntax' => [
-        'docker exec --workdir=/opt/orbit orbit-runtime php artisan migrate --force',
+        'docker exec --workdir=/opt/orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['--workdir', '/opt/orbit'],
     ],
     'short workdir syntax' => [
-        'docker exec -w /opt/orbit orbit-runtime php artisan migrate --force',
+        'docker exec -w /opt/orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['--workdir', '/opt/orbit'],
     ],
     'equals env syntax' => [
-        'docker exec --env=KEY=val orbit-runtime php artisan migrate --force',
+        'docker exec --env=KEY=val orbit-runtime php apps/gateway/artisan migrate --force',
         ['--env', 'KEY=val'],
     ],
     'attached short env syntax' => [
-        'docker exec -eKEY=val orbit-runtime php artisan migrate --force',
+        'docker exec -eKEY=val orbit-runtime php apps/gateway/artisan migrate --force',
         ['--env', 'KEY=val'],
     ],
     'env file before container' => [
-        'docker exec --env-file /tmp/runtime.env orbit-runtime php artisan migrate --force',
+        'docker exec --env-file /tmp/runtime.env orbit-runtime php apps/gateway/artisan migrate --force',
         ['--env-file', '/tmp/runtime.env'],
     ],
     'privileged before container' => [
-        'docker exec --privileged orbit-runtime php artisan migrate --force',
+        'docker exec --privileged orbit-runtime php apps/gateway/artisan migrate --force',
         ['--privileged'],
     ],
     'detach keys before container' => [
-        'docker exec --detach-keys ctrl-p,ctrl-q orbit-runtime php artisan migrate --force',
+        'docker exec --detach-keys ctrl-p,ctrl-q orbit-runtime php apps/gateway/artisan migrate --force',
         ['--detach-keys', 'ctrl-p,ctrl-q'],
     ],
     'detach before container' => [
-        'docker exec --detach orbit-runtime php artisan migrate --force',
+        'docker exec --detach orbit-runtime php apps/gateway/artisan migrate --force',
         ['--detach'],
     ],
     'whitespace padded' => [
-        '  docker   exec   -i   orbit-runtime   php   artisan   migrate   --force  ',
+        '  docker   exec   -i   orbit-runtime   php   apps/gateway/artisan   migrate   --force  ',
         [],
     ],
 ]);
@@ -156,7 +156,7 @@ it('merges unwrapped docker exec workdir with runtime cwd without conflicts', fu
 
     app(RemoteOrbitRuntimeExecutor::class)->run(
         $node,
-        'docker exec -i --workdir /opt/orbit orbit-runtime php artisan migrate --force',
+        'docker exec -i --workdir /opt/orbit orbit-runtime php apps/gateway/artisan migrate --force',
         ['cwd' => $node->orbit_path],
     );
 
@@ -202,7 +202,7 @@ it('merges unwrapped docker exec env with runtime metadata deterministically', f
 
     app(RemoteOrbitRuntimeExecutor::class)->run(
         remoteRuntimeExecutorNode(),
-        'docker exec -e CALLER_KEY=caller -e ORBIT_REQUEST_ID=caller orbit-runtime php artisan migrate --force',
+        'docker exec -e CALLER_KEY=caller -e ORBIT_REQUEST_ID=caller orbit-runtime php apps/gateway/artisan migrate --force',
         ['metadata' => ['ORBIT_REQUEST_ID' => 'runtime-req']],
     );
 
@@ -281,7 +281,7 @@ it('preserves runtime env, cwd, timeout, input, stdout, and stderr semantics', f
             && str_contains($command, '--workdir')
             && str_contains($command, OrbitRuntimeContainer::SourcePath)
             && ! str_contains($command, '/home/orbit/orbit')
-            && str_contains($command, 'orbit-runtime php artisan orbit:cleanup')
+            && str_contains($command, 'orbit-runtime php apps/gateway/artisan orbit:cleanup')
             && $process->timeout === 75
             && $process->input === 'runtime-stdin'
             && $processResult->output() === "runtime-ok\n"
@@ -297,7 +297,7 @@ it('falls back to an in-container shell for compound runtime scripts', function 
 
     app(RemoteOrbitRuntimeExecutor::class)->run(
         remoteRuntimeExecutorNode(),
-        'php artisan migrate --force && php artisan orbit:cleanup',
+        'php apps/gateway/artisan migrate --force && php apps/gateway/artisan orbit:cleanup',
         ['metadata' => ['ORBIT_REQUEST_ID' => 'runtime-compound']],
     );
 
@@ -309,7 +309,7 @@ it('falls back to an in-container shell for compound runtime scripts', function 
             && ! str_contains($command, 'docker exec -i orbit-runtime sh -lc')
             && str_contains($command, '--env')
             && str_contains($command, 'ORBIT_REQUEST_ID')
-            && str_contains($command, 'php artisan migrate --force && php artisan orbit:cleanup');
+            && str_contains($command, 'php apps/gateway/artisan migrate --force && php apps/gateway/artisan orbit:cleanup');
     });
 });
 
@@ -327,7 +327,7 @@ it('throws runtime shell failures with the same RemoteShellFailed semantics', fu
         $this->fail('Expected the runtime executor to throw a remote shell failure.');
     } catch (RemoteShellFailed $exception) {
         expect($exception->node->name)->toBe('runtime-failure')
-            ->and($exception->script)->toBe('docker exec -i orbit-runtime php artisan migrate --force')
+            ->and($exception->script)->toBe('docker exec -i orbit-runtime php apps/gateway/artisan migrate --force')
             ->and($exception->result->exitCode)->toBe(13)
             ->and($exception->getMessage())->toContain('RemoteShell failed on runtime-failure (exit 13): runtime denied');
     }

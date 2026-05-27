@@ -694,7 +694,7 @@ BASH;
         );
         E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg('require '.var_export($scriptPath, true).';'),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg('require '.var_export($scriptPath, true).';'),
             'Could not seed app-dev database and Redis registry state',
             timeoutSeconds: 120,
         );
@@ -765,7 +765,7 @@ PHP;
             $control,
             $this->host->config->controlUser,
             $key,
-            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 60,
         );
     }
@@ -916,7 +916,7 @@ BASH;
         E2ECommand::orbit(
             $gateway,
             sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
                 escapeshellarg(self::GatewayWireGuardIp),
                 escapeshellarg($publicHost),
             ),
@@ -972,7 +972,7 @@ PHP;
             $control,
             $this->host->config->controlUser,
             $key,
-            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
     }
@@ -981,7 +981,7 @@ PHP;
     {
         $rootCa = E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg('echo app(\App\Services\Ca\OrbitCaService::class)->rootCert();'),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg('echo app(\App\Services\Ca\OrbitCaService::class)->rootCert();'),
             'Could not read gateway root CA',
             timeoutSeconds: 60,
         )->output();
@@ -1011,7 +1011,7 @@ PHP;
             $control,
             $this->host->config->controlUser,
             $key,
-            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
     }

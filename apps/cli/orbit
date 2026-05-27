@@ -5,7 +5,7 @@ declare(strict_types=1);
 
 define('LARAVEL_START', microtime(true));
 
-fallbackToRootArtisanWhenCommandIsUnported($_SERVER['argv'] ?? []);
+fallbackToGatewayArtisanWhenCommandIsUnported($_SERVER['argv'] ?? []);
 
 $autoload = __DIR__.'/vendor/autoload.php';
 
@@ -33,7 +33,7 @@ exit($status);
 /**
  * @param  list<string>  $argv
  */
-function fallbackToRootArtisanWhenCommandIsUnported(array $argv): void
+function fallbackToGatewayArtisanWhenCommandIsUnported(array $argv): void
 {
     $command = commandNameFromArgv($argv);
 
@@ -41,7 +41,7 @@ function fallbackToRootArtisanWhenCommandIsUnported(array $argv): void
         return;
     }
 
-    $artisan = dirname(__DIR__, 2).'/artisan';
+    $artisan = dirname(__DIR__, 2).'/apps/gateway/artisan';
 
     if (! is_file($artisan)) {
         return;

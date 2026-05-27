@@ -6,15 +6,14 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 
-$repoRoot = dirname(__DIR__, 3);
 $gatewayRoot = dirname(__DIR__);
 
-$app = Application::configure(basePath: $repoRoot)
-    ->withProviders(require $gatewayRoot.'/bootstrap/providers.php', withBootstrapProviders: false)
+$app = Application::configure(basePath: $gatewayRoot)
+    ->withProviders(require __DIR__.'/providers.php', withBootstrapProviders: false)
     ->withRouting(
-        web: $gatewayRoot.'/routes/web.php',
-        api: $gatewayRoot.'/routes/api.php',
-        commands: $gatewayRoot.'/routes/console.php',
+        web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
+        commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -26,13 +25,8 @@ $app = Application::configure(basePath: $repoRoot)
     ->create();
 
 $app
-    ->useAppPath($gatewayRoot.'/app')
-    ->useBootstrapPath($gatewayRoot.'/bootstrap')
-    ->useConfigPath($gatewayRoot.'/config')
     ->useDatabasePath($gatewayRoot.'/database')
-    ->useEnvironmentPath($repoRoot)
-    ->usePublicPath($repoRoot.'/public')
-    ->useStoragePath($repoRoot.'/storage');
+    ->usePublicPath($gatewayRoot.'/public');
 
 $app->singleton(ConsoleKernelContract::class, ConsoleKernel::class);
 

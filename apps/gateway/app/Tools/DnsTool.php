@@ -27,7 +27,7 @@ final class DnsTool extends BaseTool
     {
         $orbitPath = $this->orbitPath($config);
 
-        return "cd '{$orbitPath}' && php artisan orbit:internal:install-orbit-dns";
+        return "cd '{$orbitPath}' && php apps/gateway/artisan orbit:internal:install-orbit-dns";
     }
 
     public function removeScript(array $config = []): string

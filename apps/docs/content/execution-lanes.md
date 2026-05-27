@@ -241,8 +241,8 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Console/Commands/VpnCommandSupport.php:87` | `RemoteOrbitRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded gateway Laravel/artisan work must run inside `orbit-runtime`. |
 | `apps/gateway/app/Console/Commands/WorkspaceExecCommand.php:143,158` | `RemoteHostExecutor` | Inspects and executes inside a workspace runtime container through Docker. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the `git pull --ff-only` stage for host source checkout. |
-| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime composer install --no-interaction` stage for Orbit dependencies. |
-| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime php artisan migrate --force` stage for Orbit migrations. |
+| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction` stage for gateway app dependencies. |
+| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime php apps/gateway/artisan migrate --force` stage for gateway migrations. |
 | `apps/gateway/app/Actions/Apps/CreateAppSourceOnNode.php:30` | `RemoteHostExecutor` | Creates/checks source directories and git material on the host. |
 | `apps/gateway/app/Actions/Apps/EnsureAppProcessRuntimeUnits.php:105,130` | `RemoteHostExecutor` | Repairs Supervisor residual units and Docker process runtime artifacts. |
 | `apps/gateway/app/Actions/Apps/EnsureAppProxyRoute.php:70,105,134,244,256` | `RemoteHostExecutor` | Writes and reads Caddy route artifacts on serving, router, and backend hosts. |
@@ -276,8 +276,8 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Nodes/NodeSecurityPostureProbe.php:110,206` | `RemoteHostExecutor` | Checks host security posture; current host PHP helper must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php:71,73,74` | `RemoteHostExecutor` | Creates and locks the host `agent` user. |
 | `apps/gateway/app/Services/OrbitUpdater.php:70,72,111` (`pullRemoteSource`) | `RemoteHostExecutor` | Runs `git pull --ff-only` in the host source checkout. |
-| `apps/gateway/app/Services/OrbitUpdater.php:75,77,111` (`installRemoteDependencies`) | `RemoteOrbitRuntimeExecutor` | Runs `docker exec orbit-runtime composer install --no-interaction` for Orbit dependencies. |
-| `apps/gateway/app/Services/OrbitUpdater.php:80,82,111` (`runRemoteMigrations`) | `RemoteOrbitRuntimeExecutor` | Runs `docker exec orbit-runtime php artisan migrate --force` for Orbit migrations. |
+| `apps/gateway/app/Services/OrbitUpdater.php:75,77,111` (`installRemoteDependencies`) | `RemoteOrbitRuntimeExecutor` | Runs `docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction` for gateway app dependencies. |
+| `apps/gateway/app/Services/OrbitUpdater.php:80,82,111` (`runRemoteMigrations`) | `RemoteOrbitRuntimeExecutor` | Runs `docker exec orbit-runtime php apps/gateway/artisan migrate --force` for gateway migrations. |
 | `apps/gateway/app/Services/Processes/ProcessDockerRuntimeManager.php:174` | `RemoteHostExecutor` | Creates and controls Docker process runtime units. |
 | `apps/gateway/app/Services/Processes/ProcessesProbe.php:66,127,230` | `RemoteHostExecutor` | Probes Docker process containers and explicit Supervisor residual artifacts; current host PHP helper at `:230` must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Proxy/ProxyRouteFixer.php:79,113,151,178,349,386,456` | `RemoteHostExecutor` | Writes, removes, reloads, and repairs `orbit-caddy` route artifacts. |

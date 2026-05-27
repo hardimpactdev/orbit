@@ -31,7 +31,7 @@ it('reads finite managed system service tool logs from an app node through the g
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tool:logs supervisor --node=app-dev-1 --lines=20 --json',
+                'cd %s && php apps/gateway/artisan tool:logs supervisor --node=app-dev-1 --lines=20 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -62,7 +62,7 @@ it('reads finite managed system service tool logs from an app node through the g
                 escapeshellarg($topology->checkout('gateway')),
                 escapeshellarg(<<<'BASH'
 rm -f /tmp/orbit-tool-follow.log
-timeout 8s php artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
+timeout 8s php apps/gateway/artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
 test -s /tmp/orbit-tool-follow.log
 grep -m 1 supervisor /tmp/orbit-tool-follow.log || { cat /tmp/orbit-tool-follow.log >&2; exit 1; }
 BASH),
@@ -82,7 +82,7 @@ BASH),
                 escapeshellarg($topology->checkout('control')),
                 escapeshellarg(<<<'BASH'
 rm -f /tmp/orbit-tool-follow-forwarded.log
-timeout 8s php artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true
+timeout 8s php apps/gateway/artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true
 test -s /tmp/orbit-tool-follow-forwarded.log
 grep -m 1 supervisor /tmp/orbit-tool-follow-forwarded.log || { cat /tmp/orbit-tool-follow-forwarded.log >&2; exit 1; }
 BASH),
@@ -99,7 +99,7 @@ BASH),
 
 function toolLogsUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
 {
-    $caPath = $topology->checkout('control').'/storage/app/orbit/gateway-ca/orbit.crt';
+    $caPath = $topology->checkout('control').'/apps/gateway/storage/app/orbit/gateway-ca/orbit.crt';
     $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
     $gatewayIpValue = var_export($gatewayApiIp, true);
     $caPathValue = var_export($caPath, true);
@@ -117,7 +117,7 @@ PHP;
     $topology->ssh(
         'control',
         sprintf(
-            'cd %s && php artisan tinker --execute=%s',
+            'cd %s && php apps/gateway/artisan tinker --execute=%s',
             escapeshellarg($topology->checkout('control')),
             escapeshellarg($php),
         ),
@@ -161,7 +161,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

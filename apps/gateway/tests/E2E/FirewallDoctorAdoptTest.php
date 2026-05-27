@@ -34,7 +34,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tinker --execute=%s',
+                'cd %s && php apps/gateway/artisan tinker --execute=%s',
                 escapeshellarg($gatewayCheckout),
                 escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->first(); if ($node) { \App\Models\FirewallRule::query()->where("node_id", $node->id)->delete(); $node->update(["platform" => "ubuntu", "status" => "active", "host" => "'.$devLanIp.'", "wireguard_address" => null]); echo "updated"; } else { echo "not found"; }'),
             ),
@@ -44,7 +44,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan doctor --node=app-dev-1 --family=firewall_rule --adopt --json',
+                'cd %s && php apps/gateway/artisan doctor --node=app-dev-1 --family=firewall_rule --adopt --json',
                 escapeshellarg($gatewayCheckout),
             ),
             timeoutSeconds: 180,
@@ -59,7 +59,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $verifyResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan tinker --execute=%s',
+                'cd %s && php apps/gateway/artisan tinker --execute=%s',
                 escapeshellarg($gatewayCheckout),
                 escapeshellarg('echo \App\Models\FirewallRule::query()->where("name", "local-vite")->where("reason", "orbit:local-vite")->first() ? "found" : "missing";'),
             ),

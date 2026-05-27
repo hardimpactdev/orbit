@@ -11,7 +11,7 @@ final readonly class ProcessEventNotifierRenderer
 {
     public function scriptPath(): string
     {
-        return base_path('apps/gateway/resources/node-scripts/orbit-notify-exit.sh');
+        return repo_path('apps/gateway/resources/node-scripts/orbit-notify-exit.sh');
     }
 
     public function installPath(): string

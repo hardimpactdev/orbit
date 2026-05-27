@@ -25,14 +25,14 @@ class E2EPrepareDockerRuntimeCommand extends Command
             [
                 'image' => DockerTopologyBuilder::runtimeImage(),
                 'action' => 'build',
-                'dockerfile' => base_path('docker/e2e/topology/Dockerfile'),
-                'context' => base_path(),
+                'dockerfile' => repo_path('docker/e2e/topology/Dockerfile'),
+                'context' => repo_path(),
             ],
             [
                 'image' => DockerTopologyProvider::runtimeSiblingImage(),
                 'action' => 'build',
-                'dockerfile' => base_path('docker/orbit-runtime/Dockerfile'),
-                'context' => base_path(),
+                'dockerfile' => repo_path('docker/orbit-runtime/Dockerfile'),
+                'context' => repo_path(),
             ],
             [
                 'image' => OrbitCaddyContainer::Image,

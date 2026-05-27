@@ -19,7 +19,7 @@ beforeEach(function (): void {
 
 describe('first-gateway provisioning contract', function (): void {
     it('routes remote bootstrap and platform detection through the orbit launcher instead of host php artisan', function (): void {
-        $installer = file_get_contents(base_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
+        $installer = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
 
         expect($installer)
             ->toContain("'orbit orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json'")
@@ -31,7 +31,7 @@ describe('first-gateway provisioning contract', function (): void {
     });
 
     it('budgets first-gateway identity bootstrap for runtime image loading and container convergence', function (): void {
-        $nodeNew = file_get_contents(base_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
+        $nodeNew = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
 
         expect($nodeNew)
             ->toContain('private const int FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS = 600')
@@ -39,7 +39,7 @@ describe('first-gateway provisioning contract', function (): void {
     });
 
     it('starts orbit-runtime with ORBIT_IS_GATEWAY=1 when install-orbit is invoked with --gateway', function (): void {
-        $script = file_get_contents(base_path('bin/install-orbit'));
+        $script = file_get_contents(repo_path('bin/install-orbit'));
 
         expect($script)
             ->toContain('--gateway')
@@ -50,8 +50,8 @@ describe('first-gateway provisioning contract', function (): void {
     });
 
     it('passes --gateway from OrbitHostInstaller to install-orbit when bootstrapping a first gateway', function (): void {
-        $installer = file_get_contents(base_path('apps/gateway/app/Services/OrbitHostInstaller.php'));
-        $nodeNew = file_get_contents(base_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
+        $installer = file_get_contents(repo_path('apps/gateway/app/Services/OrbitHostInstaller.php'));
+        $nodeNew = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
 
         expect($installer)
             ->toContain('bool $asGateway = false')
@@ -240,7 +240,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
     });
 
     it('writes the gateway API Caddyfile through the host bind mount that orbit-caddy reads', function (): void {
-        $installer = file_get_contents(base_path('bin/install-orbit'));
+        $installer = file_get_contents(repo_path('bin/install-orbit'));
 
         expect($installer)
             ->toContain('prepare_orbit_caddy_host_paths')
@@ -264,7 +264,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
     });
 
     it('ships sudo inside orbit-runtime so the gateway installer scripts can sudo install-d and sudo tee through bind-mounted host paths', function (): void {
-        $dockerfile = file_get_contents(base_path('docker/orbit-runtime/Dockerfile'));
+        $dockerfile = file_get_contents(repo_path('docker/orbit-runtime/Dockerfile'));
 
         expect($dockerfile)
             ->toContain('sudo');

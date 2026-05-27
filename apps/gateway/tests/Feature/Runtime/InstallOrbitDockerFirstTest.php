@@ -7,7 +7,7 @@ use Symfony\Component\Process\Process;
 
 describe('install-orbit Docker-first runtime contract', function (): void {
     beforeEach(function (): void {
-        $this->installer = File::get(base_path('bin/install-orbit'));
+        $this->installer = File::get(repo_path('bin/install-orbit'));
     });
 
     it('does not install or restart host Caddy, PHP-FPM, Composer, or Supervisor', function (): void {
@@ -81,7 +81,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
 
         try {
             $process = new Process([
-                base_path('bin/install-orbit'),
+                repo_path('bin/install-orbit'),
                 "--source-archive={$source}",
                 '--wg-easy-image-archive=/tmp/orbit-wg-easy-does-not-exist.tar',
                 '--skip-prerequisites',
@@ -102,16 +102,28 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('write_env_var "ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES" "1"');
     });
 
-    it('runs root and CLI composer install plus key generation inside orbit-runtime, not on the host', function (): void {
+    it('runs gateway and CLI composer install plus key generation inside orbit-runtime, not on the host or repo root', function (): void {
         expect($this->installer)
             ->toContain('docker_cli run --rm')
             ->toContain('orbit-runtime:current')
-            ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
+            ->toContain('--workdir /opt/orbit/apps/gateway')
             ->toContain('--workdir /opt/orbit/apps/cli')
+            ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
             ->toContain('php artisan key:generate --force --no-interaction')
+            ->not->toContain('php /opt/orbit/artisan')
             ->not->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader"')
             ->not->toContain('cd $target && composer install')
             ->not->toContain('cd $target && php artisan');
+    });
+
+    it('stores gateway Laravel env files under the relocated gateway app', function (): void {
+        expect($this->installer)
+            ->toContain('"$TARGET_DIR/apps/gateway/.env"')
+            ->toContain('"$TARGET_DIR/apps/gateway/.env.example"')
+            ->toContain('[ ! -f "$TARGET_DIR/apps/gateway/artisan" ]')
+            ->not->toContain('"$TARGET_DIR/.env"')
+            ->not->toContain('"$TARGET_DIR/.env.example"')
+            ->not->toContain('[ ! -f "$TARGET_DIR/artisan" ]');
     });
 
     it('clears stale Laravel bootstrap cache files before no-dev runtime composer install', function (): void {
@@ -330,7 +342,7 @@ BASH);
             escapeshellarg($stateDir),
             escapeshellarg($logFile),
             escapeshellarg($targetDir),
-            escapeshellarg(base_path('bin/install-orbit')),
+            escapeshellarg(repo_path('bin/install-orbit')),
         );
 
         $process = new Process(['bash', '-c', $command]);
@@ -364,7 +376,8 @@ BASH);
             ->toContain('docker_cli run --rm')
             ->toContain('-v "$TARGET_DIR":/opt/orbit')
             ->toContain('orbit-runtime:current')
-            ->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
+            ->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction')
+            ->not->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
             ->not->toContain('docker_cli exec \\')
             ->and($migrationStep)->not->toBeFalse()
             ->and($startRuntimeStep)->not->toBeFalse()

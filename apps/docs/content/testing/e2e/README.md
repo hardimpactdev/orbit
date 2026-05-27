@@ -21,7 +21,7 @@ composer e2e:preflight
 composer test:e2e:provision
 ```
 
-`composer test:e2e` runs `php artisan e2e:test`, which selects prepared-topology
+`composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which selects prepared-topology
 lanes from `ORBIT_E2E_LANES` (`docker,incus` by default) and excludes
 `e2e-provision`. Docker and Incus lanes run concurrently by default. Pass
 `--sequential-lanes` for single-lane debugging output and `--sequential-tests`

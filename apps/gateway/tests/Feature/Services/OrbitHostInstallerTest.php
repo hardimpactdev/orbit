@@ -155,6 +155,10 @@ it('stages installer transfer artifacts under var tmp instead of the small tmpfs
 
     expect($output)
         ->toContain('/var/tmp/orbit-source-')
+        ->toContain("--exclude='.env'")
+        ->toContain("--exclude='.env.*'")
+        ->toContain("--exclude='apps/gateway/.env'")
+        ->toContain("--exclude='apps/gateway/.env.e2e'")
         ->toContain('/var/tmp/orbit-install-env-')
         ->toContain('/var/tmp/orbit-install-')
         ->not->toContain("-czf '/tmp/orbit-source-")

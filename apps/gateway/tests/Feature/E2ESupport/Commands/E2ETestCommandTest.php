@@ -404,14 +404,14 @@ it('normalizes legacy explicit docker e2e paths and runs them sequentially when 
         $command = $payload['success']['data']['lanes'][0]['command'];
 
         expect($exitCode)->toBe(0)
-            ->and($command)->toContain('apps/gateway/tests/E2E/AppListTest.php')
+            ->and($command)->toContain('tests/E2E/AppListTest.php')
             ->and($command)->not->toContain('--parallel')
             ->and($command)->not->toContain('--processes=8');
     });
 });
 
 it('documents explicit docker container caps for every configured host', function (): void {
-    $example = collect(file(base_path('.env.e2e.example'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [])
+    $example = collect(file(repo_path('.env.e2e.example'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [])
         ->reject(fn (string $line): bool => str_starts_with(trim($line), '#'))
         ->mapWithKeys(function (string $line): array {
             [$key, $value] = explode('=', $line, 2);
@@ -456,11 +456,11 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
     });
 
     expect($exitCode)->toBe(0)
-        ->and($generatedPath)->toStartWith('apps/gateway/tests/E2E/.docker-feature-tests/run_')
-        ->and($lane['test_files'])->toContain('apps/gateway/tests/E2E/IngressProductionTopologyTest.php')
-        ->and($lane['test_files'])->toContain('apps/gateway/tests/E2E/ToolCredentialsTest.php')
-        ->and($lane['test_files'])->not->toContain('apps/gateway/tests/E2E/ToolStartTest.php')
-        ->and($lane['test_files'])->not->toContain('apps/gateway/tests/E2E/RuntimeBackendHostInitTest.php');
+        ->and($generatedPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
+        ->and($lane['test_files'])->toContain('tests/E2E/IngressProductionTopologyTest.php')
+        ->and($lane['test_files'])->toContain('tests/E2E/ToolCredentialsTest.php')
+        ->and($lane['test_files'])->not->toContain('tests/E2E/ToolStartTest.php')
+        ->and($lane['test_files'])->not->toContain('tests/E2E/RuntimeBackendHostInitTest.php');
 });
 
 it('does not select Docker E2E files with direct host PHP topology commands', function (): void {
@@ -476,7 +476,7 @@ it('does not select Docker E2E files with direct host PHP topology commands', fu
         $lane = $payload['success']['data']['lanes'][0];
         $files = [
             ...$lane['test_files'],
-            'apps/gateway/tests/E2E/Support/Pest.php',
+            'tests/E2E/Support/Pest.php',
         ];
     });
 
@@ -564,7 +564,7 @@ it('includes the agent topology coverage in the incus lane', function (): void {
         $lane = $payload['success']['data']['lanes'][0];
 
         expect($exitCode)->toBe(0)
-            ->and($lane['test_files'])->toContain('apps/gateway/tests/E2E/NodeListAgentTopologyTest.php')
+            ->and($lane['test_files'])->toContain('tests/E2E/NodeListAgentTopologyTest.php')
             ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_CACHE'])->toBe('process')
             ->and($lane['environment']['ORBIT_E2E_CHECKOUT_CACHE'])->toBe('process')
             ->and($lane['command'])->toContain('--processes=3');
@@ -642,13 +642,13 @@ it('uses a unique generated docker test directory per plan', function (): void {
     $secondPath = firstGeneratedDockerPath($second['success']['data']['lanes'][0]['command']);
 
     expect($exitCode)->toBe(0)
-        ->and($firstPath)->toStartWith('apps/gateway/tests/E2E/.docker-feature-tests/run_')
-        ->and($secondPath)->toStartWith('apps/gateway/tests/E2E/.docker-feature-tests/run_')
+        ->and($firstPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
+        ->and($secondPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
         ->and($firstPath)->not->toBe($secondPath);
 });
 
 it('does not include generated docker test files in future docker plans', function (): void {
-    $directory = base_path('apps/gateway/tests/E2E/.docker-feature-tests');
+    $directory = repo_path('apps/gateway/tests/E2E/.docker-feature-tests');
 
     if (! is_dir($directory)) {
         mkdir($directory, 0777, true);
@@ -674,7 +674,7 @@ PHP);
         });
 
         expect($exitCode)->toBe(0)
-            ->and($lane['test_files'])->not->toContain('apps/gateway/tests/E2E/.docker-feature-tests/Docker999GeneratedTest.php');
+            ->and($lane['test_files'])->not->toContain('tests/E2E/.docker-feature-tests/Docker999GeneratedTest.php');
     } finally {
         @unlink($directory.'/Docker999GeneratedTest.php');
         @rmdir($directory);
@@ -683,7 +683,7 @@ PHP);
 
 it('copies e2e support files into generated docker test suites', function (): void {
     $command = app(E2ETestCommand::class);
-    $testPath = 'apps/gateway/tests/E2E/.docker-feature-tests/run_support_'.bin2hex(random_bytes(4));
+    $testPath = 'tests/E2E/.docker-feature-tests/run_support_'.bin2hex(random_bytes(4));
     $plans = [
         'docker' => [
             'lane' => 'docker',
@@ -693,7 +693,7 @@ it('copies e2e support files into generated docker test suites', function (): vo
             ],
             'test_path' => $testPath,
             'test_files' => [
-                'apps/gateway/tests/E2E/DatabaseDescribeTest.php',
+                'tests/E2E/DatabaseDescribeTest.php',
             ],
         ],
     ];
@@ -951,7 +951,7 @@ function runE2EInterruptReapers(array $plans): void
 function firstGeneratedDockerPath(array $command): ?string
 {
     foreach ($command as $argument) {
-        if (str_starts_with($argument, 'apps/gateway/tests/E2E/.docker-feature-tests/run_')) {
+        if (str_starts_with($argument, 'tests/E2E/.docker-feature-tests/run_')) {
             return $argument;
         }
     }
@@ -964,7 +964,7 @@ function firstGeneratedDockerPath(array $command): ?string
  */
 function failingPreparationPlans(): array
 {
-    $testPath = 'apps/gateway/tests/E2E/.docker-feature-tests/run_failure_'.bin2hex(random_bytes(4));
+    $testPath = 'tests/E2E/.docker-feature-tests/run_failure_'.bin2hex(random_bytes(4));
 
     return [
         'docker' => [
@@ -975,8 +975,8 @@ function failingPreparationPlans(): array
             ],
             'test_path' => $testPath,
             'test_files' => [
-                'apps/gateway/tests/E2E/ToolCredentialsTest.php',
-                'apps/gateway/tests/E2E/DefinitelyMissingTest.php',
+                'tests/E2E/ToolCredentialsTest.php',
+                'tests/E2E/DefinitelyMissingTest.php',
             ],
         ],
     ];
@@ -1032,7 +1032,7 @@ function invokeE2ETestCommandMethod(E2ETestCommand $command, string $method, arr
  */
 function createTopologySchedulingFixtureFiles(array $groups): array
 {
-    $directory = base_path('apps/gateway/tests/E2E/.topology-scheduling-fixtures/'.bin2hex(random_bytes(4)));
+    $directory = repo_path('apps/gateway/tests/E2E/.topology-scheduling-fixtures/'.bin2hex(random_bytes(4)));
 
     if (! mkdir($directory, 0777, true) && ! is_dir($directory)) {
         throw new RuntimeException("Could not create fixture directory [{$directory}].");

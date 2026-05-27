@@ -49,7 +49,7 @@ class NodeRegisterCommand extends Command
                     'role' => $role,
                     'host' => (string) ($this->option('host') ?: $name),
                     'user' => (string) ($this->option('user') ?: get_current_user()),
-                    'orbit_path' => (string) ($this->option('orbit-path') ?: base_path()),
+                    'orbit_path' => (string) ($this->option('orbit-path') ?: repo_path()),
                     'status' => $status,
                 ],
             );

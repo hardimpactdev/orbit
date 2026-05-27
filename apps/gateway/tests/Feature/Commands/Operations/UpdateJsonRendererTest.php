@@ -82,7 +82,7 @@ it('renders local_checkout_unavailable with path', function (): void {
 
     expect($exitCode)->toBe(1);
     expect(str_contains($output, '"code":"local_checkout_unavailable"'))->toBeTrue();
-    expect(str_contains($output, '"path":"'.base_path().'"'))->toBeTrue();
+    expect(str_contains($output, '"path":"'.repo_path().'"'))->toBeTrue();
 });
 
 it('includes no extra fields in error envelope', function (): void {

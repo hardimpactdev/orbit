@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\File;
 
 describe('install-orbit host PHP CLI baseline', function (): void {
     beforeEach(function (): void {
-        $this->installer = File::get(base_path('bin/install-orbit'));
+        $this->installer = File::get(repo_path('bin/install-orbit'));
     });
 
     it('installs PHP 8.5 CLI and required extensions on Ubuntu through the Ondrej PPA', function (): void {

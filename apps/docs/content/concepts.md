@@ -102,18 +102,17 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway role**
 - **VPN role**
 - **Router role**
-- **Agent role**
-- **Ingress role**
-- **WebSocket role**
-- **S3 role**
 - **Gateway-coupled infrastructure role**
 - **Orbit launcher**
 - **Orbit runtime container**
 - **Orbit Caddy container**
+- **WebSocket role**
+- **S3 role**
+- **Agent role**
+- **Ingress role**
 - **Role assignability**
 - **Role assignment**
 - **Role settings**
-- **VPN role settings**
 - **Node TLD**
 - **Agent role baseline**
 - **Agent runtime user**
@@ -127,6 +126,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-to-node edge**
 - **Node event ingestion**
 - **Node reality**
+- **VPN role settings**
 - **Consuming node**
 - **Serving node**
 - **Node access permission**
@@ -164,6 +164,7 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Gateway relationship**
 - **Configured gateway endpoint**
 - **Gateway WireGuard API address**
+- **Gateway API runtime**
 - **Local gateway configuration**
 - **Gateway root CA**
 - **Gateway trust material**
@@ -218,12 +219,13 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Workspace hostname**
 - **Workspace path**
 - **Workspace lifecycle status**
+- **Workspace runtime container**
+- **Workspace exec**
+- **Host cwd context**
 - **Workspace PHP override**
 - **Workspace PHP inheritance flag**
-- **Workspace runtime container**
 - **Workspace agent IDE adapter**
 - **Workspace agent IDE identifier**
-- **Host cwd context**
 - **Setup step definition**
 - **Setup steps phase**
 - **Teardown step definition**
@@ -243,15 +245,17 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process definition**
 - **Process identity slug**
 - **Process order**
+- **Runtime unit**
 - **Process runtime**
 - **Docker process runtime**
 - **Supervisor process runtime**
-- **Runtime unit**
 - **Runtime unit expansion**
 - **Runtime unit filename**
 - **Runtime unit environment**
+- **Runtime backend artifact**
 - **Restart policy**
 - **Crash notification policy**
+- **Process runtime selection**
 - **Process event**
 - **Crash event**
 - **Process-family boundaries**
@@ -271,16 +275,15 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Custom route**
 - **Redirect route**
 - **Tool-owned route**
+- **App WebSocket route**
+- **WebSocket service route**
+- **Public S3 route**
+- **S3 service route**
 - **Public route artifact**
-- **Private backend artifact**
 - **Private router artifact**
 - **Private backend artifact**
 - **Router backend pool**
-- **App WebSocket route**
-- **WebSocket service route**
 - **WebSocket backend pool**
-- **Public S3 route**
-- **S3 service route**
 - **S3 backend pool**
 - **Orbit-managed TLS**
 - **Route leaf certificate**
@@ -313,6 +316,8 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Schedule lock**
 - **Run-history hook**
 - **Schedule-family boundaries**
+- **Gateway-only scheduler invariant**
+- **No node-side scheduler**
 <!-- /concept-index -->
 
 ## Database Concepts
@@ -449,6 +454,7 @@ Source: [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 - **VPN-role runtime administration**
 - **VPN-role execution path**
 - **VPN runtime backend**
+- **VPN role settings**
 - **Backend TOTP code**
 - **VPN client**
 - **VPN client name**
@@ -476,6 +482,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Supported PHP version set**
 - **Available PHP image**
 - **PHP runtime catalog**
+- **PHP runtime policy**
 - **Gateway-tracked image facts**
 - **Live image inspection**
 - **PHP runtime view**
@@ -484,8 +491,8 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**
 - **Runtime PHP binary**
-- **PHP runtime target**
 - **PHP runtime container artifact**
+- **PHP runtime target**
 - **Partial PHP application warning**
 - **PHP-domain boundaries**
 <!-- /concept-index -->
@@ -530,8 +537,13 @@ Source: [Firewall Concepts](domains/4_firewall/firewall-concepts.md).
 - **Destination**
 - **Port**
 - **Protocol**
+- **Address family**
+- **Interface scope**
+- **Owner**
+- **Protected**
 - **Reason**
 - **Eligible firewall target**
+- **Database-only ingress**
 - **Bootstrap policy**
 - **Operator preset firewall boundary**
 - **Firewall-family boundaries**
@@ -555,6 +567,7 @@ Source: [Agent IDE Concepts](domains/15_agent-ide/agent-ide-concepts.md).
 - **Effective Agent IDE adapter**
 - **Agent IDE input token**
 - **Agent IDE message**
+- **Agent IDE launcher context**
 - **Agent-IDE-domain boundaries**
 - **Registry boundary**
 <!-- /concept-index -->
@@ -579,6 +592,7 @@ Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
 - **Local resolver source**
 - **Local DNS entry status**
 - **Development DNS mapping owned by the gateway**
+- **Private `.orbit` service name**
 - **App-role resolver drift**
 - **Public DNS boundary**
 - **DNS-domain boundaries**

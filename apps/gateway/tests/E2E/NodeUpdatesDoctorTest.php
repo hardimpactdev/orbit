@@ -100,7 +100,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -131,7 +131,7 @@ function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure =
     return $topology->ssh(
         'gateway',
         sprintf(
-            'cd %s && php artisan doctor --node=app-dev-1 --family=node --key=node.updates --json',
+            'cd %s && php apps/gateway/artisan doctor --node=app-dev-1 --family=node --key=node.updates --json',
             escapeshellarg($topology->checkout('gateway')),
         ),
         timeoutSeconds: 240,

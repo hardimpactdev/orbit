@@ -1,34 +1,27 @@
 # Orbit
 
-Clean Laravel 13 rebuild of Orbit.
+Orbit is a command-first environment control plane for Laravel development,
+hosting workflows, and node orchestration.
 
-Orbit is a command-first environment control plane for Laravel development and
-hosting workflows. The current baseline is intentionally small: a node registry,
-local updates, registry-backed `update:all`, and a real-node smoke path.
+The monorepo contains three self-contained applications:
 
-## Current Commands
-
-```bash
-php artisan node:register gateway --role=gateway --host=10.6.0.2 --ssh-user=gateway --orbit-path=/home/gateway/orbit --local
-php artisan node:register mini --role=control --host=10.6.0.8 --ssh-user=nckrtl --orbit-path=/Users/nckrtl/orbit
-php artisan node:register beast --role=app --host=10.6.0.7 --ssh-user=nckrtl --orbit-path=/home/nckrtl/orbit
-
-php artisan node:list
-php artisan update
-php artisan update:all
-```
+- `apps/gateway` — Laravel 13 gateway/control-plane app.
+- `apps/docs` — Laravel docs and Librarian lint app.
+- `apps/cli` — local CLI and executor app.
 
 ## Development
 
 ```bash
 composer install
-php artisan migrate
-php artisan test --compact
+cd apps/gateway && composer install
+cd ../docs && composer install
+cd ../cli && composer install
 ```
 
 Useful checks:
 
 ```bash
+composer test
 composer quality-check
 composer test:e2e
 ```

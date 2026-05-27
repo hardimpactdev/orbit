@@ -420,10 +420,10 @@ function workspaceSetupConfigureLocalExecutor(E2ETopologyHarness $topology): voi
         sprintf(
             <<<'SH'
 cd %1$s
-touch .env
-grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_OPERATION_TOKEN_TTL_SECONDS)=' .env > .env.tmp || true
-mv .env.tmp .env
-printf 'ORBIT_OPERATION_TOKEN_SECRET=%2$s\nORBIT_OPERATION_TOKEN_TTL_SECONDS=120\n' >> .env
+touch apps/gateway/.env
+grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_OPERATION_TOKEN_TTL_SECONDS)=' apps/gateway/.env > apps/gateway/.env.tmp || true
+mv apps/gateway/.env.tmp apps/gateway/.env
+printf 'ORBIT_OPERATION_TOKEN_SECRET=%2$s\nORBIT_OPERATION_TOKEN_TTL_SECONDS=120\n' >> apps/gateway/.env
 SH,
             escapeshellarg($topology->checkout('gateway')),
             $secret,

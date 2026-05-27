@@ -10,17 +10,17 @@ beforeEach(function (): void {
 
 function provisionScript(): string
 {
-    return base_path('bin/e2e-provision-node');
+    return repo_path('bin/e2e-provision-node');
 }
 
 function depsScript(): string
 {
-    return base_path('bin/_e2e-deps.sh');
+    return repo_path('bin/_e2e-deps.sh');
 }
 
 function installerScript(): string
 {
-    return base_path('bin/install-orbit');
+    return repo_path('bin/install-orbit');
 }
 
 it('ships an executable provisioner script', function (): void {

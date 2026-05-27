@@ -27,7 +27,7 @@ it('loads e2e pest helper functions from the pest bootstrap', function (): void 
 });
 
 it('keeps pest helpers scoped to prepared topology acquisition', function (): void {
-    $helpers = file_get_contents(base_path('apps/gateway/tests/E2E/Support/Pest.php'));
+    $helpers = file_get_contents(repo_path('apps/gateway/tests/E2E/Support/Pest.php'));
 
     expect($helpers)
         ->toContain('function e2eTopology(')

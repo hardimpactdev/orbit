@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+APP_ROOT="${ROOT}/apps/cli"
+
+cd "$APP_ROOT"
+
+exec php -d "memory_limit=${ORBIT_PEST_MEMORY_LIMIT:-512M}" "${APP_ROOT}/vendor/pestphp/pest/bin/pest" "$@"

@@ -40,10 +40,10 @@ it('starts the scheduler as the gateway orbit-runtime default process alongside 
     $capture = "{$root}/capture";
     $sleepCapture = "{$root}/sleep-capture";
 
-    mkdir($source, recursive: true);
+    mkdir("{$source}/apps/gateway", recursive: true);
     mkdir($bin, recursive: true);
 
-    file_put_contents("{$source}/artisan", "<?php\n");
+    file_put_contents("{$source}/apps/gateway/artisan", "<?php\n");
     file_put_contents("{$bin}/php", <<<'BASH'
 #!/usr/bin/env bash
 printf 'argv=%s\n' "$*" >> "$PHP_CAPTURE"
@@ -68,7 +68,7 @@ BASH);
 
     try {
         $process = new SymfonyProcess(
-            ['bash', base_path('docker/orbit-runtime/entrypoint.sh')],
+            ['bash', repo_path('docker/orbit-runtime/entrypoint.sh')],
             null,
             [
                 'ORBIT_IS_GATEWAY' => '1',
@@ -85,7 +85,7 @@ BASH);
         expect($process->getExitCode())
             ->toBe(42, $process->getOutput().$process->getErrorOutput())
             ->and(file_get_contents($capture))
-            ->toContain("argv={$source}/artisan orbit-scheduler --sleep-seconds=7")
+            ->toContain("argv={$source}/apps/gateway/artisan orbit-scheduler --sleep-seconds=7")
             ->toContain('serve')
             ->toContain('--port=8080')
             ->and(file_exists($sleepCapture))->toBeFalse();
@@ -151,13 +151,13 @@ it('runs gateway-target schedules locally without remote shell dispatch', functi
     Schedule::factory()->orbit()->create([
         'name' => 'gateway-maintenance',
         'schedule_key' => 'orbit:gateway:gateway-maintenance',
-        'execution_value' => 'php artisan orbit:cleanup',
+        'execution_value' => 'php apps/gateway/artisan orbit:cleanup',
         'interval' => 'every minute',
     ]);
     $remoteShell = new OrbitSchedulerRecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
     Process::fake([
-        'php artisan orbit:cleanup' => Process::result(output: "local\n"),
+        'php apps/gateway/artisan orbit:cleanup' => Process::result(output: "local\n"),
     ]);
     Process::preventStrayProcesses();
 
@@ -172,7 +172,7 @@ it('runs gateway-target schedules locally without remote shell dispatch', functi
         ->and($run->status)->toBe('completed')
         ->and($run->stdout)->toBe("local\n");
 
-    Process::assertRan('php artisan orbit:cleanup');
+    Process::assertRan('php apps/gateway/artisan orbit:cleanup');
 });
 
 it('dispatches multiple remote schedules through the remote shell pool', function (): void {

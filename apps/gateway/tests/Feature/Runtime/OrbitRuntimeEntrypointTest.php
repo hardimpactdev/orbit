@@ -10,10 +10,10 @@ it('starts the gateway API HTTP server on port 8080 before running the scheduler
     $bin = "{$root}/bin";
     $capture = "{$root}/capture";
 
-    mkdir($source, recursive: true);
+    mkdir("{$source}/apps/gateway", recursive: true);
     mkdir($bin, recursive: true);
 
-    file_put_contents("{$source}/artisan", "<?php\n");
+    file_put_contents("{$source}/apps/gateway/artisan", "<?php\n");
 
     /*
      * The fake `php` records every invocation to a capture log. The scheduler
@@ -44,7 +44,7 @@ exit 0
 BASH);
     chmod("{$bin}/php", 0755);
 
-    $entrypoint = base_path('docker/orbit-runtime/entrypoint.sh');
+    $entrypoint = repo_path('docker/orbit-runtime/entrypoint.sh');
 
     try {
         $process = new Process(
@@ -87,7 +87,7 @@ exit 99
 BASH);
     chmod("{$bin}/php", 0755);
 
-    $entrypoint = base_path('docker/orbit-runtime/entrypoint.sh');
+    $entrypoint = repo_path('docker/orbit-runtime/entrypoint.sh');
 
     try {
         $process = new Process(
@@ -107,12 +107,20 @@ BASH);
 });
 
 it('exposes the gateway API host and port through ORBIT_API_HOST / ORBIT_API_PORT overrides', function (): void {
-    $entrypoint = file_get_contents(base_path('docker/orbit-runtime/entrypoint.sh'));
+    $entrypoint = file_get_contents(repo_path('docker/orbit-runtime/entrypoint.sh'));
 
     expect($entrypoint)
         ->toContain('ORBIT_API_HOST')
         ->toContain('ORBIT_API_PORT')
         ->toContain('start_gateway_http_server');
+});
+
+it('uses the relocated gateway artisan without falling back to a repo-root artisan', function (): void {
+    $entrypoint = file_get_contents(repo_path('docker/orbit-runtime/entrypoint.sh'));
+
+    expect($entrypoint)
+        ->toContain('${source_path}/apps/gateway/artisan')
+        ->not->toContain('${source_path}/artisan');
 });
 
 it('sets PHP_CLI_SERVER_WORKERS for concurrent gateway api requests', function (): void {
@@ -121,10 +129,10 @@ it('sets PHP_CLI_SERVER_WORKERS for concurrent gateway api requests', function (
     $bin = "{$root}/bin";
     $capture = "{$root}/capture";
 
-    mkdir($source, recursive: true);
+    mkdir("{$source}/apps/gateway", recursive: true);
     mkdir($bin, recursive: true);
 
-    file_put_contents("{$source}/artisan", "<?php\n");
+    file_put_contents("{$source}/apps/gateway/artisan", "<?php\n");
 
     file_put_contents("{$bin}/php", <<<'BASH'
 #!/usr/bin/env bash
@@ -145,7 +153,7 @@ exit 0
 BASH);
     chmod("{$bin}/php", 0755);
 
-    $entrypoint = base_path('docker/orbit-runtime/entrypoint.sh');
+    $entrypoint = repo_path('docker/orbit-runtime/entrypoint.sh');
 
     try {
         $process = new Process(

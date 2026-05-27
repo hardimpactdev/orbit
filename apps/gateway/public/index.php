@@ -5,22 +5,15 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
-$repoRoot = dirname(__DIR__);
-$gatewayRoot = $repoRoot.'/apps/gateway';
+$gatewayRoot = dirname(__DIR__);
 
 // Determine if the application is in maintenance mode...
-if (file_exists($maintenance = $repoRoot.'/storage/framework/maintenance.php')) {
+if (file_exists($maintenance = $gatewayRoot.'/storage/framework/maintenance.php')) {
     require $maintenance;
 }
 
 // Register the Composer autoloader...
-$autoload = $gatewayRoot.'/vendor/autoload.php';
-
-if (! is_file($autoload)) {
-    $autoload = $repoRoot.'/vendor/autoload.php';
-}
-
-require $autoload;
+require $gatewayRoot.'/vendor/autoload.php';
 
 // Bootstrap Laravel and handle the request...
 /** @var Application $app */

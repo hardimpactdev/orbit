@@ -24,7 +24,7 @@ it('runs migrations inside orbit-runtime', function (): void {
         && $process->command[1] === 'exec'
         && $process->command[2] === 'orbit-runtime'
         && $process->command[3] === 'php'
-        && $process->command[4] === 'artisan'
+        && $process->command[4] === 'apps/gateway/artisan'
         && $process->command[5] === 'migrate'
         && $process->command[6] === '--force');
 });
@@ -42,8 +42,9 @@ it('installs dependencies inside orbit-runtime', function (): void {
         && $process->command[1] === 'exec'
         && $process->command[2] === 'orbit-runtime'
         && $process->command[3] === 'composer'
-        && $process->command[4] === 'install'
-        && $process->command[5] === '--no-interaction');
+        && $process->command[4] === '--working-dir=apps/gateway'
+        && $process->command[5] === 'install'
+        && $process->command[6] === '--no-interaction');
 });
 
 it('updates remote nodes through orbit-runtime container', function (): void {
@@ -59,8 +60,8 @@ it('updates remote nodes through orbit-runtime container', function (): void {
     expect($result->successful())->toBeTrue();
     expect(array_column($shell->calls, 'script'))->toBe([
         'git pull --ff-only',
-        'docker exec orbit-runtime composer install --no-interaction',
-        'docker exec orbit-runtime php artisan migrate --force',
+        'docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction',
+        'docker exec orbit-runtime php apps/gateway/artisan migrate --force',
     ]);
     expect(array_column($shell->calls, 'cwd'))->toBe([
         '/home/nckrtl/orbit',

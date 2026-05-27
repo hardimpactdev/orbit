@@ -25,9 +25,13 @@ final readonly class E2EResourceLeasePool
 
     public static function defaultDirectoryFor(string $basePath): string
     {
-        $root = self::sharedRepositoryRoot($basePath) ?? rtrim($basePath, '/');
+        $root = self::repositoryRoot($basePath);
 
-        return $root.'/storage/framework/e2e/leases';
+        if ($root !== null) {
+            return $root.'/apps/gateway/storage/framework/e2e/leases';
+        }
+
+        return rtrim($basePath, '/').'/storage/framework/e2e/leases';
     }
 
     public function directory(): string
@@ -405,6 +409,36 @@ final readonly class E2EResourceLeasePool
         $commonGitDirectory = dirname($gitDirectory, 2);
 
         return dirname($commonGitDirectory);
+    }
+
+    private static function repositoryRoot(string $basePath): ?string
+    {
+        $basePath = rtrim($basePath, '/');
+        $path = $basePath;
+
+        while ($path !== '' && $path !== '/') {
+            if (basename($path) === 'gateway' && basename(dirname($path)) === 'apps') {
+                return dirname($path, 2);
+            }
+
+            if (is_dir("{$path}/.git")) {
+                return $path;
+            }
+
+            if (is_file("{$path}/.git")) {
+                return self::sharedRepositoryRoot($path) ?? $path;
+            }
+
+            $parent = dirname($path);
+
+            if ($parent === $path) {
+                break;
+            }
+
+            $path = $parent;
+        }
+
+        return null;
     }
 
     private static function normalizePath(string $path): string

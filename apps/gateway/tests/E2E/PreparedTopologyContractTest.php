@@ -234,7 +234,7 @@ function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair 
         $instance,
         $user,
         $key,
-        'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version',
+        'cd '.escapeshellarg($orbitPath).' && test -f apps/gateway/artisan && orbit --version',
     );
 
     expect(trim($result->output()))->not->toBe('');
@@ -367,8 +367,8 @@ function expectPreparedGatewayCertificateKeysReadable(E2EInstance $gateway, SshK
         'orbit',
         $key,
         implode(' && ', [
-            'test -r /home/orbit/orbit/storage/app/orbit/ca/root.key',
-            '(test -r /home/orbit/orbit/storage/app/orbit/certs/gateway.key || test -r /home/orbit/orbit/storage/app/orbit/certs/10.6.0.2.key)',
+            'test -r /home/orbit/orbit/apps/gateway/storage/app/orbit/ca/root.key',
+            '(test -r /home/orbit/orbit/apps/gateway/storage/app/orbit/certs/gateway.key || test -r /home/orbit/orbit/apps/gateway/storage/app/orbit/certs/10.6.0.2.key)',
         ]),
         timeoutSeconds: 60,
     );

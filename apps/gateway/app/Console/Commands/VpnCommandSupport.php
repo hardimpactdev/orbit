@@ -119,7 +119,7 @@ abstract class VpnCommandSupport extends Command implements Loggable
      */
     protected function gatewayScript(string $command, array $arguments, array $options): string
     {
-        $parts = ['/opt/orbit/artisan', $command];
+        $parts = ['php apps/gateway/artisan', $command];
 
         foreach ($arguments as $argument) {
             $parts[] = escapeshellarg((string) $argument);

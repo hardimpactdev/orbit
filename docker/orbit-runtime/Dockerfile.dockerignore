@@ -9,6 +9,6 @@
 .env*
 vendor/**
 node_modules/**
-storage/app/orbit/ca/**
-storage/app/orbit/certs/**
-storage/app/orbit/keys/**
+apps/gateway/storage/app/orbit/ca/**
+apps/gateway/storage/app/orbit/certs/**
+apps/gateway/storage/app/orbit/keys/**

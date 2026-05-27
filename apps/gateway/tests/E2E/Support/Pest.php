@@ -208,8 +208,8 @@ function e2eConfigureCurrentCheckoutCliGatewaySettings(E2ETopologyHarness $topol
 
 function e2eInstallCurrentCheckoutGatewayCa(E2ETopologyHarness $topology, string $role): string
 {
-    $caPemPath = $topology->checkout($role).'/storage/app/orbit/ca/root.crt';
-    $gatewayCaPath = $topology->checkout('gateway').'/storage/app/orbit/ca/root.crt';
+    $caPemPath = $topology->checkout($role).'/apps/gateway/storage/app/orbit/ca/root.crt';
+    $gatewayCaPath = $topology->checkout('gateway').'/apps/gateway/storage/app/orbit/ca/root.crt';
     $rootCert = $topology->ssh(
         'gateway',
         'cat '.escapeshellarg($gatewayCaPath),
