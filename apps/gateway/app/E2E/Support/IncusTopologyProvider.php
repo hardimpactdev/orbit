@@ -40,9 +40,25 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             return ProviderAvailability::unavailable(E2EPreparedTopology::unsupportedKindMessage($kind));
         }
 
+        if (IncusWarmTopologyPool::enabled()) {
+            try {
+                $hostSlots = IncusWarmTopologyPool::availableHostSlots($this->config, $kind);
+            } catch (\InvalidArgumentException $exception) {
+                return ProviderAvailability::unavailable($exception->getMessage());
+            }
+
+            $host = array_key_first($hostSlots);
+
+            if ($host === null) {
+                return ProviderAvailability::unavailable("warm prepared topology {$kind->value} is not available on any Incus host. Run composer e2e:prepare-warm-topology -- --force {$kind->value}.");
+            }
+
+            return ProviderAvailability::available("warm prepared topology {$kind->value} is available on {$host}");
+        }
+
         $availability = IncusHostPool::fromEnvironment($this->config)->availabilityFor(
             $kind,
-            checkCapacity: $this->config->incusHostSlots === [],
+            checkCapacity: false,
         );
         $host = $availability['host'];
 
@@ -50,20 +66,29 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             return ProviderAvailability::unavailable("prepared topology {$kind->value} is not available on any Incus host: {$availability['reason']}");
         }
 
+        $capacityReason = $this->capacityConfigurationUnavailableReason($kind);
+
+        if ($capacityReason !== null) {
+            return ProviderAvailability::unavailable($capacityReason);
+        }
+
         return ProviderAvailability::available("prepared topology {$kind->value} is available on {$host->config->host}");
     }
 
     public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
     {
+        if (IncusWarmTopologyPool::enabled()) {
+            return $this->acquireWarm($kind, $timer, $options);
+        }
+
         $pool = IncusHostPool::fromEnvironment($this->config);
-        $resourceLease = $this->acquireResourceLease();
-        $hostNames = $resourceLease === null ? null : [$resourceLease->host()];
-        $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind, $hostNames));
+        $resourceLease = $this->acquireResourceLease($kind);
+        $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind, [$resourceLease->host()], checkCapacity: false));
         $host = $availability['host'];
         $instances = [];
 
         if ($host === null) {
-            $resourceLease?->release();
+            $resourceLease->release();
 
             throw new \RuntimeException("Prepared topology {$kind->value} is not available on any Incus host: {$availability['reason']}");
         }
@@ -83,7 +108,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 }
             }
 
-            $resourceLease?->release();
+            $resourceLease->release();
 
             throw $exception;
         }
@@ -118,16 +143,323 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         );
     }
 
-    private function acquireResourceLease(): ?E2EResourceLease
+    public function prepareWarmSnapshots(E2ETopologyKind $kind, int $slots, E2EPhaseTimer $timer, bool $replaceExisting = false): array
     {
-        if ($this->config->incusHostSlots === []) {
-            return null;
+        $host = IncusHostPool::fromEnvironment($this->config)->first();
+
+        if ($host === null) {
+            throw new \RuntimeException('No Incus hosts configured. Set ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST.');
         }
+
+        if (! IncusTopologyTemplate::availableOn($host, $kind)) {
+            throw new \RuntimeException("Prepared topology {$kind->value} is not available on {$host->config->host}. Run composer e2e:prepare-topology -- --force {$kind->value} first.");
+        }
+
+        $maxSlots = IncusWarmTopologyPool::maxSlotsForHost($this->config, $kind, $host->config->host);
+
+        if ($slots > $maxSlots) {
+            throw new \RuntimeException("Warm topology {$kind->value} requested {$slots} slots, but {$host->config->host} can fit {$maxSlots} warm slot(s). Increase ORBIT_E2E_INCUS_HOST_VM_CAPS or lower ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS.");
+        }
+
+        $manifest = [];
+
+        for ($slot = 1; $slot <= $slots; $slot++) {
+            $runId = IncusWarmTopologyPool::runId($kind, $slot);
+            $names = IncusWarmTopologyPool::instanceNames($kind, $slot);
+
+            if ($replaceExisting) {
+                $timer->measure("warm.cleanup.slot-{$slot}", fn () => $host->deleteInstancesIfPresent($names));
+            }
+
+            $slotAvailable = IncusWarmTopologyPool::slotAvailableOn($host, $kind, $slot);
+
+            if (! $replaceExisting && $slotAvailable) {
+                $manifest[] = [
+                    'host' => $host->config->host,
+                    'slot' => $slot,
+                    'run_id' => $runId,
+                    'instances' => $names,
+                    'snapshot' => IncusWarmTopologyPool::SnapshotName,
+                    'reused' => true,
+                ];
+
+                continue;
+            }
+
+            if (! $replaceExisting && ! $slotAvailable) {
+                $timer->measure("warm.cleanup.slot-{$slot}", fn () => $host->deleteInstancesIfPresent($names));
+            }
+
+            $instances = $timer->measure(
+                "warm.clone.slot-{$slot}",
+                fn (): array => IncusTopologyTemplate::clone($host, $kind, $runId, $timer->child("warm.slot-{$slot}"), stateful: true),
+            );
+
+            $sshKeyPair = $this->createSshKeyPair($host, $runId);
+            $this->prepareInstances(
+                $instances,
+                $this->config,
+                $sshKeyPair,
+                $timer->child("warm.slot-{$slot}"),
+                new E2ETopologyAcquisitionOptions(
+                    sshUsers: ['control' => $this->config->controlUser],
+                    startGatewayApi: true,
+                ),
+                $kind,
+            );
+
+            foreach ($instances as $role => $instance) {
+                $timer->measure("warm.snapshot.slot-{$slot}.{$role}", fn () => $instance->snapshotStatefully(IncusWarmTopologyPool::SnapshotName));
+            }
+
+            $timer->measure("warm.stop.slot-{$slot}", fn () => $host->stopInstancesIfRunning($names));
+
+            $manifest[] = [
+                'host' => $host->config->host,
+                'slot' => $slot,
+                'run_id' => $runId,
+                'instances' => $names,
+                'snapshot' => IncusWarmTopologyPool::SnapshotName,
+                'reused' => false,
+            ];
+        }
+
+        return $manifest;
+    }
+
+    private function acquireWarm(E2ETopologyKind $kind, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
+    {
+        $requiredSlots = count(IncusTopologyTemplate::rolesFor($kind));
+        $pool = E2EResourceLeasePool::fromEnvironment(
+            waitSeconds: $this->config->slotWaitSeconds,
+            staleSeconds: $this->config->slotStaleSeconds,
+        );
+        $hostSlots = IncusWarmTopologyPool::availableHostSlots($this->config, $kind);
+        $capacityLease = $pool->acquireWeighted('incus', $this->preparedHostVmCaps($kind), $requiredSlots, $this->config->exclusiveHosts);
+
+        try {
+            $host = $capacityLease->host();
+            $warmSlots = $hostSlots[$host] ?? 0;
+
+            if ($warmSlots < 1) {
+                throw new \RuntimeException("No warm prepared topology {$kind->value} slots are available on {$host}.");
+            }
+
+            $warmLease = $pool->acquire(
+                IncusWarmTopologyPool::backend($kind),
+                [$host => $warmSlots],
+            );
+        } catch (\Throwable $exception) {
+            $capacityLease->release();
+
+            throw $exception;
+        }
+
+        $resourceLease = new E2EResourceLeaseSet([
+            ...$capacityLease->leases(),
+            $warmLease,
+        ]);
+        $host = new IncusHost($this->config->forHost($warmLease->host()));
+        $slot = $warmLease->slot();
+        $instances = IncusWarmTopologyPool::instancesFor($host, $kind, $slot);
+        $names = IncusWarmTopologyPool::instanceNames($kind, $slot);
+        $sshKeyPair = IncusWarmTopologyPool::sshKeyPair($kind, $slot);
+        $primaryUsers = $this->sshUsersFor($instances, $this->config, $options);
+
+        try {
+            $result = $timer->measure(
+                'warm.restore',
+                fn () => $host->restoreSnapshotsConcurrently($names, IncusWarmTopologyPool::SnapshotName, stateful: true),
+            );
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not restore warm topology {$kind->value}: {$result->errorOutput()}");
+            }
+
+            $timer->measure('warm.start-if-needed', fn () => $host->startInstancesIfStopped($names));
+
+            foreach ($instances as $role => $instance) {
+                $timer->measure("warm.agent-ready.{$role}", fn () => $instance->waitForAgent());
+            }
+
+            foreach ($primaryUsers as $role => $primaryUser) {
+                $instance = $instances[$role] ?? null;
+
+                if ($instance === null) {
+                    continue;
+                }
+
+                $timer->measure("warm.command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+            }
+
+            if ($options->startGatewayApi && isset($instances['control'])) {
+                $timer->measure('warm.gateway-api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+                    $instances['control'],
+                    $this->config->controlUser,
+                    $sshKeyPair,
+                    gatewayIp: self::GatewayWireGuardIp,
+                ));
+            }
+        } catch (\Throwable $exception) {
+            $resourceLease->release();
+
+            throw $exception;
+        }
+
+        $leaseInstances = $this->leaseInstancesFor($kind, $instances);
+        $snapshotReset = $this->warmSnapshotResetFor($host, $instances, $primaryUsers, $sshKeyPair, $options->startGatewayApi);
+        $rebuild = fn (E2EPhaseTimer $cycleTimer): array => [
+            'instances' => $leaseInstances,
+            'snapshotReset' => $snapshotReset,
+        ];
+        $bulkCleanup = $this->warmSnapshotCleanupFor($host, $instances);
+
+        return new E2ETopologyLease(
+            kind: $kind,
+            control: $leaseInstances['control'],
+            gateway: $leaseInstances['gateway'] ?? null,
+            dev: $leaseInstances['dev'] ?? null,
+            prod: $leaseInstances['prod'] ?? null,
+            sshKeyPair: $sshKeyPair,
+            rebuild: $rebuild,
+            snapshotReset: $snapshotReset,
+            bulkCleanup: $bulkCleanup,
+            gatewayApiIp: self::GatewayWireGuardIp,
+            resourceLease: $resourceLease,
+            agent: $leaseInstances['agent'] ?? null,
+            ingress: $leaseInstances['ingress'] ?? null,
+            additionalInstances: $this->additionalInstancesFrom($leaseInstances),
+        );
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     * @param  array<string, string>  $primaryUsers
+     */
+    private function warmSnapshotResetFor(IncusHost $host, array $instances, array $primaryUsers, SshKeyPair $sshKeyPair, bool $startGatewayApi): \Closure
+    {
+        return function (E2EPhaseTimer $cycleTimer) use ($host, $instances, $primaryUsers, $sshKeyPair, $startGatewayApi): void {
+            $names = array_map(
+                static fn (IncusInstance $instance): string => $instance->name(),
+                array_values($instances),
+            );
+
+            $result = $cycleTimer->measure(
+                'warm.reset.restore-stateful.all',
+                fn () => $host->restoreSnapshotsConcurrently($names, IncusWarmTopologyPool::SnapshotName, stateful: true),
+            );
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not restore warm topology snapshots: {$result->errorOutput()}");
+            }
+
+            $cycleTimer->measure('warm.reset.start-if-needed.all', fn () => $host->startInstancesIfStopped($names));
+
+            foreach ($instances as $role => $instance) {
+                $cycleTimer->measure("warm.reset.agent-ready.{$role}", fn () => $instance->waitForAgent());
+            }
+
+            foreach ($primaryUsers as $role => $primaryUser) {
+                $instance = $instances[$role] ?? null;
+
+                if ($instance === null) {
+                    continue;
+                }
+
+                $cycleTimer->measure("warm.reset.command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+            }
+
+            if ($startGatewayApi && isset($instances['control'])) {
+                $cycleTimer->measure('warm.reset.gateway-api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+                    $instances['control'],
+                    $this->config->controlUser,
+                    $sshKeyPair,
+                    gatewayIp: self::GatewayWireGuardIp,
+                ));
+            }
+        };
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function warmSnapshotCleanupFor(IncusHost $host, array $instances): \Closure
+    {
+        return function (E2EPhaseTimer $cycleTimer) use ($host, $instances): void {
+            $names = array_map(
+                static fn (IncusInstance $instance): string => $instance->name(),
+                array_values($instances),
+            );
+
+            $cycleTimer->measure('warm.cleanup.stop.all', fn () => $host->stopInstancesIfRunning($names));
+        };
+    }
+
+    private function acquireResourceLease(E2ETopologyKind $kind): E2EResourceLeaseSet
+    {
+        $requiredSlots = count(IncusTopologyTemplate::rolesFor($kind));
 
         return E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $this->config->slotWaitSeconds,
             staleSeconds: $this->config->slotStaleSeconds,
-        )->acquire('incus', $this->config->incusHostSlots, $this->config->exclusiveHosts);
+        )->acquireWeighted('incus', $this->preparedHostVmCaps($kind), $requiredSlots, $this->config->exclusiveHosts);
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function preparedHostVmCaps(E2ETopologyKind $kind): array
+    {
+        $caps = [];
+
+        foreach ($this->config->incusHostCandidates() as $hostName) {
+            $host = new IncusHost($this->config->forHost($hostName));
+
+            if (! IncusTopologyTemplate::availableOn($host, $kind)) {
+                continue;
+            }
+
+            $caps[$hostName] = $this->config->incusMaxVmsForHost($hostName);
+        }
+
+        return $caps;
+    }
+
+    private function capacityConfigurationUnavailableReason(E2ETopologyKind $kind): ?string
+    {
+        $requiredSlots = count(IncusTopologyTemplate::rolesFor($kind));
+        $reasons = [];
+        $hasPreparedHost = false;
+
+        foreach ($this->config->incusHostCandidates() as $hostName) {
+            $host = new IncusHost($this->config->forHost($hostName));
+
+            if (! IncusTopologyTemplate::availableOn($host, $kind)) {
+                continue;
+            }
+
+            $hasPreparedHost = true;
+
+            try {
+                $hostCap = $this->config->incusMaxVmsForHost($hostName);
+            } catch (\InvalidArgumentException $exception) {
+                $reasons[] = "{$hostName}: {$exception->getMessage()}";
+
+                continue;
+            }
+
+            if ($hostCap >= $requiredSlots) {
+                return null;
+            }
+
+            $reasons[] = "{$hostName} allows {$hostCap}/{$requiredSlots} VMs";
+        }
+
+        if (! $hasPreparedHost) {
+            return null;
+        }
+
+        return "Incus VM capacity cannot fit prepared topology {$kind->value}: ".implode('; ', $reasons);
     }
 
     /**

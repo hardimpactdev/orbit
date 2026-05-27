@@ -23,8 +23,9 @@ Use focused files and filters before escalating to the full default suite.
 ```bash
 bin/orbit-gateway-pest --compact tests/Feature/Commands/Nodes/NodeListCommandTest.php
 bin/orbit-gateway-pest --compact --filter='lists nodes'
-bin/orbit-gateway-vendor-bin pint --dirty --format agent --config ../../pint.json
+bin/orbit-gateway-vendor-bin pint --dirty --format agent
 ```
 
 The default Composer test lane excludes `e2e` and `slow` groups, uses Pest
-parallel mode, and runs compact output.
+parallel mode for the gateway, and runs compact output across the gateway, CLI,
+docs app, and core package.

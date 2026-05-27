@@ -21,6 +21,7 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
 
     private const int MaxBranchLength = 255;
 
+    #[\Override]
     protected $signature = 'internal:workspace-adapter:update
         {--adapter=}
         {--update=}
@@ -29,8 +30,10 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
         {--operation-token=}
         {--json}';
 
+    #[\Override]
     protected $description = 'Update agent IDE workspace adapter state';
 
+    #[\Override]
     protected $hidden = true;
 
     public function handle(OperationTokenGuard $guard): int
@@ -278,7 +281,7 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
             $entry = posix_getpwuid(posix_getuid());
 
             if (is_array($entry)) {
-                return $this->stringValue($entry['dir'] ?? null);
+                return $this->stringValue($entry['dir']);
             }
         }
 

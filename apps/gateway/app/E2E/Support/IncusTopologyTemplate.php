@@ -94,12 +94,12 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false): array
     {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles);
+        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful);
 
         $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
 
@@ -124,7 +124,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles): string
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null): string
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
@@ -141,7 +141,7 @@ final readonly class IncusTopologyTemplate
         $statefulLines = [];
         $startLines = [];
         $waitStartLines = [];
-        $statefulReset = getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
+        $stateful ??= getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
 
         $index = 0;
         foreach ($roles as $role) {
@@ -157,7 +157,7 @@ final readonly class IncusTopologyTemplate
             $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}";
             $rootSizeLines[] = "incus config device set {$clone} root size={$rootSize} || incus config device override {$clone} root size={$rootSize}";
 
-            if ($statefulReset) {
+            if ($stateful) {
                 $statefulLines[] = "incus config device set {$clone} root size.state={$stateSize} || incus config device override {$clone} root size.state={$stateSize}";
                 $statefulLines[] = "incus config set {$clone} migration.stateful=true";
             }

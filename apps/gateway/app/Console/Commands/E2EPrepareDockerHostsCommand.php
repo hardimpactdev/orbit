@@ -22,6 +22,7 @@ use Throwable;
 #[Signature('e2e:prepare-docker-hosts
     {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
     {--force : Ensure Docker runtime and topology images exist on the build host and sync them to runners}
+    {--rebuild : Rebuild selected Docker artifacts even when they already exist}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
     {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent)}
@@ -206,6 +207,7 @@ class E2EPrepareDockerHostsCommand extends Command
         }
 
         $buildKinds = E2EPreparedTopology::dockerArtifactSourceKindsFor($kind);
+        $selectedBuildKinds = [];
         $images = [];
 
         foreach ($buildKinds as $buildKind) {
@@ -215,6 +217,7 @@ class E2EPrepareDockerHostsCommand extends Command
                 continue;
             }
 
+            $selectedBuildKinds[] = $buildKind;
             $images = [
                 ...$images,
                 ...array_map(
@@ -232,7 +235,7 @@ class E2EPrepareDockerHostsCommand extends Command
         }
 
         return [[
-            'name' => 'topology:'.$this->topologyStepName($buildKinds),
+            'name' => 'topology:'.$this->topologyStepName($selectedBuildKinds),
             'command' => sprintf(
                 'composer e2e:prepare-docker-topology -- --force%s%s %s',
                 $artifactRoles !== null ? ' --roles='.implode(',', $artifactRoles) : '',
@@ -362,9 +365,10 @@ class E2EPrepareDockerHostsCommand extends Command
      */
     private function runBuildStep(string $buildHost, array $step, array &$results): bool
     {
+        $rebuild = (bool) $this->option('rebuild');
         $missingImages = $this->missingImagesFor($buildHost, $step['images']);
 
-        if ($missingImages === []) {
+        if (! $rebuild && $missingImages === []) {
             $results[] = [
                 'host' => $buildHost,
                 'step' => $step['name'],
@@ -388,7 +392,7 @@ class E2EPrepareDockerHostsCommand extends Command
             'host' => $buildHost,
             'step' => $step['name'],
             'successful' => $result->successful(),
-            'action' => 'built',
+            'action' => $rebuild ? 'rebuilt' : 'built',
             'missing_images' => $missingImages,
             'output' => trim($result->output().$result->errorOutput()),
         ];
@@ -402,7 +406,8 @@ class E2EPrepareDockerHostsCommand extends Command
         }
 
         if (! (bool) $this->option('json')) {
-            $this->line("built: {$buildHost} {$step['name']}");
+            $action = $rebuild ? 'rebuilt' : 'built';
+            $this->line("{$action}: {$buildHost} {$step['name']}");
         }
 
         return true;

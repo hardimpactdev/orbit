@@ -191,11 +191,7 @@ SH,
     private static function ensureDigCommand(): string
     {
         return <<<'SH'
-if ! command -v dig >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq >/dev/null
-    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils >/dev/null
-fi
+command -v dig >/dev/null 2>&1 || { echo 'dig is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
 SH;
     }
 }

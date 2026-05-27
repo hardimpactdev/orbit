@@ -6,17 +6,17 @@ namespace Orbit\Core\Security;
 
 use InvalidArgumentException;
 
-final class OperationToken
+final readonly class OperationToken
 {
-    private const SEGMENT_COUNT = 6;
+    private const int SEGMENT_COUNT = 6;
 
     public function __construct(
-        public readonly string $id,
-        public readonly string $node,
-        public readonly string $command,
-        public readonly int $issued_at,
-        public readonly int $expires_at,
-        public readonly string $signature,
+        public string $id,
+        public string $node,
+        public string $command,
+        public int $issued_at,
+        public int $expires_at,
+        public string $signature,
     ) {}
 
     public function toString(): string

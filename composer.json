@@ -15,6 +15,7 @@
     "scripts": {
         "setup": [
             "composer install",
+            "cd packages/core && composer install",
             "cd apps/gateway && composer install",
             "cd apps/docs && composer install",
             "cd apps/cli && composer install",
@@ -37,14 +38,16 @@
             "bin/orbit-gateway-artisan config:clear --ansi @no_additional_args",
             "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact",
             "bin/orbit-cli-pest --compact",
-            "bin/orbit-docs-pest --compact"
+            "bin/orbit-docs-pest --compact",
+            "cd packages/core && vendor/bin/pest --compact"
         ],
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",
             "bin/orbit-gateway-artisan config:clear --ansi @no_additional_args",
             "bin/orbit-gateway-pest --exclude-group=e2e --parallel --compact",
             "bin/orbit-cli-pest --compact",
-            "bin/orbit-docs-pest --compact"
+            "bin/orbit-docs-pest --compact",
+            "cd packages/core && vendor/bin/pest --compact"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
@@ -85,6 +88,10 @@
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-docker-hosts @additional_args"
         ],
+        "e2e:ensure-artifacts": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:ensure-artifacts @additional_args"
+        ],
         "e2e:prepare-base-image": [
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-base-image @additional_args"
@@ -93,13 +100,28 @@
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-topology @additional_args"
         ],
-        "analyse": "bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M",
-        "format": [
-            "bin/orbit-gateway-vendor-bin pint --config ../../pint.json",
-            "cd apps/cli && vendor/bin/pint --config ../../pint.json",
-            "cd apps/docs && vendor/bin/pint --config ../../pint.json"
+        "e2e:prepare-warm-topology": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-warm-topology @additional_args"
         ],
-        "rector": "bin/orbit-gateway-vendor-bin rector process",
+        "analyse": [
+            "bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M",
+            "cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M",
+            "cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M",
+            "cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M"
+        ],
+        "format": [
+            "bin/orbit-gateway-vendor-bin pint",
+            "cd apps/cli && vendor/bin/pint",
+            "cd apps/docs && vendor/bin/pint",
+            "cd packages/core && vendor/bin/pint"
+        ],
+        "rector": [
+            "bin/orbit-gateway-vendor-bin rector process",
+            "cd apps/cli && vendor/bin/rector process",
+            "cd apps/docs && vendor/bin/rector process",
+            "cd packages/core && vendor/bin/rector process"
+        ],
         "quality-check": [
             "Composer\\Config::disableProcessTimeout",
             "bin/quality-check.sh"

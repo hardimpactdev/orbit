@@ -18,8 +18,10 @@ ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast
 ORBIT_E2E_INCUS_HOSTS=beast
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
-ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12
-ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3
+ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=4
+ORBIT_E2E_INCUS_WARM_SNAPSHOTS=0
+ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ORBIT_E2E_SLOT_WAIT_SECONDS=900
 ORBIT_E2E_SLOT_STALE_SECONDS=7200
@@ -60,6 +62,14 @@ and starts selected prepared-topology lanes concurrently. The lane aliases set
 `composer test:e2e:docker` selects `docker`, and `composer test:e2e:incus`
 selects `incus`.
 
+Each selected lane is mandatory. `composer test:e2e` defaults to `docker,incus`
+and fails before Pest workers start when either provider is missing required
+prepared artifacts, runner capacity, or reachable hosts. Missing artifacts print
+a scoped `composer e2e:ensure-artifacts` command; the test lanes themselves
+never run preparation. Use `composer test:e2e:docker` or
+`composer test:e2e:incus` when intentionally checking only one
+prepared-topology provider.
+
 `composer test:e2e:provision` runs the single superset provisioning test. It
 launches the base VM, installs Orbit, provisions the gateway, and internally
 provisions app-dev, app-prod, and agent in parallel.
@@ -94,7 +104,8 @@ uses the same rule with template and snapshot suffixes: it tries
 `orbit-template-agent-base` plus `clean-<source-topology>-base` for that role.
 
 Preparing artifacts while this variable is set requires an explicit scope. Use
-`--roles=<comma-separated roles>` for Docker role-image overrides or
-`--all-roles` for an intentional full namespaced rebuild. Incus targeted
-`--roles` preparation is guarded until selected-role rebakes are implemented;
-Incus acquisition falls back per role when branch artifacts are absent.
+`composer e2e:ensure-artifacts -- --roles=<comma-separated roles>` for Docker
+role-image overrides or `--all-roles` for an intentional full namespaced
+rebuild. Incus targeted `--roles` preparation is guarded until selected-role
+rebakes are implemented; Incus acquisition falls back per role when branch
+artifacts are absent.

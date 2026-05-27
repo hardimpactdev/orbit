@@ -22,7 +22,7 @@ function e2eReachabilityResult(bool $successful = true, string $output = '', str
     return $result;
 }
 
-it('installs dig when needed before resolving DNS over WireGuard', function (): void {
+it('requires dig before resolving DNS over WireGuard', function (): void {
     $command = null;
     $instance = m::mock(E2EInstance::class);
     $key = new SshKeyPair('/tmp/private', '/tmp/public');
@@ -47,7 +47,7 @@ it('installs dig when needed before resolving DNS over WireGuard', function (): 
     );
 
     expect($command)->toContain('command -v dig')
-        ->and($command)->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq dnsutils >/dev/null')
+        ->and($command)->not->toContain('apt-get')
         ->and($command)->toContain("dig +time=15 +short 'gateway-1.gateway' @'10.6.0.1'");
 });
 

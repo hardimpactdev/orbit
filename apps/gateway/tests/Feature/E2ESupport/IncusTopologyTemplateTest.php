@@ -11,6 +11,7 @@ use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
 use App\E2E\Support\IncusTopologyProvider;
 use App\E2E\Support\IncusTopologyTemplate;
+use App\E2E\Support\IncusWarmTopologyPool;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
@@ -278,7 +279,7 @@ it('skips transient capacity checks when requested', function (): void {
         ->and($availability['reason'])->toBeNull();
 });
 
-it('does not fail provider availability on transient incus capacity when host slots are configured', function (): void {
+it('does not fail provider availability on transient incus capacity', function (): void {
     $probedCapacity = false;
 
     Process::fake(function ($process) use (&$probedCapacity) {
@@ -292,8 +293,8 @@ it('does not fail provider availability on transient incus capacity when host sl
     withE2EEnvironment([
         'ORBIT_E2E_INCUS_HOSTS',
     ], [
-        'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:1',
+        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:2',
     ], function () use (&$probedCapacity): void {
         $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::ControlGateway);
@@ -304,19 +305,85 @@ it('does not fail provider availability on transient incus capacity when host sl
     });
 });
 
-it('leases configured incus host slots before acquiring a topology', function (): void {
+it('reports warm prepared topology availability only when warm stateful snapshots exist', function (): void {
+    Process::fake(function ($process) {
+        expect($process->command)
+            ->toContain('orbit-e2e-warm-')
+            ->toContain('/snapshots/warm-ready')
+            ->not->toContain('clean-operator_gateway_app-dev_app-prod_agent-base');
+
+        return Process::result();
+    });
+
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS',
+    ], [
+        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
+        'ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS' => '2',
+    ], function (): void {
+        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+        $availability = $provider->availability(E2ETopologyKind::ControlGateway);
+
+        expect($availability->available)->toBeTrue()
+            ->and($availability->message)->toContain('warm prepared topology operator_gateway is available on sidecar1');
+    });
+});
+
+it('fails warm prepared topology availability when warm snapshots are missing', function (): void {
+    Process::fake(fn () => Process::result(exitCode: 1));
+
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS',
+    ], [
+        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
+    ], function (): void {
+        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+        $availability = $provider->availability(E2ETopologyKind::ControlGateway);
+
+        expect($availability->available)->toBeFalse()
+            ->and($availability->message)->toContain('Run composer e2e:prepare-warm-topology -- --force operator_gateway');
+    });
+});
+
+it('plans stable warm topology slot names per topology and artifact set', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent branch',
+    ], function (): void {
+        $runId = IncusWarmTopologyPool::runId(E2ETopologyKind::OperatorGatewayAgent, 2);
+
+        expect($runId)->toStartWith('warm-')
+            ->toEndWith('-s2')
+            ->and(IncusWarmTopologyPool::instanceName(E2ETopologyKind::OperatorGatewayAgent, 2, 'control'))
+            ->toBe("orbit-e2e-{$runId}-control")
+            ->and(IncusWarmTopologyPool::instanceNames(E2ETopologyKind::OperatorGatewayAgent, 2))
+            ->toBe([
+                "orbit-e2e-{$runId}-control",
+                "orbit-e2e-{$runId}-gateway",
+                "orbit-e2e-{$runId}-agent",
+            ]);
+    });
+});
+
+it('leases weighted incus vm capacity before acquiring a topology', function (): void {
     $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
     $pool = new E2EResourceLeasePool($leaseDirectory, waitSeconds: 0, staleSeconds: 60);
-    $heldLease = $pool->acquire('incus', ['sidecar1' => 1]);
+    $heldLease = $pool->acquireWeighted('incus', ['sidecar1' => 1], slots: 1);
+
+    Process::fake(fn () => Process::result());
 
     try {
         withE2EEnvironment([
             'ORBIT_E2E_INCUS_HOSTS',
         ], [
-            'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1',
+            'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:1',
             'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function (): void {
@@ -327,7 +394,7 @@ it('leases configured incus host slots before acquiring a topology', function ()
                 'run123',
                 new E2EPhaseTimer,
                 new E2ETopologyAcquisitionOptions,
-            ))->toThrow(RuntimeException::class, 'No incus E2E slot became available');
+            ))->toThrow(RuntimeException::class, 'No incus E2E capacity for 1 slots became available');
         });
     } finally {
         $heldLease->release();
@@ -620,6 +687,24 @@ it('enables stateful migration before starting clones when stateful reset is req
             putenv("ORBIT_E2E_TOPOLOGY_RESET={$previous}");
         }
     }
+});
+
+it('can explicitly build stateful-ready topology clone scripts for warm snapshots', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 2);
+
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::ControlGateway,
+        'runWarm',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
+        stateful: true,
+    );
+
+    expect($script)->toContain("incus config set 'orbit-e2e-runWarm-control' migration.stateful=true")
+        ->and($script)->toContain("incus config set 'orbit-e2e-runWarm-gateway' migration.stateful=true")
+        ->and($script)->toContain("incus config device set 'orbit-e2e-runWarm-control' root size.state='4GiB' || incus config device override 'orbit-e2e-runWarm-control' root size.state='4GiB'");
 });
 
 it('clones runs the batch script through the host and waits for each agent', function (): void {

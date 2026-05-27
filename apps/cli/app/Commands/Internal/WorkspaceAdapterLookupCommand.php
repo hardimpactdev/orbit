@@ -14,8 +14,14 @@ use PDOStatement;
 
 final class WorkspaceAdapterLookupCommand extends OrbitCommand
 {
+    private const string AdapterPolyscope = 'polyscope';
+
+    private const string AdapterOpenCode = 'opencode';
+
+    #[\Override]
     protected $signature = 'internal:workspace-adapter:lookup {--adapter=} {--operation-token=} {--json} {--workspace-path=} {--app-path=} {--lookup=workspace}';
 
+    #[\Override]
     protected $description = 'Look up agent IDE workspace adapter state';
 
     public function handle(OperationTokenGuard $guard): int
@@ -32,13 +38,13 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
             return $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
         }
 
-        $adapter = $this->stringOption('adapter');
+        $adapter = $this->adapterOption();
 
-        if (! in_array($adapter, ['polyscope', 'opencode'], true)) {
+        if ($adapter === null) {
             return $this->renderFailure(
                 'validation_failed',
                 'Workspace adapter must be one of: polyscope, opencode.',
-                ['field' => 'adapter', 'adapter' => $adapter],
+                ['field' => 'adapter', 'adapter' => $this->stringOption('adapter')],
             );
         }
 
@@ -59,6 +65,9 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
         return $this->lookupWorkspace($adapter);
     }
 
+    /**
+     * @param  'polyscope'|'opencode'  $adapter
+     */
     private function lookupWorkspace(string $adapter): int
     {
         $appPath = $this->requiredOption('app-path');
@@ -81,8 +90,8 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
 
         try {
             $payload = match ($adapter) {
-                'polyscope' => $this->lookupPolyscopeWorkspace($database, $appPath, $workspacePath),
-                'opencode' => $this->lookupOpenCodeWorkspace($database, $appPath, $workspacePath),
+                self::AdapterPolyscope => $this->lookupPolyscopeWorkspace($database, $appPath, $workspacePath),
+                self::AdapterOpenCode => $this->lookupOpenCodeWorkspace($database, $appPath, $workspacePath),
             };
         } catch (PDOException) {
             return $this->renderFailure(
@@ -95,9 +104,12 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
         return $this->renderSuccess($payload, []);
     }
 
+    /**
+     * @param  'polyscope'|'opencode'  $adapter
+     */
     private function lookupConfig(string $adapter): int
     {
-        if ($adapter !== 'polyscope') {
+        if ($adapter !== self::AdapterPolyscope) {
             return $this->renderFailure(
                 'validation_failed',
                 'Only the polyscope adapter supports config lookup.',
@@ -306,6 +318,9 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
         return $settings;
     }
 
+    /**
+     * @param  'polyscope'|'opencode'  $adapter
+     */
     private function openAdapterDatabase(string $adapter): PDO|int
     {
         $path = $this->databasePath($adapter);
@@ -373,11 +388,14 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
         return $options;
     }
 
+    /**
+     * @param  'polyscope'|'opencode'  $adapter
+     */
     private function databasePath(string $adapter): ?string
     {
         $override = match ($adapter) {
-            'polyscope' => $this->environmentPath('ORBIT_POLYSCOPE_DB_PATH'),
-            'opencode' => $this->environmentPath('ORBIT_OPENCODE_DB_PATH'),
+            self::AdapterPolyscope => $this->environmentPath('ORBIT_POLYSCOPE_DB_PATH'),
+            self::AdapterOpenCode => $this->environmentPath('ORBIT_OPENCODE_DB_PATH'),
         };
 
         if ($override !== null) {
@@ -391,8 +409,8 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
         }
 
         return match ($adapter) {
-            'polyscope' => "{$home}/.polyscope/polyscope.db",
-            'opencode' => "{$home}/.local/share/opencode/opencode.db",
+            self::AdapterPolyscope => "{$home}/.polyscope/polyscope.db",
+            self::AdapterOpenCode => "{$home}/.local/share/opencode/opencode.db",
         };
     }
 
@@ -421,7 +439,7 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
             $entry = posix_getpwuid(posix_getuid());
 
             if (is_array($entry)) {
-                return $this->stringValue($entry['dir'] ?? null);
+                return $this->stringValue($entry['dir']);
             }
         }
 
@@ -438,6 +456,20 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
     private function stringOption(string $name): ?string
     {
         return $this->stringValue($this->option($name));
+    }
+
+    /**
+     * @return 'polyscope'|'opencode'|null
+     */
+    private function adapterOption(): ?string
+    {
+        $adapter = $this->stringOption('adapter');
+
+        if ($adapter === self::AdapterPolyscope || $adapter === self::AdapterOpenCode) {
+            return $adapter;
+        }
+
+        return null;
     }
 
     private function requiredOption(string $name): ?string

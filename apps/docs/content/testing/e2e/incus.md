@@ -15,9 +15,11 @@ rebuild topology images and do not run provisioning:
 composer test:e2e:incus
 ```
 
-When Incus is unavailable or the required prepared topology is missing, the test
-should catch `E2ETopologyUnavailable` and call `markTestSkipped()`. That makes
-`composer test:e2e` usable on Docker-only hosts.
+When Incus is unavailable or the required prepared topology is missing, the
+selected lane fails before Pest workers start and includes a scoped
+`composer e2e:ensure-artifacts` command for the missing role set. Use
+`composer test:e2e:docker` when intentionally checking only Docker feature
+coverage.
 
 Do not put provisioning tests in `e2e-provider-incus`. Provisioning tests stay in
 `e2e-provision` and run only through `composer test:e2e:provision`.
@@ -43,13 +45,52 @@ automatically. Their concurrency is bounded by:
   Incus lane.
 - `ORBIT_E2E_INCUS_HOST_VM_CAPS`, the maximum number of Orbit-owned
   prepared-topology VMs allowed on an Incus host.
-- The cached topology size selected by the lane.
 
-For example, `ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3`,
-`ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12`, and `ORBIT_E2E_TOPOLOGY_CPUS=1` request
-three Incus workers. If the largest selected Incus topology has three roles, all
-three workers fit within the 12 VM cap. If the largest selected topology has
-five roles, the lane caps to two workers.
+For example, `ORBIT_E2E_INCUS_PARALLEL_PROCESSES=4`,
+`ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16`, and `ORBIT_E2E_TOPOLOGY_CPUS=1` request
+four Incus workers. Each topology acquisition leases the VM capacity it needs
+for its selected roles. If later tests need eight VMs, they can run when eight
+host slots are free without lowering the whole lane's Pest worker count.
+
+## Warm stateful snapshots
+
+Incus feature tests can optionally use stateful warm snapshots to avoid the
+first cold VM boot during topology acquisition. Warm snapshots are prepared
+artifacts, not test-time provisioning:
+
+```bash
+composer e2e:prepare-warm-topology -- --force operator_gateway_agent
+```
+
+Enable warm acquisition explicitly:
+
+```bash
+ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1
+ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS=1
+composer test:e2e:incus
+```
+
+`ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS` is the maximum warm slots inspected per
+topology. If several selected tests use the same topology, prepare enough slots
+for the desired same-topology concurrency:
+
+```bash
+composer e2e:prepare-warm-topology -- --force --slots=3 operator_gateway_app-dev
+ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1 ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS=3 composer test:e2e:incus
+```
+
+Warm slots are persistent Incus VMs named from the topology and artifact set.
+The preparation command clones the cold prepared topology, boots and retargets
+it, starts the gateway API, takes a stateful `warm-ready` snapshot, then leaves
+the slot stopped. A feature test leases a warm slot, restores the stateful
+snapshot, verifies agent/SSH/API readiness, and restores the same snapshot again
+when `E2ETopologyLease::reset()` is called. Releasing the lease stops the warm
+slot so the next acquisition can restore it from `warm-ready`.
+
+When `ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1`, `composer test:e2e:incus` fails before
+Pest if a selected topology is missing warm snapshots and prints the exact
+`composer e2e:prepare-warm-topology` command to run. The feature lane never
+creates warm snapshots itself.
 
 ## Recommended local baseline
 
@@ -59,8 +100,10 @@ Use this baseline for the local Beast-backed Incus lane.
 ORBIT_E2E_INCUS_HOSTS=beast
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e
-ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12
-ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3
+ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=4
+ORBIT_E2E_INCUS_WARM_SNAPSHOTS=0
+ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS=1
 ORBIT_E2E_TOPOLOGY_CPUS=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ```
@@ -103,6 +146,14 @@ namespaced rebuilds with `--all-roles`. Targeted `--roles=<role>` rebakes are
 guarded until the builder can refresh only the selected VMs from the base source
 snapshot.
 A custom namespace without `--roles` or `--all-roles` is rejected.
+
+Use the artifact ensure command to inspect targeted Incus role templates before
+rebuilding:
+
+```bash
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
+composer e2e:ensure-artifacts -- --lanes=incus --roles=agent operator_gateway_agent
+```
 
 The regression signature for a storage-pool mismatch is
 `ORBIT_E2E_TIMINGS=1 composer test:e2e:incus` reporting `batch.copy-start` near

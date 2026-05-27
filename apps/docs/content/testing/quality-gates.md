@@ -10,13 +10,13 @@ filter first.
 
 ```bash
 bin/orbit-gateway-pest --compact
-bin/orbit-gateway-vendor-bin pint --dirty --format agent --config ../../pint.json
+bin/orbit-gateway-vendor-bin pint --dirty --format agent
 composer docs-lint
 ```
 
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
-default Pest suite.
+default Pest suite across each app and package.
 
 ## E2E gates
 

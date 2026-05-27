@@ -51,6 +51,46 @@ it('allocates different slots while prior leases are held', function (): void {
     $second->release();
 });
 
+it('acquires and releases weighted capacity on one host', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 1, staleSeconds: 60);
+
+    $lease = $pool->acquireWeighted('incus', ['beast' => 4], slots: 3);
+
+    expect($lease->host())->toBe('beast')
+        ->and($pool->snapshot('incus', ['beast' => 4]))->toMatchArray([
+            ['host' => 'beast', 'slot' => 1, 'leased' => true],
+            ['host' => 'beast', 'slot' => 2, 'leased' => true],
+            ['host' => 'beast', 'slot' => 3, 'leased' => true],
+            ['host' => 'beast', 'slot' => 4, 'leased' => false],
+        ]);
+
+    $lease->release();
+
+    expect($pool->snapshot('incus', ['beast' => 4]))->toMatchArray([
+        ['host' => 'beast', 'slot' => 1, 'leased' => false],
+        ['host' => 'beast', 'slot' => 2, 'leased' => false],
+        ['host' => 'beast', 'slot' => 3, 'leased' => false],
+        ['host' => 'beast', 'slot' => 4, 'leased' => false],
+    ]);
+});
+
+it('does not keep partial weighted leases when capacity is insufficient', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+    $held = $pool->acquire('incus', ['beast' => 3]);
+
+    expect(fn () => $pool->acquireWeighted('incus', ['beast' => 3], slots: 3))
+        ->toThrow(RuntimeException::class, 'No incus E2E capacity for 3 slots became available');
+
+    expect($pool->snapshot('incus', ['beast' => 3]))->toMatchArray([
+        ['host' => 'beast', 'slot' => 1, 'leased' => true],
+        ['host' => 'beast', 'slot' => 2, 'leased' => false],
+        ['host' => 'beast', 'slot' => 3, 'leased' => false],
+    ]);
+
+    $held->release();
+});
+
 it('keeps different backends independent on non-exclusive hosts', function (): void {
     $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 60);
 

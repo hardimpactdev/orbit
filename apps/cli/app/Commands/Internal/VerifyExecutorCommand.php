@@ -10,8 +10,10 @@ use App\Services\Executor\OperationTokenGuard;
 
 final class VerifyExecutorCommand extends OrbitCommand
 {
+    #[\Override]
     protected $signature = 'internal:executor:verify {--operation-token=} {--json}';
 
+    #[\Override]
     protected $description = 'Verify an internal executor operation token';
 
     public function handle(OperationTokenGuard $guard): int

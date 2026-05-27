@@ -14,7 +14,9 @@
     },
     "require-dev": {
         "laravel/pint": "^1.29",
-        "pestphp/pest": "^4.6"
+        "pestphp/pest": "^4.6",
+        "phpstan/phpstan": "^2.1",
+        "rector/rector": "^2.3"
     },
     "autoload": {
         "psr-4": {
@@ -27,7 +29,9 @@
         }
     },
     "scripts": {
+        "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
+        "rector": "vendor/bin/rector process",
         "test": "vendor/bin/pest --compact"
     },
     "extra": {
@@ -39,7 +43,8 @@
     },
     "config": {
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "rector/rector": true
         },
         "sort-packages": true
     },

@@ -13,28 +13,28 @@ use PDOStatement;
 
 final class WgEasyStateCommand extends OrbitCommand
 {
-    private const ActionUpdateUser = 'update-user';
+    private const string ActionUpdateUser = 'update-user';
 
-    private const ActionUpdateGeneral = 'update-general';
+    private const string ActionUpdateGeneral = 'update-general';
 
-    private const ActionEnsureWritable = 'ensure-writable';
+    private const string ActionEnsureWritable = 'ensure-writable';
 
-    private const ActionUpsertPeer = 'upsert-peer';
+    private const string ActionUpsertPeer = 'upsert-peer';
 
-    private const ActionDeletePeer = 'delete-peer';
+    private const string ActionDeletePeer = 'delete-peer';
 
-    private const ActionUpdateInterface = 'update-interface';
+    private const string ActionUpdateInterface = 'update-interface';
 
-    private const ActionUpdateUserPassword = 'update-user-password';
+    private const string ActionUpdateUserPassword = 'update-user-password';
 
-    private const ActionUpdateSessionPassword = 'update-session-password';
+    private const string ActionUpdateSessionPassword = 'update-session-password';
 
-    private const InterfaceName = 'wg0';
+    private const string InterfaceName = 'wg0';
 
     /**
      * @var list<string>
      */
-    private const Actions = [
+    private const array Actions = [
         self::ActionUpdateUser,
         self::ActionUpdateGeneral,
         self::ActionEnsureWritable,
@@ -48,18 +48,19 @@ final class WgEasyStateCommand extends OrbitCommand
     /**
      * @var list<string>
      */
-    private const PeerIdentityOptions = [
+    private const array PeerIdentityOptions = [
         'name',
         'public-key',
         'ipv4',
     ];
 
-    private const BcryptPasswordHashPattern = '/\A\$2[aby]\$\d{2}\$[.\/A-Za-z0-9]{53}\z/';
+    private const string BcryptPasswordHashPattern = '/\A\$2[aby]\$\d{2}\$[.\/A-Za-z0-9]{53}\z/';
 
-    private const ArgonPasswordHashPattern = '/\A\$argon2(?:id|i)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+\/=]+\$[A-Za-z0-9+\/=]+\z/';
+    private const string ArgonPasswordHashPattern = '/\A\$argon2(?:id|i)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+\/=]+\$[A-Za-z0-9+\/=]+\z/';
 
-    private const InvalidPasswordHashMessage = 'password hash format is not a recognized bcrypt/argon2i/argon2id hash';
+    private const string InvalidPasswordHashMessage = 'password hash format is not a recognized bcrypt/argon2i/argon2id hash';
 
+    #[\Override]
     protected $signature = 'internal:wg-easy:state
         {--action=}
         {--operation-token=}
@@ -78,6 +79,7 @@ final class WgEasyStateCommand extends OrbitCommand
         {--ipv4-cidr=}
         {--password-hash=}';
 
+    #[\Override]
     protected $description = 'Update wg-easy state through the internal local executor';
 
     public function handle(OperationTokenGuard $guard): int
@@ -941,7 +943,7 @@ final class WgEasyStateCommand extends OrbitCommand
             $entry = posix_getpwuid(posix_getuid());
 
             if (is_array($entry)) {
-                return $this->stringValue($entry['dir'] ?? null);
+                return $this->stringValue($entry['dir']);
             }
         }
 

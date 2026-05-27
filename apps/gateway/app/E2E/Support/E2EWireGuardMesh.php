@@ -95,8 +95,8 @@ final readonly class E2EWireGuardMesh
             sprintf(
                 <<<'SH'
 set -euo pipefail
-sudo apt-get -o DPkg::Lock::Timeout=300 update -qq >/dev/null
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq wireguard-tools >/dev/null
+command -v wg >/dev/null 2>&1 || { echo 'wg is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
+command -v wg-quick >/dev/null 2>&1 || { echo 'wg-quick is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
 sudo install -d -m 0700 /etc/wireguard
 cat <<'ORBIT_WG_CONFIG' | sudo tee /etc/wireguard/wg-orbit.conf >/dev/null
 %s

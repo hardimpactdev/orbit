@@ -9,8 +9,22 @@ composer test:e2e:docker
 ```
 
 `composer test:e2e:docker` and the Docker lane of `composer test:e2e` do not
-rebuild Docker images. On a fresh host pool, after Dockerfile or system
-dependency changes, or when remote images look stale, rebuild on Beast and
+rebuild Docker images. Missing support or role images fail the lane before Pest
+workers start and include a scoped `composer e2e:ensure-artifacts` command.
+
+Use the ensure command for targeted refreshes:
+
+```bash
+composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent
+
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
+composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent
+
+composer e2e:ensure-artifacts -- --lanes=docker --roles=operator,gateway --rebuild --force operator_gateway_app-dev_app-prod_agent
+```
+
+On a fresh host pool, after Dockerfile or system dependency changes, or when the
+entire base image set is intentionally being refreshed, rebuild on Beast and
 refresh each configured Docker host:
 
 ```bash
@@ -48,17 +62,19 @@ role-specific image override. The Docker provider first tries
 role branch-specific; unchanged roles keep reusing the base images.
 
 When preparing artifacts with a custom namespace, pass the changed roles
-explicitly. This builds and distributes only those role images; absent roles keep
-falling back to `base`:
+explicitly. This builds and distributes only those selected role images; absent
+roles keep falling back to `base`:
 
 ```bash
 ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
-composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent
 ```
 
 Use `--all-roles` only when the branch intentionally needs a full namespaced
-role-image set. A custom namespace without `--roles` or `--all-roles` is
-rejected so a worktree cannot accidentally rebuild every Docker role.
+role-image set. Add `--rebuild` when the selected tags exist but must be
+refreshed from the current checkout. A custom namespace without `--roles` or
+`--all-roles` is rejected so a worktree cannot accidentally rebuild every Docker
+role.
 
 Runner hosts need the five canonical role images plus the runtime support
 images used by gateway-backed topologies: `orbit-runtime`, `orbit-caddy`, and

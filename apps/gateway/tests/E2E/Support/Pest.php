@@ -39,10 +39,22 @@ function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withG
     try {
         $lease = $factory->require($kind);
     } catch (E2ETopologyUnavailable $exception) {
+        if (e2eFailsOnTopologyUnavailable()) {
+            throw $exception;
+        }
+
         test()->markTestSkipped($exception->getMessage());
     }
 
     return new E2ETopologyHarness($lease);
+}
+
+function e2eFailsOnTopologyUnavailable(): bool
+{
+    $value = getenv('ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE');
+
+    return is_string($value)
+        && in_array(strtolower($value), ['1', 'true', 'yes'], true);
 }
 
 function e2eGatewayApiByDefault(): bool

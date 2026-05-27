@@ -10,6 +10,7 @@ use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
 use App\E2E\Support\IncusTopologyTemplate;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
@@ -49,6 +50,64 @@ it('defaults to the prepared full Incus source kind', function (): void {
         ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
+});
+
+it('plans Incus warm topology stateful snapshot slots', function (): void {
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS',
+    ], [
+        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:4',
+    ], function (): void {
+        $this->artisan('e2e:prepare-warm-topology', [
+            'kind' => 'operator_gateway',
+            '--slots' => '1',
+        ])
+            ->expectsOutputToContain('Dry run. Pass --force to create Incus warm stateful snapshots.')
+            ->expectsOutputToContain('requested topology: operator_gateway')
+            ->expectsOutputToContain('planned: slot 1 (snapshot: warm-ready)')
+            ->expectsOutputToContain('instance: orbit-e2e-warm-')
+            ->assertSuccessful();
+    });
+});
+
+it('renders Incus warm topology dry-run output as json', function (): void {
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS',
+    ], [
+        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:4',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:prepare-warm-topology', [
+            'kind' => 'operator_gateway_agent',
+            '--slots' => '1',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['dry_run'])->toBeTrue()
+            ->and($payload['success']['data']['kind'])->toBe('operator_gateway_agent')
+            ->and($payload['success']['data']['slots'][0]['snapshot'])->toBe('warm-ready')
+            ->and($payload['success']['data']['slots'][0]['instances'])->toHaveCount(3);
+    });
+});
+
+it('rejects warm topology slots that exceed the host VM capacity', function (): void {
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS',
+    ], [
+        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:2',
+    ], function (): void {
+        $this->artisan('e2e:prepare-warm-topology', [
+            'kind' => 'operator_gateway',
+            '--slots' => '2',
+        ])
+            ->expectsOutputToContain('requested 2 slots, but beast can fit 1 warm slot')
+            ->assertFailed();
+    });
 });
 
 it('supports operator kind', function (): void {

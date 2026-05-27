@@ -43,7 +43,8 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
 
     expect($commands[0])->toContain('docker run -d')
         ->and($commands[0])->toContain('--name wg-easy')
-        ->and($commands[0])->toContain('install -y -qq docker.io')
+        ->and($commands[0])->toContain('command -v docker')
+        ->and($commands[0])->not->toContain('apt-get')
         ->and($commands[0])->toContain('-p 51820:51820/udp')
         ->and($commands[0])->not->toContain('51822')
         ->and($commands[0])->not->toContain('wg-quick down wg-orbit')

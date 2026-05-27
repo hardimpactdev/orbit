@@ -9,7 +9,7 @@ use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Throwable;
 
-final class OperationTokenGuard
+final readonly class OperationTokenGuard
 {
     public function __construct(
         private ?string $secret,

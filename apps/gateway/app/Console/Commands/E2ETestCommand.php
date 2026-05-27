@@ -8,11 +8,13 @@ use App\E2E\Support\DockerHost;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyCapabilities;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyProviderPool;
 use App\E2E\Support\IncusTopologyTemplate;
+use App\E2E\Support\IncusWarmTopologyPool;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -96,7 +98,11 @@ class E2ETestCommand extends Command
             return $this->renderDryRun($plans);
         }
 
-        return $this->runPlans($plans);
+        try {
+            return $this->runPlans($plans);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failCommand($exception->getMessage());
+        }
     }
 
     /**
@@ -155,10 +161,26 @@ class E2ETestCommand extends Command
      */
     private function validateLaneCapacity(array $plans): ?string
     {
-        if (! isset($plans['docker'])) {
-            return null;
+        if (isset($plans['docker'])) {
+            $message = $this->validateDockerLaneCapacity($plans);
+
+            if ($message !== null) {
+                return $message;
+            }
         }
 
+        if (isset($plans['incus'])) {
+            return $this->validateIncusLaneCapacity($plans);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     */
+    private function validateDockerLaneCapacity(array $plans): ?string
+    {
         return $this->withPlanEnvironment($plans['docker'], function () use ($plans): ?string {
             $config = E2EConfig::fromEnvironment();
 
@@ -184,6 +206,40 @@ class E2ETestCommand extends Command
     }
 
     /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     */
+    private function validateIncusLaneCapacity(array $plans): ?string
+    {
+        return $this->withPlanEnvironment($plans['incus'], function () use ($plans): ?string {
+            $config = E2EConfig::fromEnvironment();
+            $hostCaps = [];
+
+            foreach ($config->incusHostCandidates() as $host) {
+                try {
+                    $hostCaps[$host] = $config->incusMaxVmsForHost($host);
+                } catch (\InvalidArgumentException $exception) {
+                    return $exception->getMessage();
+                }
+            }
+
+            foreach ($this->incusLaneTopologyKinds($plans['incus']['test_files'] ?? []) as $kind) {
+                $requiredVms = count(IncusTopologyTemplate::rolesFor($kind));
+                $fits = array_any($hostCaps, fn (int $hostCap): bool => $hostCap >= $requiredVms);
+
+                if (! $fits) {
+                    return "Incus prepared topology [{$kind->value}] requires {$requiredVms} VMs on one host. Increase ORBIT_E2E_INCUS_HOST_VM_CAPS for at least one candidate host.";
+                }
+
+                if (IncusWarmTopologyPool::enabled() && IncusWarmTopologyPool::availableHostSlots($config, $kind) === []) {
+                    return "Incus warm prepared topology [{$kind->value}] is missing. Run composer e2e:prepare-warm-topology -- --force {$kind->value}.";
+                }
+            }
+
+            return null;
+        });
+    }
+
+    /**
      * @param  list<string>  $passThroughArguments
      * @return array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}
      */
@@ -191,6 +247,7 @@ class E2ETestCommand extends Command
     {
         $testPath = null;
         $testFiles = [];
+        $hasExplicitTestPath = $this->hasExplicitTestPath($passThroughArguments);
         $group = (bool) $this->option('canary') ? 'e2e-feature-canary' : 'e2e-feature';
         $command = [
             'php',
@@ -202,7 +259,9 @@ class E2ETestCommand extends Command
             '--exclude-group=e2e-provider-incus',
         ];
 
-        if (! $this->hasExplicitTestPath($passThroughArguments)) {
+        if ($hasExplicitTestPath) {
+            $testFiles = $this->explicitTestFiles($passThroughArguments, 'docker');
+        } else {
             $testPath = 'tests/E2E/.docker-feature-tests/'.$this->dockerTestRunDirectory();
             $testFiles = $this->dockerTestFiles();
             $command[] = $testPath;
@@ -219,6 +278,7 @@ class E2ETestCommand extends Command
             'ORBIT_E2E_GATEWAY_API' => '1',
             'ORBIT_E2E_TOPOLOGY_CACHE' => $this->topologyCache(),
             'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
+            'ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE' => '1',
         ];
         $environment = [
             ...$environment,
@@ -248,6 +308,9 @@ class E2ETestCommand extends Command
 
         if ($testPath !== null) {
             $plan['test_path'] = $testPath;
+        }
+
+        if ($testFiles !== []) {
             $plan['test_files'] = $testFiles;
         }
 
@@ -267,6 +330,7 @@ class E2ETestCommand extends Command
     {
         $testPath = null;
         $testFiles = [];
+        $hasExplicitTestPath = $this->hasExplicitTestPath($passThroughArguments);
         $command = [
             'php',
             'artisan',
@@ -277,12 +341,14 @@ class E2ETestCommand extends Command
             '--exclude-group=e2e-topology-contract',
         ];
 
-        if (! $this->hasExplicitTestPath($passThroughArguments)) {
+        if ($hasExplicitTestPath) {
+            $testFiles = $this->explicitTestFiles($passThroughArguments, 'incus');
+        } else {
             $testPath = 'tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
             $testFiles = $this->incusTestFiles();
         }
 
-        $processes = $this->incusCachedWorkerCount(E2EConfig::fromEnvironment(), $testFiles);
+        $processes = $this->incusRequestedProcessCount();
 
         if ($this->shouldRunTestsInParallel($processes, $passThroughArguments)) {
             $command[] = '--parallel';
@@ -301,8 +367,10 @@ class E2ETestCommand extends Command
                 'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
                 'ORBIT_E2E_TOPOLOGY_PROVIDERS' => 'incus',
                 'ORBIT_E2E_GATEWAY_API' => '1',
+                'ORBIT_E2E_INCUS_HOST_SLOTS' => '',
                 'ORBIT_E2E_TOPOLOGY_CACHE' => $this->topologyCache(),
                 'ORBIT_E2E_CHECKOUT_CACHE' => 'process',
+                'ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE' => '1',
                 ...$this->topologyCacheLimitEnvironment(),
                 ...$this->topologyArtifactEnvironment(),
                 ...$this->runtimeIsolationEnvironment(),
@@ -311,6 +379,9 @@ class E2ETestCommand extends Command
 
         if ($testPath !== null) {
             $plan['test_path'] = $testPath;
+        }
+
+        if ($testFiles !== []) {
             $plan['test_files'] = $testFiles;
         }
 
@@ -514,36 +585,9 @@ class E2ETestCommand extends Command
         ));
     }
 
-    /**
-     * @param  list<string>  $testFiles
-     */
-    private function incusCachedWorkerCount(E2EConfig $config, array $testFiles): int
+    private function incusRequestedProcessCount(): int
     {
-        $requested = $this->envInt('ORBIT_E2E_INCUS_PARALLEL_PROCESSES', 1);
-        $topologySize = $this->incusLaneMaxVmCount($testFiles);
-        $capacityBound = array_sum(array_map(
-            fn (string $host): int => intdiv($config->incusMaxVmsForHost($host), $topologySize),
-            $config->incusHostCandidates(),
-        ));
-
-        return max(1, min($requested, max(1, $capacityBound)));
-    }
-
-    /**
-     * @param  list<string>  $testFiles
-     */
-    private function incusLaneMaxVmCount(array $testFiles): int
-    {
-        $kinds = $this->incusLaneTopologyKinds($testFiles);
-
-        if ($kinds === []) {
-            return count(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent));
-        }
-
-        return max(array_map(
-            static fn (E2ETopologyKind $kind): int => count(IncusTopologyTemplate::rolesFor($kind)),
-            $kinds,
-        ));
+        return $this->envInt('ORBIT_E2E_INCUS_PARALLEL_PROCESSES', 1);
     }
 
     /**
@@ -596,17 +640,13 @@ class E2ETestCommand extends Command
                 continue;
             }
 
-            $contents = file_get_contents($path);
+            $testFile = str_replace(base_path().'/', '', $path);
 
-            if (! is_string($contents)
-                || ! str_contains($contents, 'e2e-provider-incus')
-                || str_contains($contents, 'e2e-provision')
-                || str_contains($contents, 'e2e-topology-contract')
-            ) {
+            if (! $this->isFeatureTestFileForProvider($testFile, 'incus')) {
                 continue;
             }
 
-            $files[] = str_replace(base_path().'/', '', $path);
+            $files[] = $testFile;
         }
 
         sort($files);
@@ -642,6 +682,82 @@ class E2ETestCommand extends Command
     }
 
     /**
+     * @param  list<string>  $arguments
+     * @return list<string>
+     */
+    private function explicitTestFiles(array $arguments, string $provider): array
+    {
+        $files = [];
+
+        foreach ($arguments as $argument) {
+            if (str_starts_with($argument, '-')) {
+                continue;
+            }
+
+            $path = base_path($argument);
+
+            if (is_file($path)) {
+                $testFile = $this->relativeE2ETestFile($path);
+
+                if ($testFile !== null && $this->isFeatureTestFileForProvider($testFile, $provider)) {
+                    $files[$testFile] = $testFile;
+                }
+
+                continue;
+            }
+
+            if (! is_dir($path)) {
+                continue;
+            }
+
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+            );
+
+            foreach ($iterator as $file) {
+                if (! $file instanceof \SplFileInfo || ! $file->isFile()) {
+                    continue;
+                }
+
+                $testFile = $this->relativeE2ETestFile($file->getPathname());
+
+                if ($testFile === null || ! $this->isFeatureTestFileForProvider($testFile, $provider)) {
+                    continue;
+                }
+
+                $files[$testFile] = $testFile;
+            }
+        }
+
+        $files = array_values($files);
+        sort($files);
+
+        return $this->topologyBalancedTestFiles($files, $provider);
+    }
+
+    private function relativeE2ETestFile(string $path): ?string
+    {
+        $realPath = realpath($path);
+        $basePath = realpath(base_path());
+
+        if (! is_string($realPath) || ! is_string($basePath) || ! str_starts_with($realPath, $basePath.DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+
+        $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($realPath, strlen($basePath) + 1));
+
+        if (! str_starts_with($relative, 'tests/E2E/')
+            || str_contains($relative, '/.docker-feature-tests/')
+            || str_contains($relative, '/.incus-feature-tests/')
+            || ! str_ends_with($relative, 'Test.php')
+        ) {
+            return null;
+        }
+
+        return $relative;
+    }
+
+    /**
      * @return list<string>
      */
     private function dockerTestFiles(): array
@@ -672,23 +788,37 @@ class E2ETestCommand extends Command
                 continue;
             }
 
-            $contents = file_get_contents($path);
+            $testFile = str_replace(base_path().'/', '', $path);
 
-            if (! is_string($contents)
-                || ! str_contains($contents, 'e2e-feature')
-                || str_contains($contents, 'e2e-provider-incus')
-                || str_contains($contents, 'e2e-provision')
-                || str_contains($contents, 'e2e-topology-contract')
-            ) {
+            if (! $this->isFeatureTestFileForProvider($testFile, 'docker')) {
                 continue;
             }
 
-            $files[] = str_replace(base_path().'/', '', $path);
+            $files[] = $testFile;
         }
 
         sort($files);
 
         return $this->topologyBalancedTestFiles($files, 'docker');
+    }
+
+    private function isFeatureTestFileForProvider(string $testFile, string $provider): bool
+    {
+        $contents = file_get_contents(base_path($testFile));
+
+        if (! is_string($contents)
+            || ! str_contains($contents, 'e2e-feature')
+            || str_contains($contents, 'e2e-provision')
+            || str_contains($contents, 'e2e-topology-contract')
+        ) {
+            return false;
+        }
+
+        return match ($provider) {
+            'docker' => ! str_contains($contents, 'e2e-provider-incus'),
+            'incus' => str_contains($contents, 'e2e-provider-incus'),
+            default => false,
+        };
     }
 
     /**
@@ -768,7 +898,7 @@ class E2ETestCommand extends Command
                 ...$kind->deprecatedFeatureGroups(),
             ];
 
-            if (array_any($groups, fn (string $group): bool => str_contains($contents, $group))) {
+            if (array_any($groups, fn (string $group): bool => preg_match('/(?<![A-Za-z0-9_-])'.preg_quote($group, '/').'(?![A-Za-z0-9_-])/', $contents) === 1)) {
                 $kinds[$kind->value] = $kind;
             }
         }
@@ -854,7 +984,11 @@ class E2ETestCommand extends Command
     private function runPlans(array $plans): int
     {
         if ((bool) $this->option('sequential-lanes')) {
-            $plans = $this->preparePlansForExecution($plans);
+            try {
+                $plans = $this->preparePlansForExecution($plans);
+            } catch (\InvalidArgumentException $exception) {
+                return $this->failCommand($exception->getMessage());
+            }
 
             if ($plans === []) {
                 return self::SUCCESS;
@@ -866,7 +1000,13 @@ class E2ETestCommand extends Command
         $startedAt = microtime(true);
 
         $this->emitCheckpoint('e2e.lanes', 'started');
-        $plans = $this->preparePlansForExecution($plans);
+        try {
+            $plans = $this->preparePlansForExecution($plans);
+        } catch (\InvalidArgumentException $exception) {
+            $this->emitCheckpoint('e2e.lanes', 'failed', microtime(true) - $startedAt);
+
+            return $this->failCommand($exception->getMessage());
+        }
 
         if ($plans === []) {
             $this->emitCheckpoint('e2e.lanes', 'done', microtime(true) - $startedAt);
@@ -938,8 +1078,9 @@ class E2ETestCommand extends Command
     private function preparePlansForExecution(array $plans): array
     {
         $plans = $this->filterUnavailableDockerRunners($plans);
+        $this->failIfUnavailablePlans($plans);
 
-        return $this->skipUnavailablePlans($plans);
+        return $plans;
     }
 
     /**
@@ -987,11 +1128,20 @@ class E2ETestCommand extends Command
         }
 
         if ($availability['host_slots'] === []) {
-            $this->emitCheckpoint('e2e.lane.docker', 'skipped');
-            $this->line('E2E lane [docker] skipped: no configured Docker test runner is reachable.');
-            unset($plans['docker']);
+            $details = implode('; ', array_map(
+                fn (string $host, string $reason): string => "{$host}: {$reason}",
+                array_keys($availability['unavailable']),
+                array_values($availability['unavailable']),
+            ));
+            $message = 'E2E lane [docker] unavailable: no configured Docker test runner is reachable.';
 
-            return $plans;
+            if ($details !== '') {
+                $message .= " {$details}.";
+            }
+
+            $this->emitCheckpoint('e2e.lane.docker', 'failed');
+
+            throw new \InvalidArgumentException($message);
         }
 
         $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $availability['test_runners'];
@@ -1005,15 +1155,24 @@ class E2ETestCommand extends Command
     {
         $dockerHost = new DockerHost($config, $host);
 
-        if (! $dockerHost->run('command -v docker >/dev/null', timeoutSeconds: 10)->successful()) {
+        if (! $this->dockerProbeSuccessful($dockerHost, 'command -v docker >/dev/null')) {
             return 'docker command is not available';
         }
 
-        if (! $dockerHost->run('docker info >/dev/null', timeoutSeconds: 10)->successful()) {
+        if (! $this->dockerProbeSuccessful($dockerHost, 'docker info >/dev/null')) {
             return 'docker daemon is not reachable';
         }
 
         return null;
+    }
+
+    private function dockerProbeSuccessful(DockerHost $dockerHost, string $command): bool
+    {
+        try {
+            return $dockerHost->run($command, timeoutSeconds: 10)->successful();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -1043,17 +1202,122 @@ class E2ETestCommand extends Command
 
     /**
      * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
-     * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
      */
-    private function skipUnavailablePlans(array $plans): array
+    private function failIfUnavailablePlans(array $plans): void
     {
-        foreach ($this->unavailableLaneReasons($plans) as $lane => $reason) {
-            $this->emitCheckpoint("e2e.lane.{$lane}", 'skipped');
-            $this->line("E2E lane [{$lane}] skipped: {$reason}");
-            unset($plans[$lane]);
+        $reasons = $this->unavailableLaneReasons($plans);
+
+        if ($reasons === []) {
+            return;
         }
 
-        return $plans;
+        foreach (array_keys($reasons) as $lane) {
+            $this->emitCheckpoint("e2e.lane.{$lane}", 'failed');
+        }
+
+        $messages = [];
+
+        foreach ($reasons as $lane => $reason) {
+            $messages[] = $this->unavailableLaneMessage($lane, $reason, $plans[$lane] ?? null);
+        }
+
+        throw new \InvalidArgumentException(implode(PHP_EOL, $messages));
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}|null  $plan
+     */
+    private function unavailableLaneMessage(string $lane, string $reason, ?array $plan): string
+    {
+        $message = "E2E lane [{$lane}] unavailable: {$reason}";
+        $command = $plan === null ? null : $this->artifactEnsureCommand($lane, $reason, $plan);
+
+        if ($command === null) {
+            return $message;
+        }
+
+        return $message.PHP_EOL."Targeted artifact command: {$command}";
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function artifactEnsureCommand(string $lane, string $reason, array $plan): ?string
+    {
+        return match ($lane) {
+            'docker' => $this->dockerArtifactEnsureCommand($reason),
+            'incus' => $this->incusArtifactEnsureCommand($reason, $plan),
+            default => null,
+        };
+    }
+
+    private function dockerArtifactEnsureCommand(string $reason): ?string
+    {
+        $lowerReason = strtolower($reason);
+        $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgent->value;
+
+        if (str_contains($lowerReason, 'docker runtime image')
+            || str_contains($lowerReason, 'docker orbit-caddy image')
+            || str_contains($lowerReason, 'docker php runtime image')
+        ) {
+            return "composer e2e:ensure-artifacts -- --lanes=docker --runtime --force {$kind}";
+        }
+
+        if (! preg_match('/docker prepared image (?P<image>\S+) is not available/i', $reason, $matches)) {
+            return null;
+        }
+
+        $role = $this->artifactRoleFromDockerImage($matches['image']);
+
+        if ($role === null) {
+            return null;
+        }
+
+        return "composer e2e:ensure-artifacts -- --lanes=docker --roles={$role} --force {$kind}";
+    }
+
+    private function artifactRoleFromDockerImage(string $image): ?string
+    {
+        foreach (E2EPreparedTopology::artifactRoles() as $role) {
+            if (str_contains($image, ":{$role}_")) {
+                return $role;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function incusArtifactEnsureCommand(string $reason, array $plan): ?string
+    {
+        if (! str_contains($reason, 'prepared topology') && ! str_contains($reason, 'prepared templates or snapshots')) {
+            return null;
+        }
+
+        $kind = $this->topologyKindFromUnavailableReason($reason)
+            ?? $this->laneRequiredTopologies($plan)[0]
+            ?? E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
+        $roles = array_values(array_unique(array_map(
+            E2EPreparedTopology::artifactRoleForIncusRole(...),
+            IncusTopologyTemplate::rolesFor($kind),
+        )));
+
+        return sprintf(
+            'composer e2e:ensure-artifacts -- --lanes=incus --roles=%s %s',
+            implode(',', $roles),
+            $kind->value,
+        );
+    }
+
+    private function topologyKindFromUnavailableReason(string $reason): ?E2ETopologyKind
+    {
+        if (! preg_match('/prepared topology (?P<kind>[a-z0-9_-]+)/i', $reason, $matches)) {
+            return null;
+        }
+
+        return E2ETopologyKind::tryFromInput($matches['kind']);
     }
 
     /**
@@ -1069,12 +1333,14 @@ class E2ETestCommand extends Command
         $reasons = [];
 
         foreach ($plans as $lane => $plan) {
-            if ($lane === 'incus') {
-                $reason = $this->incusLaneUnavailableReason($plan);
+            $reason = match ($lane) {
+                'docker' => $this->laneUnavailableReason($plan, E2ETopologyCapabilities::containerFeature()),
+                'incus' => $this->laneUnavailableReason($plan, E2ETopologyCapabilities::vm()),
+                default => null,
+            };
 
-                if ($reason !== null) {
-                    $reasons[$lane] = $reason;
-                }
+            if ($reason !== null) {
+                $reasons[$lane] = $reason;
             }
         }
 
@@ -1084,14 +1350,23 @@ class E2ETestCommand extends Command
     /**
      * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
      */
-    private function incusLaneUnavailableReason(array $plan): ?string
+    private function laneUnavailableReason(array $plan, E2ETopologyCapabilities $requirements): ?string
     {
-        return $this->withPlanEnvironment($plan, function (): ?string {
+        if (($plan['environment']['ORBIT_E2E_TOPOLOGY_PROVIDERS'] ?? '') === '') {
+            return null;
+        }
+
+        $requiredTopologies = $this->laneRequiredTopologies($plan);
+
+        if ($requiredTopologies === []) {
+            return null;
+        }
+
+        return $this->withPlanEnvironment($plan, function () use ($requiredTopologies, $requirements): ?string {
             $config = E2EConfig::fromEnvironment();
             $pool = E2ETopologyProviderPool::fromEnvironment($config);
-            $requirements = E2ETopologyCapabilities::vm();
 
-            foreach ($this->incusLaneRequiredTopologies() as $kind) {
+            foreach ($requiredTopologies as $kind) {
                 $selection = $pool->select($kind, $requirements);
 
                 if (! $selection->available()) {
@@ -1104,14 +1379,16 @@ class E2ETestCommand extends Command
     }
 
     /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
      * @return list<E2ETopologyKind>
      */
-    private function incusLaneRequiredTopologies(): array
+    private function laneRequiredTopologies(array $plan): array
     {
-        return [
-            E2ETopologyKind::ControlGateway,
-            E2ETopologyKind::ControlGatewayDev,
-        ];
+        return match ($plan['lane']) {
+            'docker' => $this->dockerLaneTopologyKinds($plan['test_files'] ?? []),
+            'incus' => $this->incusLaneTopologyKinds($plan['test_files'] ?? []),
+            default => [],
+        };
     }
 
     /**

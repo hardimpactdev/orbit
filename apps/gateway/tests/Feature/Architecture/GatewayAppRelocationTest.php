@@ -22,6 +22,7 @@ it('keeps the Laravel gateway app under apps gateway', function (): void {
 
     expect($gatewayRoot)->toBeDirectory()
         ->and("{$gatewayRoot}/artisan")->toBeFile()
+        ->and("{$gatewayRoot}/.env.live.example")->toBeFile()
         ->and("{$gatewayRoot}/app")->toBeDirectory()
         ->and("{$gatewayRoot}/bootstrap")->toBeDirectory()
         ->and("{$gatewayRoot}/config")->toBeDirectory()
@@ -33,6 +34,7 @@ it('keeps the Laravel gateway app under apps gateway', function (): void {
         ->and("{$gatewayRoot}/tests")->toBeDirectory()
         ->and("{$gatewayRoot}/boost.json")->toBeFile()
         ->and("{$gatewayRoot}/package.json")->toBeFile()
+        ->and("{$gatewayRoot}/pint.json")->toBeFile()
         ->and("{$gatewayRoot}/phpstan.neon")->toBeFile()
         ->and("{$gatewayRoot}/rector.php")->toBeFile()
         ->and("{$gatewayRoot}/vite.config.js")->toBeFile()
@@ -46,6 +48,9 @@ it('keeps the Laravel gateway app under apps gateway', function (): void {
         ->and("{$repoRoot}/storage")->not->toBeDirectory()
         ->and("{$repoRoot}/tests")->not->toBeDirectory()
         ->and("{$repoRoot}/artisan")->not->toBeFile()
+        ->and("{$repoRoot}/.env.live.example")->not->toBeFile()
+        ->and("{$repoRoot}/pint.json")->not->toBeFile()
+        ->and("{$repoRoot}/.npmrc")->not->toBeFile()
         ->and("{$repoRoot}/phpunit.xml")->not->toBeFile();
 });
 
@@ -67,6 +72,20 @@ it('keeps root composer as an orchestrator without gateway autoloads', function 
             'quality-check',
             'test:e2e',
         ]);
+});
+
+it('keeps quality tool configs local to each app and package', function (): void {
+    $repoRoot = gatewayRelocationRepoRoot();
+
+    foreach (['apps/gateway', 'apps/cli', 'apps/docs', 'packages/core'] as $projectPath) {
+        expect("{$repoRoot}/{$projectPath}/pint.json")->toBeFile()
+            ->and("{$repoRoot}/{$projectPath}/phpstan.neon")->toBeFile()
+            ->and("{$repoRoot}/{$projectPath}/rector.php")->toBeFile();
+    }
+
+    expect("{$repoRoot}/pint.json")->not->toBeFile()
+        ->and("{$repoRoot}/phpstan.neon")->not->toBeFile()
+        ->and("{$repoRoot}/rector.php")->not->toBeFile();
 });
 
 it('uses the gateway app autoloader directly', function (): void {

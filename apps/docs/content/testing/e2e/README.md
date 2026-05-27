@@ -19,13 +19,21 @@ composer test:e2e:topology-contract
 # Superset provisioning lane
 composer e2e:preflight
 composer test:e2e:provision
+
+# Explicit artifact planning/preparation
+composer e2e:ensure-artifacts
 ```
 
 `composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which selects prepared-topology
 lanes from `ORBIT_E2E_LANES` (`docker,incus` by default) and excludes
-`e2e-provision`. Docker and Incus lanes run concurrently by default. Pass
-`--sequential-lanes` for single-lane debugging output and `--sequential-tests`
-when selected Pest files should run in one process.
+`e2e-provision`. Every selected lane must have its prepared artifacts, runner
+capacity, and provider hosts available before feature tests start. Missing
+Docker role images, support images, Incus templates, Incus snapshots, or runner
+capacity fail the command. Missing artifacts include a scoped
+`composer e2e:ensure-artifacts` command; feature lanes never run preparation
+implicitly. Docker and Incus lanes run concurrently by default. Pass
+`--sequential-lanes` for single-lane debugging output and
+`--sequential-tests` when selected Pest files should run in one process.
 
 ## Provider capability matrix
 
@@ -88,7 +96,8 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   commands, forwarding chains, or read-only behavior. Run Docker-eligible feature
   tests with `composer test:e2e:docker`; run Incus-only feature tests with
   `composer test:e2e:incus`. The aggregate `composer test:e2e` runs both
-  prepared-topology feature lanes.
+  prepared-topology feature lanes and fails if either selected provider cannot
+  supply the required prepared topology.
 - `e2e-provision` builds the reusable Incus superset from the supported base
   image. It launches a fresh base VM, installs Orbit on the operator, provisions
   the gateway, runs `node:new` for app-dev, app-prod, and agent in parallel, and

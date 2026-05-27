@@ -1,15 +1,32 @@
 # Orbit
 
-Orbit is a clean Laravel 13 codebase.
+Orbit is a command-first PHP/Laravel monorepo for local development,
+provisioning, hosting workflows, and node orchestration.
 
-## Current Shape
+## Repository Shape
 
-- Laravel 13 gateway application under `apps/gateway/`, plus separate
-  `apps/docs/` and `apps/cli/` applications.
-- Gateway entry point: `php apps/gateway/artisan` from the repository root, or
-  `php artisan` from `apps/gateway/`. The host `orbit` launcher dispatches to
-  the gateway or CLI artifact based on the node role.
-- Gateway database: SQLite at `apps/gateway/database/database.sqlite`.
+- The repository root is orchestration only: root Composer scripts, `bin/`
+  helper launchers, Docker/E2E assets, AI/project configuration, and
+  cross-project documentation artifacts. There is no root Laravel app, root
+  `artisan`, root `phpunit.xml`, root Pint config, root PHPStan config, or root
+  Rector config.
+- `apps/gateway/` is the Laravel 13 gateway/control-plane application. It owns
+  the gateway HTTP/API surface, gateway database, provisioning logic, E2E
+  harness, deployed public/storage assets, frontend build, and gateway-local
+  quality tooling.
+- `apps/docs/` is the Laravel 13 documentation and Librarian application. It
+  owns the product documentation under `apps/docs/content/` and docs-linting.
+- `apps/cli/` is the Laravel Zero local CLI and executor application.
+- `packages/core/` is the shared Orbit package for contracts, helpers, and
+  cross-application primitives.
+- Each app/package owns its own `composer.json`, test config, Pint config,
+  PHPStan config, and Rector config. Root Composer commands only orchestrate
+  those app/package-local commands.
+- The gateway entry point is `php apps/gateway/artisan` from the repository
+  root, or `php artisan` from `apps/gateway/`. The host `orbit` launcher
+  dispatches to the gateway or CLI artifact based on the node role.
+- The gateway database is SQLite at
+  `apps/gateway/database/database.sqlite`.
 
 ## Product Authority
 
@@ -24,16 +41,16 @@ Orbit's current product contract lives in this repo under `apps/docs/content/`:
 Session artifacts (plans, specs) stay at `docs/superpowers/`. They are not
 product authority and are not linted as product docs.
 
-Do not use external historical Orbit repositories as product authority or
-implementation reference material. Current docs, current tests, and current
-code in this repository are the only valid inputs for Orbit behavior unless the
-user explicitly provides additional source material for a specific task.
-
 ## Development and debugging Rules
 
-- Always make sure that the documentation at apps/docs/content/ describes the correct behavior. If the docs are lacking or contradicting with what is requested, flag it first before proceeding.
-- When the documentation is aligned, proceed with checking wether there is a corresponding test in place. If not first create a (failing) test. Or create/adjust the test that mirrors the correct behavior.
-- From the failing test work on the implementation/fix. Always make sure the docs, tests, and code are aligned and do not drift
+- Always make sure that `apps/docs/content/` describes the correct behavior. If
+  the docs are lacking or contradict what is requested, flag that first before
+  proceeding.
+- When documentation is aligned, check whether a corresponding test exists. If
+  not, create or adjust a failing test that mirrors the correct behavior before
+  changing implementation.
+- From the failing test, work on the implementation/fix. Always keep docs,
+  tests, and code aligned.
 - When an issue is reported about orbit running against live nodes. Make sure to verify the fix against those running nodes.
 - Prefer small, working vertical slices over porting large legacy areas.
 - Keep the command surface contract-first. Use `.agents/skills/command-designer`
@@ -60,7 +77,7 @@ Run the narrowest useful check while developing:
 
 ```bash
 bin/orbit-gateway-pest --compact
-bin/orbit-gateway-vendor-bin pint --dirty --format agent --config ../../pint.json
+bin/orbit-gateway-vendor-bin pint --dirty --format agent
 ```
 
 Before handing off a code change that should be broadly safe, run:
@@ -68,6 +85,9 @@ Before handing off a code change that should be broadly safe, run:
 ```bash
 composer quality-check
 ```
+
+`composer quality-check` fans out docs linting, Pest, Pint, PHPStan, and Rector
+across every app/package.
 
 When behavior touches the integrated topology, run the ephemeral E2E lane:
 

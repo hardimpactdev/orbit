@@ -7,6 +7,7 @@ use App\Console\Commands\E2EPrepareBaseImageCommand;
 use App\Console\Commands\E2EPrepareDockerRuntimeCommand;
 use App\Console\Commands\E2EPrepareDockerTopologyCommand;
 use App\Console\Commands\E2EPrepareTopologyCommand;
+use App\Console\Commands\E2EPrepareWarmTopologyCommand;
 use App\Console\Commands\E2EReapDockerCommand;
 use App\Console\Commands\E2EReapIncusCommand;
 use App\Console\Commands\E2ETestCommand;
@@ -87,10 +88,18 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('bin/orbit-gateway-vendor-bin pint')
+        ->toContain('cd apps/cli && vendor/bin/phpstan analyse')
+        ->toContain('cd apps/docs && vendor/bin/phpstan analyse')
+        ->toContain('cd packages/core && vendor/bin/phpstan analyse')
+        ->toContain('cd apps/cli && vendor/bin/rector process')
+        ->toContain('cd apps/docs && vendor/bin/rector process')
+        ->toContain('cd packages/core && vendor/bin/rector process')
+        ->toContain('cd apps/cli && vendor/bin/pint')
+        ->toContain('cd apps/docs && vendor/bin/pint')
+        ->toContain('cd packages/core && vendor/bin/pint')
         ->toContain('bin/orbit-cli-pest')
         ->toContain('bin/orbit-docs-pest')
-        ->toContain('cd apps/cli && vendor/bin/pint --config ../../pint.json')
-        ->toContain('cd apps/docs && vendor/bin/pint --config ../../pint.json')
+        ->toContain('cd packages/core && vendor/bin/pest')
         ->toContain('bin/orbit-gateway-pest')
         ->toContain('--exclude-group=e2e')
         ->toContain('--exclude-group=slow')
@@ -111,6 +120,7 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
                 ->toContain('--compact'),
             fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
+            fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
         );
 
     $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args';
@@ -245,12 +255,18 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
         ])->and($composer['scripts']['e2e:prepare-docker-hosts'])->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-hosts @additional_args",
+        ])->and($composer['scripts']['e2e:ensure-artifacts'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:ensure-artifacts @additional_args",
         ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-base-image @additional_args",
         ])->and($composer['scripts']['e2e:prepare-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-topology @additional_args",
+        ])->and($composer['scripts']['e2e:prepare-warm-topology'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-warm-topology @additional_args",
         ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:reap-incus @additional_args")
         ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:reap-docker @additional_args");
 });
@@ -329,6 +345,7 @@ it('registers the e2e artisan commands', function (): void {
         E2EPreflightCommand::class,
         E2EPrepareBaseImageCommand::class,
         E2EPrepareTopologyCommand::class,
+        E2EPrepareWarmTopologyCommand::class,
         E2EPrepareDockerRuntimeCommand::class,
         E2EPrepareDockerTopologyCommand::class,
         E2EReapDockerCommand::class,
@@ -347,6 +364,7 @@ it('registers the e2e artisan commands', function (): void {
         E2EPreflightCommand::class,
         E2EPrepareBaseImageCommand::class,
         E2EPrepareTopologyCommand::class,
+        E2EPrepareWarmTopologyCommand::class,
         E2EPrepareDockerTopologyCommand::class,
         E2EReapDockerCommand::class,
         E2EReapIncusCommand::class,

@@ -647,30 +647,17 @@ class IncusTopologyBuilder
     private function installE2EBaseDependenciesCommand(): string
     {
         $script = <<<'BASH'
-if ! command -v apt-get >/dev/null 2>&1; then
-    exit 0
-fi
-
-if command -v supervisorctl >/dev/null 2>&1 && systemctl is-active supervisor.service >/dev/null 2>&1; then
-    exit 0
-fi
-
-deps_script=''
-for candidate in /home/orbit/orbit/bin/_e2e-deps.sh /home/control/orbit/bin/_e2e-deps.sh /var/tmp/orbit-e2e-bundle/_e2e-deps.sh; do
-    if [ -x "$candidate" ]; then
-        deps_script="$candidate"
-        break
+missing=''
+for command in composer git supervisorctl wg wg-quick dig ufw; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        missing="${missing} ${command}"
     fi
 done
 
-if [ -z "$deps_script" ]; then
-    echo 'missing _e2e-deps.sh'
+if [ -n "$missing" ]; then
+    echo "prepared Incus base image is missing E2E dependencies:${missing}. Rebuild the base image and prepared topology." >&2
     exit 1
 fi
-
-packages="$("$deps_script" --base | tr '\n' ' ')"
-sudo apt-get update
-sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y $packages
 
 if command -v systemctl >/dev/null 2>&1; then
     sudo systemctl enable --now supervisor.service || true

@@ -310,7 +310,9 @@ it('builds full prepared roles from the gateway base with parallel downstream pr
             ->and($commandOutput)->toContain('app-prod-1')
             ->and($commandOutput)->toContain('agent-1')
             ->and(substr_count($commandOutput, 'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='))->toBe(3)
-            ->and($commandOutput)->toContain('_e2e-deps.sh')
+            ->and($commandOutput)->toContain('prepared Incus base image is missing E2E dependencies')
+            ->and($commandOutput)->toContain('for command in composer git supervisorctl wg wg-quick dig ufw; do')
+            ->and($commandOutput)->not->toContain('apt-get')
             ->and($commandOutput)->toContain('systemctl enable --now supervisor.service');
         expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(2);
     });

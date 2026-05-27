@@ -9,15 +9,14 @@ use Illuminate\Support\ServiceProvider;
 
 final class GatewayApiServiceProvider extends ServiceProvider
 {
+    #[\Override]
     public function register(): void
     {
-        $this->app->singleton(GatewayApiClient::class, function (): GatewayApiClient {
-            return new GatewayApiClient(
-                baseUrl: $this->nullableString(config('orbit.gateway.url')),
-                identity: $this->nullableString(config('orbit.gateway.identity')),
-                timeout: $this->positiveInteger(config('orbit.gateway.timeout'), 30),
-            );
-        });
+        $this->app->singleton(GatewayApiClient::class, fn (): GatewayApiClient => new GatewayApiClient(
+            baseUrl: $this->nullableString(config('orbit.gateway.url')),
+            identity: $this->nullableString(config('orbit.gateway.identity')),
+            timeout: $this->positiveInteger(config('orbit.gateway.timeout'), 30),
+        ));
     }
 
     private function nullableString(mixed $value): ?string

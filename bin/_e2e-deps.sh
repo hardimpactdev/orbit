@@ -14,6 +14,7 @@ ORBIT_E2E_BASE_PACKAGES=(
     ca-certificates
     composer
     curl
+    bind9-dnsutils
     git
     gnupg
     openssh-client
@@ -21,6 +22,7 @@ ORBIT_E2E_BASE_PACKAGES=(
     supervisor
     tar
     unzip
+    ufw
     wireguard
     wireguard-tools
 )

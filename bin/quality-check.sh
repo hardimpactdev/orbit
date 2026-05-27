@@ -44,27 +44,54 @@ run_bg() {
 
 run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=content/domains
 run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=content/testing
+
 run_bg gateway_phpstan bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M --no-progress
+run_bg cli_phpstan bash -lc 'cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
+run_bg docs_phpstan bash -lc 'cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
+run_bg core_phpstan bash -lc 'cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
+
 run_bg gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
-run_bg gateway_pint bin/orbit-gateway-vendor-bin pint --config ../../pint.json "${PINT_ARGS[@]}"
-run_bg cli_pint bash -lc 'cd apps/cli && vendor/bin/pint --config ../../pint.json "$@"' bash "${PINT_ARGS[@]}"
-run_bg docs_pint bash -lc 'cd apps/docs && vendor/bin/pint --config ../../pint.json "$@"' bash "${PINT_ARGS[@]}"
+run_bg cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+
+run_bg gateway_pint bin/orbit-gateway-vendor-bin pint "${PINT_ARGS[@]}"
+run_bg cli_pint bash -lc 'cd apps/cli && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
+run_bg docs_pint bash -lc 'cd apps/docs && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
+run_bg core_pint bash -lc 'cd packages/core && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
+
 run_bg cli_pest bin/orbit-cli-pest --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
+run_bg core_pest bash -lc 'cd packages/core && vendor/bin/pest --compact'
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
 bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
 pest_exit=$?
 
-wait "$docs_lint_PID" 2>/dev/null
-wait "$docs_testing_PID" 2>/dev/null
-wait "$gateway_phpstan_PID" 2>/dev/null
-wait "$gateway_rector_PID"  2>/dev/null
-wait "$gateway_pint_PID"    2>/dev/null
-wait "$cli_pint_PID"        2>/dev/null
-wait "$docs_pint_PID"       2>/dev/null
-wait "$cli_pest_PID"        2>/dev/null
-wait "$docs_pest_PID"       2>/dev/null
+CHECK_LABELS=(
+    docs_lint
+    docs_testing
+    gateway_phpstan
+    cli_phpstan
+    docs_phpstan
+    core_phpstan
+    gateway_rector
+    cli_rector
+    docs_rector
+    core_rector
+    gateway_pint
+    cli_pint
+    docs_pint
+    core_pint
+    cli_pest
+    docs_pest
+    core_pest
+)
+
+for label in "${CHECK_LABELS[@]}"; do
+    pid_var="${label}_PID"
+    wait "${!pid_var}" 2>/dev/null
+done
 
 print_log() {
     local label="$1"
@@ -80,19 +107,18 @@ print_log() {
     return "$code"
 }
 
-print_log docs_lint; docs_lint_exit=$?
-print_log docs_testing; docs_testing_exit=$?
-print_log gateway_phpstan; gateway_phpstan_exit=$?
-print_log gateway_rector;  gateway_rector_exit=$?
-print_log gateway_pint;    gateway_pint_exit=$?
-print_log cli_pint;        cli_pint_exit=$?
-print_log docs_pint;       docs_pint_exit=$?
-print_log cli_pest;        cli_pest_exit=$?
-print_log docs_pest;       docs_pest_exit=$?
+overall="$pest_exit"
+summary="gateway_pest=${pest_exit}"
 
-overall=$((pest_exit | docs_lint_exit | docs_testing_exit | gateway_phpstan_exit | gateway_rector_exit | gateway_pint_exit | cli_pint_exit | docs_pint_exit | cli_pest_exit | docs_pest_exit))
+for label in "${CHECK_LABELS[@]}"; do
+    print_log "$label"
+    code=$?
+    overall=$((overall | code))
+    summary="${summary} ${label}=${code}"
+done
+
 if [ "$overall" -ne 0 ]; then
-    echo "Quality gate FAILED (gateway_pest=${pest_exit} docs=${docs_lint_exit} docs_testing=${docs_testing_exit} gateway_phpstan=${gateway_phpstan_exit} gateway_rector=${gateway_rector_exit} gateway_pint=${gateway_pint_exit} cli_pint=${cli_pint_exit} docs_pint=${docs_pint_exit} cli_pest=${cli_pest_exit} docs_pest=${docs_pest_exit})"
+    echo "Quality gate FAILED (${summary})"
 fi
 
 exit "$overall"

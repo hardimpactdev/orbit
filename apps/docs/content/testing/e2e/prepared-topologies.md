@@ -105,6 +105,37 @@ Required prepared sources for feature lanes:
 - `operator_gateway_app-dev_app-prod_agent` Incus role snapshots for selective
   VM boot, including operator-only and operator-gateway tests.
 
+`composer test:e2e`, `composer test:e2e:docker`, and
+`composer test:e2e:incus` do not prepare artifacts. They fail before Pest
+workers start when a selected provider is missing a required image, template, or
+snapshot, and print a scoped artifact command for the missing lane.
+
+Use `composer e2e:ensure-artifacts` to plan or run a targeted artifact refresh:
+
+```bash
+# Build or pull Docker runtime/support images only when one is missing.
+composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent
+
+# Refresh only the agent Docker role image for a branch/worktree override.
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
+composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent
+
+# Rebuild selected Docker role images even when matching tags already exist.
+composer e2e:ensure-artifacts -- --lanes=docker --roles=operator,gateway --rebuild --force operator_gateway_app-dev_app-prod_agent
+
+# Inspect the Incus templates for an agent role override.
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
+composer e2e:ensure-artifacts -- --lanes=incus --roles=agent operator_gateway_agent
+```
+
+Forced Docker ensure delegates to the Docker host preparer, which checks the
+requested images on the build host and distributes only the selected role or
+runtime artifacts. Add `--rebuild` when the selected Docker tags already exist
+but their baked source or runtime state must be refreshed. Forced Incus targeted
+role refreshes are guarded; inspect the planned role templates with
+`e2e:ensure-artifacts` and use the explicit topology preparer only when
+intentionally rebuilding an Incus artifact set.
+
 Prepare the canonical Docker role image set once for the host pool:
 
 ```bash
@@ -194,3 +225,8 @@ clone to a known-clean state between sub-scenarios in the same test:
   support has been verified.
 
 Unknown values fall back to `fresh-clone`.
+
+`ORBIT_E2E_TOPOLOGY_RESET` applies after a test has already acquired a topology.
+Initial Incus acquisition can use prepared warm stateful snapshots only when
+`ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1`; see
+`docs/testing/e2e/incus.md#warm-stateful-snapshots`.

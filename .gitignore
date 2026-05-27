@@ -21,10 +21,13 @@
 /build/
 /apps/cli/.phpunit.cache
 /apps/cli/.phpunit.result.cache
+/apps/cli/build/
 /apps/cli/vendor
+/apps/docs/build/
 /apps/gateway/.env
 /apps/gateway/.env.*
 !/apps/gateway/.env.example
+!/apps/gateway/.env.live.example
 /apps/gateway/.phpunit.cache
 /apps/gateway/.phpunit.result.cache
 /apps/gateway/auth.json
@@ -41,6 +44,10 @@
 /apps/gateway/vendor
 /apps/gateway/tests/E2E/.docker-feature-tests/
 /apps/gateway/tests/E2E/.incus-feature-tests/
+/packages/core/.phpunit.cache
+/packages/core/.phpunit.result.cache
+/packages/core/build/
+/packages/core/vendor
 /vendor
 _ide_helper.php
 Homestead.json

@@ -32,7 +32,7 @@ final class E2ETopologyLease
         private readonly ?\Closure $bulkCleanup = null,
         private readonly ?\Closure $teardown = null,
         private readonly string $gatewayApiIp = '10.6.0.2',
-        private readonly ?E2EResourceLease $resourceLease = null,
+        private readonly E2EResourceLease|E2EResourceLeaseSet|null $resourceLease = null,
         private ?E2EInstance $agent = null,
         private ?E2EInstance $ingress = null,
         private array $additionalInstances = [],

@@ -19,7 +19,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $topology->ssh(
             'dev',
             sprintf(
-                'sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw && sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-wg-ssh" && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-lan-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
+                'command -v ufw >/dev/null 2>&1 || { echo "ufw is missing from the prepared Incus artifact. Rebuild the base image and prepared topology." >&2; exit 1; }; sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-wg-ssh" && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-lan-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
                 escapeshellarg("{$gatewayWireGuardIp}/32"),
                 escapeshellarg("{$gatewayLanIp}/32"),
                 escapeshellarg($wireGuardCidr),
@@ -68,7 +68,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
 
         expect(trim($verifyResult->output()))->toContain('found');
     } finally {
-        $topology->ssh('dev', 'if command -v ufw >/dev/null 2>&1; then sudo ufw --force reset && sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq ufw; fi', timeoutSeconds: 120);
+        $topology->ssh('dev', 'if command -v ufw >/dev/null 2>&1; then sudo ufw --force disable && sudo ufw --force reset; fi', timeoutSeconds: 120);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');

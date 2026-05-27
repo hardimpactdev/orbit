@@ -144,6 +144,59 @@ it('builds and distributes only selected branch Docker role images', function ()
         ]);
 });
 
+it('rebuilds and distributes selected Docker role images even when they already exist', function (): void {
+    $runs = [];
+    $distributions = [];
+
+    Process::fake(function ($process) use (&$runs) {
+        $runs[] = [
+            'command' => $process->command,
+            'environment' => $process->environment,
+        ];
+
+        return Process::result();
+    });
+
+    $distributor = m::mock(DockerImageDistributor::class);
+    $distributor->shouldReceive('distribute')
+        ->once()
+        ->andReturnUsing(function (array $images, array $hosts) use (&$distributions): array {
+            $distributions[] = [
+                'images' => $images,
+                'hosts' => $hosts,
+            ];
+
+            return [];
+        });
+
+    app()->bind(DockerImageDistributor::class, fn (): DockerImageDistributor => $distributor);
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:28,sidecar2:2:28',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
+    ], function (): void {
+        $this->artisan('e2e:prepare-docker-hosts', [
+            'kind' => 'operator_gateway_app-dev_app-prod_agent',
+            '--force' => true,
+            '--rebuild' => true,
+            '--topology-only' => true,
+            '--roles' => 'agent',
+        ])
+            ->expectsOutputToContain('rebuilt: beast topology:operator_gateway_app-dev_app-prod_agent')
+            ->assertSuccessful();
+    });
+
+    $buildRuns = array_values(array_filter($runs, fn (array $run): bool => str_contains($run['command'], 'composer e2e:prepare-docker-topology')));
+
+    expect($buildRuns)->toHaveCount(1)
+        ->and($buildRuns[0]['command'])->toContain('composer e2e:prepare-docker-topology -- --force')
+        ->and($buildRuns[0]['command'])->toContain('--roles=agent')
+        ->and($distributions)->toHaveCount(1)
+        ->and($distributions[0]['images'])->toBe([
+            ['role' => 'agent', 'image' => 'orbit-e2e:agent_base'],
+        ]);
+});
+
 it('builds docker images once on the build host and distributes them to runner hosts', function (): void {
     $runs = [];
     $distributions = [];

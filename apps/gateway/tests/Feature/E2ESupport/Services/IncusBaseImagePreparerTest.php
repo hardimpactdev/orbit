@@ -190,6 +190,8 @@ it('writes cloud-init that installs the deps helper packages and the orbit user'
     expect($cloudInitYaml)->toContain('disable_suites:');
     expect($cloudInitYaml)->toContain('    - security');
     expect($cloudInitYaml)->toContain('  - composer');
+    expect($cloudInitYaml)->toContain('  - bind9-dnsutils');
+    expect($cloudInitYaml)->toContain('  - ufw');
     expect($cloudInitYaml)->toContain('  - wireguard');
     expect($cloudInitYaml)->toContain('  - php8.5-cli');
     expect($cloudInitYaml)->toContain('  - php8.5-bcmath');

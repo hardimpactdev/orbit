@@ -65,6 +65,18 @@ it('reports topology provider failure details when no prepared provider is avail
     });
 });
 
+it('fails topology helper acquisition in strict lane mode', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_CACHE' => '0',
+        'ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE' => '1',
+        'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
+        'ORBIT_E2E_INCUS_HOSTS' => 'orbit-e2e-nonexistent.invalid',
+    ], function (): void {
+        expect(fn () => e2eTopology(E2ETopologyKind::Operator))
+            ->toThrow(E2ETopologyUnavailable::class, 'Prepared topology not available');
+    });
+});
+
 it('refuses providers that do not satisfy required capabilities', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'docker',

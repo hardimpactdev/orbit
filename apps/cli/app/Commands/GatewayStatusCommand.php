@@ -10,8 +10,10 @@ final class GatewayStatusCommand extends OrbitCommand
 {
     private const string ENDPOINT = '/api/status';
 
+    #[\Override]
     protected $signature = 'gateway:status {--json}';
 
+    #[\Override]
     protected $description = 'Show gateway API status';
 
     public function handle(): int

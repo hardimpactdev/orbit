@@ -28,11 +28,13 @@ it('plans docker and incus lanes by default', function (): void {
                     ->lane->toBe('docker')
                     ->environment->ORBIT_E2E_TOPOLOGY_PROVIDER->toBe('docker')
                     ->environment->ORBIT_E2E_TOPOLOGY_PROVIDERS->toBe('docker')
+                    ->environment->ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE->toBe('1')
                     ->environment->ORBIT_E2E_TOPOLOGY_CACHE_LIMIT->toBe('1'),
                 fn ($lane) => $lane
                     ->lane->toBe('incus')
                     ->environment->ORBIT_E2E_TOPOLOGY_PROVIDER->toBe('incus')
                     ->environment->ORBIT_E2E_TOPOLOGY_PROVIDERS->toBe('incus')
+                    ->environment->ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE->toBe('1')
                     ->environment->ORBIT_E2E_TOPOLOGY_CACHE_LIMIT->toBe('1'),
             );
     });
@@ -347,7 +349,7 @@ it('filters unavailable docker runners before starting Pest workers', function (
         && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '4');
 });
 
-it('skips the docker lane when no configured docker runner is reachable', function (): void {
+it('fails the docker lane when no configured docker runner is reachable', function (): void {
     Process::fake(function ($process) {
         if ($process->command === 'command -v docker >/dev/null') {
             return Process::result();
@@ -366,9 +368,162 @@ it('skips the docker lane when no configured docker runner is reachable', functi
     ], function (): void {
         $this->artisan('e2e:test --lanes=docker')
             ->expectsOutputToContain('E2E Docker runner [macbook] ignored: docker daemon is not reachable')
-            ->expectsOutputToContain('E2E lane [docker] skipped: no configured Docker test runner is reachable.')
-            ->assertSuccessful();
+            ->expectsOutputToContain('E2E lane [docker] unavailable: no configured Docker test runner is reachable.')
+            ->assertFailed();
     });
+
+    Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true), 0);
+});
+
+it('fails the docker lane cleanly when runner probing times out', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            throw new RuntimeException('probe timed out');
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+    ], function (): void {
+        $this->artisan('e2e:test --lanes=docker')
+            ->expectsOutputToContain('E2E Docker runner [sidecar1] ignored: docker daemon is not reachable')
+            ->expectsOutputToContain('E2E lane [docker] unavailable: no configured Docker test runner is reachable.')
+            ->assertFailed();
+    });
+
+    Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true), 0);
+});
+
+it('fails when a required docker prepared image is missing before invoking pest', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if (is_string($process->command) && str_starts_with($process->command, 'docker image inspect ')) {
+            return str_contains($process->command, 'orbit-e2e:operator_base')
+                ? Process::result(exitCode: 1, errorOutput: 'missing')
+                : Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $exitCode = null;
+    $output = null;
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+    ], function () use (&$exitCode, &$output): void {
+        $exitCode = Artisan::call('e2e:test', ['--lanes' => 'docker']);
+        $output = Artisan::output();
+    });
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('E2E lane [docker] unavailable:')
+        ->and($output)->toContain('docker prepared image')
+        ->and($output)->toContain('is not available')
+        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=docker --roles=operator --force operator_gateway_app-dev_app-prod_agent');
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker image inspect')
+        && str_contains($process->command, 'orbit-e2e:operator_base'));
+    Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true), 0);
+});
+
+it('checks docker prepared artifacts before invoking explicit test paths', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if (is_string($process->command) && str_starts_with($process->command, 'docker image inspect ')) {
+            return str_contains($process->command, 'orbit-e2e:app-dev_base')
+                ? Process::result(exitCode: 1, errorOutput: 'missing')
+                : Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $exitCode = null;
+    $output = null;
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+    ], function () use (&$exitCode, &$output): void {
+        $exitCode = Artisan::call('e2e:test --lanes=docker tests/E2E/AppListTest.php');
+        $output = Artisan::output();
+    });
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('E2E lane [docker] unavailable:')
+        ->and($output)->toContain('docker prepared image')
+        ->and($output)->toContain('orbit-e2e:app-dev_base')
+        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=docker --roles=app-dev --force operator_gateway_app-dev_app-prod_agent');
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker image inspect')
+        && str_contains($process->command, 'orbit-e2e:app-dev_base'));
+    Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true), 0);
+});
+
+it('suggests the runtime artifact command when docker support images are missing', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if (is_string($process->command) && str_contains($process->command, "docker image inspect 'caddy:2-alpine'")) {
+            return Process::result(exitCode: 1, errorOutput: 'missing');
+        }
+
+        if (is_string($process->command) && str_starts_with($process->command, 'docker image inspect ')) {
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $exitCode = null;
+    $output = null;
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+    ], function () use (&$exitCode, &$output): void {
+        $exitCode = Artisan::call('e2e:test', ['--lanes' => 'docker']);
+        $output = Artisan::output();
+    });
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('Docker orbit-caddy image caddy:2-alpine is not available')
+        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent');
 
     Process::assertRanTimes(fn ($process): bool => is_array($process->command)
         && in_array('test', $process->command, true), 0);
@@ -459,7 +614,7 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
         ->and($generatedPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
         ->and($lane['test_files'])->toContain('tests/E2E/IngressProductionTopologyTest.php')
         ->and($lane['test_files'])->toContain('tests/E2E/ToolCredentialsTest.php')
-        ->and($lane['test_files'])->not->toContain('tests/E2E/ToolStartTest.php')
+        ->and($lane['test_files'])->not->toContain('tests/E2E/ToolLifecycleHostInitTest.php')
         ->and($lane['test_files'])->not->toContain('tests/E2E/RuntimeBackendHostInitTest.php');
 });
 
@@ -554,6 +709,7 @@ it('includes the agent topology coverage in the incus lane', function (): void {
     withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
         'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '3',
+        'ORBIT_E2E_INCUS_HOST_SLOTS' => 'beast:1',
     ], function (): void {
         $exitCode = Artisan::call('e2e:test', [
             '--dry-run' => true,
@@ -567,14 +723,15 @@ it('includes the agent topology coverage in the incus lane', function (): void {
             ->and($lane['test_files'])->toContain('tests/E2E/NodeListAgentTopologyTest.php')
             ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_CACHE'])->toBe('process')
             ->and($lane['environment']['ORBIT_E2E_CHECKOUT_CACHE'])->toBe('process')
+            ->and($lane['environment']['ORBIT_E2E_INCUS_HOST_SLOTS'])->toBe('')
             ->and($lane['command'])->toContain('--processes=3');
     });
 });
 
-it('sizes Incus workers from the largest selected topology', function (): void {
+it('uses the requested Incus worker count without topology-size capping', function (): void {
     withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
-        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '4',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $exitCode = Artisan::call('e2e:test', [
             '--dry-run' => true,
@@ -585,7 +742,38 @@ it('sizes Incus workers from the largest selected topology', function (): void {
         $lane = $payload['success']['data']['lanes'][0];
 
         expect($exitCode)->toBe(0)
-            ->and($lane['command'])->toContain('--processes=4');
+            ->and($lane['command'])->toContain('--processes=8');
+    });
+});
+
+it('requires Incus VM caps before planning Incus lanes', function (): void {
+    withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=incus tests/E2E/NodeListAgentTopologyTest.php');
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Missing Incus VM cap for host [beast]. Set ORBIT_E2E_INCUS_HOST_VM_CAPS.');
+    });
+});
+
+it('fails Incus lane planning when warm snapshots are requested but missing', function (): void {
+    Process::fake(fn () => Process::result(exitCode: 1));
+
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES',
+    ], [
+        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=incus tests/E2E/NodeListAgentTopologyTest.php');
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Incus warm prepared topology [operator_gateway_agent] is missing')
+            ->and($output)->toContain('composer e2e:prepare-warm-topology -- --force operator_gateway_agent');
     });
 });
 
@@ -714,7 +902,7 @@ it('rejects unsupported lanes', function (): void {
         ->assertFailed();
 });
 
-it('skips unavailable incus lanes before invoking pest', function (): void {
+it('fails unavailable incus lanes before invoking pest', function (): void {
     withE2EEnvironment([], [
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
     ], function (): void {
@@ -723,17 +911,77 @@ it('skips unavailable incus lanes before invoking pest', function (): void {
 
         $command = app(E2ETestCommand::class);
         $command->setLaneAvailabilityResolver(fn (): array => [
-            'incus' => 'incus: prepared topology control-gateway is not available on any Incus host',
+            'incus' => 'incus: prepared topology operator_gateway is not available on any Incus host',
         ]);
         $this->app->instance(E2ETestCommand::class, $command);
 
-        $this->artisan('e2e:test --lanes=incus')
-            ->expectsOutputToContain('E2E lane [incus] skipped: incus: prepared topology control-gateway is not available on any Incus host')
-            ->assertSuccessful();
+        $exitCode = Artisan::call('e2e:test', ['--lanes' => 'incus']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('E2E lane [incus] unavailable: incus: prepared topology operator_gateway is not available on any Incus host')
+            ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway operator_gateway');
 
         Process::assertRanTimes(fn ($process): bool => is_array($process->command)
             && in_array('test', $process->command, true), 0);
     });
+});
+
+it('fails the aggregate run when any selected lane is unavailable', function (): void {
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+    ], function (): void {
+        Process::fake(['*' => Process::result()]);
+        Process::preventStrayProcesses();
+
+        $command = app(E2ETestCommand::class);
+        $command->setLaneAvailabilityResolver(fn (): array => [
+            'incus' => 'incus: prepared topology operator_gateway_agent is not available on any Incus host',
+        ]);
+        $this->app->instance(E2ETestCommand::class, $command);
+
+        $exitCode = Artisan::call('e2e:test', ['--lanes' => 'all']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('E2E lane [incus] unavailable: incus: prepared topology operator_gateway_agent is not available on any Incus host')
+            ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway,agent operator_gateway_agent');
+
+        Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+            && in_array('test', $process->command, true), 0);
+    });
+});
+
+it('passes explicit incus test paths into artifact availability checks', function (): void {
+    Process::fake();
+    Process::preventStrayProcesses();
+
+    $seenTestFiles = null;
+    $command = app(E2ETestCommand::class);
+    $command->setLaneAvailabilityResolver(function (array $plans) use (&$seenTestFiles): array {
+        $seenTestFiles = $plans['incus']['test_files'] ?? [];
+
+        return [
+            'incus' => 'incus: prepared topology operator_gateway_agent is not available on any Incus host',
+        ];
+    });
+    $this->app->instance(E2ETestCommand::class, $command);
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+    ], function () use (&$exitCode, &$output): void {
+        $exitCode = Artisan::call('e2e:test --lanes=incus tests/E2E/NodeListAgentTopologyTest.php');
+        $output = Artisan::output();
+    });
+
+    expect($seenTestFiles)->toBe(['tests/E2E/NodeListAgentTopologyTest.php'])
+        ->and($exitCode)->toBe(1)
+        ->and($output)->toContain('E2E lane [incus] unavailable:')
+        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway,agent operator_gateway_agent');
+
+    Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true), 0);
 });
 
 it('allocates a timings file env for timed runs and removes it during cleanup', function (): void {

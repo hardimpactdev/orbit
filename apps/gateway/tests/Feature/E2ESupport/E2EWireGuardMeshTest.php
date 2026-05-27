@@ -170,6 +170,9 @@ it('installs and restarts wg-orbit for a role', function (): void {
     $mesh->installRole($instance, 'dev');
 
     expect($commands[0])->toContain('/etc/wireguard/wg-orbit.conf')
+        ->and($commands[0])->toContain('command -v wg')
+        ->and($commands[0])->toContain('command -v wg-quick')
+        ->and($commands[0])->not->toContain('apt-get')
         ->and($commands[0])->toContain('PrivateKey = dev-private')
         ->and($commands[0])->toContain('wg-quick down wg-orbit')
         ->and($commands[0])->toContain('wg-quick up wg-orbit')

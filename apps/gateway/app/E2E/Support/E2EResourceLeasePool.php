@@ -79,6 +79,49 @@ final readonly class E2EResourceLeasePool
     /**
      * @param  array<string, int>  $hostSlots
      * @param  list<string>  $exclusiveHosts
+     */
+    public function acquireWeighted(string $backend, array $hostSlots, int $slots, array $exclusiveHosts = []): E2EResourceLeaseSet
+    {
+        if ($slots < 1) {
+            throw new RuntimeException("A {$backend} E2E lease must request at least one slot.");
+        }
+
+        if ($hostSlots === []) {
+            throw new RuntimeException("No {$backend} E2E slots are configured.");
+        }
+
+        $this->ensureDirectory();
+        $deadline = microtime(true) + $this->waitSeconds;
+        $exclusiveHostLookup = $this->exclusiveHostLookup($exclusiveHosts);
+
+        do {
+            $this->reclaimStaleLeases($backend, $hostSlots, $exclusiveHostLookup);
+
+            foreach ($hostSlots as $host => $availableSlots) {
+                if ($availableSlots < $slots) {
+                    continue;
+                }
+
+                $leases = $this->tryAcquireWeighted($backend, $host, $availableSlots, $slots, $exclusiveHostLookup);
+
+                if ($leases !== null) {
+                    return new E2EResourceLeaseSet($leases);
+                }
+            }
+
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            usleep(200_000);
+        } while (true);
+
+        throw new RuntimeException("No {$backend} E2E capacity for {$slots} slots became available within {$this->waitSeconds} seconds.");
+    }
+
+    /**
+     * @param  array<string, int>  $hostSlots
+     * @param  list<string>  $exclusiveHosts
      * @return list<array{host: string, slot: int, leased: bool}>
      */
     public function snapshot(string $backend, array $hostSlots, array $exclusiveHosts = []): array
@@ -165,6 +208,73 @@ final readonly class E2EResourceLeasePool
         }
 
         return new E2EResourceLease($backend, $host, $slot, $path, $owner);
+    }
+
+    /**
+     * @param  array<string, true>  $exclusiveHostLookup
+     * @return non-empty-list<E2EResourceLease>|null
+     */
+    private function tryAcquireWeighted(string $backend, string $host, int $availableSlots, int $requestedSlots, array $exclusiveHostLookup): ?array
+    {
+        if (! $this->isExclusiveHost($host, $exclusiveHostLookup)) {
+            return $this->tryAcquireSlotSet($backend, $host, $availableSlots, $requestedSlots);
+        }
+
+        $mutexOwner = bin2hex(random_bytes(16));
+        $mutexPath = $this->hostMutexPath($host);
+        $mutexHandle = @fopen($mutexPath, 'x');
+
+        if ($mutexHandle === false) {
+            return null;
+        }
+
+        try {
+            $this->writeLeasePayload($mutexHandle, [
+                'backend' => '__host_mutex',
+                'host' => $host,
+                'slot' => 0,
+                'owner' => $mutexOwner,
+                'pid' => getmypid(),
+                'created_at' => time(),
+            ]);
+
+            if ($this->hasConflictingHostLease($backend, $host)) {
+                return null;
+            }
+
+            return $this->tryAcquireSlotSet($backend, $host, $availableSlots, $requestedSlots);
+        } finally {
+            fclose($mutexHandle);
+            $this->releaseOwnedPath($mutexPath, $mutexOwner);
+        }
+    }
+
+    /**
+     * @return non-empty-list<E2EResourceLease>|null
+     */
+    private function tryAcquireSlotSet(string $backend, string $host, int $availableSlots, int $requestedSlots): ?array
+    {
+        $leases = [];
+
+        for ($slot = 1; $slot <= $availableSlots && count($leases) < $requestedSlots; $slot++) {
+            $lease = $this->tryAcquireSlot($backend, $host, $slot);
+
+            if ($lease === null) {
+                continue;
+            }
+
+            $leases[] = $lease;
+        }
+
+        if (count($leases) === $requestedSlots) {
+            return $leases;
+        }
+
+        foreach ($leases as $lease) {
+            $lease->release();
+        }
+
+        return null;
     }
 
     /**

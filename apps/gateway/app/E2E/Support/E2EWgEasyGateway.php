@@ -19,11 +19,7 @@ final readonly class E2EWgEasyGateway
             sprintf(
                 <<<'SH'
 set -euo pipefail
-export DEBIAN_FRONTEND=noninteractive
-if ! command -v docker >/dev/null 2>&1; then
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io
-fi
+command -v docker >/dev/null 2>&1 || { echo 'docker is missing from the prepared Incus gateway artifact. Rebuild the prepared topology.' >&2; exit 1; }
 sudo systemctl enable --now docker
 docker rm -f wg-easy >/dev/null 2>&1 || true
 sudo install -d -m 0755 -o orbit -g orbit /home/orbit/.wg-easy

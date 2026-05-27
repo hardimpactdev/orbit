@@ -3,17 +3,19 @@
 Orbit is a command-first environment control plane for Laravel development,
 hosting workflows, and node orchestration.
 
-The monorepo contains three self-contained applications:
+The monorepo contains three self-contained applications and one shared package:
 
 - `apps/gateway` — Laravel 13 gateway/control-plane app.
 - `apps/docs` — Laravel docs and Librarian lint app.
 - `apps/cli` — local CLI and executor app.
+- `packages/core` — shared Orbit contracts and helpers.
 
 ## Development
 
 ```bash
 composer install
-cd apps/gateway && composer install
+cd packages/core && composer install
+cd ../../apps/gateway && composer install
 cd ../docs && composer install
 cd ../cli && composer install
 ```

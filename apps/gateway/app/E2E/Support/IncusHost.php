@@ -477,6 +477,44 @@ class IncusHost
         return $this->run(implode("\n", $lines), timeoutSeconds: 180);
     }
 
+    /**
+     * @param  list<string>  $names
+     */
+    public function startInstancesIfStopped(array $names): ProcessResult
+    {
+        $lines = [];
+        $waitLines = [];
+
+        foreach (array_values($names) as $index => $name) {
+            $pid = "PID_START_IF_NEEDED_{$index}";
+            $quotedName = escapeshellarg($name);
+
+            $lines[] = "incus start {$quotedName} >/dev/null 2>&1 || incus list --format csv -c n,s | awk -F, -v name={$quotedName} '\$1 == name {print \$2}' | grep -qx RUNNING & {$pid}=\$!";
+            $waitLines[] = "wait \${$pid}";
+        }
+
+        return $this->run(implode("\n", [
+            ...$lines,
+            ...$waitLines,
+        ]), timeoutSeconds: 180);
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    public function deleteInstancesIfPresent(array $names): ProcessResult
+    {
+        $lines = array_map(
+            static fn (string $name): string => sprintf(
+                'incus delete --force %s >/dev/null 2>&1 || true',
+                escapeshellarg($name),
+            ),
+            $names,
+        );
+
+        return $this->run(implode("\n", $lines), timeoutSeconds: 180);
+    }
+
     public function deleteInstance(string $name): ProcessResult
     {
         return $this->run(sprintf('incus delete %s --force', escapeshellarg($name)));
