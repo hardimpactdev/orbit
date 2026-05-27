@@ -86,7 +86,7 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('--path=docs/testing')
         ->toContain('phpstan analyse')
         ->toContain('rector process')
-        ->toContain('vendor/bin/pint')
+        ->toContain('bin/orbit-gateway-vendor-bin pint')
         ->toContain('vendor/pestphp/pest/bin/pest')
         ->toContain('--exclude-group=e2e')
         ->toContain('--exclude-group=slow')
@@ -107,10 +107,10 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
                 ->toContain('--compact'),
         );
 
-    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test @additional_args';
-    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args';
-    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test --canary @additional_args';
-    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus php artisan e2e:test @additional_args';
+    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args';
+    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-gateway-artisan e2e:test @additional_args';
+    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-gateway-artisan e2e:test --canary @additional_args';
+    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/orbit-gateway-artisan e2e:test @additional_args';
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
@@ -128,7 +128,7 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ "$processes" -gt 1 ]; then ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes="$processes" @additional_args; else ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ "$processes" -gt 1 ]; then ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --parallel --processes="$processes" @additional_args; else ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi',
     ])->and($composer['scripts'])->not->toHaveKey('test:e2e:provisioning')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker');
@@ -229,24 +229,24 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
 
     $e2eEnvPrefix = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a;';
 
-    expect($composer['scripts']['e2e:preflight'])->toBe("{$e2eEnvPrefix} php artisan e2e:preflight @additional_args")
+    expect($composer['scripts']['e2e:preflight'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:preflight @additional_args")
         ->and($composer['scripts']['e2e:prepare-docker-runtime'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} php artisan e2e:prepare-docker-runtime @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-runtime @additional_args",
         ])->and($composer['scripts']['e2e:prepare-docker-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} php artisan e2e:prepare-docker-topology @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-topology @additional_args",
         ])->and($composer['scripts']['e2e:prepare-docker-hosts'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} php artisan e2e:prepare-docker-hosts @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-hosts @additional_args",
         ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} php artisan e2e:prepare-base-image @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-base-image @additional_args",
         ])->and($composer['scripts']['e2e:prepare-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} php artisan e2e:prepare-topology @additional_args",
-        ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} php artisan e2e:reap-incus @additional_args")
-        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} php artisan e2e:reap-docker @additional_args");
+            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-topology @additional_args",
+        ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:reap-incus @additional_args")
+        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:reap-docker @additional_args");
 });
 
 it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
@@ -466,7 +466,7 @@ it('runs the topology contract against the Docker full topology by default', fun
 
     expect($composer['scripts']['test:e2e:topology-contract'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod --fail-on-empty-test-suite @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod --fail-on-empty-test-suite @additional_args',
     ])->and($composer['scripts'])
         ->not->toHaveKey('test:e2e:topology-contract:control')
         ->not->toHaveKey('test:e2e:topology-contract:control-gateway')

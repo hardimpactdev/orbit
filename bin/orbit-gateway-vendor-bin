@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+if [ "$#" -lt 1 ]; then
+    printf 'usage: %s <vendor-binary> [args...]\n' "$0" >&2
+
+    exit 64
+fi
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/_orbit-gateway-paths.sh"
+
+TOOL="$1"
+shift
+
+ROOT="$(orbit_repo_root)"
+APP_ROOT="$(orbit_gateway_app_path "$ROOT")"
+
+cd "$APP_ROOT"
+
+exec "vendor/bin/${TOOL}" "$@"

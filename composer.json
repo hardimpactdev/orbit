@@ -66,83 +66,83 @@
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
-            "@php artisan key:generate",
-            "@php artisan migrate --force",
+            "bin/orbit-gateway-artisan key:generate",
+            "bin/orbit-gateway-artisan migrate --force",
             "npm install --ignore-scripts",
             "npm run build"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"bin/orbit-gateway-artisan serve\" \"bin/orbit-gateway-artisan queue:listen --tries=1 --timeout=0\" \"bin/orbit-gateway-artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
         ],
         "docs-lint": [
-            "@php artisan librarian:lint --format=agent --path=docs/domains",
-            "@php artisan librarian:lint --format=agent --path=docs/testing"
+            "bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/domains",
+            "bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/testing"
         ],
         "test": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan config:clear --ansi @no_additional_args",
-            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow --parallel --compact"
+            "bin/orbit-gateway-artisan config:clear --ansi @no_additional_args",
+            "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact"
         ],
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan config:clear --ansi @no_additional_args",
-            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --parallel --compact"
+            "bin/orbit-gateway-artisan config:clear --ansi @no_additional_args",
+            "bin/orbit-gateway-pest --exclude-group=e2e --parallel --compact"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args"
         ],
         "test:e2e:docker": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-gateway-artisan e2e:test @additional_args"
         ],
         "test:e2e:docker:canary": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test --canary @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-gateway-artisan e2e:test --canary @additional_args"
         ],
         "test:e2e:incus": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus php artisan e2e:test @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/orbit-gateway-artisan e2e:test @additional_args"
         ],
         "test:e2e:incus:reachability": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_INCUS_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_TOPOLOGY_PROVIDERS=incus ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-reachability --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_TOPOLOGY_PROVIDERS=incus ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-reachability --exclude-group=e2e-provision --exclude-group=e2e-topology-contract @additional_args; fi"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_INCUS_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_TOPOLOGY_PROVIDERS=incus ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-feature-reachability --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_TOPOLOGY_PROVIDERS=incus ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-feature-reachability --exclude-group=e2e-provision --exclude-group=e2e-topology-contract @additional_args; fi"
         ],
         "test:e2e:topology-contract": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod --fail-on-empty-test-suite @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod --fail-on-empty-test-suite @additional_args"
         ],
         "test:e2e:provision": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi"
         ],
-        "e2e:preflight": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:preflight @additional_args",
-        "e2e:reap-incus": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-incus @additional_args",
-        "e2e:reap-docker": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-docker @additional_args",
+        "e2e:preflight": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:preflight @additional_args",
+        "e2e:reap-incus": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:reap-incus @additional_args",
+        "e2e:reap-docker": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:reap-docker @additional_args",
         "e2e:prepare-docker-runtime": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-docker-runtime @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-docker-runtime @additional_args"
         ],
         "e2e:prepare-docker-topology": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-docker-topology @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-docker-topology @additional_args"
         ],
         "e2e:prepare-docker-hosts": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-docker-hosts @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-docker-hosts @additional_args"
         ],
         "e2e:prepare-base-image": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-base-image @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-base-image @additional_args"
         ],
         "e2e:prepare-topology": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-topology @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:prepare-topology @additional_args"
         ],
-        "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
-        "format": "vendor/bin/pint",
-        "rector": "vendor/bin/rector process",
+        "analyse": "bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M",
+        "format": "bin/orbit-gateway-vendor-bin pint",
+        "rector": "bin/orbit-gateway-vendor-bin rector process",
         "quality-check": [
             "Composer\\Config::disableProcessTimeout",
             "bin/quality-check.sh"
@@ -153,18 +153,18 @@
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi"
+            "bin/orbit-gateway-artisan package:discover --ansi"
         ],
         "post-update-cmd": [
-            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
+            "bin/orbit-gateway-artisan vendor:publish --tag=laravel-assets --ansi --force"
         ],
         "post-root-package-install": [
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
         ],
         "post-create-project-cmd": [
-            "@php artisan key:generate --ansi",
+            "bin/orbit-gateway-artisan key:generate --ansi",
             "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
-            "@php artisan migrate --graceful --ansi"
+            "bin/orbit-gateway-artisan migrate --graceful --ansi"
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"

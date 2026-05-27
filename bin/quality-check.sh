@@ -16,6 +16,10 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+source "${ROOT}/bin/_orbit-gateway-paths.sh"
+
+APP_ROOT="$(orbit_gateway_app_path "$ROOT")"
+
 FIX_MODE=0
 if [ "${1:-}" = "--fix" ]; then
     FIX_MODE=1
@@ -40,16 +44,18 @@ run_bg() {
     eval "${label}_PID=$!"
 }
 
-run_bg docs_lint bash -lc 'php artisan librarian:lint --format=agent --path=docs/domains && php artisan librarian:lint --format=agent --path=docs/testing'
-run_bg phpstan   vendor/bin/phpstan analyse --memory-limit=512M --no-progress
-run_bg rector    vendor/bin/rector process "${RECTOR_ARGS[@]}"
-run_bg pint      vendor/bin/pint "${PINT_ARGS[@]}"
+run_bg docs_lint bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/domains
+run_bg docs_testing bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/testing
+run_bg phpstan bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M --no-progress
+run_bg rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
+run_bg pint bin/orbit-gateway-vendor-bin pint "${PINT_ARGS[@]}"
 
-php artisan config:clear --ansi >/dev/null 2>&1 || true
-php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
+bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
+(cd "$APP_ROOT" && php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@")
 pest_exit=$?
 
 wait "$docs_lint_PID" 2>/dev/null
+wait "$docs_testing_PID" 2>/dev/null
 wait "$phpstan_PID"   2>/dev/null
 wait "$rector_PID"    2>/dev/null
 wait "$pint_PID"      2>/dev/null
@@ -69,13 +75,14 @@ print_log() {
 }
 
 print_log docs_lint; docs_lint_exit=$?
+print_log docs_testing; docs_testing_exit=$?
 print_log phpstan;   phpstan_exit=$?
 print_log rector;    rector_exit=$?
 print_log pint;      pint_exit=$?
 
-overall=$((pest_exit | docs_lint_exit | phpstan_exit | rector_exit | pint_exit))
+overall=$((pest_exit | docs_lint_exit | docs_testing_exit | phpstan_exit | rector_exit | pint_exit))
 if [ "$overall" -ne 0 ]; then
-    echo "Quality gate FAILED (pest=${pest_exit} docs=${docs_lint_exit} phpstan=${phpstan_exit} rector=${rector_exit} pint=${pint_exit})"
+    echo "Quality gate FAILED (pest=${pest_exit} docs=${docs_lint_exit} docs_testing=${docs_testing_exit} phpstan=${phpstan_exit} rector=${rector_exit} pint=${pint_exit})"
 fi
 
 exit "$overall"
