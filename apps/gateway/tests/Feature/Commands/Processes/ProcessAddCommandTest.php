@@ -179,7 +179,7 @@ describe('process:add base contract', function (): void {
             ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
                 'code' => 'process.runtime_unit_start_failed',
                 'family' => 'process',
-                'next_command' => 'doctor --fix --family=process --restore',
+                'next_command' => 'doctor --family=process --restore',
             ]);
     });
 

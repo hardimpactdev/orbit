@@ -72,7 +72,7 @@ final readonly class RemoveNode
             'code' => self::DevelopmentDnsWarningCode,
             'message' => 'Development DNS mapping could not be removed'.$reason,
             'family' => 'node',
-            'next_command' => 'doctor --fix --family=node --restore',
+            'next_command' => 'doctor --family=node --restore',
         ];
     }
 }

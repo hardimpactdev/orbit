@@ -580,7 +580,7 @@ class ToolStartCommand extends Command
             $this->line("Inspect logs with {$command}.");
         }
 
-        $this->line('Repair convergence with orbit doctor --fix --family=tool --restore.');
+        $this->line('Repair convergence with orbit doctor --family=tool --restore.');
     }
 
     private function wantsJson(): bool

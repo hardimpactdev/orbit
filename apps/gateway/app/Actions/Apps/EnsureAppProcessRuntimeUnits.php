@@ -51,7 +51,7 @@ final readonly class EnsureAppProcessRuntimeUnits
                     'code' => 'process.runtime_backend_unavailable',
                     'family' => 'process',
                     'message' => "Supervisor is not available on '{$app->node->name}'. Run doctor to converge process runtime units.",
-                    'next_command' => 'doctor --fix --family=process --restore',
+                    'next_command' => 'doctor --family=process --restore',
                 ]];
             }
         }
@@ -114,7 +114,7 @@ final readonly class EnsureAppProcessRuntimeUnits
                 'code' => 'process.runtime_unit_missing',
                 'family' => 'process',
                 'message' => "Docker process runtime unit '{$unitName}' was not enacted. Run doctor to converge process runtime units.",
-                'next_command' => 'doctor --fix --family=process --restore',
+                'next_command' => 'doctor --family=process --restore',
             ]];
         }
     }
@@ -134,7 +134,7 @@ final readonly class EnsureAppProcessRuntimeUnits
                 'code' => 'process.runtime_unit_missing',
                 'family' => 'process',
                 'message' => "Process runtime unit '{$programName}' was not enacted. Run doctor to converge process runtime units.",
-                'next_command' => 'doctor --fix --family=process --restore',
+                'next_command' => 'doctor --family=process --restore',
             ]];
         }
 
@@ -186,7 +186,7 @@ final readonly class EnsureAppProcessRuntimeUnits
                 'code' => 'process.tls_certificate_missing',
                 'family' => 'process',
                 'message' => "Process TLS certificate for '{$host}' was not installed. Run doctor to converge process runtime units.",
-                'next_command' => 'doctor --fix --family=process --restore',
+                'next_command' => 'doctor --family=process --restore',
             ];
         }
     }

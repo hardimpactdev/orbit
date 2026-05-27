@@ -351,7 +351,7 @@ class FirewallRuleIntent
             'family' => 'firewall_rule',
             'node' => $nodeName,
             'message' => 'Firewall rule intent was saved, but backend enactment is deferred in this runtime.',
-            'next_command' => 'doctor --fix --family=firewall_rule --restore',
+            'next_command' => 'doctor --family=firewall_rule --restore',
         ];
     }
 
@@ -365,7 +365,7 @@ class FirewallRuleIntent
             'family' => 'firewall_rule',
             'node' => $nodeName,
             'message' => 'Firewall rule intent was removed, but backend cleanup is deferred in this runtime.',
-            'next_command' => 'doctor --fix --family=firewall_rule --restore',
+            'next_command' => 'doctor --family=firewall_rule --restore',
         ];
     }
 }

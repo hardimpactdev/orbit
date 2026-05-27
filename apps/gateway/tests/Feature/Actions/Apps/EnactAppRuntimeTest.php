@@ -156,13 +156,13 @@ it('returns app.runtime_container_missing when installing the container fails', 
 
     // The runtime warning is preserved AND EnsureAppProxyRoute still runs so
     // gateway-side app-owned proxy route configuration is recorded. Without
-    // this, the warning's `doctor --fix --family=app --restore` next_command
+    // this, the warning's `doctor --family=app --restore` next_command
     // would have no proxy route to converge against (app doctor does not
     // edit app-owned proxy routes).
     expect(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))->not->toBeNull()
         ->and(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))->toMatchArray([
             'family' => 'app',
-            'next_command' => 'doctor --fix --family=app --restore',
+            'next_command' => 'doctor --family=app --restore',
         ])
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
 });
@@ -187,11 +187,11 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
 
     // The image-unavailable warning is preserved, but EnsureAppProxyRoute
     // still runs so the route row exists and app doctor's
-    // `doctor --fix --family=app --restore` has something to converge
+    // `doctor --family=app --restore` has something to converge
     // against once the image is made available on the node.
     expect($phpUnavailable)->not->toBeNull()
         ->and($phpUnavailable['family'])->toBe('app')
-        ->and($phpUnavailable['next_command'])->toBe('doctor --fix --family=app --restore')
+        ->and($phpUnavailable['next_command'])->toBe('doctor --family=app --restore')
         ->and($phpUnavailable['message'])->toContain('dunglas/frankenphp:1-php8.5-bookworm')
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
 });
@@ -216,7 +216,7 @@ it('returns app.runtime_container_missing (NOT app.php_version_unavailable) when
 
     expect($missing)->not->toBeNull()
         ->and(collect($drift)->firstWhere('code', 'app.php_version_unavailable'))->toBeNull()
-        ->and($missing['next_command'])->toBe('doctor --fix --family=app --restore')
+        ->and($missing['next_command'])->toBe('doctor --family=app --restore')
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
 });
 
@@ -302,7 +302,7 @@ it('returns app.runtime_container_mismatch when recreating a drifted container f
 
     expect($mismatch)->not->toBeNull()
         ->and($mismatch['family'])->toBe('app')
-        ->and($mismatch['next_command'])->toBe('doctor --fix --family=app --restore')
+        ->and($mismatch['next_command'])->toBe('doctor --family=app --restore')
         // Route row exists so app doctor's restore has something to converge.
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
 });

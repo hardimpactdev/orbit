@@ -72,7 +72,7 @@ final readonly class EnsureWorkspaceProxyRoute
                 'code' => 'proxy.enactment_failed',
                 'family' => 'proxy',
                 'message' => "Proxy route '{$domain}' was recorded, but TLS material could not be installed. Run doctor to converge proxy artifacts.",
-                'next_command' => 'doctor --fix --family=proxy --restore',
+                'next_command' => 'doctor --family=proxy --restore',
             ]];
         }
 
@@ -83,7 +83,7 @@ final readonly class EnsureWorkspaceProxyRoute
                 'code' => 'proxy.enactment_failed',
                 'family' => 'proxy',
                 'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-                'next_command' => 'doctor --fix --family=proxy --restore',
+                'next_command' => 'doctor --family=proxy --restore',
             ]];
         }
 
@@ -119,7 +119,7 @@ final readonly class EnsureWorkspaceProxyRoute
                     'code' => 'proxy.enactment_failed',
                     'family' => 'proxy',
                     'message' => "Proxy route '{$domain}' was recorded, but router enactment failed. Run doctor to converge proxy artifacts.",
-                    'next_command' => 'doctor --fix --family=proxy --restore',
+                    'next_command' => 'doctor --family=proxy --restore',
                 ]];
             }
 
@@ -149,7 +149,7 @@ final readonly class EnsureWorkspaceProxyRoute
                     'code' => 'proxy.enactment_failed',
                     'family' => 'proxy',
                     'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-                    'next_command' => 'doctor --fix --family=proxy --restore',
+                    'next_command' => 'doctor --family=proxy --restore',
                 ]];
             }
         }

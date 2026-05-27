@@ -134,7 +134,7 @@ function nodeRemoveDnsWarning(string $message = 'Development DNS mapping could n
         'code' => 'node.role_baseline_mismatch',
         'message' => $message,
         'family' => 'node',
-        'next_command' => 'doctor --fix --family=node --restore',
+        'next_command' => 'doctor --family=node --restore',
     ];
 }
 
@@ -278,7 +278,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain("Node 'app-1' removed")
             ->and($output)->toContain('Drift detected: Development DNS: Development DNS mapping could not be removed: file delete error')
-            ->and($output)->toContain('Run: orbit doctor --fix --family=node --restore');
+            ->and($output)->toContain('Run: orbit doctor --family=node --restore');
     });
 
     it('preserves forwarded development DNS warnings from the gateway JSON response', function (): void {
@@ -396,7 +396,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
         expect($exitCode)->toBe(0)
             ->and(substr_count($output, 'node.role_baseline_mismatch'))->toBe(0)
             ->and(substr_count($output, 'Drift detected: Development DNS:'))->toBe(1)
-            ->and(substr_count($output, 'Run: orbit doctor --fix --family=node --restore'))->toBe(1);
+            ->and(substr_count($output, 'Run: orbit doctor --family=node --restore'))->toBe(1);
     });
 
     it('does not attempt development DNS cleanup for non-app or non-development nodes', function (array $overrides): void {

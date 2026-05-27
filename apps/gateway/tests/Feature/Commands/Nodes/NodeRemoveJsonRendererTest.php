@@ -101,7 +101,7 @@ function nodeRemoveJsonDnsWarning(): array
         'code' => 'node.role_baseline_mismatch',
         'message' => 'Development DNS mapping could not be removed: file delete error',
         'family' => 'node',
-        'next_command' => 'doctor --fix --family=node --restore',
+        'next_command' => 'doctor --family=node --restore',
     ];
 }
 

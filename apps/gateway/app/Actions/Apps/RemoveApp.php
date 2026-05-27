@@ -104,7 +104,7 @@ final readonly class RemoveApp
                     'code' => 'app.runtime_container_extra',
                     'family' => 'app',
                     'message' => "App runtime container for '{$appName}' could not be removed during cleanup.",
-                    'next_command' => 'doctor --fix --family=app --restore',
+                    'next_command' => 'doctor --family=app --restore',
                 ];
             }
 
@@ -113,7 +113,7 @@ final readonly class RemoveApp
                     'code' => 'app.runtime_config_extra',
                     'family' => 'app',
                     'message' => "Managed app runtime configuration for '{$appName}' could not be removed during cleanup.",
-                    'next_command' => 'doctor --fix --family=app --restore',
+                    'next_command' => 'doctor --family=app --restore',
                 ];
             }
 

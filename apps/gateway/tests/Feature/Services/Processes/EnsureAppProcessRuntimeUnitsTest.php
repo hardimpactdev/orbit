@@ -129,7 +129,7 @@ it('reports process family warnings when supervisor is unavailable after intent 
         ->and($warnings[0])->toMatchArray([
             'code' => 'process.runtime_backend_unavailable',
             'family' => 'process',
-            'next_command' => 'doctor --fix --family=process --restore',
+            'next_command' => 'doctor --family=process --restore',
         ])
         ->and($remoteShell->scripts)->toHaveCount(1);
 });
@@ -175,7 +175,7 @@ it('reports process.tls_certificate_missing when the site certificate installer 
         ->and($warnings[0])->toMatchArray([
             'code' => 'process.tls_certificate_missing',
             'family' => 'process',
-            'next_command' => 'doctor --fix --family=process --restore',
+            'next_command' => 'doctor --family=process --restore',
         ])
         ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/supervisor/conf.d/orbit_docs_main_watch.conf')))->toBeFalse();
 });

@@ -78,7 +78,7 @@ final readonly class RemoveWorkspace
                     'code' => 'process.runtime_unit_extra',
                     'family' => 'process',
                     'message' => 'Workspace inherited runtime units could not be removed during cleanup.',
-                    'next_command' => 'doctor --fix --family=process --restore',
+                    'next_command' => 'doctor --family=process --restore',
                 ];
             }
 
@@ -95,7 +95,7 @@ final readonly class RemoveWorkspace
                         'code' => 'workspace.teardown_step_failed',
                         'family' => 'workspace',
                         'message' => "Workspace teardown step {$teardownStep->id} failed during cleanup.",
-                        'next_command' => 'doctor --fix --family=workspace --restore',
+                        'next_command' => 'doctor --family=workspace --restore',
                         'step_id' => (string) $teardownStep->id,
                         'exit_code' => (string) $teardownResult->exitCode,
                     ];
@@ -111,7 +111,7 @@ final readonly class RemoveWorkspace
                         'code' => 'workspace.artifact_extra',
                         'family' => 'workspace',
                         'message' => 'Workspace worktree could not be removed during cleanup.',
-                        'next_command' => 'doctor --fix --family=workspace --restore',
+                        'next_command' => 'doctor --family=workspace --restore',
                     ];
                 }
             }

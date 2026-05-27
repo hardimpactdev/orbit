@@ -592,7 +592,7 @@ class ToolRestartCommand extends Command
             $this->line("Inspect logs with {$command}.");
         }
 
-        $this->line('Repair convergence with orbit doctor --fix --family=tool --restore.');
+        $this->line('Repair convergence with orbit doctor --family=tool --restore.');
 
         if ($tool !== null) {
             $command = "orbit tool:restart {$tool}";

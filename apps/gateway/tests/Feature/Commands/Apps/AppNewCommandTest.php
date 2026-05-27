@@ -540,7 +540,7 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
         ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
             'code' => 'app.runtime_container_missing',
             'family' => 'app',
-            'next_command' => 'doctor --fix --family=app --restore',
+            'next_command' => 'doctor --family=app --restore',
         ]);
 });
 
@@ -582,7 +582,7 @@ it('keeps gateway app intent and reports app.php_version_unavailable warning whe
         ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
             'code' => 'app.php_version_unavailable',
             'family' => 'app',
-            'next_command' => 'doctor --fix --family=app --restore',
+            'next_command' => 'doctor --family=app --restore',
         ])
         ->and($payload['success']['meta']['warnings'][0]['message'])->toContain('dunglas/frankenphp:1-php8.5-bookworm');
 });
@@ -806,7 +806,7 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
         ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
             'code' => 'proxy.enactment_failed',
             'family' => 'proxy',
-            'next_command' => 'doctor --fix --family=proxy --restore',
+            'next_command' => 'doctor --family=proxy --restore',
         ]);
 });
 

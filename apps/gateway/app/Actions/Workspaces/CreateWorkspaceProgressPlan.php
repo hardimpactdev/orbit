@@ -202,7 +202,7 @@ final class CreateWorkspaceProgressPlan
                             'code' => 'workspace.http_probe_unhealthy',
                             'family' => 'workspace',
                             'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
-                            'next_command' => 'doctor --fix --family=workspace --restore',
+                            'next_command' => 'doctor --family=workspace --restore',
                         ];
                         $this->warnings[] = $warning;
                         $this->setupWorkspace->markActive($this->workspace);

@@ -345,7 +345,7 @@ describe('tool:start command contract', function (): void {
             ->and($output)->toContain('Exit code: 7')
             ->and($output)->toContain('docker start orbit-caddy failed')
             ->and($output)->toContain('orbit tool:logs caddy --node=app-failing-caddy')
-            ->and($output)->toContain('orbit doctor --fix --family=tool --restore');
+            ->and($output)->toContain('orbit doctor --family=tool --restore');
     });
 });
 

@@ -1944,7 +1944,7 @@ SH;
                 meta: [
                     'node' => $node->name,
                     'step' => 'node_adoption',
-                    'error' => 'Run `orbit doctor --fix --family=node --adopt --node='.$node->name.'` after resolving the reported node drift.',
+                    'error' => 'Run `orbit doctor --family=node --adopt --node='.$node->name.'` after resolving the reported node drift.',
                     'adoption_results' => array_map(fn ($result): array => $result->toArray(), $results),
                 ],
             );

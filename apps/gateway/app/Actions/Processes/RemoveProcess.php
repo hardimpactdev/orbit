@@ -66,7 +66,7 @@ final readonly class RemoveProcess
                 'code' => 'process.runtime_unit_extra',
                 'family' => 'process',
                 'message' => "Process intent for '{$app->name}' was removed, but no owning node was available for runtime-unit cleanup.",
-                'next_command' => 'doctor --fix --family=process --restore',
+                'next_command' => 'doctor --family=process --restore',
             ]];
         }
 
@@ -81,7 +81,7 @@ final readonly class RemoveProcess
                     'code' => 'process.runtime_unit_extra',
                     'family' => 'process',
                     'message' => "Process runtime unit '{$name}' may still exist after process intent removal.",
-                    'next_command' => 'doctor --fix --family=process --restore',
+                    'next_command' => 'doctor --family=process --restore',
                 ];
             }
         }

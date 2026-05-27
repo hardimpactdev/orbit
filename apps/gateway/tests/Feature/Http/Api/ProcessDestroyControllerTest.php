@@ -64,7 +64,7 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.code', 'process.runtime_unit_extra')
             ->assertJsonPath('success.meta.warnings.0.family', 'process')
             ->assertJsonPath('success.meta.warnings.0.message', "Process runtime unit 'orbit_docs_main_vite' may still exist after process intent removal.")
-            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --fix --family=process --restore');
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=process --restore');
 
         expect(Process::query()->where('name', 'vite')->exists())->toBeFalse();
     });

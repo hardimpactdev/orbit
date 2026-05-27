@@ -7,7 +7,7 @@ return [
         'family' => 'node',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=node --restore',
+            'doctor --family=node --restore',
         ],
     ],
     'workspace.http_probe_unhealthy' => [
@@ -28,42 +28,42 @@ return [
         'family' => 'proxy',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=node --restore',
+            'doctor --family=node --restore',
         ],
     ],
     'process.runtime_unit_missing' => [
         'family' => 'process',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=process --restore',
+            'doctor --family=process --restore',
         ],
     ],
     'process.runtime_backend_unavailable' => [
         'family' => 'process',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=process --restore',
+            'doctor --family=process --restore',
         ],
     ],
     'process.tls_certificate_missing' => [
         'family' => 'process',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=process --restore',
+            'doctor --family=process --restore',
         ],
     ],
     'process.runtime_unit_start_failed' => [
         'family' => 'process',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=process --restore',
+            'doctor --family=process --restore',
         ],
     ],
     'process.runtime_unit_restart_failed' => [
         'family' => 'process',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=process --restore',
+            'doctor --family=process --restore',
         ],
     ],
     'workspace.remove_failed' => [
@@ -77,7 +77,7 @@ return [
         'family' => 'workspace',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --fix --family=workspace --restore',
+            'doctor --family=workspace --restore',
         ],
     ],
 ];

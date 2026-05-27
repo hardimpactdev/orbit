@@ -204,7 +204,7 @@ describe('node:remove human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain("Node 'app-1' removed")
             ->and($output)->toContain('Drift detected: Development DNS: Development DNS mapping could not be removed: file delete error')
-            ->and($output)->toContain('Run: orbit doctor --fix --family=node --restore');
+            ->and($output)->toContain('Run: orbit doctor --family=node --restore');
     });
 
     it('renders node-not-found prose error', function (): void {

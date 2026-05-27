@@ -181,7 +181,7 @@ describe('tool:restart command contract', function (): void {
             ->and($output)->toContain('Exit code: 7')
             ->and($output)->toContain('docker restart orbit-caddy failed')
             ->and($output)->toContain('orbit tool:logs caddy --node=app-1')
-            ->and($output)->toContain('orbit doctor --fix --family=tool --restore')
+            ->and($output)->toContain('orbit doctor --family=tool --restore')
             ->and($output)->toContain('Retry with orbit tool:restart caddy --node=app-1');
     });
 

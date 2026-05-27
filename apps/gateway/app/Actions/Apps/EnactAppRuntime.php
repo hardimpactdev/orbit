@@ -52,7 +52,7 @@ final readonly class EnactAppRuntime
         // process units, even when the runtime container apply hit a
         // retryable warning (image-unavailable, container apply failure).
         // Without this, the warning tells the user to run
-        // `doctor --fix --family=app --restore` but app doctor cannot create
+        // `doctor --family=app --restore` but app doctor cannot create
         // a missing proxy route — proxy/process is the gateway's
         // responsibility, not app doctor's. Static apps skip the runtime
         // container apply path entirely; their file_server-only route is
@@ -79,7 +79,7 @@ final readonly class EnactAppRuntime
             'code' => $code,
             'family' => 'app',
             'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$app->node->name}': {$exception->getMessage()}",
-            'next_command' => 'doctor --fix --family=app --restore',
+            'next_command' => 'doctor --family=app --restore',
         ];
     }
 
@@ -92,7 +92,7 @@ final readonly class EnactAppRuntime
             'code' => 'app.php_version_unavailable',
             'family' => 'app',
             'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node->name}'. Make the image available, then run doctor.",
-            'next_command' => 'doctor --fix --family=app --restore',
+            'next_command' => 'doctor --family=app --restore',
         ];
     }
 }

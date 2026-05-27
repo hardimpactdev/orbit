@@ -632,8 +632,8 @@ it('renders drift details in human output when node cleanup leaves warnings', fu
         ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
         ->expectsOutputToContain("App 'docs' removed")
         ->expectsOutputToContain('  Drift detected:')
-        ->expectsOutputToContain("  - app: App runtime container for 'docs' could not be removed during cleanup. (run `doctor --fix --family=app --restore`)")
-        ->expectsOutputToContain("  - app: Managed app runtime configuration for 'docs' could not be removed during cleanup. (run `doctor --fix --family=app --restore`)")
+        ->expectsOutputToContain("  - app: App runtime container for 'docs' could not be removed during cleanup. (run `doctor --family=app --restore`)")
+        ->expectsOutputToContain("  - app: Managed app runtime configuration for 'docs' could not be removed during cleanup. (run `doctor --family=app --restore`)")
         ->assertExitCode(0);
 });
 

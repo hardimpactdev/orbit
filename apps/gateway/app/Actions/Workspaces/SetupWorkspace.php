@@ -104,7 +104,7 @@ final readonly class SetupWorkspace
                 'code' => 'workspace.http_probe_unhealthy',
                 'family' => 'workspace',
                 'message' => "Workspace did not become reachable: {$probe['status']}",
-                'next_command' => 'doctor --fix --family=workspace --restore',
+                'next_command' => 'doctor --family=workspace --restore',
             ];
         }
 
@@ -179,7 +179,7 @@ final readonly class SetupWorkspace
                 'code' => 'workspace.php_version_unavailable',
                 'family' => 'workspace',
                 'message' => "PHP {$exception->phpVersion} runtime image '{$exception->image}' is not available on node '{$node->name}'. Make the image available, then run doctor.",
-                'next_command' => 'doctor --fix --family=workspace --restore',
+                'next_command' => 'doctor --family=workspace --restore',
             ];
         } catch (WorkspaceRuntimeContainerApplyException $exception) {
             $code = $exception->hadExistingContainer
@@ -191,14 +191,14 @@ final readonly class SetupWorkspace
                 'code' => $code,
                 'family' => 'workspace',
                 'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be {$action} on '{$node->name}': {$exception->getMessage()}",
-                'next_command' => 'doctor --fix --family=workspace --restore',
+                'next_command' => 'doctor --family=workspace --restore',
             ];
         } catch (Throwable $exception) {
             return [
                 'code' => 'workspace.runtime_container_missing',
                 'family' => 'workspace',
                 'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be installed on '{$node->name}': {$exception->getMessage()}",
-                'next_command' => 'doctor --fix --family=workspace --restore',
+                'next_command' => 'doctor --family=workspace --restore',
             ];
         }
 
