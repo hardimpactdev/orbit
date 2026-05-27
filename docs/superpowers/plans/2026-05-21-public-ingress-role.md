@@ -4,7 +4,7 @@
 
 **Goal:** Add `public-ingress` as the role that owns public production HTTP ingress, while production app nodes become private HTTP backends behind that ingress.
 
-**Architecture:** Keep the existing composable role model and add one new role plus app-production placement settings. Production app routes are recorded as public-ingress routes with a backend pool; app-production Caddy still renders the private PHP backend contract on HTTP port `80`, bound to the node's WireGuard address to avoid public listener collisions when roles are co-located.
+**Architecture:** Keep the existing composable role model and add one new role plus app-production placement settings. Production app routes are recorded as public-ingress routes with a backend pool; app-production Caddy renders the private PHP backend contract on HTTP port `80`, bound to the node's WireGuard address to avoid public listener collisions when roles are co-located.
 
 **Tech Stack:** Laravel 13, PHP 8.5, Pest 4, SQLite JSON role settings, Laravel Prompts, Caddy, UFW/firewall intent, existing proxy doctor and role baseline services.
 
@@ -300,7 +300,7 @@ case PublicIngress = 'public-ingress';
 
 Change `AppProductionRoleSettings` so it accepts only `public_ingress_node_id`
 as an optional positive integer. Existing empty settings remain readable for
-old rows; new app-production assignment paths validate that a value exists.
+stored rows; app-production assignment paths validate that a value exists.
 
 Expected shape:
 
@@ -910,7 +910,7 @@ of these active roles:
 ```
 
 The bootstrap/public policy boundary stays role-owned. User firewall rules
-still cannot add public SSH allow rules.
+cannot add public SSH allow rules.
 
 - [ ] **Step 5: Update node probe role baselines**
 
@@ -957,195 +957,23 @@ git commit -m "Teach doctors about public ingress"
 ## Task 6: Add E2E Coverage And Final Quality Gate
 
 **Files:**
-- Create: `tests/E2E/Ephemeral/PublicIngressProductionTopologyTest.php`
-- Modify: `tests/E2E/Support/Pest.php`
+- Modify or create prepared topology E2E coverage under `apps/gateway/tests/E2E/`.
 
-- [ ] **Step 1: Add co-located topology E2E**
+- [ ] **Step 1: Cover public ingress role placement**
 
-Add this test skeleton:
+Use the smallest prepared topology that contains operator, gateway, production
+app, and ingress roles. Assert that public ingress role state exists on the
+selected node and that app-production settings point to the selected ingress
+node.
 
-```php
-it('serves a production app on a colocated public ingress node', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
+- [ ] **Step 2: Cover production app routing through public ingress**
 
-    if (! $selection->available()) {
-        $this->markTestSkipped($selection->message);
-    }
+Overlay the current checkout on the operator and gateway roles, restart the
+prepared gateway API through `e2eRestartGatewayApi(...)`, create a production app
+on `app-prod-1`, and assert the rendered public route uses public ingress
+placement and the expected backend pool.
 
-    $run = E2ERun::start($provider, 'public-ingress-colocated');
-    $bundle = null;
-    $passed = false;
-
-    try {
-        $bundle = E2EProvisioningBundle::stage($provider);
-        $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
-        [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
-        [$web, $nodePayload] = e2eProvisionPublicIngressAppThroughNodeNew(
-            provider: $provider,
-            run: $run,
-            config: $config,
-            control: $control,
-            key: $key,
-            name: 'web-1',
-            roles: ['app-production', 'public-ingress'],
-        );
-
-        $appPayload = e2eCreateProductionApp($control, $config, $key, node: 'web-1', domain: 'docs.example.test');
-        $route = E2EGatewayApi::getProxyRoute($gateway, 'docs.example.test');
-
-        expect($nodePayload['success']['data']['roles'])
-            ->sequence(
-                fn ($role) => $role->role->toBe('public-ingress'),
-                fn ($role) => $role->role->toBe('app-production'),
-            )
-            ->and($appPayload['success']['data']['app']['url'])->toBe('https://docs.example.test')
-            ->and($route['node'])->toBe('web-1')
-            ->and($route['placement'])->toBe('public-ingress')
-            ->and($route['backend_pool'])->toHaveCount(1)
-            ->and($route['backend_pool'][0]['url'])->toBe('http://10.6.0.4:80');
-
-        e2eAssertDoctorHealthy($control, $config, $key, node: 'web-1', families: ['node', 'proxy']);
-
-        $passed = true;
-    } finally {
-        e2eProvisionCleanup($passed, run: $run);
-        $bundle?->cleanup();
-    }
-});
-```
-
-- [ ] **Step 2: Add split topology E2E**
-
-Add this test skeleton:
-
-```php
-it('serves a production app through a dedicated public ingress node', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
-
-    if (! $selection->available()) {
-        $this->markTestSkipped($selection->message);
-    }
-
-    $run = E2ERun::start($provider, 'public-ingress-split');
-    $bundle = null;
-    $passed = false;
-
-    try {
-        $bundle = E2EProvisioningBundle::stage($provider);
-        $key = $run->createSshKeyPair();
-        $control = e2eProvisionControlFromBase($provider, $run, $bundle, $config, $key);
-        [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
-        e2eProvisionPublicIngressAppThroughNodeNew(
-            provider: $provider,
-            run: $run,
-            config: $config,
-            control: $control,
-            key: $key,
-            name: 'edge-1',
-            roles: ['public-ingress'],
-        );
-        e2eProvisionPublicIngressAppThroughNodeNew(
-            provider: $provider,
-            run: $run,
-            config: $config,
-            control: $control,
-            key: $key,
-            name: 'web-1',
-            roles: ['app-production'],
-            publicIngress: 'edge-1',
-        );
-
-        $appPayload = e2eCreateProductionApp($control, $config, $key, node: 'web-1', domain: 'docs.example.test');
-        $route = E2EGatewayApi::getProxyRoute($gateway, 'docs.example.test');
-
-        expect($appPayload['success']['data']['app']['node'])->toBe('web-1')
-            ->and($route['node'])->toBe('edge-1')
-            ->and($route['placement'])->toBe('public-ingress')
-            ->and($route['backend_pool'])->toBe([
-                ['node' => 'web-1', 'url' => 'http://10.6.0.5:80'],
-            ]);
-
-        e2eAssertDoctorHealthy($control, $config, $key, node: 'edge-1', families: ['node', 'proxy']);
-        e2eAssertDoctorHealthy($control, $config, $key, node: 'web-1', families: ['node', 'proxy']);
-
-        $passed = true;
-    } finally {
-        e2eProvisionCleanup($passed, run: $run);
-        $bundle?->cleanup();
-    }
-});
-```
-
-- [ ] **Step 3: Add E2E support helpers**
-
-Add these helpers to `tests/E2E/Support/Pest.php`:
-
-```php
-function e2eProvisionPublicIngressAppThroughNodeNew(
-    IncusProvider $provider,
-    E2ERun $run,
-    E2EConfig $config,
-    E2EInstance $control,
-    SshKeyPair $key,
-    string $name,
-    array $roles,
-    ?string $publicIngress = null,
-): array
-```
-
-The helper launches a base instance, authorizes SSH, runs:
-
-```bash
-orbit node:new <name> --role=<first-role> --role=<second-role> --host=<ip> --user=<bootstrap-user> --json
-```
-
-and appends:
-
-```bash
---public-ingress=<publicIngress>
-```
-
-when `$publicIngress` is not null.
-
-Also add:
-
-```php
-function e2eCreateProductionApp(
-    E2EInstance $control,
-    E2EConfig $config,
-    SshKeyPair $key,
-    string $node,
-    string $domain,
-): array
-```
-
-which runs:
-
-```bash
-orbit app:new docs --node=<node> --domain=<domain> --root=public --php-version=8.5 --json
-```
-
-Add:
-
-```php
-function e2eAssertDoctorHealthy(
-    E2EInstance $control,
-    E2EConfig $config,
-    SshKeyPair $key,
-    string $node,
-    array $families,
-): void
-```
-
-which runs `orbit doctor --node=<node> --family=<first-family> --family=<second-family> --json` and asserts
-`success.data.doctor.healthy === true`.
-
-- [ ] **Step 4: Run focused feature tests**
+- [ ] **Step 3: Run focused feature tests**
 
 Run:
 
@@ -1155,7 +983,7 @@ php artisan test --compact tests/Unit/Services/Nodes/NodeRoleRegistryTest.php te
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Run docs and formatting**
+- [ ] **Step 4: Run docs and formatting**
 
 Run:
 
@@ -1166,7 +994,7 @@ vendor/bin/pint --dirty --format agent
 
 Expected: docs lint passes and Pint reports no remaining dirty formatting changes after it runs.
 
-- [ ] **Step 6: Run E2E lane**
+- [ ] **Step 5: Run E2E lane**
 
 Run:
 
@@ -1174,9 +1002,9 @@ Run:
 composer test:e2e
 ```
 
-Expected: ephemeral E2E lane passes, including both public-ingress production topology tests.
+Expected: prepared Docker and Incus E2E lanes pass.
 
-- [ ] **Step 7: Run full quality check**
+- [ ] **Step 6: Run full quality check**
 
 Run:
 
@@ -1186,10 +1014,10 @@ composer quality-check
 
 Expected: all quality checks pass.
 
-- [ ] **Step 8: Commit final E2E/support updates**
+- [ ] **Step 7: Commit final E2E/support updates**
 
 ```bash
-git add tests/E2E app/Services/E2E
+git add apps/gateway/tests/E2E apps/gateway/app/E2E
 git commit -m "Cover public ingress production topologies"
 ```
 
@@ -1208,7 +1036,7 @@ git commit -m "Cover public ingress production topologies"
 - The plan keeps Caddy on app-production and adds Caddy to public-ingress.
 - The plan uses HTTP port `80` for app-production backends and binds it to the WireGuard address.
 - The plan stores backend pools as lists from v1.
-- The plan includes co-located and split topology tests.
+- The plan includes prepared topology E2E coverage.
 
 ## Open Questions
 

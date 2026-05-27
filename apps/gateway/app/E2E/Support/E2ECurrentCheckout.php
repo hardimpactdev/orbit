@@ -599,7 +599,7 @@ PHP;
             "sudo rm -rf {$quotedRemotePath}",
             "mkdir -p {$quotedRemotePath}",
             "cd {$quotedBasePath}",
-            "find . -mindepth 1 -maxdepth 1 ! -name vendor ! -name storage ! -name .env -exec sh -c 'target=\$1; shift; for path do cp -al \"\$path\" \"\$target\"/ 2>/dev/null || cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null || cp -a \"\$path\" \"\$target\"/; done' sh {$quotedRemotePath} {} +",
+            "find . -mindepth 1 -maxdepth 1 ! -name vendor ! -name storage ! -name .env -exec sh -c 'target=\$1; shift; for path do dest=\"\$target/\$(basename \"\$path\")\"; rm -rf \"\$dest\"; cp -al \"\$path\" \"\$target\"/ 2>/dev/null || { rm -rf \"\$dest\"; cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null; } || { rm -rf \"\$dest\"; cp -a \"\$path\" \"\$target\"/; }; done' sh {$quotedRemotePath} {} +",
             self::cloneCachedVendorCommand($basePath, $remotePath),
             "if [ -f {$quotedBasePath}/.env ]; then cp {$quotedBasePath}/.env {$quotedRemotePath}/.env; fi",
             "mkdir -p {$quotedRemotePath}/apps/gateway/database",

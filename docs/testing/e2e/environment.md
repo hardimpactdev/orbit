@@ -20,7 +20,6 @@ ORBIT_E2E_INCUS_HOSTS=beast
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
 ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:12
 ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3
-ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ORBIT_E2E_SLOT_WAIT_SECONDS=900
 ORBIT_E2E_SLOT_STALE_SECONDS=7200
@@ -61,16 +60,15 @@ and starts selected prepared-topology lanes concurrently. The lane aliases set
 `composer test:e2e:docker` selects `docker`, and `composer test:e2e:incus`
 selects `incus`.
 
-`composer test:e2e:provision` runs serially when
-`ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1`. Set the value above `1` to enable
-Pest parallel mode for provision tests; every worker still acquires a
-provisioning lease before creating Incus resources.
+`composer test:e2e:provision` runs the single superset provisioning test. It
+launches the base VM, installs Orbit, provisions the gateway, and internally
+provisions app-dev, app-prod, and agent in parallel.
 
 ## Lease namespaces
 
-`composer test:e2e:docker` and `composer test:e2e:provision` use separate lease
-namespaces in the same shared lease directory. Docker feature tests read
-`ORBIT_E2E_DOCKER_TEST_RUNNERS`; Incus provisioning tests read
+`composer test:e2e:docker` and Incus image/topology preparation use separate
+lease namespaces in the same shared lease directory. Docker feature tests read
+`ORBIT_E2E_DOCKER_TEST_RUNNERS`; Incus image-preparation commands read
 `ORBIT_E2E_INCUS_HOST_SLOTS`.
 
 By default those namespaces do not block each other. Add a host to
@@ -99,4 +97,4 @@ Preparing artifacts while this variable is set requires an explicit scope. Use
 `--roles=<comma-separated roles>` for Docker role-image overrides or
 `--all-roles` for an intentional full namespaced rebuild. Incus targeted
 `--roles` preparation is guarded until selected-role rebakes are implemented;
-Incus acquisition still falls back per role when branch artifacts are absent.
+Incus acquisition falls back per role when branch artifacts are absent.

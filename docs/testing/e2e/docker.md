@@ -28,7 +28,7 @@ composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-pro
 
 Prepare the composable Docker role image set once. The Docker preparation flow
 builds `operator_gateway` first, then provisions the downstream app-dev,
-app-prod, and agent roles from the full role source. Feature tests still request
+app-prod, and agent roles from the full role source. Feature tests request
 the smallest active topology they need; the Docker provider composes that
 topology from the canonical operator, gateway, app-dev, app-prod, and agent
 images.
@@ -187,7 +187,7 @@ composer test:e2e:docker -- --sequential-tests \
 Each Pest worker gets a non-overlapping Docker subnet from the `10.90.N.0/24`
 pool. Role host endings stay consistent within the worker subnet: gateway `.2`,
 operator `.3`, dev `.4`, prod `.5`, agent `.6`, and ingress `.7`. `control` is
-the legacy alias for the operator node address.
+an alias for the operator node address.
 
 Tests must reach Docker topology services through topology handles such as
 `$topology->operator()->ssh(...)`, not by calling `https://10.6.0.x` directly

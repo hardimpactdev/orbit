@@ -3,17 +3,17 @@
 The `e2e-feature` lane uses prepared topology clones. Choose the smallest
 topology that covers the behavior under test.
 
-Legacy `control-*` aliases remain accepted for existing topology kinds. New
-topology kinds use the canonical `operator*` spelling.
+Topology kinds use the canonical `operator*` spelling. `control-*` remains an
+accepted alias where the code exposes compatibility shims.
 
 For Incus, topology names describe the roles that should be booted for a test.
 They do not mean each kind has a separate Incus source build. Incus uses the
 prepared five-role source and starts only the listed nodes.
 
-For Docker, topology names also describe the active roles requested by a test,
-not separate per-topology image families. Docker prepares composable role
-images: operator and gateway from `operator_gateway`, then app-dev, app-prod,
-and agent from `operator_gateway_app-dev_app-prod_agent`.
+For Docker, topology names also describe the active roles requested by a test.
+Docker prepares composable role images: operator and gateway from
+`operator_gateway`, then app-dev, app-prod, and agent from
+`operator_gateway_app-dev_app-prod_agent`.
 
 ## Topology kinds
 
@@ -62,8 +62,8 @@ try {
 
 Use `roles: ['operator']` when only the operator-side command under test needs
 the branch checkout. Add `gateway`, `dev`, or `prod` when the branch changes code
-that runs on those nodes. `control` remains accepted as a legacy alias for the
-operator node.
+that runs on those nodes. `control` is accepted as an alias for the operator
+node.
 
 ## Cache behavior
 
@@ -164,7 +164,7 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 
 | Kind | Expectation |
 | --- | --- |
-| `operator` | Provides one operator node clone through the `operator` topology handle. The operator user is `ORBIT_E2E_OPERATOR_USER` (`orbit` by default, falling back to `ORBIT_E2E_CONTROL_USER` for older environments). |
+| `operator` | Provides one operator node clone through the `operator` topology handle. The operator user is `ORBIT_E2E_OPERATOR_USER` (`orbit` by default, with `ORBIT_E2E_CONTROL_USER` accepted as an alias). |
 | `operator_gateway` | Adds one gateway clone through the `gateway` handle. The operator can reach the gateway API, stores gateway settings, and trusts the gateway CA. |
 | `operator_gateway_app-dev` | Adds a development app clone named `app-dev-1`. Development TLD state exists for `test` and points at the development app's WireGuard address. |
 | `operator_gateway_app-dev_app-prod` | Adds a production app clone named `app-prod-1`. Production app runtime assertions use FrankenPHP app containers and Docker process runtime units behind the private `orbit-caddy` backend listener. |

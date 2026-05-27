@@ -21,8 +21,6 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
-pest()->group('e2e', 'e2e-provision', 'agent-node-role');
-
 beforeEach(function (): void {
     config(['orbit.is_gateway' => true]);
 

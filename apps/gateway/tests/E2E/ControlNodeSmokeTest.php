@@ -21,6 +21,6 @@ it('runs the current checkout from a prepared control topology', function (): vo
 
         $passed = true;
     } finally {
-        e2eProvisionCleanup($passed, topology: $topology);
+        e2eTopologyCleanup($passed, $topology);
     }
 });

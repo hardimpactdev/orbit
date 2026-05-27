@@ -1,7 +1,7 @@
 # Incus E2E
 
-Incus VM-feature tests are still `e2e-feature` tests, but they carry the
-`e2e-provider-incus` group and require VM capabilities:
+Incus VM-feature tests use `e2e-feature`, carry the `e2e-provider-incus` group,
+and require VM capabilities:
 
 ```php
 E2ETopologyFactory::fromEnvironment()

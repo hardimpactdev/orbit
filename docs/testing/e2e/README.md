@@ -16,7 +16,7 @@ composer test:e2e:docker
 composer test:e2e:incus
 composer test:e2e:topology-contract
 
-# Provisioning and host-mutation lane
+# Superset provisioning lane
 composer e2e:preflight
 composer test:e2e:provision
 ```
@@ -59,8 +59,8 @@ real SSH daemon behavior, sudo prompts, or host init. Mark these tests with
 `e2e-provider-incus` so Docker-only runs skip them without probing an unsuitable
 provider.
 
-Provisioning, installer, and host-mutation tests stay in the `e2e-provision`
-lane on Incus regardless of family.
+Provisioning and installer changes stay in the `e2e-provision` lane on Incus
+regardless of family. Feature tests use prepared topology clones.
 
 ## Lane examples
 
@@ -74,7 +74,7 @@ Use these examples when a feature could fit more than one lane.
 | Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-runtime`, runtime containers, and the scheduler. |
 | Host-init service control and journal behavior | Incus VM-feature | Requires real systemd and host init semantics. |
 | OS package installs, trust-store mutation, sudo, real SSH daemon behavior | Incus VM-feature | Depends on VM and OS behavior Docker does not model. |
-| Base image, installer, topology preparation, `node:new`, WireGuard routing | Incus provision | Mutates disposable VMs and proves production-style provisioning. |
+| Base image, installer, superset topology preparation, `node:new`, WireGuard routing | Incus provision | Builds the reusable Incus superset and proves production-style provisioning. |
 
 When in doubt, start with Docker feature. Move to Incus only when the assertion
 would be false confidence in Docker because the kernel, VM boot, host init, or
@@ -89,9 +89,11 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   tests with `composer test:e2e:docker`; run Incus-only feature tests with
   `composer test:e2e:incus`. The aggregate `composer test:e2e` runs both
   prepared-topology feature lanes.
-- `e2e-provision` mutates disposable VMs from the base image and exercises setup
-  flows such as base VM lifecycle, operator node readiness, gateway onboarding,
-  and node provisioning. Run it with `composer test:e2e:provision`.
+- `e2e-provision` builds the reusable Incus superset from the supported base
+  image. It launches a fresh base VM, installs Orbit on the operator, provisions
+  the gateway, runs `node:new` for app-dev, app-prod, and agent in parallel, and
+  snapshots the prepared role templates. Run it with
+  `composer test:e2e:provision`.
 
 Each prepared topology has its own contract group:
 
@@ -109,14 +111,12 @@ Each prepared topology has its own contract group:
 health check, while `composer test:e2e` excludes topology-contract tests and
 runs feature assertions only.
 
-Provision tests are intentionally on demand because they run real
-installer/provisioning paths and are much slower than prepared-topology feature
-tests. They run with Pest parallel mode by default when
-`ORBIT_E2E_PROVISION_PARALLEL_PROCESSES` is greater than `1`, and each worker
-must acquire an Incus slot before creating a disposable VM.
+The provision gate is intentionally on demand because it runs real
+installer/provisioning paths and is much slower than prepared-topology feature
+tests. It is one superset test.
 
-Live or standing infrastructure verification lanes are sunset. Do not use
-persistent gateway, operator, or app nodes as verification targets.
+Verification uses prepared topology lanes or the provisioning gate. Persistent
+gateway, operator, and app nodes are diagnostic targets only.
 
 ## Details
 

@@ -14,9 +14,10 @@
 
 **Source spec:** `docs/superpowers/specs/2026-05-21-docker-first-orbit-runtime-design.md`
 
-**Current contract conflict:** Current docs and code still describe host PHP,
-native Caddy, PHP-FPM pools, and Supervisor as the runtime model. This plan
-intentionally replaces that contract.
+**Runtime contract:** Orbit runs the gateway CLI/API through the Docker-first
+host launcher and `orbit-runtime`; app and workspace PHP runs through
+FrankenPHP containers; residual non-PHP host processes use the explicit
+Supervisor runtime path.
 
 **Execution rule:** Do not start product code changes until Task 1 product docs
 are aligned and `composer docs-lint` passes.
@@ -37,8 +38,7 @@ images is implementation work, not validation.
 
 Execute this plan in a dedicated worktree and rebase on the current mainline
 before starting. Current docs, current tests, and current code in this
-repository are the implementation inputs. Do not use external historical Orbit
-repositories as reference material for this migration.
+repository are the implementation inputs.
 
 Temporary branch-local compatibility is allowed only while tests are being
 rebuilt. The merged product must not expose a permanent PHP-FPM/FrankenPHP
@@ -199,7 +199,7 @@ Risk: High
 - Modify: `tests/E2E/RuntimeBackendSchedulerTest.php`
 - Modify: `tests/E2E/PhpRuntimeCommandsTest.php`
 - Modify: `tests/E2E/ProcessCommandTest.php`
-- Modify: `tests/E2E/AppNewReachableTest.php`
+- Modify: `apps/gateway/tests/E2E/AppNewTest.php`
 - Modify: `tests/E2E/WorkspaceSetupTest.php`
 - Create: `tests/E2E/DockerFirstRuntimeTopologyTest.php`
 
@@ -537,7 +537,8 @@ prove static intent. Backfill `processes.runtime` from the owning app or
 workspace runtime: PHP-owned processes become `docker`; static/non-PHP
 processes become `supervisor` unless existing configuration proves they should
 already be Docker-backed. New process creation must store an explicit runtime;
-the database default is only a safety net for old inserts.
+the database default is only a safety net for inserts that bypass the command
+or API layer.
 
 - [ ] **Step 3: Add container renderers**
 
@@ -760,11 +761,10 @@ rg "php-fpm|PHP-FPM|php_fastcgi|caddy.service|systemctl reload caddy|supervisorc
 Every match must be one of:
 
 ```text
-historical note
 explicit non-goal
 Supervisor runtime path
 containerized command path
-test asserting old behavior is gone
+negative assertion for unsupported host-native runtime behavior
 ```
 
 - [ ] **Step 2: Delete or quarantine dead FPM paths**
@@ -907,6 +907,5 @@ merge a permanent dual-runtime compromise.
   targeted runtime diagnostics, not every product command output.
 - E2E topology: Docker E2E uses sibling containers through the host Docker
   socket, not Docker-in-Docker.
-- Role naming: the public edge role is `ingress`. Historical filenames may
-  still include the legacy public-edge term, but product docs, code
-  identifiers, commands, JSON fields, and tests must use `ingress`.
+- Role naming: the public edge role is `ingress`. Product docs, code
+  identifiers, commands, JSON fields, and tests use `ingress`.

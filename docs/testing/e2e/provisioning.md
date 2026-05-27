@@ -15,6 +15,17 @@ Use `composer test:e2e:provision` only when topology, installer, image,
 `node:new`, WireGuard provisioning, or other VM setup behavior changes. Ordinary
 command ports should add feature tests that use prepared topologies instead.
 
+The provision gate has one supported shape:
+
+1. Launch a fresh VM from `orbit-base-ubuntu-26.04`.
+2. Install Orbit from the current source bundle on the operator.
+3. Provision the gateway through the real gateway path.
+4. Run `node:new` for app-dev, app-prod, and agent in parallel.
+5. Snapshot the resulting role templates for prepared Incus feature tests.
+
+Command contracts use `e2e-feature` or in-memory Pest coverage when prepared
+topology state is enough to prove the behavior.
+
 ## Incus image model
 
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
@@ -24,8 +35,8 @@ default). It builds one reusable base image plus prepared source snapshots:
    `composer e2e:prepare-base-image -- --force`. It contains Ubuntu cloud, the
    bootstrap user, the `orbit` user, sshd, the E2E OS dependency set, and the
    PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
-   It is used by the provisioning lane's base-VM lifecycle test and as the
-   source for prepared topology roles.
+   It is used by the superset provision gate and as the source for prepared
+   topology roles.
 2. Prepared source templates `orbit-template-operator-base`,
    `orbit-template-gateway-base`, `orbit-template-app-dev-base`,
    `orbit-template-app-prod-base`, and `orbit-template-agent-base`. Build
@@ -105,8 +116,8 @@ STDOUT.
 
 ## Provision failure behavior
 
-Provision tests clean up on success. On failure they keep tracked VMs/templates
-for inspection and print their names plus a reap command. Set
+The provision gate cleans up on success. On failure it keeps tracked
+VMs/templates for inspection and prints their names plus a reap command. Set
 `ORBIT_E2E_KEEP_ON_FAILURE=0` to restore cleanup-on-failure behavior.
 
 ## Image environment
@@ -121,7 +132,7 @@ ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_OPERATOR_USER=orbit
-ORBIT_E2E_CONTROL_USER=orbit # Legacy alias for older scripts.
+ORBIT_E2E_CONTROL_USER=orbit # Operator user alias.
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
 ORBIT_E2E_TIMEOUT_SECONDS=600
 ORBIT_E2E_KEEP=1

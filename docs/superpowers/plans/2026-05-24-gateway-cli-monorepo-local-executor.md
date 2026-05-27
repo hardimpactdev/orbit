@@ -1,10 +1,15 @@
 # Gateway CLI Monorepo Local Executor Implementation Plan
 
-> **E2E Docker contract note:** This historical plan contains older examples
-> for preparing individual Docker topology kinds. Current Docker E2E authority
-> is `docs/testing/e2e/docker.md` and
-> `docs/testing/e2e/prepared-topologies.md`: prepare composable role images,
-> not per-topology image families.
+> **E2E contract:** Docker E2E authority is
+> `docs/testing/e2e/docker.md` and
+> `docs/testing/e2e/prepared-topologies.md`: prepare composable role images.
+> `composer test:e2e:provision` is the single Incus superset provisioning gate
+> from `orbit-base-ubuntu-26.04`.
+>
+> **Repository layout:** Gateway code and tests live under `apps/gateway`; root
+> Composer scripts are forwarding shims. Use `apps/gateway/app`,
+> `apps/gateway/database`, `apps/gateway/routes`, and `apps/gateway/tests` for
+> gateway changes.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -64,7 +69,7 @@ recorded in Solo.
 3. **Host PHP remains required in phase one**
    Host PHP CLI is required for `apps/cli` and the gateway host launcher.
    This is CLI/executor substrate, not a host app runtime fallback. App and
-   workspace PHP still run in FrankenPHP containers.
+   workspace PHP run in FrankenPHP containers.
 
 4. **Bundled CLI is deferred**
    PHAR or PHPacker binaries are a distribution optimization after the
@@ -179,12 +184,12 @@ recorded in Solo.
 
 - Modify: `bin/orbit`
 - Modify: `bin/install-orbit`
-- Modify: `app/E2E/Support/DockerTopologyBuilder.php` or moved gateway path
-- Modify: `app/E2E/Support/E2ECommand.php` or moved gateway path
+- Modify: `apps/gateway/app/E2E/Support/DockerTopologyBuilder.php`
+- Modify: `apps/gateway/app/E2E/Support/E2ECommand.php`
 - Modify: `docker/e2e/topology/Dockerfile`
 - Modify: `docker/e2e/topology/Dockerfile.dockerignore`
-- Modify: `tests/E2E/WorkspaceSetupTest.php` or moved gateway path
-- Modify: `tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php` or moved gateway path
+- Modify: `apps/gateway/tests/E2E/WorkspaceSetupTest.php`
+- Modify: `apps/gateway/tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php`
 - Modify: database E2E fixture tests that currently shell to host `sqlite3`.
 
 ## Implementation Tasks
@@ -427,8 +432,8 @@ recorded in Solo.
 
   ```bash
   cd apps/cli
-  php orbit test tests/Feature/PublicCommandForwardingTest.php --compact
-  php orbit test tests/Feature/InternalExecutorCommandTest.php --compact
+  php orbit test apps/gateway/tests/Feature/PublicCommandForwardingTest.php --compact
+  php orbit test apps/gateway/tests/Feature/InternalExecutorCommandTest.php --compact
   ```
 
   Expected: public command calls the fake gateway API client; internal command
@@ -446,7 +451,7 @@ recorded in Solo.
 **Files:**
 - Modify: `bin/orbit`
 - Modify: `bin/install-orbit`
-- Test: `tests/Feature/InstallOrbitLauncherTest.php`
+- Test: `apps/gateway/tests/Feature/InstallOrbitLauncherTest.php`
 
 - [ ] **Step 1: Add launcher contract tests**
 
@@ -468,7 +473,7 @@ recorded in Solo.
 - [ ] **Step 2: Update launcher**
 
   Replace the current Docker-only `bin/orbit` assumption with a role-aware
-  launcher. Gateway mode may still enter `orbit-runtime` for public gateway
+  launcher. Gateway mode may enter `orbit-runtime` for public gateway
   commands. CLI mode runs host PHP against `apps/cli/orbit`.
 
 - [ ] **Step 3: Update installer**
@@ -483,21 +488,21 @@ recorded in Solo.
   Run:
 
   ```bash
-  php artisan test --compact tests/Feature/InstallOrbitLauncherTest.php
+  php artisan test --compact apps/gateway/tests/Feature/InstallOrbitLauncherTest.php
   ```
 
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add bin/orbit bin/install-orbit tests/Feature/InstallOrbitLauncherTest.php
+  git add bin/orbit bin/install-orbit apps/gateway/tests/Feature/InstallOrbitLauncherTest.php
   git commit -m "feat: add role-aware orbit launcher"
   ```
 
 ### Task 5: Add Gateway Operation Tokens
 
 **Files:**
-- Create: `app/Services/Operations/OperationTokenFactory.php`
-- Create: `tests/Unit/Services/Operations/OperationTokenFactoryTest.php`
+- Create: `apps/gateway/app/Services/Operations/OperationTokenFactory.php`
+- Create: `apps/gateway/tests/Unit/Services/Operations/OperationTokenFactoryTest.php`
 - Modify: `config/orbit.php`
 
 - [ ] **Step 1: Write token factory tests**
@@ -526,23 +531,23 @@ recorded in Solo.
   Run:
 
   ```bash
-  php artisan test --compact tests/Unit/Services/Operations/OperationTokenFactoryTest.php
+  php artisan test --compact apps/gateway/tests/Unit/Services/Operations/OperationTokenFactoryTest.php
   ```
 
 - [ ] **Step 4: Commit**
 
   ```bash
-  git add app/Services/Operations/OperationTokenFactory.php tests/Unit/Services/Operations/OperationTokenFactoryTest.php config/orbit.php
+  git add apps/gateway/app/Services/Operations/OperationTokenFactory.php apps/gateway/tests/Unit/Services/Operations/OperationTokenFactoryTest.php config/orbit.php
   git commit -m "feat: add operation tokens"
   ```
 
 ### Task 6: Add RemoteLocalExecutor
 
 **Files:**
-- Create: `app/Services/RemoteShell/RemoteLocalExecutor.php`
-- Create: `app/Services/RemoteShell/LocalExecutorCommandBuilder.php`
-- Create: `tests/Unit/Services/RemoteShell/RemoteLocalExecutorTest.php`
-- Modify: `app/Providers/AppServiceProvider.php`
+- Create: `apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php`
+- Create: `apps/gateway/app/Services/RemoteShell/LocalExecutorCommandBuilder.php`
+- Create: `apps/gateway/tests/Unit/Services/RemoteShell/RemoteLocalExecutorTest.php`
+- Modify: `apps/gateway/app/Providers/AppServiceProvider.php`
 
 - [ ] **Step 1: Write executor tests**
 
@@ -556,7 +561,7 @@ recorded in Solo.
 
 - [ ] **Step 2: Preserve default binding**
 
-  `RemoteShell` and `RemoteExecutor` must still default to `RemoteHostExecutor`
+  `RemoteShell` and `RemoteExecutor` must default to `RemoteHostExecutor`
   until call sites explicitly request another lane.
 
 - [ ] **Step 3: Implement builder**
@@ -578,13 +583,13 @@ recorded in Solo.
   Run:
 
   ```bash
-  php artisan test --compact tests/Unit/Services/RemoteShell
+  php artisan test --compact apps/gateway/tests/Unit/Services/RemoteShell
   ```
 
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add app/Services/RemoteShell/RemoteLocalExecutor.php app/Services/RemoteShell/LocalExecutorCommandBuilder.php tests/Unit/Services/RemoteShell/RemoteLocalExecutorTest.php app/Providers/AppServiceProvider.php
+  git add apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php apps/gateway/app/Services/RemoteShell/LocalExecutorCommandBuilder.php apps/gateway/tests/Unit/Services/RemoteShell/RemoteLocalExecutorTest.php apps/gateway/app/Providers/AppServiceProvider.php
   git commit -m "feat: add remote local executor"
   ```
 
@@ -592,12 +597,12 @@ recorded in Solo.
 
 **Files:**
 - Create: `apps/cli/app/Commands/Internal/WorkspaceAdapterLookupCommand.php`
-- Modify: `app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php`
-- Modify: `app/Services/Workspaces/PolyscopeWorkspaceDriver.php`
-- Modify: `app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php`
-- Test: `tests/Unit/Services/AgentIde/CoreAgentIdeWorkspacePathResolverTest.php`
-- Test: `tests/Unit/Services/Workspaces/PolyscopeWorkspaceBranchAlignerTest.php`
-- Test: `tests/E2E/WorkspaceSetupTest.php`
+- Modify: `apps/gateway/app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php`
+- Modify: `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceDriver.php`
+- Modify: `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php`
+- Test: `apps/gateway/tests/Unit/Services/AgentIde/CoreAgentIdeWorkspacePathResolverTest.php`
+- Test: `apps/gateway/tests/Unit/Services/Workspaces/PolyscopeWorkspaceBranchAlignerTest.php`
+- Test: `apps/gateway/tests/E2E/WorkspaceSetupTest.php`
 
 - [ ] **Step 1: Write failing script assertions**
 
@@ -641,15 +646,15 @@ recorded in Solo.
   Run:
 
   ```bash
-  php artisan test --compact tests/Unit/Services/Workspaces tests/Unit/Services/AgentIde
-  php artisan test --compact tests/E2E/WorkspaceSetupTest.php
+  php artisan test --compact apps/gateway/tests/Unit/Services/Workspaces apps/gateway/tests/Unit/Services/AgentIde
+  php artisan test --compact apps/gateway/tests/E2E/WorkspaceSetupTest.php
   vendor/bin/pint --dirty --format agent
   ```
 
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add apps/cli/app/Commands/Internal/WorkspaceAdapterLookupCommand.php app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php app/Services/Workspaces/PolyscopeWorkspaceDriver.php app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php tests/Unit/Services/AgentIde tests/Unit/Services/Workspaces tests/E2E/WorkspaceSetupTest.php
+  git add apps/cli/app/Commands/Internal/WorkspaceAdapterLookupCommand.php apps/gateway/app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceDriver.php apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php apps/gateway/tests/Unit/Services/AgentIde apps/gateway/tests/Unit/Services/Workspaces apps/gateway/tests/E2E/WorkspaceSetupTest.php
   git commit -m "feat: migrate workspace adapters to local executor"
   ```
 
@@ -657,11 +662,11 @@ recorded in Solo.
 
 **Files:**
 - Create: `apps/cli/app/Commands/Internal/WgEasyStateCommand.php`
-- Modify: `app/Services/Vpn/WgEasyVpnBackend.php`
-- Modify: `app/Services/Vpn/WgEasyServiceInstaller.php`
-- Modify: `app/E2E/Support/E2EWgEasyGateway.php`
-- Test: `tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php`
-- Test: `tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php`
+- Modify: `apps/gateway/app/Services/Vpn/WgEasyVpnBackend.php`
+- Modify: `apps/gateway/app/Services/Vpn/WgEasyServiceInstaller.php`
+- Modify: `apps/gateway/app/E2E/Support/E2EWgEasyGateway.php`
+- Test: `apps/gateway/tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php`
+- Test: `apps/gateway/tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php`
 
 - [ ] **Step 1: Write failing command-generation assertions**
 
@@ -699,27 +704,27 @@ recorded in Solo.
   Run:
 
   ```bash
-  php artisan test --compact tests/Unit/Services/Vpn tests/Feature/Services/Vpn
-  php artisan test --compact tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php
+  php artisan test --compact apps/gateway/tests/Unit/Services/Vpn apps/gateway/tests/Feature/Services/Vpn
+  php artisan test --compact apps/gateway/tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php
   vendor/bin/pint --dirty --format agent
   ```
 
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add apps/cli/app/Commands/Internal/WgEasyStateCommand.php app/Services/Vpn/WgEasyVpnBackend.php app/Services/Vpn/WgEasyServiceInstaller.php app/E2E/Support/E2EWgEasyGateway.php tests/Feature/Services/Vpn tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php
+  git add apps/cli/app/Commands/Internal/WgEasyStateCommand.php apps/gateway/app/Services/Vpn/WgEasyVpnBackend.php apps/gateway/app/Services/Vpn/WgEasyServiceInstaller.php apps/gateway/app/E2E/Support/E2EWgEasyGateway.php apps/gateway/tests/Feature/Services/Vpn apps/gateway/tests/Feature/E2ESupport/E2EWgEasyGatewayTest.php
   git commit -m "feat: migrate wg-easy state to local executor"
   ```
 
 ### Task 9: Close Remaining Host Tool Leaks
 
 **Files:**
-- Modify: `app/Console/Commands/VpnCommandSupport.php`
-- Modify: database E2E fixture helpers under `tests/E2E/`
-- Test: `tests/Feature/Commands/Vpn/*`
-- Test: `tests/E2E/DatabaseTablesTest.php`
-- Test: `tests/E2E/DatabaseSchemaTest.php`
-- Test: `tests/E2E/DatabaseDescribeTest.php`
+- Modify: `apps/gateway/app/Console/Commands/VpnCommandSupport.php`
+- Modify: database E2E fixture helpers under `apps/gateway/tests/E2E/`
+- Test: `apps/gateway/tests/Feature/Commands/Vpn/*`
+- Test: `apps/gateway/tests/E2E/DatabaseTablesTest.php`
+- Test: `apps/gateway/tests/E2E/DatabaseSchemaTest.php`
+- Test: `apps/gateway/tests/E2E/DatabaseDescribeTest.php`
 
 - [ ] **Step 1: Fix VPN forwarding path**
 
@@ -741,15 +746,15 @@ recorded in Solo.
   Run:
 
   ```bash
-  php artisan test --compact tests/Feature/Commands/Vpn tests/Unit/Console/Commands
-  php artisan test --compact tests/E2E/DatabaseTablesTest.php tests/E2E/DatabaseSchemaTest.php tests/E2E/DatabaseDescribeTest.php
+  php artisan test --compact apps/gateway/tests/Feature/Commands/Vpn apps/gateway/tests/Unit/Console/Commands
+  php artisan test --compact apps/gateway/tests/E2E/DatabaseTablesTest.php apps/gateway/tests/E2E/DatabaseSchemaTest.php apps/gateway/tests/E2E/DatabaseDescribeTest.php
   vendor/bin/pint --dirty --format agent
   ```
 
 - [ ] **Step 4: Commit**
 
   ```bash
-  git add app/Console/Commands/VpnCommandSupport.php tests/E2E/DatabaseTablesTest.php tests/E2E/DatabaseSchemaTest.php tests/E2E/DatabaseDescribeTest.php
+  git add apps/gateway/app/Console/Commands/VpnCommandSupport.php apps/gateway/tests/E2E/DatabaseTablesTest.php apps/gateway/tests/E2E/DatabaseSchemaTest.php apps/gateway/tests/E2E/DatabaseDescribeTest.php
   git commit -m "fix: remove remaining host tool leaks"
   ```
 
@@ -758,11 +763,11 @@ recorded in Solo.
 **Files:**
 - Modify: `docker/e2e/topology/Dockerfile`
 - Modify: `docker/e2e/topology/Dockerfile.dockerignore`
-- Modify: `app/E2E/Support/DockerTopologyBuilder.php`
-- Modify: `app/E2E/Support/E2ECommand.php`
+- Modify: `apps/gateway/app/E2E/Support/DockerTopologyBuilder.php`
+- Modify: `apps/gateway/app/E2E/Support/E2ECommand.php`
 - Modify: `docs/testing/README.md`
-- Test: `tests/Feature/E2ESupport/DockerTopologyBuilderTest.php`
-- Test: `tests/E2E/PreparedTopologyContractTest.php`
+- Test: `apps/gateway/tests/Feature/E2ESupport/DockerTopologyBuilderTest.php`
+- Test: `apps/gateway/tests/E2E/PreparedTopologyContractTest.php`
 
 - [ ] **Step 1: Keep topology as environment substrate**
 
@@ -797,15 +802,14 @@ recorded in Solo.
   Run:
 
   ```bash
-  composer e2e:prepare-docker-runtime -- --force
-  composer e2e:prepare-docker-topology -- --force operator-gateway-appdev
+  composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
   composer test:e2e:topology-contract
   ```
 
 - [ ] **Step 5: Commit**
 
   ```bash
-  git add docker/e2e/topology app/E2E/Support docs/testing/README.md tests/Feature/E2ESupport tests/E2E/PreparedTopologyContractTest.php
+  git add docker/e2e/topology apps/gateway/app/E2E/Support docs/testing/README.md apps/gateway/tests/Feature/E2ESupport apps/gateway/tests/E2E/PreparedTopologyContractTest.php
   git commit -m "test: prepare e2e topology for monorepo cli"
   ```
 
@@ -868,24 +872,17 @@ recorded in Solo.
 - No planned product files unless tests reveal defects in the migrated paths.
 - Coordinate: `solo://proj/2/todo/--341`
 
-- [ ] **Step 1: Prepare runtime image**
+- [ ] **Step 1: Refresh Docker role artifacts if needed**
 
-  Run:
+  `composer test:e2e:docker` and the Docker lane of `composer test:e2e` do not
+  rebuild images. If the host pool is stale or topology/runtime artifacts need a
+  forced refresh, run:
 
   ```bash
-  composer e2e:prepare-docker-runtime -- --force
+  composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
   ```
 
-- [ ] **Step 2: Prepare focused Docker topologies**
-
-  Run:
-
-	  ```bash
-	  composer e2e:prepare-docker-topology -- --force operator-gateway-appdev
-	  composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
-	  ```
-
-- [ ] **Step 3: Run topology contract**
+- [ ] **Step 2: Run topology contract**
 
   Run:
 
@@ -893,7 +890,7 @@ recorded in Solo.
   composer test:e2e:topology-contract
   ```
 
-- [ ] **Step 4: Run Docker E2E**
+- [ ] **Step 3: Run Docker E2E**
 
   Run:
 
@@ -904,7 +901,7 @@ recorded in Solo.
   Expected: the Docker lane is not blocked by host `python3`, host `sqlite3`,
   or host `php artisan` forwarding leaks.
 
-- [ ] **Step 5: Update Solo**
+- [ ] **Step 4: Update Solo**
 
   If the lane passes, comment on ORBIT-RUNTIME-11 with exact commands and
   results. If an environment blocker remains, record the exact failing command,
@@ -962,19 +959,22 @@ Minimum final verification before marking this plan complete:
 ```bash
 composer docs-lint
 composer test
-composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force operator-gateway-appdev
-composer e2e:prepare-docker-topology -- --force operator-gateway-appprod-ingress
 composer test:e2e:topology-contract
-composer test:e2e:docker
-composer test:e2e:incus
+composer test:e2e
+```
+
+If Docker artifacts need a forced refresh before verification, prepare the
+canonical role image set:
+
+```bash
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
 Run `composer test:e2e:provision` when installer or provisioning paths change.
 
-## Live Infra Policy
+## Diagnostics Policy
 
-Standing live infra such as Beast may be used to inspect failures, compare
-operator experience, or validate a suspected environment issue. It is not the
-completion gate. A task is complete only when the relevant in-memory and
-prepared E2E lanes pass, or when Solo records a precise repeatable blocker.
+Beast may be used to inspect failures, compare operator experience, or validate
+a suspected environment issue. It is not the completion gate. A task is complete
+only when the relevant in-memory and prepared E2E lanes pass, or when Solo
+records a precise repeatable blocker.

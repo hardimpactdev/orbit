@@ -170,7 +170,6 @@ Required split contract tests:
 | `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, verified gateway and local-node references without role fields, `added` and `converged` success payloads, error codes, and enum values. |
 | `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
 | `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-local host rejection before prompts or side effects, and non-gateway local onboarding behavior. |
-| `apps/gateway/tests/E2E/GatewayAddTest.php` | Real-node end-to-end client join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |
 
 Context-specific behavior and test mapping live in:
 

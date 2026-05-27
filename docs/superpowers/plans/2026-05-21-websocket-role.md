@@ -8,6 +8,17 @@
 
 **Tech Stack:** Laravel 13, PHP 8.5, Pest 4, SQLite JSON role settings, encrypted Eloquent casts, Laravel Reverb, Redis tool on database nodes, Caddy route rendering, Docker-first runtime containers, Orbit CA certificates.
 
+> **Repository layout:** Gateway code and tests live under `apps/gateway`.
+> Unless a task explicitly targets root shims, `apps/cli`, `packages/core`,
+> `bin`, or `docker`, use `apps/gateway/app`, `apps/gateway/database`,
+> `apps/gateway/routes`, and `apps/gateway/tests`.
+>
+> **E2E contract:** Use `docs/testing/README.md` and
+> `docs/testing/e2e/**` as authority. Docker E2E uses composable role images
+> and runs the smallest requested topology from those images. Incus feature E2E
+> uses prepared role snapshots from `orbit-base-ubuntu-26.04` and boots only the
+> roles a test requests. Supported providers are Docker and Incus.
+
 ---
 
 ## Status
@@ -43,62 +54,62 @@ gateway-coupled role and ingress forwards public traffic to router.
 
 ### Schema And Models
 
-- Create: `database/migrations/YYYY_MM_DD_HHMMSS_create_app_websocket_bindings_table.php`
-- Create: `app/Models/AppWebSocketBinding.php`
-- Create: `database/factories/AppWebSocketBindingFactory.php`
-- Modify: `app/Models/App.php`
+- Create: `apps/gateway/database/migrations/YYYY_MM_DD_HHMMSS_create_app_websocket_bindings_table.php`
+- Create: `apps/gateway/app/Models/AppWebSocketBinding.php`
+- Create: `apps/gateway/database/factories/AppWebSocketBindingFactory.php`
+- Modify: `apps/gateway/app/Models/App.php`
 
 ### Role Model
 
-- Modify: `app/Enums/Nodes/NodeRoleName.php`
-- Create: `app/Data/Nodes/RoleSettings/WebSocketRoleSettings.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleRegistry.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
-- Create: `app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleAssignmentService.php`
+- Modify: `apps/gateway/app/Enums/Nodes/NodeRoleName.php`
+- Create: `apps/gateway/app/Data/Nodes/RoleSettings/WebSocketRoleSettings.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleRegistry.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
+- Create: `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleAssignmentService.php`
 
 ### Runtime And Certificates
 
-- Create: `app/Services/WebSockets/WebSocketRuntimeRenderer.php`
-- Create: `app/Services/WebSockets/WebSocketBackendName.php`
-- Create: `app/Services/WebSockets/WebSocketRedisResolver.php`
-- Create: `app/Services/WebSockets/WebSocketCertificateInstaller.php`
-- Modify: `app/Services/Ca/OrbitSiteCertificateInstaller.php` only if backend certificate helpers need a reusable method.
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketRuntimeRenderer.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketBackendName.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketRedisResolver.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketCertificateInstaller.php`
+- Modify: `apps/gateway/app/Services/Ca/OrbitSiteCertificateInstaller.php` only if backend certificate helpers need a reusable method.
 
 ### Router, Proxy, And App Binding
 
-- Create: `app/Services/WebSockets/WebSocketBindingService.php`
-- Create: `app/Services/WebSockets/WebSocketCredentials.php`
-- Create: `app/Services/WebSockets/WebSocketRouteRegistrar.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketBindingService.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketCredentials.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketRouteRegistrar.php`
 - Modify: router route rendering services created by the ingress/router work.
-- Modify: `app/Services/Proxy/ProxyRouteRenderer.php` or the post-router equivalent to support WebSocket upstream options.
+- Modify: `apps/gateway/app/Services/Proxy/ProxyRouteRenderer.php` or the post-router equivalent to support WebSocket upstream options.
 
 ### Commands And API
 
-- Create: `app/Console/Commands/AppWebSocketEnableCommand.php`
-- Create: `app/Console/Commands/AppWebSocketCredentialsCommand.php`
-- Create: `app/Console/Commands/AppWebSocketDisableCommand.php`
-- Create: `app/Http/Gateway/Requests/Apps/EnableAppWebSocketRequest.php`
-- Create: `app/Http/Gateway/Requests/Apps/AppWebSocketCredentialsRequest.php`
-- Create: `app/Http/Gateway/Requests/Apps/DisableAppWebSocketRequest.php`
-- Create: `app/Http/Controllers/Api/AppWebSocketController.php`
-- Modify: `routes/api.php`
+- Create: `apps/gateway/app/Console/Commands/AppWebSocketEnableCommand.php`
+- Create: `apps/gateway/app/Console/Commands/AppWebSocketCredentialsCommand.php`
+- Create: `apps/gateway/app/Console/Commands/AppWebSocketDisableCommand.php`
+- Create: `apps/gateway/app/Http/Gateway/Requests/Apps/EnableAppWebSocketRequest.php`
+- Create: `apps/gateway/app/Http/Gateway/Requests/Apps/AppWebSocketCredentialsRequest.php`
+- Create: `apps/gateway/app/Http/Gateway/Requests/Apps/DisableAppWebSocketRequest.php`
+- Create: `apps/gateway/app/Http/Controllers/Api/AppWebSocketController.php`
+- Modify: `apps/gateway/routes/api.php`
 
 ### Doctor And Tests
 
-- Modify: `app/Services/Doctor/DoctorReportRunner.php`
+- Modify: `apps/gateway/app/Services/Doctor/DoctorReportRunner.php`
 - Modify: node/tool/proxy doctor services touched by the router branch.
-- Create: `tests/Feature/Database/AppWebSocketBindingSchemaTest.php`
-- Create: `tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php`
-- Modify: `tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
-- Modify: `tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php`
-- Create: `tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php`
-- Create: `tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php`
-- Create: `tests/Feature/Commands/Nodes/NodeNewWebSocketRoleTest.php`
-- Create: `tests/Feature/Commands/Nodes/NodeRoleAddWebSocketTest.php`
-- Create: `tests/Feature/Commands/Apps/AppWebSocketCommandTest.php`
-- Create: `tests/E2E/WebSocketPrivateRouteTest.php`
-- Create: `tests/E2E/WebSocketIngressRouteTest.php`
+- Create: `apps/gateway/tests/Feature/Database/AppWebSocketBindingSchemaTest.php`
+- Create: `apps/gateway/tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php`
+- Modify: `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
+- Modify: `apps/gateway/tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php`
+- Create: `apps/gateway/tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php`
+- Create: `apps/gateway/tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php`
+- Create: `apps/gateway/tests/Feature/Commands/Nodes/NodeNewWebSocketRoleTest.php`
+- Create: `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddWebSocketTest.php`
+- Create: `apps/gateway/tests/Feature/Commands/Apps/AppWebSocketCommandTest.php`
+- Create: `apps/gateway/tests/E2E/WebSocketPrivateRouteTest.php`
+- Create: `apps/gateway/tests/E2E/WebSocketIngressRouteTest.php`
 
 ## Task 1: Align Product Documentation
 
@@ -177,15 +188,15 @@ Expected: `issues:0`, `errors:0`, `warnings:0`.
 
 **Files:**
 
-- Create: `database/migrations/YYYY_MM_DD_HHMMSS_create_app_websocket_bindings_table.php`
-- Create: `app/Models/AppWebSocketBinding.php`
-- Create: `database/factories/AppWebSocketBindingFactory.php`
-- Modify: `app/Models/App.php`
-- Test: `tests/Feature/Database/AppWebSocketBindingSchemaTest.php`
+- Create: `apps/gateway/database/migrations/YYYY_MM_DD_HHMMSS_create_app_websocket_bindings_table.php`
+- Create: `apps/gateway/app/Models/AppWebSocketBinding.php`
+- Create: `apps/gateway/database/factories/AppWebSocketBindingFactory.php`
+- Modify: `apps/gateway/app/Models/App.php`
+- Test: `apps/gateway/tests/Feature/Database/AppWebSocketBindingSchemaTest.php`
 
 - [ ] **Step 1: Write the failing schema test**
 
-Create `tests/Feature/Database/AppWebSocketBindingSchemaTest.php`:
+Create `apps/gateway/tests/Feature/Database/AppWebSocketBindingSchemaTest.php`:
 
 ```php
 <?php
@@ -226,7 +237,7 @@ it('stores app websocket bindings with encrypted secrets', function (): void {
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Database/AppWebSocketBindingSchemaTest.php
+php artisan test --compact apps/gateway/tests/Feature/Database/AppWebSocketBindingSchemaTest.php
 ```
 
 Expected: fail because the table and model do not exist.
@@ -272,7 +283,7 @@ return new class extends Migration
 
 - [ ] **Step 4: Add the model**
 
-Create `app/Models/AppWebSocketBinding.php`:
+Create `apps/gateway/app/Models/AppWebSocketBinding.php`:
 
 ```php
 <?php
@@ -335,7 +346,7 @@ class AppWebSocketBinding extends Model
 
 - [ ] **Step 5: Add the factory and app relation**
 
-Create `database/factories/AppWebSocketBindingFactory.php`:
+Create `apps/gateway/database/factories/AppWebSocketBindingFactory.php`:
 
 ```php
 <?php
@@ -373,7 +384,7 @@ class AppWebSocketBindingFactory extends Factory
 }
 ```
 
-Add to `app/Models/App.php`:
+Add to `apps/gateway/app/Models/App.php`:
 
 ```php
 /**
@@ -396,7 +407,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Database/AppWebSocketBindingSchemaTest.php
+php artisan test --compact apps/gateway/tests/Feature/Database/AppWebSocketBindingSchemaTest.php
 ```
 
 Expected: pass.
@@ -405,15 +416,15 @@ Expected: pass.
 
 **Files:**
 
-- Modify: `app/Enums/Nodes/NodeRoleName.php`
-- Create: `app/Data/Nodes/RoleSettings/WebSocketRoleSettings.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleRegistry.php`
-- Test: `tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php`
-- Test: `tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
+- Modify: `apps/gateway/app/Enums/Nodes/NodeRoleName.php`
+- Create: `apps/gateway/app/Data/Nodes/RoleSettings/WebSocketRoleSettings.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleRegistry.php`
+- Test: `apps/gateway/tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php`
+- Test: `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
 
 - [ ] **Step 1: Write role settings tests**
 
-Create `tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php`:
+Create `apps/gateway/tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php`:
 
 ```php
 <?php
@@ -440,7 +451,7 @@ it('rejects unknown settings', function (): void {
 
 - [ ] **Step 2: Update registry tests**
 
-In `tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`, add expectations that:
+In `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`, add expectations that:
 
 ```php
 expect($registry->definition('websocket')->conflictsWith)->toBe([
@@ -465,20 +476,20 @@ expect($registry->definition('websocket')->settingsClass)
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
 ```
 
 Expected: fail because `websocket` is not registered.
 
 - [ ] **Step 4: Add enum and settings class**
 
-Add to `app/Enums/Nodes/NodeRoleName.php`:
+Add to `apps/gateway/app/Enums/Nodes/NodeRoleName.php`:
 
 ```php
 case WebSocket = 'websocket';
 ```
 
-Create `app/Data/Nodes/RoleSettings/WebSocketRoleSettings.php`:
+Create `apps/gateway/app/Data/Nodes/RoleSettings/WebSocketRoleSettings.php`:
 
 ```php
 <?php
@@ -556,7 +567,7 @@ dev-services topology nodes.
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
 ```
 
 Expected: pass.
@@ -565,9 +576,9 @@ Expected: pass.
 
 **Files:**
 
-- Modify: `app/Services/Nodes/Roles/NodeRoleAssignmentService.php`
-- Create: `app/Services/WebSockets/WebSocketRedisResolver.php`
-- Test: `tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleAssignmentService.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketRedisResolver.php`
+- Test: `apps/gateway/tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php`
 
 - [ ] **Step 1: Add failing assignment tests**
 
@@ -601,14 +612,14 @@ expect($assignment->settings)->toBe(['redis_node_id' => $databaseNode->id]);
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php --filter=websocket
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php --filter=websocket
 ```
 
 Expected: fail because Redis dependency validation is missing.
 
 - [ ] **Step 3: Add Redis resolver**
 
-Create `app/Services/WebSockets/WebSocketRedisResolver.php`:
+Create `apps/gateway/app/Services/WebSockets/WebSocketRedisResolver.php`:
 
 ```php
 <?php
@@ -673,7 +684,7 @@ Import `Node`, `NodeRoleName`, `WebSocketRoleSettings`, and
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php --filter=websocket
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php --filter=websocket
 ```
 
 Expected: pass.
@@ -682,11 +693,11 @@ Expected: pass.
 
 **Files:**
 
-- Create: `app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
-- Create: `app/Services/WebSockets/WebSocketRuntimeRenderer.php`
-- Create: `app/Services/WebSockets/WebSocketBackendName.php`
-- Test: `tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php`
+- Create: `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketRuntimeRenderer.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketBackendName.php`
+- Test: `apps/gateway/tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php`
 
 - [ ] **Step 1: Write renderer tests**
 
@@ -714,14 +725,14 @@ expect($env)->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php
 ```
 
 Expected: fail because renderer does not exist.
 
 - [ ] **Step 3: Implement backend naming**
 
-Create `app/Services/WebSockets/WebSocketBackendName.php`:
+Create `apps/gateway/app/Services/WebSockets/WebSocketBackendName.php`:
 
 ```php
 <?php
@@ -743,7 +754,7 @@ final class WebSocketBackendName
 
 - [ ] **Step 4: Implement runtime renderer**
 
-Create `app/Services/WebSockets/WebSocketRuntimeRenderer.php` with a method:
+Create `apps/gateway/app/Services/WebSockets/WebSocketRuntimeRenderer.php` with a method:
 
 ```php
 public function env(Node $node, WebSocketRoleSettings $settings): string
@@ -796,7 +807,7 @@ NodeRoleName::WebSocket->value => $this->webSocketRoleBaseline,
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/WebSockets/WebSocketRuntimeRendererTest.php
 ```
 
 Expected: pass.
@@ -805,10 +816,10 @@ Expected: pass.
 
 **Files:**
 
-- Create: `app/Services/WebSockets/WebSocketRouteRegistrar.php`
+- Create: `apps/gateway/app/Services/WebSockets/WebSocketRouteRegistrar.php`
 - Modify: router route rendering services from the router branch.
 - Modify: ingress route rendering services from the ingress branch.
-- Test: `tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php`
+- Test: `apps/gateway/tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php`
 
 - [ ] **Step 1: Write route registrar tests**
 
@@ -848,7 +859,7 @@ expect(proxyRouteFor('ws.example.com'))
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php
 ```
 
 Expected: fail because registrar does not exist.
@@ -890,7 +901,7 @@ the router/ingress branch for long-lived streams.
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/WebSockets/WebSocketRouteRegistrarTest.php
 ```
 
 Expected: pass.
@@ -900,8 +911,8 @@ Expected: pass.
 **Files:**
 
 - Create app websocket commands and API files listed in File Map.
-- Modify: `routes/api.php`
-- Test: `tests/Feature/Commands/Apps/AppWebSocketCommandTest.php`
+- Modify: `apps/gateway/routes/api.php`
+- Test: `apps/gateway/tests/Feature/Commands/Apps/AppWebSocketCommandTest.php`
 
 - [ ] **Step 1: Write command tests**
 
@@ -946,7 +957,7 @@ Also test:
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/Apps/AppWebSocketCommandTest.php
+php artisan test --compact apps/gateway/tests/Feature/Commands/Apps/AppWebSocketCommandTest.php
 ```
 
 Expected: fail because commands do not exist.
@@ -992,7 +1003,7 @@ credentials, following the existing tool credentials pattern.
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/Apps/AppWebSocketCommandTest.php
+php artisan test --compact apps/gateway/tests/Feature/Commands/Apps/AppWebSocketCommandTest.php
 ```
 
 Expected: pass.
@@ -1001,7 +1012,7 @@ Expected: pass.
 
 **Files:**
 
-- Modify: `app/Services/Doctor/DoctorReportRunner.php`
+- Modify: `apps/gateway/app/Services/Doctor/DoctorReportRunner.php`
 - Modify doctor helpers touched by router/ingress branch.
 - Test: existing doctor tests plus websocket-specific tests.
 
@@ -1033,7 +1044,7 @@ proxy.websocket.public_route_missing
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=websocket
+php artisan test --compact apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=websocket
 ```
 
 Expected: fail because doctor does not inspect websocket runtime.
@@ -1052,7 +1063,7 @@ the owning proxy/tool doctor services. Keep ownership split:
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=websocket
+php artisan test --compact apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=websocket
 ```
 
 Expected: pass.
@@ -1061,13 +1072,15 @@ Expected: pass.
 
 **Files:**
 
-- Create: `tests/E2E/WebSocketPrivateRouteTest.php`
-- Create: `tests/E2E/WebSocketIngressRouteTest.php`
-- Modify E2E topology prep files as needed for the smallest operator
+- Create: `apps/gateway/tests/E2E/WebSocketPrivateRouteTest.php`
+- Create: `apps/gateway/tests/E2E/WebSocketIngressRouteTest.php`
+- Use the existing prepared topology support for the smallest operator
   topologies that cover WebSocket:
   - `operator_gateway_app-dev` for private `websocket.orbit` assertions;
   - `operator_gateway_app-dev_app-prod` for
     `ingress -> router -> websocket` assertions.
+  Modify E2E topology internals only if the current contract in
+  `docs/testing/e2e/**` proves a missing capability.
 
 - [ ] **Step 1: Write E2E test**
 
@@ -1087,10 +1100,10 @@ Create an E2E test that:
 Run:
 
 ```bash
-composer test:e2e:docker -- tests/E2E/WebSocketPrivateRouteTest.php tests/E2E/WebSocketIngressRouteTest.php
+composer test:e2e:docker -- apps/gateway/tests/E2E/WebSocketPrivateRouteTest.php apps/gateway/tests/E2E/WebSocketIngressRouteTest.php
 ```
 
-Expected: pass after topology support is prepared.
+Expected: pass after WebSocket support is implemented.
 
 ## Task 10: Final Verification
 
@@ -1101,7 +1114,7 @@ Expected: pass after topology support is prepared.
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Database/AppWebSocketBindingSchemaTest.php tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php tests/Unit/Services/WebSockets tests/Feature/Commands/Apps/AppWebSocketCommandTest.php
+php artisan test --compact apps/gateway/tests/Feature/Database/AppWebSocketBindingSchemaTest.php apps/gateway/tests/Unit/Services/Nodes/WebSocketRoleSettingsTest.php apps/gateway/tests/Unit/Services/WebSockets apps/gateway/tests/Feature/Commands/Apps/AppWebSocketCommandTest.php
 ```
 
 Expected: all pass.
@@ -1131,7 +1144,7 @@ Expected: all checks pass.
 Run:
 
 ```bash
-composer test:e2e:docker -- tests/E2E/WebSocketPrivateRouteTest.php tests/E2E/WebSocketIngressRouteTest.php
+composer test:e2e:docker -- apps/gateway/tests/E2E/WebSocketPrivateRouteTest.php apps/gateway/tests/E2E/WebSocketIngressRouteTest.php
 ```
 
 Expected: pass.
@@ -1143,5 +1156,5 @@ Expected: pass.
   existing credential-output pattern. Stop and reconcile only if the landed app
   permission registry has no credential-read concept to attach to.
 - Private-only development usage defaults to `websocket.orbit`. Browser-facing
-  public development hosts must be explicit per app/workspace and route through
-  ingress when enabled.
+  public development hosts must be explicit per application or workspace and
+  route through ingress when enabled.

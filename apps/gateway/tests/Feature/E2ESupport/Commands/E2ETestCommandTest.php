@@ -506,6 +506,50 @@ it('does not select Docker E2E files with direct host PHP topology commands', fu
         ->and($violations)->toBe([]);
 });
 
+it('does not select direct provisioning tests for prepared topology lanes', function (): void {
+    withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '3',
+    ], function () use (&$exitCode, &$files): void {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'all',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $files = collect($payload['success']['data']['lanes'])
+            ->flatMap(fn (array $lane): array => $lane['test_files'] ?? [])
+            ->unique()
+            ->values()
+            ->all();
+    });
+
+    $patterns = [
+        'launchBase(',
+        'pushBundle(',
+        'provisionInstance(',
+        'e2e-provision-node',
+        'orbit-source.tar.gz',
+        '--source-archive',
+    ];
+
+    $violations = collect($files)
+        ->flatMap(function (string $file) use ($patterns): array {
+            $contents = file_get_contents(base_path($file)) ?: '';
+
+            return collect($patterns)
+                ->filter(fn (string $pattern): bool => str_contains($contents, $pattern))
+                ->map(fn (string $pattern): string => "{$file}:{$pattern}")
+                ->all();
+        })
+        ->values()
+        ->all();
+
+    expect($exitCode)->toBe(0)
+        ->and($violations)->toBe([]);
+});
+
 it('includes the agent topology coverage in the incus lane', function (): void {
     withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',

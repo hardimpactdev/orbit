@@ -11,8 +11,9 @@ Orbit has three supported test lanes:
    and contract coverage.
 2. Feature E2E backed by Docker for prepared-topology command, registry, gateway
    API, and CA trust coverage.
-3. Ephemeral VM E2E tests for real SSH, provisioning, image, WireGuard,
-   systemd-backed runtime, and host-mutation coverage.
+3. The Incus provisioning gate for the reusable superset topology: fresh base
+   VM, Orbit install, gateway provisioning, and parallel `node:new` for
+   app-dev, app-prod, and agent.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
 operator, or app nodes as verification targets.
@@ -33,7 +34,7 @@ change.
 | Ordinary command, service, database, renderer, and contract behavior | [In-memory tests](in-memory/README.md) |
 | Fast Pest feedback and default suite performance | [In-memory performance](in-memory/performance.md) |
 | Prepared topology E2E lanes, provider selection, and command aliases | [E2E testing](e2e/README.md) |
-| Provisioning, image, installer, and host-mutation flows | [E2E provisioning](e2e/provisioning.md) |
+| Superset provisioning, image, installer, and topology-preparation flows | [E2E provisioning](e2e/provisioning.md) |
 | Prepared topology contracts and checkout overlay behavior | [Prepared topologies](e2e/prepared-topologies.md) |
 | Docker feature host pools and Docker topology behavior | [Docker E2E](e2e/docker.md) |
 | Incus VM-feature behavior and host capacity | [Incus E2E](e2e/incus.md) |
@@ -60,7 +61,7 @@ composer test:e2e:docker
 composer test:e2e:incus
 composer test:e2e:topology-contract
 
-# Provisioning and host-mutation E2E
+# Superset provisioning E2E
 composer e2e:preflight
 composer test:e2e:provision
 ```
@@ -68,5 +69,5 @@ composer test:e2e:provision
 Run the narrowest useful check while developing. Run `composer quality-check`
 before handing off a broad code change. When behavior touches the integrated
 topology, run the E2E lane for the matching prepared topology and provider.
-Provisioning, repair, and host-mutation flows belong in
-`composer test:e2e:provision`.
+Provisioning changes belong in `composer test:e2e:provision`, which proves the
+single Incus superset build path.

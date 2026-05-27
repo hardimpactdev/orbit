@@ -86,8 +86,8 @@ sidecar sshd capacity has been verified under load.
 
 Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
 factory and lease. Forced `e2e:prepare-topology` already streams checkpoints by
-default; the environment flag is still useful for topology acquisition, cleanup,
-and reset paths.
+default; the environment flag also covers topology acquisition, cleanup, and
+reset paths.
 
 Current event names include `availability`, `batch.copy-start`,
 `agent-ready.<role>`, `command-ready.<role>`, `wireguard`, `cleanup.<role>`, and
@@ -109,10 +109,9 @@ Latest Beast prepared-topology measurement from May 21, 2026:
   85 assertions in `real 100.50s`, with two cached five-node workers and
   `batch.copy-start` around 2s per worker.
 
-Historical Docker measurement on May 19, 2026, before the gateway runtime
-sibling was accounted for, passed the canary with eight Docker workers across
-`sidecar1:4,sidecar2:4` and a 16 container cap in `47.55s` real time. The
-runtime after the Docker-first migration needs a 28 container cap for that pool.
+Docker canary measurement on May 19, 2026 passed with eight Docker workers
+across `sidecar1:4,sidecar2:4` and a 16 container cap in `47.55s` real time.
+The current runtime needs a 28 container cap for that pool.
 
 The full Docker lane passed three consecutive runs with 81 tests / 727
 assertions in `113.45s`, `112.49s`, and `114.88s` real time (`113.61s` mean,

@@ -105,17 +105,13 @@
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/orbit-gateway-artisan e2e:test @additional_args"
         ],
-        "test:e2e:incus:reachability": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_INCUS_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_TOPOLOGY_PROVIDERS=incus ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-feature-reachability --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_TOPOLOGY_PROVIDERS=incus ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-feature-reachability --exclude-group=e2e-provision --exclude-group=e2e-topology-contract @additional_args; fi"
-        ],
         "test:e2e:topology-contract": [
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod --fail-on-empty-test-suite @additional_args"
         ],
         "test:e2e:provision": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ \"$processes\" -gt 1 ]; then ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=\"$processes\" @additional_args; else ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --fail-on-empty-test-suite @additional_args"
         ],
         "e2e:preflight": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:preflight @additional_args",
         "e2e:reap-incus": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:reap-incus @additional_args",

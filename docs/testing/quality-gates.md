@@ -26,7 +26,7 @@ Use `composer test:e2e:docker` for Docker-eligible feature tests and
 
 Use `composer test:e2e:provision` only when topology preparation, installer
 behavior, image shape, `node:new`, WireGuard provisioning, or other VM setup
-behavior changes.
+behavior changes. It runs the single Incus superset provision gate.
 
 There is no standing live-node verification lane. Persistent gateway, operator,
 and app nodes are diagnostic targets only.

@@ -26,13 +26,17 @@ it('loads e2e pest helper functions from the pest bootstrap', function (): void 
         ->and(function_exists('e2eCheckout'))->toBeTrue();
 });
 
-it('provisions app nodes through canonical node roles in the provision lane', function (): void {
+it('keeps pest helpers scoped to prepared topology acquisition', function (): void {
     $helpers = file_get_contents(base_path('apps/gateway/tests/E2E/Support/Pest.php'));
 
     expect($helpers)
-        ->toContain("'development' => 'app-dev'")
-        ->toContain("'production' => 'app-prod'")
-        ->toContain('$parts[] = \'--role=ingress\';')
+        ->toContain('function e2eTopology(')
+        ->toContain('E2ETopologyFactory::fromEnvironment()')
+        ->toContain('function e2eTopologyCleanup(')
+        ->not->toContain('e2eProvisionControlFromBase')
+        ->not->toContain('e2eProvisionGatewayThroughNodeNew')
+        ->not->toContain('e2eProvisionAppThroughNodeNew')
+        ->not->toContain('node:new')
         ->not->toContain("'--role=app',")
         ->not->toContain("'--environment='");
 });

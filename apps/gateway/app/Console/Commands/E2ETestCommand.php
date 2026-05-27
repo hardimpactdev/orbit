@@ -275,7 +275,6 @@ class E2ETestCommand extends Command
             '--group=e2e-provider-incus',
             '--exclude-group=e2e-provision',
             '--exclude-group=e2e-topology-contract',
-            '--exclude-group=e2e-feature-reachability',
         ];
 
         if (! $this->hasExplicitTestPath($passThroughArguments)) {
@@ -601,7 +600,6 @@ class E2ETestCommand extends Command
 
             if (! is_string($contents)
                 || ! str_contains($contents, 'e2e-provider-incus')
-                || str_contains($contents, 'e2e-feature-reachability')
                 || str_contains($contents, 'e2e-provision')
                 || str_contains($contents, 'e2e-topology-contract')
             ) {

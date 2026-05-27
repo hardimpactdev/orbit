@@ -8,6 +8,17 @@
 
 **Tech Stack:** Laravel 13, PHP 8.5, Pest 4, SQLite JSON role settings, encrypted `NodeTool::credentials`, RustFS Docker image, Docker-first runtime container rendering, Caddy route rendering, Orbit router role, ingress role, WireGuard private networking.
 
+> **Repository layout:** Gateway code and tests live under `apps/gateway`.
+> Unless a task explicitly targets root shims, `apps/cli`, `packages/core`,
+> `bin`, or `docker`, use `apps/gateway/app`, `apps/gateway/database`,
+> `apps/gateway/routes`, and `apps/gateway/tests`.
+>
+> **E2E contract:** Use `docs/testing/README.md` and
+> `docs/testing/e2e/**` as authority. Docker E2E uses composable role images
+> and runs the smallest requested topology from those images. Incus feature E2E
+> uses prepared role snapshots from `orbit-base-ubuntu-26.04` and boots only the
+> roles a test requests. Supported providers are Docker and Incus.
+
 ---
 
 ## Status
@@ -48,7 +59,7 @@
 - Router owns `s3.orbit` and routes it to the RustFS backend pool.
 - Ingress owns public host TLS and forwards public S3 hosts to router.
 - Router route config carries the public host relay list so forwarded public
-  requests can keep the original S3 Host header while still using router-owned
+  requests can keep the original S3 Host header while using router-owned
   backend selection.
 - RustFS receives preserved Host and forwarded-proto headers so S3 signatures see the requested endpoint.
 - Credentials are service-level credentials stored on the `rustfs` tool row. `tool:credentials rustfs` and `s3:credentials` may return them to authorized callers.
@@ -105,68 +116,65 @@ When merged into the router/ingress matrix:
 
 ### Role Model
 
-- Modify: `app/Enums/Nodes/NodeRoleName.php`
-- Create: `app/Data/Nodes/RoleSettings/S3RoleSettings.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleRegistry.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
-- Create: `app/Services/Nodes/Roles/RoleBaselines/S3RoleBaseline.php`
-- Modify: `app/Services/Nodes/Roles/RoleSelfGrantMaterializer.php`
-- Modify: `app/Services/Nodes/Access/NodePermissionRegistry.php`
-- Modify: `app/Services/Nodes/Access/NodePermissionPresets.php`
+- Modify: `apps/gateway/app/Enums/Nodes/NodeRoleName.php`
+- Create: `apps/gateway/app/Data/Nodes/RoleSettings/S3RoleSettings.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleRegistry.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
+- Create: `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/S3RoleBaseline.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/RoleSelfGrantMaterializer.php`
+- Modify: `apps/gateway/app/Services/Nodes/Access/NodePermissionRegistry.php`
+- Modify: `apps/gateway/app/Services/Nodes/Access/NodePermissionPresets.php`
 
 ### RustFS Tool And Runtime
 
-- Create: `app/Tools/RustfsTool.php`
-- Modify: `app/Providers/AppServiceProvider.php`
-- Create: `app/Services/S3/S3RuntimeContainer.php`
-- Create: `app/Services/S3/S3RuntimeContainerRenderer.php`
-- Create: `app/Services/S3/S3CredentialGenerator.php`
-- Create: `app/Services/S3/S3ServiceConfig.php`
-- Create: `app/Services/S3/S3ServiceConfigResolver.php`
-- Create: `app/Services/S3/S3ServiceConfigurator.php`
+- Create: `apps/gateway/app/Tools/RustfsTool.php`
+- Modify: `apps/gateway/app/Providers/AppServiceProvider.php`
+- Create: `apps/gateway/app/Services/S3/S3RuntimeContainer.php`
+- Create: `apps/gateway/app/Services/S3/S3RuntimeContainerRenderer.php`
+- Create: `apps/gateway/app/Services/S3/S3CredentialGenerator.php`
+- Create: `apps/gateway/app/Services/S3/S3ServiceConfig.php`
+- Create: `apps/gateway/app/Services/S3/S3ServiceConfigResolver.php`
+- Create: `apps/gateway/app/Services/S3/S3ServiceConfigurator.php`
 
 ### Router And Public Route Integration
 
-- Create: `app/Services/S3/S3BackendName.php`
-- Create: `app/Services/S3/S3RouteRegistrar.php`
+- Create: `apps/gateway/app/Services/S3/S3BackendName.php`
+- Create: `apps/gateway/app/Services/S3/S3RouteRegistrar.php`
 - Modify: router route rendering services introduced by the router/ingress branch.
 - Modify: ingress route rendering services introduced by the router/ingress branch.
-- Modify: `app/Services/Proxy/ProxyRouteQuery.php`
-- Modify: `app/Services/Proxy/ProxyRouteProbe.php`
+- Modify: `apps/gateway/app/Services/Proxy/ProxyRouteQuery.php`
+- Modify: `apps/gateway/app/Services/Proxy/ProxyRouteProbe.php`
 
 ### Commands And API
 
-- Create: `app/Console/Commands/S3PublishCommand.php`
-- Create: `app/Console/Commands/S3UnpublishCommand.php`
-- Create: `app/Console/Commands/S3CredentialsCommand.php`
-- Create: `app/Http/Gateway/Requests/S3/PublishS3Request.php`
-- Create: `app/Http/Gateway/Requests/S3/UnpublishS3Request.php`
-- Create: `app/Http/Gateway/Requests/S3/S3CredentialsRequest.php`
-- Create: `app/Http/Controllers/Api/S3Controller.php`
-- Modify: `routes/api.php`
+- Create: `apps/gateway/app/Console/Commands/S3PublishCommand.php`
+- Create: `apps/gateway/app/Console/Commands/S3UnpublishCommand.php`
+- Create: `apps/gateway/app/Console/Commands/S3CredentialsCommand.php`
+- Create: `apps/gateway/app/Http/Gateway/Requests/S3/PublishS3Request.php`
+- Create: `apps/gateway/app/Http/Gateway/Requests/S3/UnpublishS3Request.php`
+- Create: `apps/gateway/app/Http/Gateway/Requests/S3/S3CredentialsRequest.php`
+- Create: `apps/gateway/app/Http/Controllers/Api/S3Controller.php`
+- Modify: `apps/gateway/routes/api.php`
 
 ### Doctor And Tests
 
-- Modify: `app/Services/Doctor/DoctorReportRunner.php`
+- Modify: `apps/gateway/app/Services/Doctor/DoctorReportRunner.php`
 - Modify: node/tool/proxy doctor services touched by the router branch.
-- Create: `tests/Unit/Services/Nodes/S3RoleSettingsTest.php`
-- Modify: `tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
-- Create: `tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php`
-- Create: `tests/Unit/Services/S3/S3RouteRegistrarTest.php`
-- Create: `tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php`
-- Create: `tests/Feature/Commands/Nodes/NodeNewS3RoleTest.php`
-- Create: `tests/Feature/Commands/Nodes/NodeRoleAddS3Test.php`
-- Create: `tests/Feature/Commands/S3/S3PublishCommandTest.php`
-- Create: `tests/Feature/Commands/S3/S3CredentialsCommandTest.php`
-- Modify: `tests/Unit/Services/Tools/ToolCatalogTest.php`
-- Modify: `tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php`
-- Create: `tests/E2E/S3PrivateRouteTest.php`
-- Create: `tests/E2E/S3IngressRouteTest.php`
-- Modify: `app/E2E/Support/E2ETopologyKind.php`
-- Modify: `app/E2E/Support/DockerTopologyNetworkPlan.php`
-- Modify: `app/E2E/Support/DockerTopologyBuilder.php`
-- Modify: `app/E2E/Support/IncusTopologyBuilder.php`
-- Modify: `app/E2E/Support/E2EWireGuardMesh.php`
+- Create: `apps/gateway/tests/Unit/Services/Nodes/S3RoleSettingsTest.php`
+- Modify: `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
+- Create: `apps/gateway/tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php`
+- Create: `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php`
+- Create: `apps/gateway/tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php`
+- Create: `apps/gateway/tests/Feature/Commands/Nodes/NodeNewS3RoleTest.php`
+- Create: `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddS3Test.php`
+- Create: `apps/gateway/tests/Feature/Commands/S3/S3PublishCommandTest.php`
+- Create: `apps/gateway/tests/Feature/Commands/S3/S3CredentialsCommandTest.php`
+- Modify: `apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php`
+- Modify: `apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php`
+- Create: `apps/gateway/tests/E2E/S3PrivateRouteTest.php`
+- Create: `apps/gateway/tests/E2E/S3IngressRouteTest.php`
+- Use the existing prepared topology support unless
+  `docs/testing/e2e/**` proves a missing capability.
 
 ## Task 1: Align Product Documentation
 
@@ -362,15 +370,15 @@ Expected: `issues:0`, `errors:0`, `warnings:0`.
 
 **Files:**
 
-- Modify: `app/Enums/Nodes/NodeRoleName.php`
-- Create: `app/Data/Nodes/RoleSettings/S3RoleSettings.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleRegistry.php`
-- Test: `tests/Unit/Services/Nodes/S3RoleSettingsTest.php`
-- Test: `tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
+- Modify: `apps/gateway/app/Enums/Nodes/NodeRoleName.php`
+- Create: `apps/gateway/app/Data/Nodes/RoleSettings/S3RoleSettings.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleRegistry.php`
+- Test: `apps/gateway/tests/Unit/Services/Nodes/S3RoleSettingsTest.php`
+- Test: `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`
 
 - [ ] **Step 1: Write role settings tests**
 
-Create `tests/Unit/Services/Nodes/S3RoleSettingsTest.php`:
+Create `apps/gateway/tests/Unit/Services/Nodes/S3RoleSettingsTest.php`:
 
 ```php
 <?php
@@ -402,7 +410,7 @@ it('rejects unknown settings', function (): void {
 
 - [ ] **Step 2: Update registry tests**
 
-In `tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`, add:
+In `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php`, add:
 
 ```php
 expect($registry->definition('s3')->conflictsWith)->toBe([
@@ -427,20 +435,20 @@ Also update existing role expectations so `gateway`, `vpn`, `router`,
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/S3RoleSettingsTest.php tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/S3RoleSettingsTest.php apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
 ```
 
 Expected: fail because `s3` is not registered.
 
 - [ ] **Step 4: Add enum and settings class**
 
-Add to `app/Enums/Nodes/NodeRoleName.php`:
+Add to `apps/gateway/app/Enums/Nodes/NodeRoleName.php`:
 
 ```php
 case S3 = 's3';
 ```
 
-Create `app/Data/Nodes/RoleSettings/S3RoleSettings.php`:
+Create `apps/gateway/app/Data/Nodes/RoleSettings/S3RoleSettings.php`:
 
 ```php
 <?php
@@ -518,7 +526,7 @@ agent roles. Do not add `s3` to the `app-development`, `database`, or
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/S3RoleSettingsTest.php tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/S3RoleSettingsTest.php apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php
 ```
 
 Expected: pass.
@@ -527,13 +535,13 @@ Expected: pass.
 
 **Files:**
 
-- Create: `app/Tools/RustfsTool.php`
-- Modify: `app/Providers/AppServiceProvider.php`
-- Modify: `tests/Unit/Services/Tools/ToolCatalogTest.php`
+- Create: `apps/gateway/app/Tools/RustfsTool.php`
+- Modify: `apps/gateway/app/Providers/AppServiceProvider.php`
+- Modify: `apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php`
 
 - [ ] **Step 1: Write catalog tests**
 
-Add to `tests/Unit/Services/Tools/ToolCatalogTest.php`:
+Add to `apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php`:
 
 ```php
 it('catalogs rustfs as the s3 backend tool', function (): void {
@@ -553,14 +561,14 @@ it('catalogs rustfs as the s3 backend tool', function (): void {
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Tools/ToolCatalogTest.php --filter=rustfs
+php artisan test --compact apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php --filter=rustfs
 ```
 
 Expected: fail because `rustfs` is not cataloged.
 
 - [ ] **Step 3: Add RustFS tool class**
 
-Create `app/Tools/RustfsTool.php`:
+Create `apps/gateway/app/Tools/RustfsTool.php`:
 
 ```php
 <?php
@@ -603,7 +611,7 @@ final class RustfsTool extends BaseTool
 
 - [ ] **Step 4: Register RustFS tool**
 
-Import `App\Tools\RustfsTool` in `app/Providers/AppServiceProvider.php` and add
+Import `App\Tools\RustfsTool` in `apps/gateway/app/Providers/AppServiceProvider.php` and add
 it to the `ToolDefinitionRegistry` after `RedisTool`:
 
 ```php
@@ -615,7 +623,7 @@ $app->make(RustfsTool::class),
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Tools/ToolCatalogTest.php --filter=rustfs
+php artisan test --compact apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php --filter=rustfs
 ```
 
 Expected: pass.
@@ -624,20 +632,20 @@ Expected: pass.
 
 **Files:**
 
-- Create: `app/Services/S3/S3RuntimeContainerRenderer.php`
-- Create: `app/Services/S3/S3RuntimeContainer.php`
-- Create: `app/Services/S3/S3CredentialGenerator.php`
-- Create: `app/Services/S3/S3ServiceConfig.php`
-- Create: `app/Services/S3/S3ServiceConfigResolver.php`
-- Create: `app/Services/S3/S3ServiceConfigurator.php`
-- Create: `app/Services/Nodes/Roles/RoleBaselines/S3RoleBaseline.php`
-- Modify: `app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
-- Test: `tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php`
-- Test: `tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php`
+- Create: `apps/gateway/app/Services/S3/S3RuntimeContainerRenderer.php`
+- Create: `apps/gateway/app/Services/S3/S3RuntimeContainer.php`
+- Create: `apps/gateway/app/Services/S3/S3CredentialGenerator.php`
+- Create: `apps/gateway/app/Services/S3/S3ServiceConfig.php`
+- Create: `apps/gateway/app/Services/S3/S3ServiceConfigResolver.php`
+- Create: `apps/gateway/app/Services/S3/S3ServiceConfigurator.php`
+- Create: `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/S3RoleBaseline.php`
+- Modify: `apps/gateway/app/Services/Nodes/Roles/NodeRoleBaselineConverger.php`
+- Test: `apps/gateway/tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php`
+- Test: `apps/gateway/tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php`
 
 - [ ] **Step 1: Write runtime container renderer tests**
 
-Create `tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php`:
+Create `apps/gateway/tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php`:
 
 ```php
 <?php
@@ -675,7 +683,7 @@ it('renders rustfs container bound to the wireguard address only', function (): 
 
 - [ ] **Step 2: Write role baseline tests**
 
-Create `tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php`:
+Create `apps/gateway/tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php`:
 
 ```php
 <?php
@@ -747,14 +755,14 @@ it('materializes docker and rustfs tool intent with encrypted credentials', func
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php apps/gateway/tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php
 ```
 
 Expected: fail because S3 runtime services and baseline do not exist.
 
 - [ ] **Step 4: Add service config DTO**
 
-Create `app/Services/S3/S3ServiceConfig.php`:
+Create `apps/gateway/app/Services/S3/S3ServiceConfig.php`:
 
 ```php
 <?php
@@ -781,7 +789,7 @@ final readonly class S3ServiceConfig
 
 - [ ] **Step 5: Add credential generator**
 
-Create `app/Services/S3/S3CredentialGenerator.php`:
+Create `apps/gateway/app/Services/S3/S3CredentialGenerator.php`:
 
 ```php
 <?php
@@ -812,7 +820,7 @@ final class S3CredentialGenerator
 
 - [ ] **Step 6: Add runtime container renderer**
 
-Create `app/Services/S3/S3RuntimeContainer.php`:
+Create `apps/gateway/app/Services/S3/S3RuntimeContainer.php`:
 
 ```php
 <?php
@@ -841,7 +849,7 @@ final readonly class S3RuntimeContainer
 }
 ```
 
-Then create `app/Services/S3/S3RuntimeContainerRenderer.php`:
+Then create `apps/gateway/app/Services/S3/S3RuntimeContainerRenderer.php`:
 
 ```php
 <?php
@@ -878,7 +886,7 @@ final class S3RuntimeContainerRenderer
 
 - [ ] **Step 7: Add service config resolver**
 
-Create `app/Services/S3/S3ServiceConfigResolver.php` with:
+Create `apps/gateway/app/Services/S3/S3ServiceConfigResolver.php` with:
 
 ```php
 public function fromTool(NodeTool $tool): S3ServiceConfig
@@ -895,7 +903,7 @@ The resolver must:
 
 - [ ] **Step 8: Add service configurator**
 
-Create `app/Services/S3/S3ServiceConfigurator.php` with:
+Create `apps/gateway/app/Services/S3/S3ServiceConfigurator.php` with:
 
 ```php
 public function converge(Node $node, S3RoleSettings $settings): NodeTool
@@ -916,7 +924,7 @@ The method must:
 
 - [ ] **Step 9: Add S3 role baseline**
 
-Create `app/Services/Nodes/Roles/RoleBaselines/S3RoleBaseline.php`:
+Create `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/S3RoleBaseline.php`:
 
 ```php
 <?php
@@ -974,7 +982,7 @@ NodeRoleName::S3->value => $this->s3RoleBaseline,
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/S3/S3RuntimeContainerRendererTest.php apps/gateway/tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php
 ```
 
 Expected: pass.
@@ -983,17 +991,17 @@ Expected: pass.
 
 **Files:**
 
-- Create: `app/Services/S3/S3BackendName.php`
-- Create: `app/Services/S3/S3RouteRegistrar.php`
+- Create: `apps/gateway/app/Services/S3/S3BackendName.php`
+- Create: `apps/gateway/app/Services/S3/S3RouteRegistrar.php`
 - Modify: router route rendering services introduced by the router/ingress branch.
 - Modify: ingress route rendering services introduced by the router/ingress branch.
-- Modify: `app/Services/Proxy/ProxyRouteQuery.php`
-- Modify: `app/Services/Proxy/ProxyRouteProbe.php`
-- Test: `tests/Unit/Services/S3/S3RouteRegistrarTest.php`
+- Modify: `apps/gateway/app/Services/Proxy/ProxyRouteQuery.php`
+- Modify: `apps/gateway/app/Services/Proxy/ProxyRouteProbe.php`
+- Test: `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php`
 
 - [ ] **Step 1: Write route registrar tests**
 
-Create `tests/Unit/Services/S3/S3RouteRegistrarTest.php`:
+Create `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php`:
 
 ```php
 <?php
@@ -1093,14 +1101,14 @@ it('registers public s3 hosts on ingress and forwards them to router', function 
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/S3/S3RouteRegistrarTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php
 ```
 
 Expected: fail because S3 route registration does not exist.
 
 - [ ] **Step 3: Implement backend naming**
 
-Create `app/Services/S3/S3BackendName.php`:
+Create `apps/gateway/app/Services/S3/S3BackendName.php`:
 
 ```php
 <?php
@@ -1184,7 +1192,7 @@ other concrete S3 backend.
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/S3/S3RouteRegistrarTest.php
+php artisan test --compact apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php
 ```
 
 Expected: pass.
@@ -1194,13 +1202,13 @@ Expected: pass.
 **Files:**
 
 - Create command and API files listed under Commands And API.
-- Modify: `routes/api.php`
-- Test: `tests/Feature/Commands/S3/S3PublishCommandTest.php`
-- Test: `tests/Feature/Commands/S3/S3CredentialsCommandTest.php`
+- Modify: `apps/gateway/routes/api.php`
+- Test: `apps/gateway/tests/Feature/Commands/S3/S3PublishCommandTest.php`
+- Test: `apps/gateway/tests/Feature/Commands/S3/S3CredentialsCommandTest.php`
 
 - [ ] **Step 1: Write command tests**
 
-Create `tests/Feature/Commands/S3/S3PublishCommandTest.php` with tests for:
+Create `apps/gateway/tests/Feature/Commands/S3/S3PublishCommandTest.php` with tests for:
 
 ```php
 $exitCode = Artisan::call('s3:publish', [
@@ -1235,7 +1243,7 @@ Also test:
 - publishing rejects domains already owned by another proxy owner;
 - `s3:unpublish s3.example.com --node=storage-1 --force --json` removes the public route and updates `rustfs.config.public_hosts`.
 
-Create `tests/Feature/Commands/S3/S3CredentialsCommandTest.php` with:
+Create `apps/gateway/tests/Feature/Commands/S3/S3CredentialsCommandTest.php` with:
 
 ```php
 $exitCode = Artisan::call('s3:credentials', [
@@ -1272,7 +1280,7 @@ Expected JSON:
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/S3/S3PublishCommandTest.php tests/Feature/Commands/S3/S3CredentialsCommandTest.php
+php artisan test --compact apps/gateway/tests/Feature/Commands/S3/S3PublishCommandTest.php apps/gateway/tests/Feature/Commands/S3/S3CredentialsCommandTest.php
 ```
 
 Expected: fail because S3 commands do not exist.
@@ -1332,7 +1340,7 @@ Behavior:
 - [ ] **Step 6: Add API forwarding**
 
 Create API requests and `S3Controller` methods matching the local command
-behavior. Register routes in `routes/api.php`:
+behavior. Register routes in `apps/gateway/routes/api.php`:
 
 ```php
 Route::post('/s3/public-hosts', [S3Controller::class, 'publish']);
@@ -1354,7 +1362,7 @@ aliases.
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/S3/S3PublishCommandTest.php tests/Feature/Commands/S3/S3CredentialsCommandTest.php
+php artisan test --compact apps/gateway/tests/Feature/Commands/S3/S3PublishCommandTest.php apps/gateway/tests/Feature/Commands/S3/S3CredentialsCommandTest.php
 ```
 
 Expected: pass.
@@ -1363,7 +1371,7 @@ Expected: pass.
 
 **Files:**
 
-- Modify: `app/Services/Doctor/DoctorReportRunner.php`
+- Modify: `apps/gateway/app/Services/Doctor/DoctorReportRunner.php`
 - Modify node/tool/proxy doctor services touched by router branch.
 - Test: existing doctor tests plus S3-specific tests.
 
@@ -1398,7 +1406,7 @@ proxy.s3.public_route_missing
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=s3
+php artisan test --compact apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=s3
 ```
 
 Expected: fail because doctor does not inspect S3 runtime or routes.
@@ -1417,7 +1425,7 @@ owning proxy/tool doctor services. Keep ownership split:
 Run:
 
 ```bash
-php artisan test --compact tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=s3
+php artisan test --compact apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php --filter=s3
 ```
 
 Expected: pass.
@@ -1426,13 +1434,12 @@ Expected: pass.
 
 **Files:**
 
-- Create: `tests/E2E/S3PrivateRouteTest.php`
-- Create: `tests/E2E/S3IngressRouteTest.php`
-- Modify: `app/E2E/Support/E2ETopologyKind.php`
-- Modify: `app/E2E/Support/DockerTopologyNetworkPlan.php`
-- Modify: `app/E2E/Support/DockerTopologyBuilder.php`
-- Modify: `app/E2E/Support/IncusTopologyBuilder.php`
-- Modify: `app/E2E/Support/E2EWireGuardMesh.php`
+- Create: `apps/gateway/tests/E2E/S3PrivateRouteTest.php`
+- Create: `apps/gateway/tests/E2E/S3IngressRouteTest.php`
+- Use the existing prepared topology support for
+  `operator_gateway_app-dev` and `operator_gateway_app-dev_app-prod`. Modify E2E
+  topology internals only if the current contract in `docs/testing/e2e/**`
+  proves a missing capability.
 
 - [ ] **Step 1: Write Docker feature E2E**
 
@@ -1453,7 +1460,7 @@ Create an E2E test that:
 Run:
 
 ```bash
-composer test:e2e:docker -- tests/E2E/S3PrivateRouteTest.php tests/E2E/S3IngressRouteTest.php
+composer test:e2e:docker -- apps/gateway/tests/E2E/S3PrivateRouteTest.php apps/gateway/tests/E2E/S3IngressRouteTest.php
 ```
 
 Expected: pass.
@@ -1470,7 +1477,7 @@ Incus-marked feature test with `e2e-provider-incus` that:
 Run:
 
 ```bash
-composer test:e2e:incus -- tests/E2E/S3PrivateRouteTest.php tests/E2E/S3IngressRouteTest.php
+composer test:e2e:incus -- apps/gateway/tests/E2E/S3PrivateRouteTest.php apps/gateway/tests/E2E/S3IngressRouteTest.php
 ```
 
 Expected: pass when Incus topology support includes the S3 role.
@@ -1484,7 +1491,7 @@ Expected: pass when Incus topology support includes the S3 role.
 Run:
 
 ```bash
-php artisan test --compact tests/Unit/Services/Nodes/S3RoleSettingsTest.php tests/Unit/Services/S3 tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php tests/Feature/Commands/S3 tests/Unit/Services/Tools/ToolCatalogTest.php --filter='s3|rustfs'
+php artisan test --compact apps/gateway/tests/Unit/Services/Nodes/S3RoleSettingsTest.php apps/gateway/tests/Unit/Services/S3 apps/gateway/tests/Feature/Services/Nodes/Roles/S3RoleBaselineTest.php apps/gateway/tests/Feature/Commands/S3 apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php --filter='s3|rustfs'
 ```
 
 Expected: all focused S3/RustFS tests pass.
@@ -1524,7 +1531,7 @@ Expected: all checks pass.
 Run:
 
 ```bash
-composer test:e2e:docker -- tests/E2E/S3PrivateRouteTest.php tests/E2E/S3IngressRouteTest.php
+composer test:e2e:docker -- apps/gateway/tests/E2E/S3PrivateRouteTest.php apps/gateway/tests/E2E/S3IngressRouteTest.php
 ```
 
 Expected: pass.
