@@ -270,7 +270,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -320,9 +320,9 @@ describe('node:new', function (): void {
                 'host' => '192.0.2.10',
                 'status' => 'complete',
             ])
-            ->and($payload['success']['data']['local_control_node'])->toMatchArray([
+            ->and($payload['success']['data']['local_operator_node'])->toMatchArray([
                 'name' => 'mini',
-                'role' => 'control',
+                'role' => null,
                 'environment' => null,
                 'tld' => null,
                 'platform' => nodeNewExpectedLocalPlatform(),
@@ -488,7 +488,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -513,7 +513,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -531,7 +531,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -540,7 +540,7 @@ describe('node:new', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['result']['action'])->toBe('converged')
             ->and($payload['success']['data']['node']['platform'])->toBe('ubuntu_24-04')
-            ->and($payload['success']['data']['local_control_node']['platform'])->toBe(nodeNewExpectedLocalPlatform())
+            ->and($payload['success']['data']['local_operator_node']['platform'])->toBe(nodeNewExpectedLocalPlatform())
             ->and($payload['success']['data']['provisioning'])->toBe([
                 'transport' => 'none',
                 'host' => '192.0.2.10',
@@ -573,7 +573,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -603,7 +603,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.15',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -636,7 +636,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.15',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
         ]);
 
         expect($exitCode)->toBe(1)
@@ -653,7 +653,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -685,7 +685,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.77',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -714,7 +714,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.99',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -746,7 +746,7 @@ describe('node:new', function (): void {
             '--role' => 'gateway',
             '--host' => '192.0.2.88',
             '--user' => 'provisioner',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 
@@ -1834,8 +1834,8 @@ describe('node:new', function (): void {
                 'data' => [
                     'result' => ['action' => 'enrolled'],
                     'node' => [
-                        'name' => 'control-2',
-                        'role' => 'control',
+                        'name' => 'operator-2',
+                        'role' => null,
                         'environment' => null,
                         'tld' => null,
                         'platform' => 'unknown',
@@ -1865,21 +1865,21 @@ describe('node:new', function (): void {
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
-            'name' => 'control-2',
-            '--role' => 'control',
+            'name' => 'operator-2',
+            '--role' => 'operator',
             '--json' => true,
         ]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['name'])->toBe('control-2')
+            ->and($payload['success']['data']['node']['name'])->toBe('operator-2')
             ->and($payload['success']['data']['wireguard']['config'])->toContain('[Interface]')
-            ->and(DB::table('nodes')->where('name', 'control-2')->exists())->toBeFalse();
+            ->and(DB::table('nodes')->where('name', 'operator-2')->exists())->toBeFalse();
 
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
-                'name' => 'control-2',
+                'name' => 'operator-2',
                 'role' => 'control',
                 'roles' => ['control'],
                 'host' => null,
@@ -1994,20 +1994,20 @@ describe('node:new', function (): void {
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
-            'name' => 'control-2',
-            '--role' => 'control',
+            'name' => 'operator-2',
+            '--role' => 'operator',
             '--json' => true,
         ]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        $control = DB::table('nodes')->where('name', 'control-2')->first();
+        $control = DB::table('nodes')->where('name', 'operator-2')->first();
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['result']['action'])->toBe('enrolled')
             ->and($payload['success']['data']['node'])->toMatchArray([
-                'name' => 'control-2',
-                'role' => 'control',
+                'name' => 'operator-2',
+                'role' => null,
                 'environment' => null,
                 'tld' => null,
                 'platform' => 'unknown',
@@ -2122,7 +2122,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-2',
             '--role' => 'gateway',
             '--host' => '192.0.2.11',
-            '--control-name' => 'mini',
+            '--operator-name' => 'mini',
             '--json' => true,
         ]);
 

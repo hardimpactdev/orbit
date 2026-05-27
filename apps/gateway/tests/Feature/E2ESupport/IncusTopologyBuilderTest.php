@@ -34,7 +34,7 @@ function incusTopologyBuilderConfig(): E2EConfig
         sourceImage: 'images:ubuntu/26.04/cloud',
         baseImage: 'orbit-base-ubuntu-26.04',
         bootstrapUser: 'provisioner',
-        controlUser: 'control',
+        operatorUser: 'operator',
         instancePrefix: 'orbit-e2e',
         timeoutSeconds: 60,
         cpus: '2',
@@ -60,7 +60,7 @@ it('throws when the base image is missing', function (): void {
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    expect(fn () => $builder->build(E2ETopologyKind::Control))
+    expect(fn () => $builder->build(E2ETopologyKind::Operator))
         ->toThrow(RuntimeException::class, "Required base image [{$config->baseImage}] not found");
 });
 
@@ -72,7 +72,7 @@ it('throws when no provisioning bundle has been staged', function (): void {
 
     $builder = new IncusTopologyBuilder($host);
 
-    expect(fn () => $builder->build(E2ETopologyKind::Control))
+    expect(fn () => $builder->build(E2ETopologyKind::Operator))
         ->toThrow(RuntimeException::class, 'No provisioning bundle has been staged');
 });
 
@@ -88,7 +88,7 @@ it('throws when a target template instance already exists', function (): void {
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    expect(fn () => $builder->build(E2ETopologyKind::Control))
+    expect(fn () => $builder->build(E2ETopologyKind::Operator))
         ->toThrow(RuntimeException::class, 'Template instance [orbit-template-operator-base] already exists');
 });
 
@@ -110,7 +110,7 @@ it('deletes target template instances before replacing them', function (): void 
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    expect(fn () => $builder->build(E2ETopologyKind::Control, replaceExisting: true))
+    expect(fn () => $builder->build(E2ETopologyKind::Operator, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory');
 });
 
@@ -141,10 +141,10 @@ it('does not delete unsuffixed Incus templates when replacing prepared topology 
         $builder = new IncusTopologyBuilder($host);
         $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-        expect(fn () => $builder->build(E2ETopologyKind::Control, replaceExisting: true))
+        expect(fn () => $builder->build(E2ETopologyKind::Operator, replaceExisting: true))
             ->toThrow(RuntimeException::class, 'Could not create work directory')
-            ->and($checked)->not->toContain('orbit-template-control')
-            ->and($deleted)->not->toContain('orbit-template-control')
+            ->and($checked)->not->toContain('orbit-template-operator')
+            ->and($deleted)->not->toContain('orbit-template-operator')
             ->and($deleted)->toContain('orbit-template-operator-base');
     });
 });
@@ -177,7 +177,7 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    expect(fn () => $builder->build(E2ETopologyKind::ControlGatewayDev, replaceExisting: true))
+    expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdev, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deleted)->toBe(array_reverse($existing));
 });
@@ -243,7 +243,7 @@ it('builds full prepared roles from the gateway base with parallel downstream pr
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('waitForCloudInit')->times(5);
-        $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
@@ -289,7 +289,7 @@ it('builds full prepared roles from the gateway base with parallel downstream pr
 
         expect($manifest)->toHaveCount(5)
             ->and($manifest)->sequence(
-                fn ($template) => $template->role->toBe('control')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
+                fn ($template) => $template->role->toBe('operator')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
                 fn ($template) => $template->role->toBe('gateway')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
                 fn ($template) => $template->role->toBe('dev')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
                 fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
@@ -326,7 +326,7 @@ it('rebuilds app production ingress through the prepared prod template', functio
         'orbit-template-operator-base',
         'orbit-template-gateway-base',
         'orbit-template-app-prod-base',
-        'orbit-template-operator_gateway_app-prod_ingress-control-base',
+        'orbit-template-operator_gateway_app-prod_ingress-operator-base',
         'orbit-template-operator_gateway_app-prod_ingress-gateway-base',
         'orbit-template-operator_gateway_app-prod_ingress-prod-base',
         'orbit-template-ingress-prod',
@@ -356,7 +356,7 @@ it('rebuilds app production ingress through the prepared prod template', functio
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppprodIngress, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deleted)->toContain('orbit-template-app-prod-base')
-        ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-control-base')
+        ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-operator-base')
         ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-gateway-base')
         ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-prod-base')
         ->and($deleted)->not->toContain('orbit-template-ingress-prod')
@@ -390,9 +390,12 @@ it('restores a reusable base stage before continuing a force rebuild', function 
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('startInstance')
-        ->with('orbit-template-operator-base')
         ->once()
-        ->andReturn(incusTopologyBuilderProcessResult(errorOutput: 'start failed', successful: false));
+        ->andReturnUsing(function (string $name): ProcessResult {
+            expect($name)->toBe('orbit-template-operator-base');
+
+            return incusTopologyBuilderProcessResult(errorOutput: 'start failed', successful: false);
+        });
     $host->shouldReceive('run')
         ->andReturnUsing(function (string $command): ProcessResult {
             if (str_starts_with($command, 'mktemp -d ')) {
@@ -420,7 +423,7 @@ it('records phase timings while building topology templates', function (): void 
     $host->shouldReceive('instanceExists')->with('orbit-template-operator-base')->andReturn(false);
     $host->shouldReceive('waitForCloudInit')->with('orbit-template-operator-base')->once();
     $host->shouldReceive('provisionInstance')
-        ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')
+        ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('stopInstance')->with('orbit-template-operator-base')->once()->andReturn(incusTopologyBuilderProcessResult());
@@ -440,20 +443,20 @@ it('records phase timings while building topology templates', function (): void 
     $builder = new IncusTopologyBuilder($host, $timer);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    $builder->build(E2ETopologyKind::Control);
+    $builder->build(E2ETopologyKind::Operator);
 
     $eventNames = array_column($timer->events(), 'name');
 
     expect($eventNames)->toContain('preflight')
         ->and($eventNames)->toContain('workdir')
         ->and($eventNames)->toContain('ssh-key')
-        ->and($eventNames)->toContain('control.launch')
-        ->and($eventNames)->toContain('control.cloud-init')
-        ->and($eventNames)->toContain('control.provision')
-        ->and($eventNames)->toContain('control.provisioning-ssh-key')
-        ->and($eventNames)->toContain('control.identity')
-        ->and($eventNames)->toContain('finalize.stop.control')
-        ->and($eventNames)->toContain('finalize.snapshot.control')
+        ->and($eventNames)->toContain('operator.launch')
+        ->and($eventNames)->toContain('operator.cloud-init')
+        ->and($eventNames)->toContain('operator.provision')
+        ->and($eventNames)->toContain('operator.provisioning-ssh-key')
+        ->and($eventNames)->toContain('operator.identity')
+        ->and($eventNames)->toContain('finalize.stop.operator')
+        ->and($eventNames)->toContain('finalize.snapshot.operator')
         ->and($eventNames)->toContain('workdir.cleanup');
 });
 
@@ -470,7 +473,7 @@ it('builds prepared topology templates through staged node:new snapshots', funct
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('waitForCloudInit')->times(4);
-    $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('stopInstance')->times(10)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->times(10)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
@@ -506,13 +509,13 @@ it('builds prepared topology templates through staged node:new snapshots', funct
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    $manifest = $builder->build(E2ETopologyKind::ControlGatewayDevProd);
+    $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 
     $commandOutput = implode("\n", $commands);
 
     expect($manifest)->toBe([
         [
-            'role' => 'control',
+            'role' => 'operator',
             'name' => 'orbit-template-operator-base',
             'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
         ],
@@ -535,10 +538,10 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-gateway-base'")
         ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-dev-base'")
         ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
-        ->and($commandOutput)->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-control-base')
+        ->and($commandOutput)->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-operator-base')
         ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
         ->and($commandOutput)->not->toContain('--role=gateway')
-        ->and($commandOutput)->not->toContain('--control-name=control-1')
+        ->and($commandOutput)->not->toContain('--operator-name=operator-1')
         ->and($commandOutput)->toContain('/var/tmp/orbit-e2e-bundle/e2e-provision-node')
         ->and($commandOutput)->toContain('--role=')
         ->and($commandOutput)->toContain('gateway')
@@ -580,7 +583,7 @@ it('builds app production ingress on the prod template without development or ag
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('waitForCloudInit')->times(3);
-    $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'control')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('stopInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
@@ -617,7 +620,7 @@ it('builds app production ingress on the prod template without development or ag
 
     expect($manifest)->toBe([
         [
-            'role' => 'control',
+            'role' => 'operator',
             'name' => 'orbit-template-operator-base',
             'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
         ],

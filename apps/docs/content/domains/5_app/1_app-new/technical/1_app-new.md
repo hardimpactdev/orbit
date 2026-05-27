@@ -174,7 +174,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Activity Logging
 
-Emitted through the gateway API Loggable contract when the forwarded control
+Emitted through the gateway API Loggable contract when the forwarded operator
 path lands. The initial gateway-local implementation slice is tracked in
 `docs/porting/PORTING.md`; API activity emission remains part of the operator-forwarding
 slice.

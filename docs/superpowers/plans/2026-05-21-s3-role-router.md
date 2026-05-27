@@ -13,8 +13,8 @@
 > `bin`, or `docker`, use `apps/gateway/app`, `apps/gateway/database`,
 > `apps/gateway/routes`, and `apps/gateway/tests`.
 >
-> **E2E contract:** Use `docs/testing/README.md` and
-> `docs/testing/e2e/**` as authority. Docker E2E uses composable role images
+> **E2E contract:** Use `apps/docs/content/testing/README.md` and
+> `apps/docs/content/testing/e2e/**` as authority. Docker E2E uses composable role images
 > and runs the smallest requested topology from those images. Incus feature E2E
 > uses prepared role snapshots from `orbit-base-ubuntu-26.04` and boots only the
 > roles a test requests. Supported providers are Docker and Incus.
@@ -84,35 +84,35 @@ When merged into the router/ingress matrix:
 
 ### Product Docs
 
-- Modify: `docs/architecture.md` - add the S3 role and ingress/router/S3 traffic shape.
-- Modify: `docs/tech-stack.md` - document RustFS, Docker-first runtime container rendering, private bind, and request-proxy requirements.
-- Modify: `docs/concepts.md` - add S3 role, S3 service endpoint, RustFS backend, and S3 public host terms.
-- Modify: `docs/domains/1_node/node-concepts.md` - add role vocabulary, compatibility, settings, baseline, and platform support.
-- Modify: `docs/domains/1_node/1_node-new/**` - document `--role=s3` and `--s3-data-path=`.
-- Modify: `docs/domains/1_node/12_node-role-add/**` - document adding `s3`.
-- Modify: `docs/domains/3_tool/README.md` - add `rustfs` to the tool catalog table.
-- Create: `docs/domains/3_tool/catalog/rustfs.md`
-- Modify: `docs/domains/8_proxy/**` - document router-owned S3 service routes and ingress S3 public host forwarding.
-- Create: `docs/domains/19_s3/README.md`
-- Create: `docs/domains/19_s3/s3-concepts.md`
-- Create: `docs/domains/19_s3/1_s3-publish/s3-publish.md`
-- Create: `docs/domains/19_s3/1_s3-publish/technical/1_s3-publish.md`
-- Create: `docs/domains/19_s3/1_s3-publish/technical/5.1_s3-publish_input-mode_interactive.md`
-- Create: `docs/domains/19_s3/1_s3-publish/technical/5.2_s3-publish_input-mode_non-interactive.md`
-- Create: `docs/domains/19_s3/1_s3-publish/technical/6.1_s3-publish_output-render_human.md`
-- Create: `docs/domains/19_s3/1_s3-publish/technical/6.2_s3-publish_output-render_json.md`
-- Create: `docs/domains/19_s3/2_s3-unpublish/s3-unpublish.md`
-- Create: `docs/domains/19_s3/2_s3-unpublish/technical/1_s3-unpublish.md`
-- Create: `docs/domains/19_s3/2_s3-unpublish/technical/5.1_s3-unpublish_input-mode_interactive.md`
-- Create: `docs/domains/19_s3/2_s3-unpublish/technical/5.2_s3-unpublish_input-mode_non-interactive.md`
-- Create: `docs/domains/19_s3/2_s3-unpublish/technical/6.1_s3-unpublish_output-render_human.md`
-- Create: `docs/domains/19_s3/2_s3-unpublish/technical/6.2_s3-unpublish_output-render_json.md`
-- Create: `docs/domains/19_s3/3_s3-credentials/s3-credentials.md`
-- Create: `docs/domains/19_s3/3_s3-credentials/technical/1_s3-credentials.md`
-- Create: `docs/domains/19_s3/3_s3-credentials/technical/5.1_s3-credentials_input-mode_interactive.md`
-- Create: `docs/domains/19_s3/3_s3-credentials/technical/5.2_s3-credentials_input-mode_non-interactive.md`
-- Create: `docs/domains/19_s3/3_s3-credentials/technical/6.1_s3-credentials_output-render_human.md`
-- Create: `docs/domains/19_s3/3_s3-credentials/technical/6.2_s3-credentials_output-render_json.md`
+- Modify: `apps/docs/content/architecture.md` - add the S3 role and ingress/router/S3 traffic shape.
+- Modify: `apps/docs/content/tech-stack.md` - document RustFS, Docker-first runtime container rendering, private bind, and request-proxy requirements.
+- Modify: `apps/docs/content/concepts.md` - add S3 role, S3 service endpoint, RustFS backend, and S3 public host terms.
+- Modify: `apps/docs/content/domains/1_node/node-concepts.md` - add role vocabulary, compatibility, settings, baseline, and platform support.
+- Modify: `apps/docs/content/domains/1_node/1_node-new/**` - document `--role=s3` and `--s3-data-path=`.
+- Modify: `apps/docs/content/domains/1_node/12_node-role-add/**` - document adding `s3`.
+- Modify: `apps/docs/content/domains/3_tool/README.md` - add `rustfs` to the tool catalog table.
+- Create: `apps/docs/content/domains/3_tool/catalog/rustfs.md`
+- Modify: `apps/docs/content/domains/8_proxy/**` - document router-owned S3 service routes and ingress S3 public host forwarding.
+- Create: `apps/docs/content/domains/19_s3/README.md`
+- Create: `apps/docs/content/domains/19_s3/s3-concepts.md`
+- Create: `apps/docs/content/domains/19_s3/1_s3-publish/s3-publish.md`
+- Create: `apps/docs/content/domains/19_s3/1_s3-publish/technical/1_s3-publish.md`
+- Create: `apps/docs/content/domains/19_s3/1_s3-publish/technical/5.1_s3-publish_input-mode_interactive.md`
+- Create: `apps/docs/content/domains/19_s3/1_s3-publish/technical/5.2_s3-publish_input-mode_non-interactive.md`
+- Create: `apps/docs/content/domains/19_s3/1_s3-publish/technical/6.1_s3-publish_output-render_human.md`
+- Create: `apps/docs/content/domains/19_s3/1_s3-publish/technical/6.2_s3-publish_output-render_json.md`
+- Create: `apps/docs/content/domains/19_s3/2_s3-unpublish/s3-unpublish.md`
+- Create: `apps/docs/content/domains/19_s3/2_s3-unpublish/technical/1_s3-unpublish.md`
+- Create: `apps/docs/content/domains/19_s3/2_s3-unpublish/technical/5.1_s3-unpublish_input-mode_interactive.md`
+- Create: `apps/docs/content/domains/19_s3/2_s3-unpublish/technical/5.2_s3-unpublish_input-mode_non-interactive.md`
+- Create: `apps/docs/content/domains/19_s3/2_s3-unpublish/technical/6.1_s3-unpublish_output-render_human.md`
+- Create: `apps/docs/content/domains/19_s3/2_s3-unpublish/technical/6.2_s3-unpublish_output-render_json.md`
+- Create: `apps/docs/content/domains/19_s3/3_s3-credentials/s3-credentials.md`
+- Create: `apps/docs/content/domains/19_s3/3_s3-credentials/technical/1_s3-credentials.md`
+- Create: `apps/docs/content/domains/19_s3/3_s3-credentials/technical/5.1_s3-credentials_input-mode_interactive.md`
+- Create: `apps/docs/content/domains/19_s3/3_s3-credentials/technical/5.2_s3-credentials_input-mode_non-interactive.md`
+- Create: `apps/docs/content/domains/19_s3/3_s3-credentials/technical/6.1_s3-credentials_output-render_human.md`
+- Create: `apps/docs/content/domains/19_s3/3_s3-credentials/technical/6.2_s3-credentials_output-render_json.md`
 
 ### Role Model
 
@@ -174,7 +174,7 @@ When merged into the router/ingress matrix:
 - Create: `apps/gateway/tests/E2E/S3PrivateRouteTest.php`
 - Create: `apps/gateway/tests/E2E/S3IngressRouteTest.php`
 - Use the existing prepared topology support unless
-  `docs/testing/e2e/**` proves a missing capability.
+  `apps/docs/content/testing/e2e/**` proves a missing capability.
 
 ## Task 1: Align Product Documentation
 
@@ -184,7 +184,7 @@ When merged into the router/ingress matrix:
 
 - [ ] **Step 1: Update architecture role language**
 
-Add this contract language to `docs/architecture.md`:
+Add this contract language to `apps/docs/content/architecture.md`:
 
 ```markdown
 The `s3` role is a private workload role for Orbit-managed S3-compatible object
@@ -232,7 +232,7 @@ nodes.
 
 - [ ] **Step 4: Add RustFS tool catalog entry**
 
-Create `docs/domains/3_tool/catalog/rustfs.md`:
+Create `apps/docs/content/domains/3_tool/catalog/rustfs.md`:
 
 ```markdown
 # Tool Catalog: `rustfs`
@@ -281,7 +281,7 @@ credentials metadata, logs availability, and safe repair/adoption boundaries.
 
 - [ ] **Step 5: Add S3 command domain docs**
 
-Create `docs/domains/19_s3/README.md` with these domain rules:
+Create `apps/docs/content/domains/19_s3/README.md` with these domain rules:
 
 ```markdown
 # S3 Commands
@@ -1438,7 +1438,7 @@ Expected: pass.
 - Create: `apps/gateway/tests/E2E/S3IngressRouteTest.php`
 - Use the existing prepared topology support for
   `operator_gateway_app-dev` and `operator_gateway_app-dev_app-prod`. Modify E2E
-  topology internals only if the current contract in `docs/testing/e2e/**`
+  topology internals only if the current contract in `apps/docs/content/testing/e2e/**`
   proves a missing capability.
 
 - [ ] **Step 1: Write Docker feature E2E**

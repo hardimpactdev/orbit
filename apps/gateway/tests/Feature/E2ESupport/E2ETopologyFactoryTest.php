@@ -22,9 +22,9 @@ it('has correct enum string values', function (): void {
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
         ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
         ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress')?->value)->toBe('operator_gateway_app-prod_ingress')
-        ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
+        ->and(E2ETopologyKind::Operator)->toBe(E2ETopologyKind::Operator)
         ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
-        ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 });
 
 it('resolves requested topology kinds exactly', function (): void {
@@ -33,10 +33,10 @@ it('resolves requested topology kinds exactly', function (): void {
         $ingressKind = E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress');
 
         expect($ingressKind)->not->toBeNull();
-        expect($factory->resolveKind(E2ETopologyKind::ControlGateway))->toBe(E2ETopologyKind::ControlGateway)
-            ->and($factory->resolveKind(E2ETopologyKind::Control))->toBe(E2ETopologyKind::Control)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDev))->toBe(E2ETopologyKind::ControlGatewayDev)
-            ->and($factory->resolveKind(E2ETopologyKind::ControlGatewayDevProd))->toBe(E2ETopologyKind::ControlGatewayDevProd)
+        expect($factory->resolveKind(E2ETopologyKind::OperatorGateway))->toBe(E2ETopologyKind::OperatorGateway)
+            ->and($factory->resolveKind(E2ETopologyKind::Operator))->toBe(E2ETopologyKind::Operator)
+            ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdev))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
+            ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
             ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAgent))->toBe(E2ETopologyKind::OperatorGatewayAgent)
             ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
     });
@@ -48,7 +48,7 @@ it('reports unavailable topology when requiring a topology', function (): void {
     ], function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
-        expect(fn () => $factory->require(E2ETopologyKind::Control))
+        expect(fn () => $factory->require(E2ETopologyKind::Operator))
             ->toThrow(E2ETopologyUnavailable::class, 'incus: prepared topology operator is not available on any Incus host: orbit-e2e-nonexistent.invalid is missing prepared templates or snapshots');
     });
 });
@@ -60,7 +60,7 @@ it('reports topology provider failure details when no prepared provider is avail
     ], function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
-        expect(fn () => $factory->require(E2ETopologyKind::Control))
+        expect(fn () => $factory->require(E2ETopologyKind::Operator))
             ->toThrow(E2ETopologyUnavailable::class, 'Prepared topology not available');
     });
 });
@@ -89,18 +89,18 @@ it('refuses providers that do not satisfy required capabilities', function (): v
                 kernelNetworking: false,
             ));
 
-        expect(fn () => $factory->require(E2ETopologyKind::Control))
+        expect(fn () => $factory->require(E2ETopologyKind::Operator))
             ->toThrow(E2ETopologyUnavailable::class, 'capabilities do not satisfy required');
     });
 });
 
 it('lease cleanup is idempotent', function (): void {
-    $control = m::mock(E2EInstance::class);
-    $control->shouldReceive('delete')->once();
+    $operator = m::mock(E2EInstance::class);
+    $operator->shouldReceive('delete')->once();
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $control,
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
         gateway: null,
         dev: null,
         prod: null,
@@ -114,29 +114,29 @@ it('lease cleanup is idempotent', function (): void {
 
 it('stores requested SSH users immutably', function (): void {
     $factory = E2ETopologyFactory::fromEnvironment();
-    $controlOnly = $factory->withSshUsers(['control' => 'control']);
+    $operatorOnly = $factory->withSshUsers(['operator' => 'operator']);
 
-    expect($controlOnly)->not->toBe($factory)
-        ->and((new ReflectionClass($controlOnly))->getProperty('sshUsers')->getValue($controlOnly))
-        ->toBe(['control' => 'control'])
+    expect($operatorOnly)->not->toBe($factory)
+        ->and((new ReflectionClass($operatorOnly))->getProperty('sshUsers')->getValue($operatorOnly))
+        ->toBe(['operator' => 'operator'])
         ->and((new ReflectionClass($factory))->getProperty('sshUsers')->getValue($factory))
         ->toBeNull();
 });
 
 it('cleans up all instances', function (): void {
-    $control = m::mock(E2EInstance::class);
+    $operator = m::mock(E2EInstance::class);
     $gateway = m::mock(E2EInstance::class);
     $dev = m::mock(E2EInstance::class);
     $prod = m::mock(E2EInstance::class);
 
-    $control->shouldReceive('delete')->once();
+    $operator->shouldReceive('delete')->once();
     $gateway->shouldReceive('delete')->once();
     $dev->shouldReceive('delete')->once();
     $prod->shouldReceive('delete')->once();
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDevProd,
-        control: $control,
+        kind: E2ETopologyKind::OperatorGatewayAppdevAppprod,
+        operator: $operator,
         gateway: $gateway,
         dev: $dev,
         prod: $prod,

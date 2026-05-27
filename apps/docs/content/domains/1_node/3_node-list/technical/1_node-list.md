@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|s3|app|control>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|s3|app|operator>] [--environment=<development|production>] [--doctor] [--json]
 ```
 
 ## Input Contract
@@ -26,14 +26,14 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3`, `app`, or `control`. See alias notes below. |
+| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3`, `app`, or `operator`. See alias notes below. |
 | `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. |
 | `doctor` | `--doctor` | Optional. | Never. | `false`. | Boolean flag. Explicit secondary operation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-`--role` aliases: `app` matches both app host roles; `control` matches nodes
-without an active role assignment. They are compatibility aliases, not stored
-role names.
+`--role` aliases: `app` matches both app host roles; `operator` matches
+gateway-known operator identities without an active workload role assignment.
+They are query aliases, not stored role names.
 
 `--role` and `--environment` are scalar enum filters with single-value
 semantics; comma-separated input fails as `validation_failed` because it is not

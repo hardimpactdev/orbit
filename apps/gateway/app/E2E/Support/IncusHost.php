@@ -147,7 +147,7 @@ class IncusHost
         ?string $operatorUser = null,
         ?int $timeoutSeconds = null,
     ): ProcessResult {
-        if (! in_array($role, ['operator', 'control', 'gateway', 'app'], true)) {
+        if (! in_array($role, ['operator', 'gateway', 'app'], true)) {
             throw new RuntimeException("Incus topology provisioning role must be operator, gateway, or app; got [{$role}].");
         }
 

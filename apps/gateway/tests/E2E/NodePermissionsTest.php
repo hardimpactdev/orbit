@@ -11,13 +11,13 @@ it('manages and lists node access permissions from the gateway', function (): vo
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-permissions');
         E2EGatewayApi::waitForGatewayApi(
-            $topology->instance('control'),
-            $config->controlUser,
+            $topology->instance('operator'),
+            $config->operatorUser,
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
@@ -25,7 +25,7 @@ it('manages and lists node access permissions from the gateway', function (): vo
         $setResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit node:permissions control-1 app-dev-1 --preset=operator --json',
+                'cd %s && orbit node:permissions operator-1 app-dev-1 --preset=operator --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -33,14 +33,14 @@ it('manages and lists node access permissions from the gateway', function (): vo
 
         $setPayload = json_decode(trim($setResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($setPayload['success']['data']['consuming_node'])->toBe('control-1')
+        expect($setPayload['success']['data']['consuming_node'])->toBe('operator-1')
             ->and($setPayload['success']['data']['serving_node'])->toBe('app-dev-1')
             ->and($setPayload['success']['data']['permissions'])->toContain('node:read');
 
         $listResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit node:permissions control-1 app-dev-1 --json',
+                'cd %s && orbit node:permissions operator-1 app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -48,10 +48,10 @@ it('manages and lists node access permissions from the gateway', function (): vo
 
         $listPayload = json_decode(trim($listResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($listPayload['success']['data']['consuming_node'])->toBe('control-1')
+        expect($listPayload['success']['data']['consuming_node'])->toBe('operator-1')
             ->and($listPayload['success']['data']['serving_node'])->toBe('app-dev-1')
             ->and($listPayload['success']['data']['permissions'])->toContain('node:read');
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

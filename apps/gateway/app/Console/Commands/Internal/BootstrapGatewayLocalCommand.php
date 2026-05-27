@@ -30,7 +30,7 @@ use RuntimeException;
 #[Signature('orbit:internal:bootstrap-gateway-local
     {name : Gateway node name}
     {wireguard-address : WireGuard address for the gateway}
-    {--identity-json= : Gateway/control WireGuard identity payload; use - to read JSON from STDIN}
+    {--identity-json= : Gateway/operator WireGuard identity payload; use - to read JSON from STDIN}
     {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
     {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
     {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
@@ -171,11 +171,11 @@ class BootstrapGatewayLocalCommand extends Command
                 'gateway_private_key' => $gatewayPeer->private_key,
                 'gateway_pre_shared_key' => $gatewayPeer->pre_shared_key,
                 'gateway_wireguard_address' => $gateway->wireguard_address,
-                'control_name' => $control->name,
-                'control_public_key' => $controlPeer->public_key,
-                'control_private_key' => $controlPeer->private_key,
-                'control_pre_shared_key' => $controlPeer->pre_shared_key,
-                'control_wireguard_address' => $control->wireguard_address,
+                'operator_name' => $control->name,
+                'operator_public_key' => $controlPeer->public_key,
+                'operator_private_key' => $controlPeer->private_key,
+                'operator_pre_shared_key' => $controlPeer->pre_shared_key,
+                'operator_wireguard_address' => $control->wireguard_address,
             ];
         });
 
@@ -192,7 +192,7 @@ class BootstrapGatewayLocalCommand extends Command
                 $wireguardServerPublicKey = $wgEasyServiceInstaller->publicKey();
 
                 if ($enrollment !== null) {
-                    if ($enrollment['gateway_pre_shared_key'] === null || $enrollment['control_pre_shared_key'] === null) {
+                    if ($enrollment['gateway_pre_shared_key'] === null || $enrollment['operator_pre_shared_key'] === null) {
                         throw new RuntimeException('WireGuard identity payload must include pre-shared keys when bootstrapping through wg-easy.');
                     }
 
@@ -205,11 +205,11 @@ class BootstrapGatewayLocalCommand extends Command
                             'address' => $enrollment['gateway_wireguard_address'],
                         ],
                         [
-                            'name' => $enrollment['control_name'],
-                            'private_key' => $enrollment['control_private_key'],
-                            'public_key' => $enrollment['control_public_key'],
-                            'pre_shared_key' => $enrollment['control_pre_shared_key'],
-                            'address' => $enrollment['control_wireguard_address'],
+                            'name' => $enrollment['operator_name'],
+                            'private_key' => $enrollment['operator_private_key'],
+                            'public_key' => $enrollment['operator_public_key'],
+                            'pre_shared_key' => $enrollment['operator_pre_shared_key'],
+                            'address' => $enrollment['operator_wireguard_address'],
                         ],
                     ]);
                 }
@@ -228,8 +228,8 @@ class BootstrapGatewayLocalCommand extends Command
                 : $this->gatewayWireGuardConfig(
                     gatewayPrivateKey: $enrollment['gateway_private_key'],
                     gatewayWireguardAddress: $wireguardAddress,
-                    controlPublicKey: $enrollment['control_public_key'],
-                    controlWireguardAddress: $enrollment['control_wireguard_address'],
+                    controlPublicKey: $enrollment['operator_public_key'],
+                    controlWireguardAddress: $enrollment['operator_wireguard_address'],
                 ));
         }
 

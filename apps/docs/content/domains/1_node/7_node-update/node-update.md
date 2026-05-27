@@ -38,7 +38,7 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 
 - `name`: node name to update. Must exist in gateway node configuration.
 - `--host=<host>`: SSH/bootstrap endpoint. Valid for `gateway` and `app`
-  nodes. Forbidden on `control` nodes. Updating this does not change the
+  nodes. Forbidden on `operator` nodes. Updating this does not change the
   gateway endpoint used in WireGuard peer configs. `node:new --role=gateway
   --host=<host>` seeds that endpoint only during first-gateway bootstrap before
   peer configs have been issued; `node:update --host` is later node metadata.
@@ -47,9 +47,9 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 - `--tld=<tld>`: development TLD for development nodes. Valid only when the
   effective environment is `development`.
 - `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator. Valid for
-  `gateway` and `app` nodes. Forbidden on `control` nodes.
+  `gateway` and `app` nodes. Forbidden on `operator` nodes.
 - `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator. Valid for
-  `gateway` and `app` nodes. Forbidden on `control` nodes.
+  `gateway` and `app` nodes. Forbidden on `operator` nodes.
 - `--json`: Output JSON.
 
 Each field flag may be supplied at most once per invocation. Supplying the
@@ -75,7 +75,7 @@ that are directly affected by the changed metadata.
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
 - Changes a development node's TLD when `--tld` is supplied. `--tld` is
   valid only for targets that are nodes and whose effective environment is `development`;
-  gateway targets, control targets, and production-effective app targets are
+  gateway targets, operator targets, and production-effective app targets are
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
 - Reconciles the active `vpn` role DNS runtime when `tld` or

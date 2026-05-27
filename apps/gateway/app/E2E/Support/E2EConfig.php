@@ -15,7 +15,7 @@ final readonly class E2EConfig
         public string $sourceImage,
         public string $baseImage,
         public string $bootstrapUser,
-        public string $controlUser,
+        public string $operatorUser,
         public string $instancePrefix,
         public int $timeoutSeconds,
         public string $cpus,
@@ -39,7 +39,6 @@ final readonly class E2EConfig
         public array $dockerImageBuildHosts = [],
         /** @var list<string> */
         public array $exclusiveHosts = [],
-        public string $operatorUser = 'orbit',
         /** @var array<string, int> */
         public array $dockerHostContainerCaps = [],
         /** @var list<string> */
@@ -60,8 +59,7 @@ final readonly class E2EConfig
             sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04/cloud')),
             baseImage: self::envString('ORBIT_E2E_BASE_IMAGE', 'orbit-base-ubuntu-26.04'),
             bootstrapUser: self::envString('ORBIT_E2E_BOOTSTRAP_USER', 'provisioner'),
-            operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', self::envString('ORBIT_E2E_CONTROL_USER', 'orbit')),
-            controlUser: self::envString('ORBIT_E2E_CONTROL_USER', self::envString('ORBIT_E2E_OPERATOR_USER', 'orbit')),
+            operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', 'orbit'),
             instancePrefix: self::envString('ORBIT_E2E_INSTANCE_PREFIX', 'orbit-e2e'),
             timeoutSeconds: self::envInt('ORBIT_E2E_TIMEOUT_SECONDS', 600),
             cpus: self::envString('ORBIT_E2E_CPUS', '2'),
@@ -353,7 +351,6 @@ final readonly class E2EConfig
             baseImage: $this->baseImage,
             bootstrapUser: $this->bootstrapUser,
             operatorUser: $this->operatorUser,
-            controlUser: $this->controlUser,
             instancePrefix: $this->instancePrefix,
             timeoutSeconds: $this->timeoutSeconds,
             cpus: $this->cpus,

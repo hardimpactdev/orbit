@@ -11,15 +11,15 @@ use RuntimeException;
  * and HTTP responses over WireGuard, as a real human or agent would experience.
  *
  * Always runs *from the operator node* via SSH, not from the test host. The
- * control container reaches the gateway over WG, asks gateway-side DNS to
+ * operator container reaches the gateway over WG, asks gateway-side DNS to
  * resolve a TLD, and exercises the resulting URL. Verifying from the host
  * bypasses WG and proves nothing about the real path.
  */
 final readonly class E2EReachability
 {
     public static function assertDnsResolvesOverWg(
-        E2EInstance $control,
-        string $controlUser,
+        E2EInstance $operator,
+        string $operatorUser,
         SshKeyPair $key,
         string $hostname,
         string $expectedIp,
@@ -37,7 +37,7 @@ SH,
             escapeshellarg($dnsServer),
         );
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
+        $result = E2ECommand::ssh($operator, $operatorUser, $key, $command, max(120, $timeoutSeconds + 5));
         $answer = trim($result->output());
 
         if ($answer === '') {
@@ -62,8 +62,8 @@ SH,
     }
 
     public static function assertHttpReachable(
-        E2EInstance $control,
-        string $controlUser,
+        E2EInstance $operator,
+        string $operatorUser,
         SshKeyPair $key,
         string $url,
         int $expectedStatus = 200,
@@ -71,7 +71,7 @@ SH,
     ): void {
         $command = self::curlCommand($url, '-s -o /dev/null -w "%{http_code}"', $timeoutSeconds);
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
+        $result = E2ECommand::ssh($operator, $operatorUser, $key, $command, max(120, $timeoutSeconds + 5));
         $observed = trim($result->output());
 
         if ($observed !== (string) $expectedStatus) {
@@ -85,8 +85,8 @@ SH,
     }
 
     public static function assertHttpResponseContains(
-        E2EInstance $control,
-        string $controlUser,
+        E2EInstance $operator,
+        string $operatorUser,
         SshKeyPair $key,
         string $url,
         string $marker,
@@ -94,7 +94,7 @@ SH,
     ): void {
         $command = self::curlCommand($url, '-s', $timeoutSeconds);
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
+        $result = E2ECommand::ssh($operator, $operatorUser, $key, $command, max(120, $timeoutSeconds + 5));
         $body = $result->output();
 
         if (! str_contains($body, $marker)) {
@@ -108,8 +108,8 @@ SH,
     }
 
     public static function assertHttpNotServing(
-        E2EInstance $control,
-        string $controlUser,
+        E2EInstance $operator,
+        string $operatorUser,
         SshKeyPair $key,
         string $url,
         int $forbiddenStatus = 200,
@@ -117,7 +117,7 @@ SH,
     ): void {
         $command = self::curlCommand($url, '-s -o /dev/null -w "%{http_code}"', $timeoutSeconds).' || true';
 
-        $result = E2ECommand::ssh($control, $controlUser, $key, $command, max(120, $timeoutSeconds + 5));
+        $result = E2ECommand::ssh($operator, $operatorUser, $key, $command, max(120, $timeoutSeconds + 5));
         $observed = trim($result->output());
 
         if ($observed === (string) $forbiddenStatus) {

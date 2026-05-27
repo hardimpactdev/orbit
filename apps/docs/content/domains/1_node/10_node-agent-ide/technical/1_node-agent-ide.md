@@ -58,7 +58,7 @@ is invalid at node scope.
 4. Validate `node_agent_ide.adapter` immediately.
    - Must be `none` or appear in the gateway-owned adapter registry. The gateway is the sole
      authority on which adapter names are accepted; the CLI does not consult a
-     local adapter manifest, does not scan installed extensions on the control
+     local adapter manifest, does not scan installed extensions on the operator
      machine, and does not fall back to a hard-coded core list.
    - Validation is synchronous. The CLI forwards the request to the gateway
      and receives the registry decision before any side effect.

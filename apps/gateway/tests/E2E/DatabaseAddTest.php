@@ -13,23 +13,23 @@ it('adds a database connection from the operator node through the gateway api', 
     $slug = 'e2e-db-add-'.strtolower(bin2hex(random_bytes(3)));
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'database-add');
         E2EGatewayApi::waitForGatewayApi(
-            $topology->instance('control'),
-            $config->controlUser,
+            $topology->instance('operator'),
+            $config->operatorUser,
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
         e2eGrantNodeAccess($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit database:add %s --driver=sqlite --path=/srv/docs/database.sqlite --node=app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($slug),
             ),
             timeoutSeconds: 120,
@@ -53,4 +53,4 @@ it('adds a database connection from the operator node through the gateway api', 
 
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

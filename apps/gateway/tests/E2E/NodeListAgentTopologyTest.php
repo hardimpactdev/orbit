@@ -6,7 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
-it('lists the agent node from a control caller against the agent-extended topology', function (): void {
+it('lists the agent node from a operator caller against the agent-extended topology', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAgent, withGatewayApi: true);
 
@@ -15,22 +15,22 @@ it('lists the agent node from a control caller against the agent-extended topolo
             ->and($topology->lease()->prodApp())->toBeNull()
             ->and($topology->lease()->agent())->not->toBeNull();
 
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-list-agent');
         E2EGatewayApi::waitForGatewayApi(
-            $topology->instance('control'),
-            $config->controlUser,
+            $topology->instance('operator'),
+            $config->operatorUser,
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && php apps/gateway/artisan node:list --role=agent --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );

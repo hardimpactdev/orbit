@@ -35,11 +35,11 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
-| `host` | `--host` | Optional. | Target node role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
+| `host` | `--host` | Optional. | Target node role = `operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
 | `environment` | `--environment` | Optional. | Target node role ≠ `app`. | None. | One of `development`, `production`. |
 | `tld` | `--tld` | Optional. | Target node role ≠ `app`, or target effective environment ≠ `development`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. Effective environment is supplied `--environment` when present, otherwise the node's current environment. |
-| `public_ipv4` | `--public-ipv4` | Optional. | Target node role = `control`. | None. | Operator-supplied public IPv4 metadata. |
-| `public_ipv6` | `--public-ipv6` | Optional. | Target node role = `control`. | None. | Operator-supplied public IPv6 metadata. |
+| `public_ipv4` | `--public-ipv4` | Optional. | Target node role = `operator`. | None. | Operator-supplied public IPv4 metadata. |
+| `public_ipv6` | `--public-ipv6` | Optional. | Target node role = `operator`. | None. | Operator-supplied public IPv6 metadata. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 Each field flag may be supplied at most once per invocation. Supplying the same
@@ -54,15 +54,15 @@ metadata is valid only for gateway and nodes. Concretely:
 
 | Field | Valid target roles | Forbidden when |
 | --- | --- | --- |
-| `--host` | `gateway`, `app` | Target node role = `control`. |
+| `--host` | `gateway`, `app` | Target node role = `operator`. |
 | `--environment` | `app` | Target node role ≠ `app`. |
-| `--tld` | `app` with effective environment `development` | Target node role = `gateway`, target node role = `control`, or app target effective environment = `production`. |
-| `--public-ipv4` | `gateway`, `app` | Target node role = `control`. |
-| `--public-ipv6` | `gateway`, `app` | Target node role = `control`. |
+| `--tld` | `app` with effective environment `development` | Target node role = `gateway`, target node role = `operator`, or app target effective environment = `production`. |
+| `--public-ipv4` | `gateway`, `app` | Target node role = `operator`. |
+| `--public-ipv6` | `gateway`, `app` | Target node role = `operator`. |
 
 Clients are CLI callers reached through WireGuard. They have no SSH
 bootstrap endpoint and no ingress, so `--host`, `--public-ipv4`, and
-`--public-ipv6` are all forbidden on control targets. Public IPv4 and IPv6
+`--public-ipv6` are all forbidden on operator targets. Public IPv4 and IPv6
 metadata is supported on `gateway` and `app` target nodes; the gateway
 endpoint used in WireGuard peer configs lives on a separate field and is not
 updated by `--public-ipv4` or `--public-ipv6`.
@@ -73,7 +73,7 @@ otherwise the node's current stored environment. A production app can receive
 `--tld` only in the same update that changes it to
 `--environment=development`; any update that leaves or makes the effective
 environment `production` fails with `node.field_role_incompatible`,
-`meta.field=tld`, and the target role in metadata. Gateway and control targets
+`meta.field=tld`, and the target role in metadata. Gateway and operator targets
 fail with the same error code and metadata shape.
 
 `node:update --host` also does not update the gateway endpoint used in
@@ -104,7 +104,7 @@ gateway-owned side effects.
    - If `--environment` is present and the target node role is not `app`, fail
      before side effects with `node.field_role_incompatible`.
    - If `--host`, `--public-ipv4`, or `--public-ipv6` is present and the target
-     node role is `control`, fail before side effects with
+     node role is `operator`, fail before side effects with
      `node.field_role_incompatible`.
    - If `--tld` is present and the target node role is not `app`, fail before
      side effects with `node.field_role_incompatible` and `meta.field=tld`.
@@ -222,8 +222,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Field role-incompatible | A field is supplied for a node role or effective environment that does not support it. | Failure |
 | TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
 
-Examples: `--environment` for a non-node, host/public-IP fields for a control
-node, or `--tld` for gateway, control, or production-effective app targets.
+Examples: `--environment` for a non-node, host/public-IP fields for an operator
+node, or `--tld` for gateway, operator, or production-effective app targets.
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning

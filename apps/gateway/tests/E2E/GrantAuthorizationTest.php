@@ -15,17 +15,17 @@ it('enforces grants through real gateway middleware and node access rows', funct
     $workspacePath = "{$appPath}/.worktrees/{$workspaceName}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'grant-authorization');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         grantAuthorizationE2eResetGatewayState($topology);
 
         $denied = grantAuthorizationE2eApi(
             topology: $topology,
-            role: 'control',
+            role: 'operator',
             method: 'DELETE',
             path: '/nodes/app-prod-1',
             wireGuardIp: '10.6.0.3',
@@ -47,7 +47,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
             path: '/nodes/grant',
             wireGuardIp: '10.6.0.2',
             payload: [
-                'consuming_node' => 'control-1',
+                'consuming_node' => 'operator-1',
                 'serving_node' => 'gateway',
                 'permissions' => 'node:grant',
             ],
@@ -55,19 +55,19 @@ it('enforces grants through real gateway middleware and node access rows', funct
 
         expect($gatewayGrant['status'])->toBe(200)
             ->and($gatewayGrant['body']['success']['data'])->toMatchArray([
-                'consuming_node' => 'control-1',
+                'consuming_node' => 'operator-1',
                 'serving_node' => 'gateway',
                 'permissions' => ['node:grant'],
             ]);
 
         $targetGrant = grantAuthorizationE2eApi(
             topology: $topology,
-            role: 'control',
+            role: 'operator',
             method: 'POST',
             path: '/nodes/grant',
             wireGuardIp: '10.6.0.3',
             payload: [
-                'consuming_node' => 'control-1',
+                'consuming_node' => 'operator-1',
                 'serving_node' => 'app-prod-1',
                 'permissions' => 'node:remove',
             ],
@@ -75,7 +75,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
 
         expect($targetGrant['status'])->toBe(200)
             ->and($targetGrant['body']['success']['data'])->toMatchArray([
-                'consuming_node' => 'control-1',
+                'consuming_node' => 'operator-1',
                 'serving_node' => 'app-prod-1',
                 'permissions' => ['node:remove'],
             ]);
@@ -153,7 +153,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
 
         $removed = grantAuthorizationE2eApi(
             topology: $topology,
-            role: 'control',
+            role: 'operator',
             method: 'DELETE',
             path: '/nodes/app-prod-1',
             wireGuardIp: '10.6.0.3',
@@ -194,7 +194,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
         $topology->reset();
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-control-gateway-dev-prod');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-operator-gateway-dev-prod');
 
 /**
  * @param  array<string, mixed>  $payload
@@ -271,10 +271,10 @@ function grantAuthorizationE2eResetGatewayState(E2ETopologyHarness $topology): v
 {
     grantAuthorizationE2eTinker($topology, <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['gateway', 'control-1', 'app-dev-1', 'app-prod-1'])
+    ->whereIn('name', ['gateway', 'operator-1', 'app-dev-1', 'app-prod-1'])
     ->pluck('id', 'name');
 
-foreach (['gateway', 'control-1', 'app-dev-1', 'app-prod-1'] as $name) {
+foreach (['gateway', 'operator-1', 'app-dev-1', 'app-prod-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }

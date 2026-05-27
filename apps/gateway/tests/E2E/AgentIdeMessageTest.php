@@ -134,4 +134,4 @@ it('sends a workspace message through the managed OpenCode transport', function 
         e2eStopRuntimePhpServer($topology, 'gateway', '/tmp/orbit-fake-opencode.pid');
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

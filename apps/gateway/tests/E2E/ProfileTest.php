@@ -12,10 +12,10 @@ function profileSeed(E2ETopologyHarness $topology, string $gatewayApiIp): void
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
@@ -24,7 +24,7 @@ foreach (['control-1', 'app-dev-1'] as $name) {
 \App\Models\App::query()->delete();
 \Illuminate\Support\Facades\DB::table('node_access')->delete();
 \Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
     'created_at' => now(),
     'updated_at' => now(),
@@ -51,24 +51,24 @@ PHP;
     );
 }
 
-it('profiles an observable registered app target from a control caller', function (): void {
+it('profiles an observable registered app target from a operator caller', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'profile');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         profileSeed($topology, $gatewayApiIp);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit profile docs --uri=/api/me --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
@@ -86,4 +86,4 @@ it('profiles an observable registered app target from a control caller', functio
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

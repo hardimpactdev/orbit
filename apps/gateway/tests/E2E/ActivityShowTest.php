@@ -11,10 +11,10 @@ function activityShowSeed(E2ETopologyHarness $topology): int
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$actor = \App\Models\Node::query()->where('name', 'control-1')->first();
+$actor = \App\Models\Node::query()->where('name', 'operator-1')->first();
 
 if (! $actor instanceof \App\Models\Node) {
-    throw new \RuntimeException('Missing prepared control-1 node.');
+    throw new \RuntimeException('Missing prepared operator-1 node.');
 }
 
 \Spatie\Activitylog\Models\Activity::query()->delete();
@@ -46,19 +46,19 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'activity-show');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $id = activityShowSeed($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit activity:show %d --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 $id,
             ),
             timeoutSeconds: 120,
@@ -76,26 +76,26 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
 
-it('shows one activity entry human output from a control caller', function (): void {
+it('shows one activity entry human output from a operator caller', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'activity-show-human');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $id = activityShowSeed($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit activity:show %d',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 $id,
             ),
             timeoutSeconds: 120,
@@ -110,20 +110,20 @@ it('shows one activity entry human output from a control caller', function (): v
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
 
-it('returns validation_failed when id is missing from a control caller', function (): void {
+it('returns validation_failed when id is missing from a operator caller', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control']);
+        $topology->withCurrentCheckout(roles: ['operator']);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit activity:show --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
             allowFailure: true,
@@ -138,20 +138,20 @@ it('returns validation_failed when id is missing from a control caller', functio
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
 
-it('returns validation_failed for an invalid id from a control caller', function (): void {
+it('returns validation_failed for an invalid id from a operator caller', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control']);
+        $topology->withCurrentCheckout(roles: ['operator']);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit activity:show nope --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
             allowFailure: true,
@@ -165,4 +165,4 @@ it('returns validation_failed for an invalid id from a control caller', function
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');

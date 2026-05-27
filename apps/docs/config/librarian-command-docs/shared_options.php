@@ -22,7 +22,7 @@ $options = [
     '--code',
     '--command',
     '--config',
-    '--control-name',
+    '--operator-name',
     '--correlation',
     '--crash-notification',
     '--detach',

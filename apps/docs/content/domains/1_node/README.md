@@ -121,7 +121,7 @@ ordinary entries in the `tool` catalog with category `agent`; `node:new
 ## Thin CLI and gateway authority
 
 The Orbit CLI is a thin gateway client. It gathers input, calls the gateway,
-and renders the result. It does not classify itself as control, gateway, or
+and renders the result. It does not classify itself as operator, gateway, or
 app, and it does not gate behavior on a local role label. The CLI calls the
 gateway; the gateway authenticates the presented WireGuard peer identity and
 applies the authorization policy attached to that node.
@@ -411,8 +411,8 @@ steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs
-`orbit node:new <gateway-name> --role=gateway --host=<host> --control-name=<control-name>`,
-Orbit provisions the gateway and creates the initiating client identity named by `<control-name>`.
+`orbit node:new <gateway-name> --role=gateway --host=<host> --operator-name=<operator-name>`,
+Orbit provisions the gateway and creates the initiating client identity named by `<operator-name>`.
 It then installs that local WireGuard identity, trusts the gateway CA, and stores local
 gateway configuration using `<host>` as the initial gateway endpoint for WireGuard peer configs.
 Finally it verifies gateway API access.

@@ -18,7 +18,7 @@ it('selects the first topology provider with the requested kind available', func
         fakeTopologyProvider('incus', true),
     ]);
 
-    $selection = $pool->select(E2ETopologyKind::ControlGateway);
+    $selection = $pool->select(E2ETopologyKind::OperatorGateway);
 
     expect($selection->available())->toBeTrue()
         ->and($selection->provider()->name())->toBe('incus')
@@ -31,7 +31,7 @@ it('reports topology provider failures when none are available', function (): vo
         fakeTopologyProvider('incus', false),
     ]);
 
-    $selection = $pool->select(E2ETopologyKind::Control);
+    $selection = $pool->select(E2ETopologyKind::Operator);
 
     expect($selection->available())->toBeFalse()
         ->and($selection->message)->toContain('docker: unavailable')
@@ -51,7 +51,7 @@ it('skips topology providers that lack required capabilities', function (): void
         kernelNetworking: false,
     );
 
-    $selection = $pool->select(E2ETopologyKind::Control, $required);
+    $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
     expect($selection->available())->toBeTrue()
         ->and($selection->provider()->name())->toBe('incus')
@@ -70,7 +70,7 @@ it('reports capability mismatch when no provider satisfies the requirement', fun
         kernelNetworking: true,
     );
 
-    $selection = $pool->select(E2ETopologyKind::Control, $required);
+    $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
     expect($selection->available())->toBeFalse()
         ->and($selection->message)->toContain('docker: capabilities do not satisfy required');
@@ -89,7 +89,7 @@ it('treats every requested capability flag independently', function (): void {
         kernelNetworking: false,
     );
 
-    $selection = $pool->select(E2ETopologyKind::Control, $required);
+    $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
     expect($selection->available())->toBeTrue()
         ->and($selection->provider()->name())->toBe('incus');
@@ -108,7 +108,7 @@ it('can select providers with Docker sibling container support', function (): vo
         dockerSiblingContainers: true,
     );
 
-    $selection = $pool->select(E2ETopologyKind::Control, $required);
+    $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
     expect($selection->available())->toBeTrue()
         ->and($selection->provider()->name())->toBe('docker');
@@ -123,7 +123,7 @@ it('can create a docker topology provider from environment config', function ():
         'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'docker',
     ], function (): void {
         $pool = E2ETopologyProviderPool::fromEnvironment();
-        $selection = $pool->select(E2ETopologyKind::Control);
+        $selection = $pool->select(E2ETopologyKind::Operator);
 
         expect($selection->message)->toContain('docker:');
     });

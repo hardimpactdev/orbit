@@ -3,9 +3,6 @@
 The `e2e-feature` lane uses prepared topology clones. Choose the smallest
 topology that covers the behavior under test.
 
-Topology kinds use the canonical `operator*` spelling. `control-*` remains an
-accepted alias where the code exposes compatibility shims.
-
 For Incus, topology names describe the roles that should be booted for a test.
 They do not mean each kind has a separate Incus source build. Incus uses the
 prepared five-role source and starts only the listed nodes.
@@ -62,8 +59,7 @@ try {
 
 Use `roles: ['operator']` when only the operator-side command under test needs
 the branch checkout. Add `gateway`, `dev`, or `prod` when the branch changes code
-that runs on those nodes. `control` is accepted as an alias for the operator
-node.
+that runs on those nodes.
 
 ## Cache behavior
 

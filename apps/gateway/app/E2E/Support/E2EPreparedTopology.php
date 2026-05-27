@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Models\Node;
+
 final readonly class E2EPreparedTopology
 {
     public static function supportedKindsForHelp(): string
@@ -117,7 +119,7 @@ final readonly class E2EPreparedTopology
         $role = self::requireArtifactRole($role);
 
         return match ($role) {
-            'operator' => 'control',
+            'operator' => 'operator',
             'app-dev' => 'dev',
             'app-prod' => 'prod',
             default => $role,
@@ -148,7 +150,7 @@ final readonly class E2EPreparedTopology
     private static function canonicalArtifactRole(string $role): ?string
     {
         return match (strtolower(trim($role))) {
-            'operator', 'control' => 'operator',
+            'operator' => 'operator',
             'gateway' => 'gateway',
             'app-dev', 'appdev', 'dev' => 'app-dev',
             'app-prod', 'appprod', 'prod' => 'app-prod',
@@ -198,7 +200,7 @@ final readonly class E2EPreparedTopology
      */
     public static function gatewayNodeNamesForRoles(array $roles): array
     {
-        $names = ['gateway', 'control-1'];
+        $names = ['gateway', 'operator-1'];
 
         foreach ($roles as $role) {
             $nodeName = match ($role) {
@@ -229,9 +231,25 @@ final readonly class E2EPreparedTopology
             static fn (string $name): string => var_export($name, true),
             $allowedNodeNames,
         )).']';
+        $operatorStorageRoleValue = var_export(Node::OPERATOR_STORAGE_ROLE, true);
 
         return <<<PHP
 \$allowedNodeNames = {$allowedNodeNamesValue};
+
+if (in_array('operator-1', \$allowedNodeNames, true)) {
+    \$operatorNode = \\App\\Models\\Node::query()
+        ->where('name', 'operator-1')
+        ->first();
+    \$previousOperatorNode = \\App\\Models\\Node::query()
+        ->where('role', {$operatorStorageRoleValue})
+        ->where('name', '!=', 'operator-1')
+        ->first();
+
+    if (\$operatorNode === null && \$previousOperatorNode !== null) {
+        \$previousOperatorNode->forceFill(['name' => 'operator-1'])->save();
+    }
+}
+
 \$staleNodeIds = \\App\\Models\\Node::query()
     ->whereNotIn('name', \$allowedNodeNames)
     ->pluck('id');

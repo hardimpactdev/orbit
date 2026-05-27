@@ -39,8 +39,8 @@ it('requires dig before resolving DNS over WireGuard', function (): void {
         ->andReturn(e2eReachabilityResult(output: "10.6.0.2\n"));
 
     E2EReachability::assertDnsResolvesOverWg(
-        control: $instance,
-        controlUser: 'orbit',
+        operator: $instance,
+        operatorUser: 'orbit',
         key: $key,
         hostname: 'gateway-1.gateway',
         expectedIp: '10.6.0.2',
@@ -68,8 +68,8 @@ it('resolves URL hostnames through gateway DNS before curl reachability checks',
         ->andReturn(e2eReachabilityResult(output: '200'));
 
     E2EReachability::assertHttpReachable(
-        control: $instance,
-        controlUser: 'orbit',
+        operator: $instance,
+        operatorUser: 'orbit',
         key: $key,
         url: 'https://gateway-1.gateway/',
     );
@@ -98,8 +98,8 @@ it('allows removed apps to become unreachable instead of returning an HTTP statu
         ->andReturn(e2eReachabilityResult(output: '000'));
 
     E2EReachability::assertHttpNotServing(
-        control: $instance,
-        controlUser: 'orbit',
+        operator: $instance,
+        operatorUser: 'orbit',
         key: $key,
         url: 'https://docs.test/',
     );

@@ -33,7 +33,7 @@ it('keeps pest helpers scoped to prepared topology acquisition', function (): vo
         ->toContain('function e2eTopology(')
         ->toContain('E2ETopologyFactory::fromEnvironment()')
         ->toContain('function e2eTopologyCleanup(')
-        ->not->toContain('e2eProvisionControlFromBase')
+        ->not->toContain('e2eProvisionOperatorFromBase')
         ->not->toContain('e2eProvisionGatewayThroughNodeNew')
         ->not->toContain('e2eProvisionAppThroughNodeNew')
         ->not->toContain('node:new')
@@ -68,8 +68,8 @@ it('runs provider aware runtime commands through Docker runtime siblings', funct
 
     $commands = [];
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGateway,
-        control: e2ePestFakeInstance($commands, 'control'),
+        kind: E2ETopologyKind::OperatorGateway,
+        operator: e2ePestFakeInstance($commands, 'operator'),
         gateway: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-gateway', 'orbit-e2e-run'),
         dev: null,
         prod: null,
@@ -93,8 +93,8 @@ it('runs provider aware runtime commands through Docker runtime siblings', funct
 it('uses Docker runtime siblings only for gateway roles', function (): void {
     $commands = [];
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: e2ePestFakeInstance($commands, 'control'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: e2ePestFakeInstance($commands, 'operator'),
         gateway: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-gateway', 'orbit-e2e-run'),
         dev: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-dev', 'orbit-e2e-run'),
         prod: null,
@@ -109,11 +109,11 @@ it('uses Docker runtime siblings only for gateway roles', function (): void {
 it('wraps a topology lease with checkout and ssh helpers', function (): void {
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
-    $control = e2ePestFakeInstance($commands, 'control');
+    $operator = e2ePestFakeInstance($commands, 'operator');
 
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $control,
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
         gateway: null,
         dev: null,
         prod: null,
@@ -121,13 +121,13 @@ it('wraps a topology lease with checkout and ssh helpers', function (): void {
         rebuild: fn () => throw new RuntimeException('not expected'),
     ));
 
-    $harness->setCheckouts(['control' => '/home/orbit/orbit-current']);
+    $harness->setCheckouts(['operator' => '/home/orbit/orbit-current']);
 
-    $result = $harness->ssh('control', 'php artisan node:list --json');
+    $result = $harness->ssh('operator', 'php artisan node:list --json');
 
     expect($result->successful())->toBeTrue();
     expect($commands)->toContain('ssh:orbit:php artisan node:list --json');
-    expect($harness->checkout('control'))->toBe('/home/orbit/orbit-current');
+    expect($harness->checkout('operator'))->toBe('/home/orbit/orbit-current');
 });
 
 it('can expose checkout paths through the e2eCheckout helper', function (): void {
@@ -137,11 +137,11 @@ it('can expose checkout paths through the e2eCheckout helper', function (): void
 
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
-    $control = e2ePestFakeInstance($commands, 'control');
+    $operator = e2ePestFakeInstance($commands, 'operator');
 
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $control,
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
         gateway: null,
         dev: null,
         prod: null,
@@ -149,31 +149,31 @@ it('can expose checkout paths through the e2eCheckout helper', function (): void
         rebuild: fn () => throw new RuntimeException('not expected'),
     ));
 
-    expect(e2eCheckout($harness, roles: ['control']))->toBe(['control' => '/home/orbit/orbit-current']);
+    expect(e2eCheckout($harness, roles: ['operator']))->toBe(['operator' => '/home/orbit/orbit-current']);
 });
 
 it('clears checkout paths when the harness resets', function (): void {
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
-    $control = e2ePestFakeInstance($commands, 'control');
+    $operator = e2ePestFakeInstance($commands, 'operator');
 
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $control,
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
         gateway: null,
         dev: null,
         prod: null,
         sshKeyPair: $key,
         rebuild: fn () => [
-            'instances' => ['control' => $control],
+            'instances' => ['operator' => $operator],
             'snapshotReset' => null,
         ],
     ));
 
-    $harness->setCheckouts(['control' => '/home/orbit/orbit-current']);
+    $harness->setCheckouts(['operator' => '/home/orbit/orbit-current']);
     $harness->reset();
 
-    expect(fn () => $harness->checkout('control'))
+    expect(fn () => $harness->checkout('operator'))
         ->toThrow(RuntimeException::class, 'Current checkout has not been installed');
 });
 
@@ -182,8 +182,8 @@ it('fails clearly when a helper role is unavailable', function (): void {
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: e2ePestFakeInstance($commands, 'control'),
+        kind: E2ETopologyKind::Operator,
+        operator: e2ePestFakeInstance($commands, 'operator'),
         gateway: null,
         dev: null,
         prod: null,
@@ -205,12 +205,12 @@ it('can share cached topologies across helper calls in one process', function ()
 
     E2ETopologyCache::fakeResolver(function () use (&$created, &$deleted): E2ETopologyLease {
         $created++;
-        $control = e2ePestDeletableFakeInstance($deleted, 'control');
+        $operator = e2ePestDeletableFakeInstance($deleted, 'operator');
         $gatewayCommands = [];
 
         return new E2ETopologyLease(
-            kind: E2ETopologyKind::ControlGatewayDevProd,
-            control: $control,
+            kind: E2ETopologyKind::OperatorGatewayAppdevAppprod,
+            operator: $operator,
             gateway: e2ePestFakeInstance($gatewayCommands, 'gateway'),
             dev: null,
             prod: null,
@@ -220,8 +220,8 @@ it('can share cached topologies across helper calls in one process', function ()
     });
 
     try {
-        $first = e2eTopology(E2ETopologyKind::ControlGatewayDevProd);
-        $second = e2eTopology(E2ETopologyKind::ControlGatewayDevProd);
+        $first = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod);
+        $second = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod);
 
         expect($first->lease())->toBe($second->lease())
             ->and($created)->toBe(1);
@@ -259,7 +259,7 @@ it('evicts cached topologies when the process cache limit is reached', function 
 
         return new E2ETopologyLease(
             kind: $kind,
-            control: e2ePestDeletableFakeInstance($deleted, $kind->value.'-control'),
+            operator: e2ePestDeletableFakeInstance($deleted, $kind->value.'-operator'),
             gateway: null,
             dev: null,
             prod: null,
@@ -305,8 +305,8 @@ it('does not eagerly attach a timer to harnesses returned by the e2eTopology hel
         $commands = [];
 
         return new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: e2ePestFakeInstance($commands, 'control'),
+            kind: E2ETopologyKind::Operator,
+            operator: e2ePestFakeInstance($commands, 'operator'),
             gateway: null,
             dev: null,
             prod: null,
@@ -316,7 +316,7 @@ it('does not eagerly attach a timer to harnesses returned by the e2eTopology hel
     });
 
     try {
-        $harness = e2eTopology(E2ETopologyKind::Control);
+        $harness = e2eTopology(E2ETopologyKind::Operator);
 
         expect(e2ePestHarnessTimer($harness))->toBeNull();
     } finally {
@@ -333,8 +333,8 @@ it('does not eagerly attach a timer to cached topology harnesses returned direct
         $commands = [];
 
         return new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: e2ePestFakeInstance($commands, 'control'),
+            kind: E2ETopologyKind::Operator,
+            operator: e2ePestFakeInstance($commands, 'operator'),
             gateway: null,
             dev: null,
             prod: null,
@@ -343,7 +343,7 @@ it('does not eagerly attach a timer to cached topology harnesses returned direct
         );
     });
 
-    $harness = E2ETopologyCache::acquire(E2ETopologyKind::Control);
+    $harness = E2ETopologyCache::acquire(E2ETopologyKind::Operator);
 
     expect(e2ePestHarnessTimer($harness))->toBeNull();
 });
@@ -361,8 +361,8 @@ it('creates and uses a checkout timer lazily when ORBIT_E2E_TIMINGS is enabled',
         $commands = [];
 
         return new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: e2ePestFakeInstance($commands, 'control'),
+            kind: E2ETopologyKind::Operator,
+            operator: e2ePestFakeInstance($commands, 'operator'),
             gateway: null,
             dev: null,
             prod: null,
@@ -372,16 +372,16 @@ it('creates and uses a checkout timer lazily when ORBIT_E2E_TIMINGS is enabled',
     });
 
     try {
-        $harness = e2eTopology(E2ETopologyKind::Control);
+        $harness = e2eTopology(E2ETopologyKind::Operator);
 
         expect(e2ePestHarnessTimer($harness))->toBeNull();
 
-        $harness->withCurrentCheckout(['control']);
+        $harness->withCurrentCheckout(['operator']);
 
         $timer = e2ePestHarnessTimer($harness);
 
         expect($timer)->not->toBeNull()
-            ->and($harness->checkouts())->toBe(['control' => '/home/orbit/orbit-current']);
+            ->and($harness->checkouts())->toBe(['operator' => '/home/orbit/orbit-current']);
     } finally {
         if ($previousCache === false) {
             putenv('ORBIT_E2E_TOPOLOGY_CACHE');
@@ -405,8 +405,8 @@ it('restarts dns alias gateway api with canonical peer identity mapping', functi
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: e2ePestFakeInstanceWithIp($commands, 'operator', '10.61.0.3'),
         gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
         dev: e2ePestFakeInstanceWithIp($commands, 'dev', '10.61.0.4'),
         prod: null,
@@ -441,7 +441,7 @@ it('does not remap a colocated ingress instance away from its node identity', fu
 
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
         kind: E2ETopologyKind::OperatorGatewayAppprodIngress,
-        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        operator: e2ePestFakeInstanceWithIp($commands, 'operator', '10.61.0.3'),
         gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
         dev: null,
         prod: $prod,
@@ -463,8 +463,8 @@ it('uses gateway dns identity for docker dns-alias gateway settings', function (
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: e2ePestFakeInstanceWithIp($commands, 'operator', '10.61.0.3'),
         gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
         dev: e2ePestFakeInstanceWithIp($commands, 'dev', '10.61.0.4'),
         prod: null,
@@ -490,8 +490,8 @@ it('uses lease gateway ip for incus gateway settings', function (): void {
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: e2ePestFakeInstanceWithIp($commands, 'operator', '10.61.0.3'),
         gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
         dev: e2ePestFakeInstanceWithIp($commands, 'dev', '10.61.0.4'),
         prod: null,
@@ -518,7 +518,7 @@ it('uses lease gateway identity when restarting the incus gateway api', function
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
         kind: E2ETopologyKind::OperatorGatewayAgent,
-        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        operator: e2ePestFakeInstanceWithIp($commands, 'operator', '10.61.0.3'),
         gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
         dev: null,
         prod: null,
@@ -547,15 +547,15 @@ it('uses lease gateway identity when restarting the incus gateway api', function
     }
 });
 
-it('seeds current-checkout gateway settings for control callers', function (): void {
+it('seeds current-checkout gateway settings for operator callers', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
     putenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
 
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: e2ePestFakeInstanceWithIp($commands, 'control', '10.61.0.3'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: e2ePestFakeInstanceWithIp($commands, 'operator', '10.61.0.3'),
         gateway: e2ePestFakeInstanceWithIp($commands, 'gateway', '10.61.0.2'),
         dev: e2ePestFakeInstanceWithIp($commands, 'dev', '10.61.0.4'),
         prod: null,
@@ -563,19 +563,19 @@ it('seeds current-checkout gateway settings for control callers', function (): v
         rebuild: fn () => throw new RuntimeException('not expected'),
         gatewayApiIp: '10.61.0.2',
     ));
-    $harness->setCheckouts(['control' => '/home/control/orbit-current']);
+    $harness->setCheckouts(['operator' => '/home/operator/orbit-current']);
 
     try {
         e2eConfigureCurrentCheckoutGatewaySettings($harness);
 
         expect($commands)->toHaveCount(1)
-            ->and($commands[0])->toContain("cd '/home/control/orbit-current' && orbit tinker --execute=")
+            ->and($commands[0])->toContain("cd '/home/operator/orbit-current' && orbit tinker --execute=")
             ->and($commands[0])->toContain('LocalGatewaySettings::current()')
             ->and($commands[0])->toContain('gateway_url')
             ->and($commands[0])->toContain('https://10.61.0.2')
             ->and($commands[0])->toContain('gateway_wg_ip')
             ->and($commands[0])->toContain('10.61.0.2')
-            ->and($commands[0])->not->toContain("cd '/home/control/orbit' &&");
+            ->and($commands[0])->not->toContain("cd '/home/operator/orbit' &&");
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
@@ -598,8 +598,8 @@ it('seeds docker app current-checkout gateway settings through the cli env and r
     $commands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDev,
-        control: e2ePestFakeInstance($commands, 'control'),
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: e2ePestFakeInstance($commands, 'operator'),
         gateway: e2ePestFakeInstance($commands, 'gateway'),
         dev: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-dev', 'orbit-e2e-run'),
         prod: null,
@@ -651,7 +651,7 @@ it('seeds docker operator current-checkout gateway settings through the cli env 
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $harness = new E2ETopologyHarness(new E2ETopologyLease(
         kind: E2ETopologyKind::OperatorGatewayAppdev,
-        control: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-operator', 'orbit-e2e-run'),
+        operator: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-operator', 'orbit-e2e-run'),
         gateway: e2ePestFakeInstance($commands, 'gateway'),
         dev: e2ePestFakeInstance($commands, 'dev'),
         prod: null,

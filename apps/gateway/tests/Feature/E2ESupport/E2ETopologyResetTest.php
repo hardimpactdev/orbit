@@ -13,13 +13,13 @@ afterEach(function (): void {
 });
 
 it('cleanup is idempotent', function (): void {
-    $control = m::mock(E2EInstance::class);
-    $control->shouldReceive('delete')->once();
+    $operator = m::mock(E2EInstance::class);
+    $operator->shouldReceive('delete')->once();
     $teardownCalls = 0;
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $control,
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
         gateway: null,
         dev: null,
         prod: null,
@@ -37,11 +37,11 @@ it('cleanup is idempotent', function (): void {
 });
 
 it('defaults the gateway api address to the standard wireguard address', function (): void {
-    $control = m::mock(E2EInstance::class);
+    $operator = m::mock(E2EInstance::class);
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $control,
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
         gateway: null,
         dev: null,
         prod: null,
@@ -53,24 +53,24 @@ it('defaults the gateway api address to the standard wireguard address', functio
 });
 
 it('reset calls cleanup and acquires fresh instances', function (): void {
-    $oldControl = m::mock(E2EInstance::class);
-    $oldControl->shouldReceive('delete')->once();
+    $oldOperator = m::mock(E2EInstance::class);
+    $oldOperator->shouldReceive('delete')->once();
 
-    $newControl = m::mock(E2EInstance::class);
+    $newOperator = m::mock(E2EInstance::class);
 
     $callCount = 0;
-    $rebuild = function () use ($newControl, &$callCount): array {
+    $rebuild = function () use ($newOperator, &$callCount): array {
         $callCount++;
 
         return [
-            'instances' => ['control' => $newControl],
+            'instances' => ['operator' => $newOperator],
             'snapshotReset' => null,
         ];
     };
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $oldControl,
+        kind: E2ETopologyKind::Operator,
+        operator: $oldOperator,
         gateway: null,
         dev: null,
         prod: null,
@@ -84,24 +84,24 @@ it('reset calls cleanup and acquires fresh instances', function (): void {
 });
 
 it('returns new instances after reset', function (): void {
-    $oldControl = m::mock(E2EInstance::class);
+    $oldOperator = m::mock(E2EInstance::class);
     $oldGateway = m::mock(E2EInstance::class);
     $oldDev = m::mock(E2EInstance::class);
     $oldProd = m::mock(E2EInstance::class);
 
-    $oldControl->shouldReceive('delete')->once();
+    $oldOperator->shouldReceive('delete')->once();
     $oldGateway->shouldReceive('delete')->once();
     $oldDev->shouldReceive('delete')->once();
     $oldProd->shouldReceive('delete')->once();
 
-    $newControl = m::mock(E2EInstance::class);
+    $newOperator = m::mock(E2EInstance::class);
     $newGateway = m::mock(E2EInstance::class);
     $newDev = m::mock(E2EInstance::class);
     $newProd = m::mock(E2EInstance::class);
 
     $rebuild = fn (): array => [
         'instances' => [
-            'control' => $newControl,
+            'operator' => $newOperator,
             'gateway' => $newGateway,
             'dev' => $newDev,
             'prod' => $newProd,
@@ -110,8 +110,8 @@ it('returns new instances after reset', function (): void {
     ];
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDevProd,
-        control: $oldControl,
+        kind: E2ETopologyKind::OperatorGatewayAppdevAppprod,
+        operator: $oldOperator,
         gateway: $oldGateway,
         dev: $oldDev,
         prod: $oldProd,
@@ -121,7 +121,7 @@ it('returns new instances after reset', function (): void {
 
     $lease->reset();
 
-    expect($lease->control())->toBe($newControl)
+    expect($lease->operator())->toBe($newOperator)
         ->and($lease->gateway())->toBe($newGateway)
         ->and($lease->devApp())->toBe($newDev)
         ->and($lease->prodApp())->toBe($newProd);
@@ -132,9 +132,9 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-re
     putenv('ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore');
 
     try {
-        $control = m::mock(E2EInstance::class);
+        $operator = m::mock(E2EInstance::class);
         // No delete() call — snapshot-restore must reuse the same instance handles.
-        $control->shouldNotReceive('delete');
+        $operator->shouldNotReceive('delete');
 
         $callCount = 0;
         $snapshotReset = function () use (&$callCount): void {
@@ -142,8 +142,8 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-re
         };
 
         $lease = new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: $control,
+            kind: E2ETopologyKind::Operator,
+            operator: $operator,
             gateway: null,
             dev: null,
             prod: null,
@@ -157,7 +157,7 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-re
         $lease->reset();
 
         expect($callCount)->toBe(1)
-            ->and($lease->control())->toBe($control);
+            ->and($lease->operator())->toBe($operator);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -172,8 +172,8 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is stateful-re
     putenv('ORBIT_E2E_TOPOLOGY_RESET=stateful-restore');
 
     try {
-        $control = m::mock(E2EInstance::class);
-        $control->shouldNotReceive('delete');
+        $operator = m::mock(E2EInstance::class);
+        $operator->shouldNotReceive('delete');
 
         $callCount = 0;
         $snapshotReset = function () use (&$callCount): void {
@@ -181,8 +181,8 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is stateful-re
         };
 
         $lease = new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: $control,
+            kind: E2ETopologyKind::Operator,
+            operator: $operator,
             gateway: null,
             dev: null,
             prod: null,
@@ -196,7 +196,7 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is stateful-re
         $lease->reset();
 
         expect($callCount)->toBe(1)
-            ->and($lease->control())->toBe($control);
+            ->and($lease->operator())->toBe($operator);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -211,21 +211,21 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
     putenv('ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore');
 
     try {
-        $oldControl = m::mock(E2EInstance::class);
-        $oldControl->shouldReceive('delete')->once();
+        $oldOperator = m::mock(E2EInstance::class);
+        $oldOperator->shouldReceive('delete')->once();
 
-        $newControl = m::mock(E2EInstance::class);
+        $newOperator = m::mock(E2EInstance::class);
         $teardownCalls = 0;
 
         $lease = new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: $oldControl,
+            kind: E2ETopologyKind::Operator,
+            operator: $oldOperator,
             gateway: null,
             dev: null,
             prod: null,
             sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
             rebuild: fn (): array => [
-                'instances' => ['control' => $newControl],
+                'instances' => ['operator' => $newOperator],
                 'snapshotReset' => null,
             ],
             teardown: function () use (&$teardownCalls): void {
@@ -235,7 +235,7 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
 
         $lease->reset();
 
-        expect($lease->control())->toBe($newControl)
+        expect($lease->operator())->toBe($newOperator)
             ->and($teardownCalls)->toBe(0);
     } finally {
         if ($previous === false) {
@@ -247,23 +247,23 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
 });
 
 it('defers teardown until final cleanup across fresh-clone resets', function (): void {
-    $oldControl = m::mock(E2EInstance::class);
-    $oldControl->shouldReceive('delete')->once();
+    $oldOperator = m::mock(E2EInstance::class);
+    $oldOperator->shouldReceive('delete')->once();
 
-    $newControl = m::mock(E2EInstance::class);
-    $newControl->shouldReceive('delete')->once();
+    $newOperator = m::mock(E2EInstance::class);
+    $newOperator->shouldReceive('delete')->once();
 
     $teardownCalls = 0;
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $oldControl,
+        kind: E2ETopologyKind::Operator,
+        operator: $oldOperator,
         gateway: null,
         dev: null,
         prod: null,
         sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
         rebuild: fn (): array => [
-            'instances' => ['control' => $newControl],
+            'instances' => ['operator' => $newOperator],
             'snapshotReset' => null,
         ],
         teardown: function () use (&$teardownCalls): void {
@@ -281,14 +281,14 @@ it('defers teardown until final cleanup across fresh-clone resets', function ():
 });
 
 it('still runs final teardown after a fresh-clone rebuild failure', function (): void {
-    $oldControl = m::mock(E2EInstance::class);
-    $oldControl->shouldReceive('delete')->once();
+    $oldOperator = m::mock(E2EInstance::class);
+    $oldOperator->shouldReceive('delete')->once();
 
     $teardownCalls = 0;
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $oldControl,
+        kind: E2ETopologyKind::Operator,
+        operator: $oldOperator,
         gateway: null,
         dev: null,
         prod: null,
@@ -308,26 +308,26 @@ it('still runs final teardown after a fresh-clone rebuild failure', function ():
 });
 
 it('fresh-clone reset uses a prepared rebuild state', function (): void {
-    $oldControl = m::mock(E2EInstance::class);
-    $oldControl->shouldReceive('delete')->once();
+    $oldOperator = m::mock(E2EInstance::class);
+    $oldOperator->shouldReceive('delete')->once();
 
-    $newControl = m::mock(E2EInstance::class);
+    $newOperator = m::mock(E2EInstance::class);
 
     $prepared = false;
-    $rebuild = function () use ($newControl, &$prepared): array {
+    $rebuild = function () use ($newOperator, &$prepared): array {
         $prepared = true;
 
         return [
             'instances' => [
-                'control' => $newControl,
+                'operator' => $newOperator,
             ],
             'snapshotReset' => null,
         ];
     };
 
     $lease = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: $oldControl,
+        kind: E2ETopologyKind::Operator,
+        operator: $oldOperator,
         gateway: null,
         dev: null,
         prod: null,
@@ -338,7 +338,7 @@ it('fresh-clone reset uses a prepared rebuild state', function (): void {
     $lease->reset();
 
     expect($prepared)->toBeTrue()
-        ->and($lease->control())->toBe($newControl);
+        ->and($lease->operator())->toBe($newOperator);
 });
 
 it('falls back to fresh-clone for unknown reset mode values', function (): void {
@@ -346,19 +346,19 @@ it('falls back to fresh-clone for unknown reset mode values', function (): void 
     putenv('ORBIT_E2E_TOPOLOGY_RESET=unknown-mode');
 
     try {
-        $oldControl = m::mock(E2EInstance::class);
-        $oldControl->shouldReceive('delete')->once();
+        $oldOperator = m::mock(E2EInstance::class);
+        $oldOperator->shouldReceive('delete')->once();
 
-        $newControl = m::mock(E2EInstance::class);
+        $newOperator = m::mock(E2EInstance::class);
 
         $rebuild = fn (): array => [
-            'instances' => ['control' => $newControl],
+            'instances' => ['operator' => $newOperator],
             'snapshotReset' => null,
         ];
 
         $lease = new E2ETopologyLease(
-            kind: E2ETopologyKind::Control,
-            control: $oldControl,
+            kind: E2ETopologyKind::Operator,
+            operator: $oldOperator,
             gateway: null,
             dev: null,
             prod: null,
@@ -368,7 +368,7 @@ it('falls back to fresh-clone for unknown reset mode values', function (): void 
 
         $lease->reset();
 
-        expect($lease->control())->toBe($newControl);
+        expect($lease->operator())->toBe($newOperator);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');

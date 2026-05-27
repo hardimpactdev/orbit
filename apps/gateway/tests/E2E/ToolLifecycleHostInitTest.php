@@ -10,7 +10,7 @@ use Illuminate\Contracts\Process\ProcessResult;
 
 it('manages a system service tool lifecycle on an app node from the gateway', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true)
-        ->withCurrentCheckout(roles: ['control', 'gateway']);
+        ->withCurrentCheckout(roles: ['operator', 'gateway']);
 
     try {
         toolLifecyclePrepareGatewayApi($topology);
@@ -84,7 +84,7 @@ it('manages a system service tool lifecycle on an app node from the gateway', fu
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function toolLifecyclePrepareGatewayApi(E2ETopologyHarness $topology): void
 {
@@ -93,8 +93,8 @@ function toolLifecyclePrepareGatewayApi(E2ETopologyHarness $topology): void
 
     e2eRestartGatewayApi($topology, 'tool-lifecycle');
     E2EGatewayApi::waitForGatewayApi(
-        $topology->instance('control'),
-        $config->controlUser,
+        $topology->instance('operator'),
+        $config->operatorUser,
         $topology->lease()->sshKeyPair(),
         gatewayIp: $gatewayApiIp,
     );
@@ -103,7 +103,7 @@ function toolLifecyclePrepareGatewayApi(E2ETopologyHarness $topology): void
 
 function toolLifecycleUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
 {
-    $caPath = $topology->checkout('control').'/apps/gateway/storage/app/orbit/gateway-ca/orbit.crt';
+    $caPath = $topology->checkout('operator').'/apps/gateway/storage/app/orbit/gateway-ca/orbit.crt';
     $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
     $gatewayIpValue = var_export($gatewayApiIp, true);
     $caPathValue = var_export($caPath, true);
@@ -119,10 +119,10 @@ echo 'updated';
 PHP;
 
     $topology->ssh(
-        'control',
+        'operator',
         sprintf(
             'cd %s && php apps/gateway/artisan tinker --execute=%s',
-            escapeshellarg($topology->checkout('control')),
+            escapeshellarg($topology->checkout('operator')),
             escapeshellarg($php),
         ),
         timeoutSeconds: 120,
@@ -133,17 +133,17 @@ function toolLifecycleSeedGatewayIntent(E2ETopologyHarness $topology, string $ex
 {
     $accessPhp = $withAccess ? <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
 }
 
 \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
     'created_at' => now(),
@@ -239,10 +239,10 @@ BASH),
     $topology->ssh('dev', 'logger -t supervisor "supervisor follow forwarded e2e"', timeoutSeconds: 30);
 
     $forwardedFollow = $topology->ssh(
-        'control',
+        'operator',
         sprintf(
             'cd %s && timeout 20s bash -lc %s',
-            escapeshellarg($topology->checkout('control')),
+            escapeshellarg($topology->checkout('operator')),
             escapeshellarg(<<<'BASH'
 rm -f /tmp/orbit-tool-follow-forwarded.log
 timeout 8s php apps/gateway/artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true

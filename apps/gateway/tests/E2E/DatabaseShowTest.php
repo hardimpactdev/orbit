@@ -13,13 +13,13 @@ it('shows a database connection from the operator node through the gateway api',
     $slug = 'e2e-db-show-'.strtolower(bin2hex(random_bytes(3)));
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'database-show');
         E2EGatewayApi::waitForGatewayApi(
-            $topology->instance('control'),
-            $config->controlUser,
+            $topology->instance('operator'),
+            $config->operatorUser,
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
@@ -46,10 +46,10 @@ PHP;
         );
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit database:show %s --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($slug),
             ),
             timeoutSeconds: 120,
@@ -73,4 +73,4 @@ PHP;
 
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

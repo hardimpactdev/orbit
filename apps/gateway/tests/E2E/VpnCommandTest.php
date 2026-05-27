@@ -10,8 +10,8 @@ function vpnCommandPrepareFakeBackend(E2ETopologyHarness $topology, string $back
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $backendPathValue = var_export($backendPath, true);
     $publicKey = trim($topology->ssh(
-        'control',
-        'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-control >/dev/null; fi && cat ~/.ssh/id_ed25519.pub',
+        'operator',
+        'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-operator >/dev/null; fi && cat ~/.ssh/id_ed25519.pub',
         timeoutSeconds: 60,
     )->output());
 
@@ -55,7 +55,7 @@ PHP;
     );
 
     $gatewayCheckoutValue = var_export($topology->checkout('gateway'), true);
-    $controlScript = <<<PHP
+    $operatorScript = <<<PHP
 \$gateway = \App\Models\Node::query()
     ->where('role', 'gateway')
     ->orWhere('name', 'gateway-1')
@@ -105,8 +105,8 @@ echo 'prepared';
 PHP;
 
     $topology->ssh(
-        'control',
-        'cd '.escapeshellarg($topology->checkout('control')).' && orbit tinker --execute='.escapeshellarg($controlScript),
+        'operator',
+        'cd '.escapeshellarg($topology->checkout('operator')).' && orbit tinker --execute='.escapeshellarg($operatorScript),
         timeoutSeconds: 120,
     );
 
@@ -149,12 +149,12 @@ PHP;
     return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 }
 
-it('administers VPN clients through gateway execution and control SSH forwarding', function (): void {
+it('administers VPN clients through gateway execution and operator SSH forwarding', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway)
-        ->withCurrentCheckout(roles: ['control', 'gateway']);
+        ->withCurrentCheckout(roles: ['operator', 'gateway']);
     $backendPath = '/tmp/orbit-vpn-'.strtolower(bin2hex(random_bytes(3))).'.json';
     $gatewayCheckout = escapeshellarg($topology->checkout('gateway'));
-    $controlCheckout = escapeshellarg($topology->checkout('control'));
+    $operatorCheckout = escapeshellarg($topology->checkout('operator'));
 
     try {
         vpnCommandPrepareFakeBackend($topology, $backendPath);
@@ -170,29 +170,29 @@ it('administers VPN clients through gateway execution and control SSH forwarding
             ->and(array_column($gatewayListPayload['success']['data']['clients'], 'name'))->toContain('laptop');
 
         $created = $topology->ssh(
-            'control',
-            "cd {$controlCheckout} && orbit vpn-client:new tablet --config --json",
+            'operator',
+            "cd {$operatorCheckout} && orbit vpn-client:new tablet --config --json",
             timeoutSeconds: 120,
         );
         $createdPayload = json_decode(trim($created->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $disabled = $topology->ssh(
-            'control',
-            "cd {$controlCheckout} && orbit vpn-client:disable tablet --json",
+            'operator',
+            "cd {$operatorCheckout} && orbit vpn-client:disable tablet --json",
             timeoutSeconds: 120,
         );
         $disabledPayload = json_decode(trim($disabled->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $enabled = $topology->ssh(
-            'control',
-            "cd {$controlCheckout} && orbit vpn-client:enable tablet --json",
+            'operator',
+            "cd {$operatorCheckout} && orbit vpn-client:enable tablet --json",
             timeoutSeconds: 120,
         );
         $enabledPayload = json_decode(trim($enabled->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $removed = $topology->ssh(
-            'control',
-            "cd {$controlCheckout} && orbit vpn-client:remove tablet --force --json",
+            'operator',
+            "cd {$operatorCheckout} && orbit vpn-client:remove tablet --force --json",
             timeoutSeconds: 120,
         );
         $removedPayload = json_decode(trim($removed->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -257,4 +257,4 @@ it('administers VPN clients through gateway execution and control SSH forwarding
         $topology->ssh('gateway', 'rm -f '.escapeshellarg($backendPath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');

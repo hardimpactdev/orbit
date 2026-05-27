@@ -7,7 +7,7 @@
 **Effects:** `read`, `write`, `destructive`, `local-only`, `stream`.
 
 **Prerequisites:**
-- The command is running on a non-gateway client/control machine.
+- The command is running on a non-gateway operator machine.
 - The caller platform has a local resolver backend that Orbit supports.
 - The process has the local OS privileges required to update resolver
   configuration and refresh the resolver backend.

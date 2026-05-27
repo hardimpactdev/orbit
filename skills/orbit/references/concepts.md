@@ -1,21 +1,21 @@
 # Orbit Concepts
 
-Authoritative source: [`docs/architecture.md`](../../../docs/architecture.md), [`docs/concepts.md`](../../../docs/concepts.md), [`docs/tech-stack.md`](../../../docs/tech-stack.md). This file is a quick reference for the parts that matter when calling the CLI.
+Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/content/architecture.md), [`apps/docs/content/concepts.md`](../../../apps/docs/content/concepts.md), [`apps/docs/content/tech-stack.md`](../../../apps/docs/content/tech-stack.md). This file is a quick reference for the parts that matter when calling the CLI.
 
 ## Node roles
 
 | Role | Platform | What it owns |
 |---|---|---|
 | **Gateway** | Ubuntu | Canonical SQLite DB, typed HTTPS API, Orbit root CA, WireGuard, DNS, SSH to app nodes, the only writer of fleet intent |
-| **Control node** | macOS or Ubuntu | Runs the CLI; stores local gateway endpoint, WireGuard identity, trusted CA. No durable Orbit state |
+| **Operator node** | macOS or Ubuntu | Runs the CLI; stores local gateway endpoint, WireGuard identity, trusted CA. No durable Orbit state |
 | **App node** | Ubuntu | Runs PHP-FPM, Caddy, Supervisor, Docker services, app/workspace files. Stateless CLI client to the gateway |
 
-The local caller role comes from the `general.local_node_role` setting (`control` / `gateway` / `app`). Unset = `control`. Gateway and app bootstrap writes the value after readiness.
+The local caller role comes from the gateway-owned node identity. Operator callers have no hosted workload role; gateway and app bootstrap write their local readiness state after provisioning.
 
 ## Architecture in one diagram
 
 ```text
-CLI caller (control / app / gateway-local)
+CLI caller (operator / app / gateway-local)
         │ HTTPS over WireGuard
         ▼
 Gateway (Laravel app, SQLite intent, typed API, doctor)
@@ -24,7 +24,7 @@ Gateway (Laravel app, SQLite intent, typed API, doctor)
 App nodes (PHP-FPM, Caddy, Supervisor, Docker)
 ```
 
-App nodes never talk to each other. App-node CLI calls go to the gateway like any control-node call.
+App nodes never talk to each other. App-node CLI calls go to the gateway like any operator-node call.
 
 ## State families and `doctor`
 
@@ -79,7 +79,7 @@ For commands that accept `--node`, `--app`, or `--workspace`:
 
 1. Explicit flag (`--node=beast`).
 2. App or workspace ownership (e.g. `--app=myapp` resolves the owning node).
-3. Local `node:default` value (control nodes only).
+3. Local `node:default` value (operator nodes only).
 4. Interactive prompt — or non-interactive failure when stdin is unavailable / `-n` is set.
 
 ## JSON output envelope
@@ -100,7 +100,7 @@ Pass `--json` to force JSON. Non-interactive mode (`-n`) auto-enables JSON. Same
 
 Commands like `workspace:setup`, `deploy:run`, `tool:install`, and `node:new` stream Server-Sent Events from the gateway. The CLI renders a step tree (`tree` → `step` events → `complete`/`error`). If the stream closes without `complete` or `error`, the command failed.
 
-## Local node defaults (control nodes)
+## Local node defaults (operator nodes)
 
 ```bash
 orbit node:default <name>     # set default app node
@@ -112,7 +112,7 @@ This avoids passing `--node` on every dev-flavored command. App nodes don't need
 
 ## What Orbit doesn't do
 
-- It doesn't talk to app nodes from a control node directly. Always via gateway.
+- It doesn't talk to app nodes from an operator node directly. Always via gateway.
 - It doesn't infer or store public IPv4/IPv6 from `--host`. Use `node:update --public-ipv4=… --public-ipv6=…`.
 - It doesn't keep a separate "sync" command per family — adoption is `doctor --fix --adopt --family=<key>`.
 - It doesn't expose a separate web UI today. Future UI builds on the typed API.

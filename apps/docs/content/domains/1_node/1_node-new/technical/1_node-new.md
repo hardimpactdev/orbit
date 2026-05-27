@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--operator-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,7 @@ This command follows the shared
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
 | `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values and aliases below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-development`, `app-production`, `ingress`, `websocket`, or `s3`. | Client identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
-| `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
+| `operator_name` | `--operator-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
 | `tld` | `--tld` | `app-dev` or `app-development`. | Client identity, gateway bootstrap, `database`, `app-prod`, or `app-production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `ingress_node` | `--ingress` | Private `app-production` placement. | Every path other than private `app-production` placement. | None. | Must match an active node with the `ingress` role. |
@@ -68,7 +68,7 @@ bootstrap path, not a public role assignment.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
-     `node_new.control_name` for first-gateway bootstrap.
+     `node_new.operator_name` for first-gateway bootstrap.
 5. Validate required, forbidden, and path-eligibility rules as soon as the
    fields needed for each rule are known.
    - Field-local validation runs when the field is supplied or submitted.
@@ -126,7 +126,7 @@ Caller-path behavior is split out into:
   connectivity fact and must be an IP address or dotted DNS name reachable by
   nodes joining the fleet.
 - First-gateway bootstrap mints and installs the initiating client
-  identity using `node_new.control_name`. This is a separate node identity from
+  identity using `node_new.operator_name`. This is a separate node identity from
   the gateway node named by `node_new.name`.
 - First-gateway bootstrap also creates or materializes exactly one internal
   `gateway` assignment, one internal `vpn` assignment, and one internal
@@ -235,7 +235,7 @@ Emitted through the cross-cutting Loggable contract. See
 | Type | `node.created` |
 | Effect | `write` |
 | Subject | The created, enrolled, provisioned, adopted, or converged `Node` when the node record exists; otherwise `null` for early validation or authorization failures. |
-| Properties | `name` (string\|null), `role` (`gateway`\|`app`\|`control`\|null), `environment` (`development`\|`production`\|null), `tld` (string\|null). No secrets, no raw argv, no SSH bootstrap user. |
+| Properties | `name` (string\|null), `role` (`gateway`\|`app`\|`operator`\|null), `environment` (`development`\|`production`\|null), `tld` (string\|null). No secrets, no raw argv, no SSH bootstrap user. |
 | Description | `derived`, for example `"Created node app-dev-1."` |
 
 The first-gateway bootstrap path can run before a gateway API activity sink is
@@ -280,7 +280,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Owns the canonical input contract: fields, sources, required/forbidden conditions, defaults, value validation, `control_name` required only for first-gateway bootstrap, and post-input path eligibility timing. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Owns the canonical input contract: fields, sources, required/forbidden conditions, defaults, value validation, `operator_name` required only for first-gateway bootstrap, and post-input path eligibility timing. |
 
 The contract owner asserts resolved input and validation outcomes — not
 resolver internals. Input-mode prompting and gateway-side authorization

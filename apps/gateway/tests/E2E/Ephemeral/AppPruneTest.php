@@ -7,24 +7,24 @@ use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+pest()->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function appPruneGrantAccess(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
 }
 
 \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
     'created_at' => now(),
@@ -48,13 +48,13 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-prune');
         E2EGatewayApi::waitForGatewayApi(
-            $topology->instance('control'),
-            $config->controlUser,
+            $topology->instance('operator'),
+            $config->operatorUser,
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
@@ -63,10 +63,10 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
 
         // Create app with opencode adapter so prune can query it.
         $create = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:new %s --node=app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,
@@ -77,20 +77,20 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
 
         // Set opencode adapter so the app has a configured agent IDE.
         $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:agent-ide %s opencode --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 120,
         );
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:prune %s --dry-run --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 120,
@@ -116,13 +116,13 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-prune-force');
         E2EGatewayApi::waitForGatewayApi(
-            $topology->instance('control'),
-            $config->controlUser,
+            $topology->instance('operator'),
+            $config->operatorUser,
             $topology->lease()->sshKeyPair(),
             gatewayIp: $gatewayApiIp,
         );
@@ -130,10 +130,10 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         appPruneGrantAccess($topology);
 
         $create = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:new %s --node=app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,
@@ -143,20 +143,20 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         expect($createPayload['success']['data']['result']['action'])->toBe('created');
 
         $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:agent-ide %s opencode --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 120,
         );
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:prune %s --force --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,

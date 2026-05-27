@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Models\Node;
+
 final readonly class E2EGatewayApi
 {
     public static function seedOperatorIdentity(
@@ -13,40 +15,30 @@ final readonly class E2EGatewayApi
         string $gatewayIp = '10.6.0.2',
         string $operatorWireGuardIp = '10.6.0.3',
     ): void {
-        self::seedControlIdentity($gateway, $operatorIp, $operatorUser, $gatewayIp, $operatorWireGuardIp);
-    }
-
-    #[\Deprecated(message: 'Migration alias. Use seedOperatorIdentity() for product-facing terminology.')]
-    public static function seedControlIdentity(
-        E2EInstance $gateway,
-        string $controlIp,
-        string $controlUser,
-        string $gatewayIp = '10.6.0.2',
-        string $controlWireGuardIp = '10.6.0.3',
-    ): void {
-        $controlIpValue = var_export($controlIp, true);
-        $controlUserValue = var_export($controlUser, true);
+        $operatorIpValue = var_export($operatorIp, true);
+        $operatorUserValue = var_export($operatorUser, true);
         $gatewayIpValue = var_export($gatewayIp, true);
-        $controlWireGuardIpValue = var_export($controlWireGuardIp, true);
-        $orbitPathValue = var_export("/home/{$controlUser}/orbit", true);
+        $operatorWireGuardIpValue = var_export($operatorWireGuardIp, true);
+        $orbitPathValue = var_export("/home/{$operatorUser}/orbit", true);
+        $operatorStorageRoleValue = var_export(Node::OPERATOR_STORAGE_ROLE, true);
 
         $php = <<<PHP
 \\App\\Models\\Node::query()->updateOrCreate(
-    ['name' => 'control-1'],
+    ['name' => 'operator-1'],
     array_merge(
         [
-            'role' => 'control',
+            'role' => {$operatorStorageRoleValue},
             'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
-            'host' => {$controlIpValue},
-            'wireguard_address' => {$controlWireGuardIpValue},
+            'host' => {$operatorIpValue},
+            'wireguard_address' => {$operatorWireGuardIpValue},
             'gateway_endpoint' => {$gatewayIpValue},
-            'user' => {$controlUserValue},
+            'user' => {$operatorUserValue},
             'orbit_path' => {$orbitPathValue},
             'status' => 'active',
         ],
-        \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => {$controlUserValue}] : [],
+        \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => {$operatorUserValue}] : [],
     ),
 );
 PHP;
@@ -54,7 +46,7 @@ PHP;
         E2ECommand::orbit(
             $gateway,
             'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
-            'Could not seed control identity on gateway',
+            'Could not seed operator identity on gateway',
         );
     }
 
@@ -341,7 +333,7 @@ SH;
         );
     }
 
-    public static function waitForGatewayApi(E2EInstance $control, string $controlUser, SshKeyPair $key, string $gatewayIp = '10.6.0.2'): void
+    public static function waitForGatewayApi(E2EInstance $operator, string $operatorUser, SshKeyPair $key, string $gatewayIp = '10.6.0.2'): void
     {
         $deadline = time() + 120;
         $last = null;
@@ -349,8 +341,8 @@ SH;
 
         while (time() < $deadline) {
             try {
-                $last = $control->ssh(
-                    $controlUser,
+                $last = $operator->ssh(
+                    $operatorUser,
                     $key,
                     "curl --connect-timeout 2 --max-time 5 -fsS http://{$gatewayIp}/api/ca/root >/dev/null && curl --connect-timeout 2 --max-time 5 -fsSk https://{$gatewayIp}/api/me >/dev/null",
                     timeoutSeconds: 15,
@@ -1028,8 +1020,8 @@ PHP;
             'success' => [
                 'data' => [
                     'self' => [
-                        'name' => 'control-1',
-                        'role' => 'control',
+                        'name' => 'operator-1',
+                        'role' => 'operator',
                         'status' => 'active',
                         'platform' => 'unknown',
                         'addresses' => [

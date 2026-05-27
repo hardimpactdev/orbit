@@ -18,9 +18,9 @@ orbit node:revoke [consuming_node] [serving_node] [--force] [--json]
 ## Examples
 
 ```bash
-orbit node:revoke control-1 app-1
-orbit node:revoke control-1 app-1 --force
-orbit node:revoke control-1 app-1 --force --json
+orbit node:revoke operator-1 app-1
+orbit node:revoke operator-1 app-1 --force
+orbit node:revoke operator-1 app-1 --force --json
 ```
 
 ## Arguments and options
@@ -63,7 +63,7 @@ from a consumer to the gateway whose permissions include `*`. It does not
 get a separate confirmation because every revoke already requires
 destructive consent.
 
-This control-API self-lockout case is distinct from gateway-local direct
+This operator-API self-lockout case is distinct from gateway-local direct
 mutation. Gateway-local revokes are gateway-owned writes and do not report
 `self_lockout=true`.
 

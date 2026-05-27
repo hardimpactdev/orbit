@@ -12,17 +12,17 @@ function nodeRevokeSeedGrant(E2ETopologyHarness $topology): void
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-prod-1'])
+    ->whereIn('name', ['operator-1', 'app-prod-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-prod-1'] as $name) {
+foreach (['operator-1', 'app-prod-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
 }
 
 \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-prod-1'),
 ], [
     'created_at' => now(),
@@ -39,24 +39,24 @@ PHP;
     );
 }
 
-it('revokes node access from a control caller through the gateway api', function (): void {
+it('revokes node access from a operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppprodIngress, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-revoke');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         nodeRevokeSeedGrant($topology);
 
         $revokeResult = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
-                'cd %s && orbit node:revoke control-1 app-prod-1 --force --json',
-                escapeshellarg($topology->checkout('control')),
+                'cd %s && orbit node:revoke operator-1 app-prod-1 --force --json',
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
@@ -64,7 +64,7 @@ it('revokes node access from a control caller through the gateway api', function
         $revokePayload = json_decode(trim($revokeResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($revokePayload['success']['data'])->toBe([
-            'consuming_node' => 'control-1',
+            'consuming_node' => 'operator-1',
             'serving_node' => 'app-prod-1',
             'action' => 'revoked',
             'already_absent' => false,
@@ -73,17 +73,17 @@ it('revokes node access from a control caller through the gateway api', function
         ]);
 
         $showResult = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:show app-prod-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
 
         $showPayload = json_decode(trim($showResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($showPayload['success']['data']['node']['grants']['consuming_nodes'])->not->toContain('control-1');
+        expect($showPayload['success']['data']['node']['grants']['consuming_nodes'])->not->toContain('operator-1');
     } finally {
         $topology->cleanup();
     }

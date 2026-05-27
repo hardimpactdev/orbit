@@ -2,7 +2,7 @@
 
 Manage **non-node** gateway VPN clients (e.g. a phone, a personal device) and the gateway VPN web UI. Orbit nodes get their own WireGuard identities through `node:new` — those don't go through `vpn-client:*`. Spec: [`docs/domains/13_vpn/`](../../../docs/domains/13_vpn/).
 
-VPN administration is the gateway-local exception: when invoked from a control node, Orbit reaches the gateway over the Orbit/WireGuard SSH path and runs the gateway-local command there.
+VPN administration is the gateway-local exception: when invoked from an operator node, Orbit reaches the gateway over the Orbit/WireGuard SSH path and runs the gateway-local command there.
 
 All `vpn-client:*` and `vpn-web-ui:*` commands accept `--totp=<code>` because they touch the underlying VPN backend's admin surface.
 

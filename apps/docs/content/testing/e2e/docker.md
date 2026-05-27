@@ -202,8 +202,7 @@ composer test:e2e:docker -- --sequential-tests \
 
 Each Pest worker gets a non-overlapping Docker subnet from the `10.90.N.0/24`
 pool. Role host endings stay consistent within the worker subnet: gateway `.2`,
-operator `.3`, dev `.4`, prod `.5`, agent `.6`, and ingress `.7`. `control` is
-an alias for the operator node address.
+operator `.3`, dev `.4`, prod `.5`, agent `.6`, and ingress `.7`.
 
 Tests must reach Docker topology services through topology handles such as
 `$topology->operator()->ssh(...)`, not by calling `https://10.6.0.x` directly

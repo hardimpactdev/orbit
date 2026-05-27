@@ -62,7 +62,7 @@ it('starts Docker build topology client nodes with the host Docker socket and no
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::Control);
+        ->build(E2ETopologyKind::Operator);
 
     $setup = implode("\n", $commands);
 
@@ -113,7 +113,7 @@ it('can bind a build-host Composer cache into Docker topology containers', funct
         'ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY' => '1',
     ], function (): void {
         (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-            ->build(E2ETopologyKind::Control);
+            ->build(E2ETopologyKind::Operator);
     });
 
     expect(implode("\n", $commands))
@@ -221,10 +221,10 @@ it('syncs the current checkout into each Docker topology node before installing 
         ->toContain('ORBIT_IS_GATEWAY=true')
         ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader');
 
-    $controlSync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator'")
+    $operatorSync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator'")
         && str_contains($command, "tar --warning=no-unknown-keyword -xzf - -C '/home/orbit/orbit'")
         && str_contains($command, 'orbit-current-')), $commands, strict: true);
-    $controlInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit'")
+    $operatorInstall = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit'")
         && str_contains($command, "'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator-composer'")
         && str_contains($command, '/home/orbit/orbit/apps/cli')
         && str_contains($command, 'composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')), $commands, strict: true);
@@ -235,9 +235,9 @@ it('syncs the current checkout into each Docker topology node before installing 
         && str_contains($command, "tar -C '/home/orbit/orbit' -cf - apps/gateway/vendor apps/cli/vendor")
         && str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-gateway-orbit-runtime'")), $commands, strict: true);
 
-    expect($controlSync)->toBeInt()
-        ->and($controlInstall)->toBeInt()
-        ->and($controlSync)->toBeLessThan($controlInstall)
+    expect($operatorSync)->toBeInt()
+        ->and($operatorInstall)->toBeInt()
+        ->and($operatorSync)->toBeLessThan($operatorInstall)
         ->and($gatewaySync)->toBeInt()
         ->and($gatewayReuse)->toBeInt()
         ->and($gatewaySync)->toBeLessThan($gatewayReuse);
@@ -365,24 +365,24 @@ it('builds Docker topology state through the host orbit launcher', function (): 
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGateway);
+        ->build(E2ETopologyKind::OperatorGateway);
 
     $networkPlan = DockerTopologyNetworkPlan::fromEnvironment('orbit-e2e-prepared-build-operator_gateway');
     $gatewayIp = $networkPlan->ipForRole('gateway');
     $setup = implode("\n", $commands);
-    $controlComposer = strpos($setup, "docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit' --env 'COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache' --env 'COMPOSER_HOME=/tmp/orbit-composer-home' --env 'COMPOSER_PROCESS_TIMEOUT=1200' --env 'COMPOSER_ALLOW_SUPERUSER=1' --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-operator-composer'");
-    $controlMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
+    $operatorComposer = strpos($setup, "docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit' --env 'COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache' --env 'COMPOSER_HOME=/tmp/orbit-composer-home' --env 'COMPOSER_PROCESS_TIMEOUT=1200' --env 'COMPOSER_ALLOW_SUPERUSER=1' --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-operator-composer'");
+    $operatorMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
     $gatewayMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
     $gatewayRefresh = strpos($setup, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -cf - . | docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' tar -C '/home/orbit/orbit' -xf -");
     $gatewayBootstrap = strpos($setup, 'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
 
-    expect($controlComposer)->toBeInt()
-        ->and($controlMigrate)->toBeInt()
+    expect($operatorComposer)->toBeInt()
+        ->and($operatorMigrate)->toBeInt()
         ->and($gatewayMigrate)->toBeInt()
         ->and($gatewayRefresh)->toBeInt()
         ->and($gatewayBootstrap)->toBeInt()
-        ->and($controlComposer)->toBeLessThan($controlMigrate)
-        ->and($controlMigrate)->toBeLessThan($gatewayMigrate)
+        ->and($operatorComposer)->toBeLessThan($operatorMigrate)
+        ->and($operatorMigrate)->toBeLessThan($gatewayMigrate)
         ->and($gatewayMigrate)->toBeLessThan($gatewayRefresh)
         ->and($gatewayRefresh)->toBeLessThan($gatewayBootstrap);
 
@@ -413,7 +413,7 @@ it('starts the build gateway scheduler before schedule doctor verification', fun
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGateway);
+        ->build(E2ETopologyKind::OperatorGateway);
 
     $setup = implode("\n", $commands);
     $bootstrap = strpos($setup, 'orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
@@ -441,7 +441,7 @@ it('keeps the build gateway runtime marked without starting services before migr
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGateway);
+        ->build(E2ETopologyKind::OperatorGateway);
 
     $gatewayRuntimeStart = collect($commands)
         ->first(fn (string $command): bool => str_contains($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime'"));
@@ -465,7 +465,7 @@ it('normalizes persisted gateway orbit state ownership before committing prepare
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGateway);
+        ->build(E2ETopologyKind::OperatorGateway);
 
     $persist = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -xf -"));
     $ownership = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway'")
@@ -496,21 +496,21 @@ it('commits Docker build topology images from node image-layer state instead of 
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGateway);
+        ->build(E2ETopologyKind::OperatorGateway);
 
     $setup = implode("\n", $commands);
-    $controlSync = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
-    $controlCommit = strpos($setup, "docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' --change 'LABEL org.orbit.e2e.topology-mode=dns-alias' --change 'LABEL org.orbit.e2e.kind=operator_gateway' --change 'LABEL org.orbit.e2e.role=operator'");
+    $operatorSync = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
+    $operatorCommit = strpos($setup, "docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' --change 'LABEL org.orbit.e2e.topology-mode=dns-alias' --change 'LABEL org.orbit.e2e.kind=operator_gateway' --change 'LABEL org.orbit.e2e.role=operator'");
     $gatewaySync = strpos($setup, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' tar -C '/home/orbit/orbit' -cf - . | docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -xf -");
     $gatewayCommit = strpos($setup, "docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' --change 'LABEL org.orbit.e2e.topology-mode=dns-alias' --change 'LABEL org.orbit.e2e.kind=operator_gateway' --change 'LABEL org.orbit.e2e.role=gateway'");
 
     expect($setup)
-        ->not->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator_gateway-operator-home-control,dst=/home/control'")
+        ->not->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator_gateway-operator-home-operator,dst=/home/operator'")
         ->not->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator_gateway-gateway-home-orbit,dst=/home/orbit'");
 
-    expect($controlSync)->toBeInt()
-        ->and($controlCommit)->toBeInt()
-        ->and($controlSync)->toBeLessThan($controlCommit)
+    expect($operatorSync)->toBeInt()
+        ->and($operatorCommit)->toBeInt()
+        ->and($operatorSync)->toBeLessThan($operatorCommit)
         ->and($gatewaySync)->toBeInt()
         ->and($gatewayCommit)->toBeInt()
         ->and($gatewaySync)->toBeLessThan($gatewayCommit);
@@ -530,7 +530,7 @@ it('does not use host PHP or host Caddy paths while building Docker gateway topo
     });
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGateway);
+        ->build(E2ETopologyKind::OperatorGateway);
 
     $setup = implode("\n", $commands);
 
@@ -639,7 +639,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
         "docker network create --subnet * 'orbit-e2e-prepared-build-operator_gateway'" => Process::result(),
-        "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'orbit-e2e-prepared-build-operator_gateway-operator' *" => Process::result(output: "control-id\n"),
+        "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'orbit-e2e-prepared-build-operator_gateway-operator' *" => Process::result(output: "operator-id\n"),
         "docker run -d --name 'orbit-e2e-prepared-build-operator_gateway-operator-composer' *" => Process::result(output: "composer-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'orbit-e2e-prepared-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
@@ -731,7 +731,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
     ]);
 
     (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGatewayDev);
+        ->build(E2ETopologyKind::OperatorGatewayAppdev);
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'ssh-keygen -t ed25519')
@@ -747,7 +747,7 @@ it('uses the configured instance prefix for transient resources but stable image
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
         "docker network create --subnet * 'ci-foo-prepared-build-operator_gateway'" => Process::result(),
-        "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'ci-foo-prepared-build-operator_gateway-operator' *" => Process::result(output: "control-id\n"),
+        "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'ci-foo-prepared-build-operator_gateway-operator' *" => Process::result(output: "operator-id\n"),
         "docker run -d --name 'ci-foo-prepared-build-operator_gateway-operator-composer' *" => Process::result(output: "composer-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'ci-foo-prepared-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'ci-foo-prepared-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
@@ -767,7 +767,7 @@ it('uses the configured instance prefix for transient resources but stable image
         'ORBIT_E2E_INSTANCE_PREFIX' => 'ci-foo',
     ], function (): void {
         $manifest = (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-            ->build(E2ETopologyKind::ControlGateway);
+            ->build(E2ETopologyKind::OperatorGateway);
 
         expect($manifest)->toBe([
             ['role' => 'operator', 'container' => 'ci-foo-prepared-build-operator_gateway-operator', 'image' => 'orbit-e2e:operator_base'],

@@ -12,13 +12,13 @@ final readonly class IncusTopologyTemplate
     public static function rolesFor(E2ETopologyKind $kind): array
     {
         $roles = match ($kind) {
-            E2ETopologyKind::Control => ['control'],
-            E2ETopologyKind::ControlGateway => ['control', 'gateway'],
-            E2ETopologyKind::ControlGatewayDev => ['control', 'gateway', 'dev'],
-            E2ETopologyKind::ControlGatewayDevProd => ['control', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAgent => ['control', 'gateway', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['control', 'gateway', 'dev', 'prod', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppprodIngress => ['control', 'gateway', 'prod', 'ingress'],
+            E2ETopologyKind::Operator => ['operator'],
+            E2ETopologyKind::OperatorGateway => ['operator', 'gateway'],
+            E2ETopologyKind::OperatorGatewayAppdev => ['operator', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['operator', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
         };
 
         if (E2EPreparedTopology::prodHostsIngressRole($kind)) {
@@ -188,7 +188,7 @@ final readonly class IncusTopologyTemplate
     private static function artifactRole(string $role): string
     {
         return match ($role) {
-            'control' => 'operator',
+            'operator' => 'operator',
             'dev' => 'app-dev',
             'prod' => 'app-prod',
             default => $role,

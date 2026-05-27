@@ -22,7 +22,7 @@ use Illuminate\Contracts\Process\ProcessResult;
  */
 function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false): E2ETopologyHarness
 {
-    $sshUsers ??= ['control' => E2EConfig::fromEnvironment()->controlUser];
+    $sshUsers ??= ['operator' => E2EConfig::fromEnvironment()->operatorUser];
     $withGatewayApi = $withGatewayApi || e2eGatewayApiByDefault();
 
     if (E2ETopologyCache::enabled()) {
@@ -120,14 +120,14 @@ function e2eGatewayWireGuardIp(E2ETopologyHarness $topology): string
 
 function e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable(E2ETopologyHarness $topology): void
 {
-    if (! array_key_exists('control', $topology->checkouts())) {
+    if (! array_key_exists('operator', $topology->checkouts())) {
         return;
     }
 
     e2eConfigureCurrentCheckoutGatewaySettings($topology);
 }
 
-function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology, string $role = 'control'): void
+function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology, string $role = 'operator'): void
 {
     if (e2eRoleUsesDockerHostLauncher($topology, $role)) {
         e2eConfigureCurrentCheckoutCliGatewaySettings($topology, $role);
@@ -263,7 +263,7 @@ function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
 {
     $canonical = [
         'gateway' => '10.6.0.2',
-        'control' => '10.6.0.3',
+        'operator' => '10.6.0.3',
         'dev' => '10.6.0.4',
         'prod' => '10.6.0.5',
         'ingress' => '10.6.0.7',
@@ -272,7 +272,7 @@ function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
     $lease = $topology->lease();
     $instances = [
         'gateway' => $lease->gateway(),
-        'control' => $lease->control(),
+        'operator' => $lease->operator(),
         'dev' => $lease->devApp(),
         'prod' => $lease->prodApp(),
         'ingress' => $lease->ingress(),
@@ -325,7 +325,7 @@ function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): b
 function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $role): bool
 {
     return e2eRoleUsesDockerTopologyNode($topology, $role)
-        && in_array($role, ['operator', 'control', 'dev', 'prod', 'agent', 'ingress'], true);
+        && in_array($role, ['operator', 'dev', 'prod', 'agent', 'ingress'], true);
 }
 
 function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string
@@ -433,7 +433,7 @@ function e2eStopRuntimePhpServer(E2ETopologyHarness $topology, string $role, str
     );
 }
 
-function e2eGrantNodeAccess(E2ETopologyHarness $topology, string $consumer = 'control-1', string $serving = 'app-dev-1'): void
+function e2eGrantNodeAccess(E2ETopologyHarness $topology, string $consumer = 'operator-1', string $serving = 'app-dev-1'): void
 {
     $consumerValue = var_export($consumer, true);
     $servingValue = var_export($serving, true);

@@ -47,6 +47,8 @@ class Node extends Model
 
     public const string STATUS_ACTIVE = 'active';
 
+    public const string OPERATOR_STORAGE_ROLE = 'control';
+
     #[\Override]
     protected $fillable = [
         'name',
@@ -152,7 +154,7 @@ class Node extends Model
 
     public function isOperator(): bool
     {
-        return $this->role === 'control';
+        return $this->role === self::OPERATOR_STORAGE_ROLE;
     }
 
     public function displayRole(): string

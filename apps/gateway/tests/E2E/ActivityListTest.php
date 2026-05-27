@@ -11,10 +11,10 @@ function activityListSeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$actor = \App\Models\Node::query()->where('name', 'control-1')->first();
+$actor = \App\Models\Node::query()->where('name', 'operator-1')->first();
 
 if (! $actor instanceof \App\Models\Node) {
-    throw new \RuntimeException('Missing prepared control-1 node.');
+    throw new \RuntimeException('Missing prepared operator-1 node.');
 }
 
 \Spatie\Activitylog\Models\Activity::query()->delete();
@@ -49,24 +49,24 @@ PHP;
     );
 }
 
-it('reads gateway activity from a control caller through the gateway api', function (): void {
+it('reads gateway activity from a operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'activity-list');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         activityListSeed($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit activity:list --effect=destructive --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
@@ -82,4 +82,4 @@ it('reads gateway activity from a control caller through the gateway api', funct
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');

@@ -10,7 +10,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 {
     private const string GatewayWireGuardIp = '10.6.0.2';
 
-    private const string ControlWireGuardIp = '10.6.0.3';
+    private const string OperatorWireGuardIp = '10.6.0.3';
 
     private const string DevWireGuardIp = '10.6.0.4';
 
@@ -128,7 +128,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         return new E2ETopologyLease(
             kind: $kind,
-            control: $leaseInstances['control'],
+            operator: $leaseInstances['operator'],
             gateway: $leaseInstances['gateway'] ?? null,
             dev: $leaseInstances['dev'] ?? null,
             prod: $leaseInstances['prod'] ?? null,
@@ -202,7 +202,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $sshKeyPair,
                 $timer->child("warm.slot-{$slot}"),
                 new E2ETopologyAcquisitionOptions(
-                    sshUsers: ['control' => $this->config->controlUser],
+                    sshUsers: ['operator' => $this->config->operatorUser],
                     startGatewayApi: true,
                 ),
                 $kind,
@@ -292,10 +292,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $timer->measure("warm.command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
             }
 
-            if ($options->startGatewayApi && isset($instances['control'])) {
+            if ($options->startGatewayApi && isset($instances['operator'])) {
                 $timer->measure('warm.gateway-api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
-                    $instances['control'],
-                    $this->config->controlUser,
+                    $instances['operator'],
+                    $this->config->operatorUser,
                     $sshKeyPair,
                     gatewayIp: self::GatewayWireGuardIp,
                 ));
@@ -316,7 +316,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         return new E2ETopologyLease(
             kind: $kind,
-            control: $leaseInstances['control'],
+            operator: $leaseInstances['operator'],
             gateway: $leaseInstances['gateway'] ?? null,
             dev: $leaseInstances['dev'] ?? null,
             prod: $leaseInstances['prod'] ?? null,
@@ -369,10 +369,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $cycleTimer->measure("warm.reset.command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
             }
 
-            if ($startGatewayApi && isset($instances['control'])) {
+            if ($startGatewayApi && isset($instances['operator'])) {
                 $cycleTimer->measure('warm.reset.gateway-api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
-                    $instances['control'],
-                    $this->config->controlUser,
+                    $instances['operator'],
+                    $this->config->operatorUser,
                     $sshKeyPair,
                     gatewayIp: self::GatewayWireGuardIp,
                 ));
@@ -513,7 +513,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         foreach (array_keys($instances) as $role) {
             $users[$role] = match ($role) {
-                'control' => $config->controlUser,
+                'operator' => $config->operatorUser,
                 default => 'orbit',
             };
         }
@@ -637,10 +637,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      */
     private function retargetRealWireGuard(array $instances): void
     {
-        $control = $instances['control'] ?? null;
+        $operator = $instances['operator'] ?? null;
         $gateway = $instances['gateway'] ?? null;
 
-        if ($control === null || $gateway === null) {
+        if ($operator === null || $gateway === null) {
             return;
         }
 
@@ -651,7 +651,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'control', 'dev', 'prod', 'agent', 'ingress'] as $role) {
+        foreach (['gateway', 'operator', 'dev', 'prod', 'agent', 'ingress'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -660,7 +660,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $mesh->verifyRole($gateway, 'gateway', array_values(array_filter([
-            'control',
+            'operator',
             isset($instances['dev']) ? 'dev' : null,
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
@@ -675,7 +675,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     {
         $generator = app(WireGuardKeyGenerator::class);
         $gatewayHost = $generator->generateKeyPair();
-        $control = $generator->generateKeyPair();
+        $operator = $generator->generateKeyPair();
         $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
@@ -687,8 +687,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             wgEasyPublicKey: $wgEasyPublicKey,
             gatewayHostPrivateKey: $gatewayHost['private_key'],
             gatewayHostPublicKey: $gatewayHost['public_key'],
-            controlPrivateKey: $control['private_key'],
-            controlPublicKey: $control['public_key'],
+            operatorPrivateKey: $operator['private_key'],
+            operatorPublicKey: $operator['public_key'],
             devPrivateKey: $dev['private_key'] ?? null,
             devPublicKey: $dev['public_key'] ?? null,
             prodPrivateKey: $prod['private_key'] ?? null,
@@ -705,10 +705,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      */
     private function retargetTopology(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2ETopologyKind $kind): void
     {
-        $control = $instances['control'] ?? null;
+        $operator = $instances['operator'] ?? null;
         $gateway = $instances['gateway'] ?? null;
 
-        if ($control === null || $gateway === null) {
+        if ($operator === null || $gateway === null) {
             return;
         }
 
@@ -717,9 +717,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             escapeshellarg(self::GatewayWireGuardIp),
             escapeshellarg($gateway->waitForIpv4()),
         ), timeoutSeconds: 120);
-        E2EGatewayApi::seedOperatorIdentity($gateway, self::ControlWireGuardIp, $config->controlUser);
+        E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $config->operatorUser);
 
-        $this->retargetControl($control, $config, $sshKeyPair);
+        $this->retargetOperator($operator, $config, $sshKeyPair);
 
         if (isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
@@ -801,7 +801,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         );
     }
 
-    private function retargetControl(IncusInstance $control, E2EConfig $config, SshKeyPair $sshKeyPair): void
+    private function retargetOperator(IncusInstance $operator, E2EConfig $config, SshKeyPair $sshKeyPair): void
     {
         $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
 
@@ -831,24 +831,24 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 PHP;
 
         E2ECommand::ssh(
-            $control,
-            $config->controlUser,
+            $operator,
+            $config->operatorUser,
             $sshKeyPair,
-            'cd /home/'.$config->controlUser.'/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/'.$config->operatorUser.'/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
 
         E2ECommand::ssh(
-            $control,
-            $config->controlUser,
+            $operator,
+            $config->operatorUser,
             $sshKeyPair,
             implode(' && ', [
-                'cd '.escapeshellarg("/home/{$config->controlUser}/orbit/apps/cli"),
+                'cd '.escapeshellarg("/home/{$config->operatorUser}/orbit/apps/cli"),
                 'touch .env',
                 "grep -Ev '^(ORBIT_GATEWAY_URL|ORBIT_GATEWAY_IDENTITY)=' .env > .env.tmp || true",
                 'mv .env.tmp .env',
                 sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg('http://'.self::GatewayWireGuardIp)),
-                sprintf('chown %s:%s .env', escapeshellarg($config->controlUser), escapeshellarg($config->controlUser)),
+                sprintf('chown %s:%s .env', escapeshellarg($config->operatorUser), escapeshellarg($config->operatorUser)),
             ]),
             timeoutSeconds: 60,
         );
@@ -884,7 +884,7 @@ PHP;
      */
     private function additionalInstancesFrom(array $instances): array
     {
-        return array_diff_key($instances, array_flip(['control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
+        return array_diff_key($instances, array_flip(['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
     }
 
     /**
@@ -893,7 +893,7 @@ PHP;
     private function waitForPeerRoutes(array $instances, E2EConfig $config): void
     {
         $gateway = $instances['gateway'] ?? null;
-        $control = $instances['control'] ?? null;
+        $operator = $instances['operator'] ?? null;
 
         if ($gateway === null) {
             return;
@@ -908,15 +908,15 @@ PHP;
 
             $this->waitForGatewaySsh($gateway, $wireGuardIp);
 
-            if ($control !== null) {
-                $this->waitForControlHostKeyScan($control, $config, $wireGuardIp);
+            if ($operator !== null) {
+                $this->waitForOperatorHostKeyScan($operator, $config, $wireGuardIp);
             }
         }
     }
 
     /**
      * Clones inherit `~/.ssh/known_hosts` from their templates. Templates pick
-     * up stale entries from earlier bake-time SSHes (e.g. control bootstrapping
+     * up stale entries from earlier bake-time SSHes (e.g. operator bootstrapping
      * dev/prod through their provider IPs), and Incus reuses provider IPs
      * across runs, so the clone IPs collide with stale fingerprints and trip
      * StrictHostKeyChecking inside production SSH paths.
@@ -954,11 +954,11 @@ PHP;
         );
     }
 
-    private function waitForControlHostKeyScan(IncusInstance $control, E2EConfig $config, string $wireGuardIp): void
+    private function waitForOperatorHostKeyScan(IncusInstance $operator, E2EConfig $config, string $wireGuardIp): void
     {
         E2ECommand::ssh(
-            $control,
-            $config->controlUser,
+            $operator,
+            $config->operatorUser,
             new SshKeyPair('/dev/null', '/dev/null'),
             sprintf(
                 'deadline=$((SECONDS+60)); until ssh-keyscan -T 5 -t ed25519,ecdsa,rsa %1$s >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then ssh-keyscan -T 10 -t ed25519,ecdsa,rsa %1$s; exit 1; fi; sleep 2; done',
@@ -972,7 +972,7 @@ PHP;
     {
         return match ($role) {
             'gateway' => self::GatewayWireGuardIp,
-            'control' => self::ControlWireGuardIp,
+            'operator' => self::OperatorWireGuardIp,
             'dev' => self::DevWireGuardIp,
             'prod' => self::ProdWireGuardIp,
             'agent' => self::AgentWireGuardIp,

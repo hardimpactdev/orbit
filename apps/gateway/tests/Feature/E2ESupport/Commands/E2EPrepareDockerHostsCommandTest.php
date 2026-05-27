@@ -37,7 +37,7 @@ it('documents host preparation without force using docker test runners', functio
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:28,sidecar2:2:28,beast:3:56',
         'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
     ], function (): void {
-        $this->artisan('e2e:prepare-docker-hosts', ['kind' => 'control-gateway-dev-prod'])
+        $this->artisan('e2e:prepare-docker-hosts', ['kind' => 'operator-gateway-dev-prod'])
             ->expectsOutputToContain('Dry run')
             ->expectsOutputToContain('builder: beast')
             ->expectsOutputToContain('planned: sidecar1')
@@ -235,7 +235,7 @@ it('builds docker images once on the build host and distributes them to runner h
         'ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY' => '1',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
-            'kind' => 'control-gateway-dev-prod',
+            'kind' => 'operator-gateway-dev-prod',
             '--force' => true,
         ])->assertSuccessful();
     });
@@ -438,7 +438,7 @@ it('rejects multiple docker image build hosts to keep topology images combined',
         'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast,sidecar1',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
-            'kind' => 'control-gateway-dev-prod',
+            'kind' => 'operator-gateway-dev-prod',
             '--force' => true,
         ])
             ->expectsOutputToContain('Configure exactly one Docker image build host')
@@ -465,7 +465,7 @@ it('prepares Docker topology images', function (): void {
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:28',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
-            'kind' => 'control-gateway',
+            'kind' => 'operator-gateway',
             '--force' => true,
             '--topology-only' => true,
         ])->assertSuccessful();
@@ -494,7 +494,7 @@ it('defaults host preparation to prepared topology images', function (): void {
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:28',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
-            'kind' => 'control-gateway',
+            'kind' => 'operator-gateway',
             '--force' => true,
             '--topology-only' => true,
         ])->assertSuccessful();
@@ -517,7 +517,7 @@ it('supports preparing only topology images', function (): void {
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:28',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
-            'kind' => 'control-gateway-dev-prod',
+            'kind' => 'operator-gateway-dev-prod',
             '--force' => true,
             '--topology-only' => true,
         ])->assertSuccessful();
@@ -547,7 +547,7 @@ it('fails when one host preparation fails and reports the host', function (): vo
         'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
     ], function (): void {
         $this->artisan('e2e:prepare-docker-hosts', [
-            'kind' => 'control-gateway-dev-prod',
+            'kind' => 'operator-gateway-dev-prod',
             '--force' => true,
         ])
             ->expectsOutputToContain('beast')

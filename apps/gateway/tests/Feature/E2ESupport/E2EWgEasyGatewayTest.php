@@ -81,7 +81,7 @@ it('persists and activates topology peers on wg-easy wg0', function (): void {
 
     (new E2EWgEasyGateway)->configurePeers($instance, [
         ['name' => 'gateway', 'private_key' => 'gateway-host-private', 'public_key' => 'gateway-host-public', 'pre_shared_key' => 'gateway-psk', 'address' => '10.6.0.2'],
-        ['name' => 'control', 'private_key' => 'control-private', 'public_key' => 'control-public', 'pre_shared_key' => 'control-psk', 'address' => '10.6.0.3'],
+        ['name' => 'operator', 'private_key' => 'operator-private', 'public_key' => 'operator-public', 'pre_shared_key' => 'operator-psk', 'address' => '10.6.0.3'],
         ['name' => 'dev', 'private_key' => 'dev-private', 'public_key' => 'dev-public', 'pre_shared_key' => 'dev-psk', 'address' => '10.6.0.4'],
     ]);
 
@@ -96,7 +96,7 @@ it('persists and activates topology peers on wg-easy wg0', function (): void {
         ->and($commands[0])->toContain('gateway-host-public')
         ->and($commands[0])->toContain('preshared-key')
         ->and($commands[0])->toContain('10.6.0.2/32')
-        ->and($commands[0])->toContain('control-public')
+        ->and($commands[0])->toContain('operator-public')
         ->and($commands[0])->toContain('10.6.0.3/32')
         ->and($commands[0])->toContain('dev-public')
         ->and($commands[0])->toContain('10.6.0.4/32')
@@ -153,7 +153,7 @@ it('persists fixture peers through the generated PDO script', function (): void 
 
     $peers = [
         ['name' => "gateway', enabled = 0 --", 'private_key' => 'gateway-host-private', 'public_key' => 'gateway-host-public', 'pre_shared_key' => 'gateway-psk', 'address' => '10.6.0.2'],
-        ['name' => 'control', 'private_key' => 'control-private', 'public_key' => 'control-public', 'address' => '10.6.0.3'],
+        ['name' => 'operator', 'private_key' => 'operator-private', 'public_key' => 'operator-public', 'address' => '10.6.0.3'],
     ];
 
     seedE2EWgEasyGatewayClient($databasePath, name: 'stale', publicKey: 'gateway-host-public', address: '10.6.0.99');
@@ -166,7 +166,7 @@ it('persists fixture peers through the generated PDO script', function (): void 
     ]);
 
     $gateway = e2eWgEasyGatewayRow($databasePath, 'clients_table', "public_key = 'gateway-host-public'");
-    $control = e2eWgEasyGatewayRow($databasePath, 'clients_table', "public_key = 'control-public'");
+    $operator = e2eWgEasyGatewayRow($databasePath, 'clients_table', "public_key = 'operator-public'");
 
     expect(e2eWgEasyGatewayCount($databasePath, 'clients_table'))->toBe(2)
         ->and($gateway['name'])->toBe("gateway', enabled = 0 --")
@@ -174,8 +174,8 @@ it('persists fixture peers through the generated PDO script', function (): void 
         ->and($gateway['pre_shared_key'])->toBe('gateway-psk')
         ->and($gateway['server_allowed_ips'])->toBe('["10.6.0.2/32"]')
         ->and($gateway['enabled'])->toBe(1)
-        ->and($control['pre_shared_key'])->toBe(base64_encode(hash('sha256', 'orbit-e2e-control-public', binary: true)))
-        ->and($control['ipv6_address'])->toBe('fdcc:ad94:bacf:61a4::cafe:3');
+        ->and($operator['pre_shared_key'])->toBe(base64_encode(hash('sha256', 'orbit-e2e-operator-public', binary: true)))
+        ->and($operator['ipv6_address'])->toBe('fdcc:ad94:bacf:61a4::cafe:3');
 });
 
 /**

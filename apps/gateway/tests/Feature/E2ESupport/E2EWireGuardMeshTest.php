@@ -27,8 +27,8 @@ it('renders the gateway host config as a peer of wg-easy', function (): void {
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         devPrivateKey: 'dev-private',
         devPublicKey: 'dev-public',
     );
@@ -43,7 +43,7 @@ it('renders the gateway host config as a peer of wg-easy', function (): void {
         ->and($config)->toContain('Endpoint = 10.231.0.11:51820')
         ->and($config)->toContain('PersistentKeepalive = 25')
         ->and($config)->not->toContain('ListenPort = 51820')
-        ->and($config)->not->toContain('PublicKey = control-public')
+        ->and($config)->not->toContain('PublicKey = operator-public')
         ->and($config)->not->toContain('PublicKey = dev-public');
 });
 
@@ -53,8 +53,8 @@ it('renders non-gateway peer configs against the wg-easy server key', function (
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         devPrivateKey: 'dev-private',
         devPublicKey: 'dev-public',
     );
@@ -77,8 +77,8 @@ it('returns persistent wg-easy peer records for topology roles', function (): vo
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         devPrivateKey: 'dev-private',
         devPublicKey: 'dev-public',
     );
@@ -88,7 +88,7 @@ it('returns persistent wg-easy peer records for topology roles', function (): vo
     expect($peers)->toHaveCount(3)
         ->and($peers[0])->toMatchArray(['name' => 'gateway', 'private_key' => 'gateway-host-private', 'public_key' => 'gateway-host-public', 'address' => '10.6.0.2'])
         ->and($peers[0]['pre_shared_key'])->toBe(base64_encode(hash('sha256', 'orbit-e2e-gateway-host-public', binary: true)))
-        ->and($peers[1])->toMatchArray(['name' => 'control', 'private_key' => 'control-private', 'public_key' => 'control-public', 'address' => '10.6.0.3'])
+        ->and($peers[1])->toMatchArray(['name' => 'operator', 'private_key' => 'operator-private', 'public_key' => 'operator-public', 'address' => '10.6.0.3'])
         ->and($peers[1]['pre_shared_key'])->not->toBeEmpty()
         ->and($peers[2])->toMatchArray(['name' => 'dev', 'private_key' => 'dev-private', 'public_key' => 'dev-public', 'address' => '10.6.0.4'])
         ->and($peers[2]['pre_shared_key'])->not->toBeEmpty();
@@ -100,8 +100,8 @@ it('can include an agent peer with a stable WireGuard address', function (): voi
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         agentPrivateKey: 'agent-private',
         agentPublicKey: 'agent-public',
     );
@@ -125,8 +125,8 @@ it('can include an ingress peer with a stable WireGuard address', function (): v
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         ingressPrivateKey: 'ingress-private',
         ingressPublicKey: 'ingress-public',
     );
@@ -161,8 +161,8 @@ it('installs and restarts wg-orbit for a role', function (): void {
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         devPrivateKey: 'dev-private',
         devPublicKey: 'dev-public',
     );
@@ -196,13 +196,13 @@ it('verifies a role interface and peer reachability', function (): void {
         wgEasyPublicKey: 'wg-easy-public',
         gatewayHostPrivateKey: 'gateway-host-private',
         gatewayHostPublicKey: 'gateway-host-public',
-        controlPrivateKey: 'control-private',
-        controlPublicKey: 'control-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
         devPrivateKey: 'dev-private',
         devPublicKey: 'dev-public',
     );
 
-    $mesh->verifyRole($instance, 'gateway', ['control', 'dev']);
+    $mesh->verifyRole($instance, 'gateway', ['operator', 'dev']);
 
     expect($commands[0])->toContain('deadline=$((SECONDS+60))')
         ->and($commands[0])->toContain('while true; do')

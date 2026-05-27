@@ -249,7 +249,7 @@ it('skips orbit-template and orbit-ready instances', function (): void {
         if (str_contains($process->command, 'incus list')) {
             return Process::result(output: json_encode([
                 ['name' => 'orbit-e2e-old', 'created_at' => '2026-05-03T04:00:00Z'],
-                ['name' => 'orbit-template-control', 'created_at' => '2026-05-01T04:00:00Z'],
+                ['name' => 'orbit-template-operator', 'created_at' => '2026-05-01T04:00:00Z'],
                 ['name' => 'orbit-ready-gateway', 'created_at' => '2026-05-01T04:00:00Z'],
             ]));
         }
@@ -261,7 +261,7 @@ it('skips orbit-template and orbit-ready instances', function (): void {
 
     $this->artisan('e2e:reap-incus')
         ->expectsOutputToContain('orbit-e2e-old')
-        ->expectsOutputToContain('Skipped protected names: orbit-template-control, orbit-ready-gateway')
+        ->expectsOutputToContain('Skipped protected names: orbit-template-operator, orbit-ready-gateway')
         ->assertSuccessful();
 
     Process::assertNotRan(function ($process) {

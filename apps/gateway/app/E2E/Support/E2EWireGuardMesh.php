@@ -22,8 +22,8 @@ final readonly class E2EWireGuardMesh
         string $wgEasyPublicKey,
         string $gatewayHostPrivateKey,
         string $gatewayHostPublicKey,
-        string $controlPrivateKey,
-        string $controlPublicKey,
+        string $operatorPrivateKey,
+        string $operatorPublicKey,
         ?string $devPrivateKey = null,
         ?string $devPublicKey = null,
         ?string $prodPrivateKey = null,
@@ -35,7 +35,7 @@ final readonly class E2EWireGuardMesh
     ): self {
         $peers = [
             'gateway' => self::peerRecord('10.6.0.2', $gatewayHostPrivateKey, $gatewayHostPublicKey),
-            'control' => self::peerRecord('10.6.0.3', $controlPrivateKey, $controlPublicKey),
+            'operator' => self::peerRecord('10.6.0.3', $operatorPrivateKey, $operatorPublicKey),
         ];
 
         if ($devPrivateKey !== null && $devPublicKey !== null) {

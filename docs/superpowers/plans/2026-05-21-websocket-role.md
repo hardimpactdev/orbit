@@ -13,8 +13,8 @@
 > `bin`, or `docker`, use `apps/gateway/app`, `apps/gateway/database`,
 > `apps/gateway/routes`, and `apps/gateway/tests`.
 >
-> **E2E contract:** Use `docs/testing/README.md` and
-> `docs/testing/e2e/**` as authority. Docker E2E uses composable role images
+> **E2E contract:** Use `apps/docs/content/testing/README.md` and
+> `apps/docs/content/testing/e2e/**` as authority. Docker E2E uses composable role images
 > and runs the smallest requested topology from those images. Incus feature E2E
 > uses prepared role snapshots from `orbit-base-ubuntu-26.04` and boots only the
 > roles a test requests. Supported providers are Docker and Incus.
@@ -42,15 +42,15 @@ gateway-coupled role and ingress forwards public traffic to router.
 
 ### Product Docs
 
-- Modify: `docs/architecture.md` - add websocket role and router-backed realtime traffic shape.
-- Modify: `docs/tech-stack.md` - document Laravel Reverb runtime, TLS private bind, Redis dependency, and process manager.
-- Modify: `docs/concepts.md` - add `websocket` role, app websocket binding, websocket backend pool, and Reverb credential terms.
-- Modify: `docs/domains/1_node/node-concepts.md` - add role compatibility, settings, baseline, and platform support.
-- Modify: `docs/domains/1_node/1_node-new/**` - document `--role=websocket --redis-node=`.
-- Modify: `docs/domains/1_node/12_node-role-add/**` - document adding `websocket`.
-- Modify: `docs/domains/5_app/**` - document app websocket binding ownership.
-- Modify: `docs/domains/8_proxy/**` - document websocket route placement through router and ingress.
-- Modify: `docs/domains/3_tool/catalog/reverb.md` - align the current Reverb tool catalog with the role-owned Reverb runtime.
+- Modify: `apps/docs/content/architecture.md` - add websocket role and router-backed realtime traffic shape.
+- Modify: `apps/docs/content/tech-stack.md` - document Laravel Reverb runtime, TLS private bind, Redis dependency, and process manager.
+- Modify: `apps/docs/content/concepts.md` - add `websocket` role, app websocket binding, websocket backend pool, and Reverb credential terms.
+- Modify: `apps/docs/content/domains/1_node/node-concepts.md` - add role compatibility, settings, baseline, and platform support.
+- Modify: `apps/docs/content/domains/1_node/1_node-new/**` - document `--role=websocket --redis-node=`.
+- Modify: `apps/docs/content/domains/1_node/12_node-role-add/**` - document adding `websocket`.
+- Modify: `apps/docs/content/domains/5_app/**` - document app websocket binding ownership.
+- Modify: `apps/docs/content/domains/8_proxy/**` - document websocket route placement through router and ingress.
+- Modify: `apps/docs/content/domains/3_tool/catalog/reverb.md` - align the current Reverb tool catalog with the role-owned Reverb runtime.
 
 ### Schema And Models
 
@@ -119,7 +119,7 @@ gateway-coupled role and ingress forwards public traffic to router.
 
 - [ ] **Step 1: Update architecture role language**
 
-Add this contract language to `docs/architecture.md`:
+Add this contract language to `apps/docs/content/architecture.md`:
 
 ```markdown
 The `websocket` role is a private workload role for Orbit-managed realtime
@@ -169,7 +169,7 @@ websocket role nodes.
 
 - [ ] **Step 5: Update Reverb tool catalog**
 
-In `docs/domains/3_tool/catalog/reverb.md`, state that the installable `reverb`
+In `apps/docs/content/domains/3_tool/catalog/reverb.md`, state that the installable `reverb`
 tool is superseded by the `websocket` role for fleet realtime infrastructure.
 The tool catalog entry may remain for compatibility until implementation
 removes or migrates it, but app-facing realtime should use the role.
@@ -1080,7 +1080,7 @@ Expected: pass.
   - `operator_gateway_app-dev_app-prod` for
     `ingress -> router -> websocket` assertions.
   Modify E2E topology internals only if the current contract in
-  `docs/testing/e2e/**` proves a missing capability.
+  `apps/docs/content/testing/e2e/**` proves a missing capability.
 
 - [ ] **Step 1: Write E2E test**
 

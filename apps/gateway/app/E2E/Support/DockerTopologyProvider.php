@@ -104,7 +104,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         return new E2ETopologyLease(
             kind: $kind,
-            control: $leaseInstances['operator'] ?? $leaseInstances['control'],
+            operator: $leaseInstances['operator'] ?? $leaseInstances['operator'],
             gateway: $leaseInstances['gateway'] ?? null,
             dev: $leaseInstances['dev'] ?? null,
             prod: $leaseInstances['prod'] ?? null,
@@ -133,9 +133,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         $mode ??= $this->topologyMode();
 
-        $sourceRole = $role === 'control' ? 'operator' : $role;
-        $candidate = $this->imageNameFor($kind, $sourceRole, $mode);
-        $baseCandidate = DockerTopologyBuilder::baseImageNameFor($kind, $sourceRole, $mode);
+        $candidate = $this->imageNameFor($kind, $role, $mode);
+        $baseCandidate = DockerTopologyBuilder::baseImageNameFor($kind, $role, $mode);
 
         if ($candidate === $baseCandidate) {
             return [$candidate];
@@ -831,7 +830,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         return match ($role) {
             'gateway' => '10.6.0.2',
-            'operator', 'control' => '10.6.0.3',
+            'operator' => '10.6.0.3',
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',
@@ -1072,6 +1071,6 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private function additionalInstancesFrom(array $instances): array
     {
-        return array_diff_key($instances, array_flip(['operator', 'control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
+        return array_diff_key($instances, array_flip(['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
     }
 }

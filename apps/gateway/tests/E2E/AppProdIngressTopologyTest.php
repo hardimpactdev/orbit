@@ -37,7 +37,7 @@ it('acquires app production ingress on the prod node', function (): void {
             ->and($state['roles'])->toContain('app-production')
             ->and($state['roles'])->toContain('ingress')
             ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
-            ->and($state['node_names'])->toBe(['app-prod-1', 'control-1', 'gateway']);
+            ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
     } finally {
         $topology->cleanup();
     }

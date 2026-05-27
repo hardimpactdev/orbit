@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+pest()->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 it('reports workspace source drift from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)

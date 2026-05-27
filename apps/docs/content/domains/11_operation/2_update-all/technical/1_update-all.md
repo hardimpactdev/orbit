@@ -52,8 +52,8 @@ execution details live in the renderer contracts.
 - Include active non-local managed Orbit installations from gateway node
   configuration when the gateway has both an Orbit installation path and enough
   `RemoteShell` transport metadata to reach the node.
-- **Exclude every node whose role is `control`, regardless of caller.** Control
-  nodes are operator workstations that update locally through
+- **Exclude operator identities, regardless of caller.** Operator
+  workstations update locally through
   [`orbit update`](../../1_update/update.md) on each workstation.
 - Exclude inactive, removed, unknown, or caller-local node records from the
   gateway-selected installation list. The local checkout is updated once through
@@ -72,9 +72,9 @@ The expected target shape per calling context:
 - Update each selected installation with the same local checkout update sequence
   documented by [`update`](../../1_update/technical/1_update.md).
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
-  Clients do not SSH directly to the gateway, nodes, or other control
-  nodes as part of the command contract. The gateway does not SSH to control
-  nodes as part of the command contract.
+  Clients do not SSH directly to the gateway, nodes, or other operator
+  workstations as part of the command contract. The gateway does not SSH to
+  operator workstations as part of the command contract.
 - Update the caller-local checkout and gateway-local checkout as independent
   selected targets when both are selected.
 - After the gateway-local update succeeds, selected remote app-role

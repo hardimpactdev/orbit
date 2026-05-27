@@ -323,7 +323,7 @@ it('keeps persisted orbit certificate material out of source-less docker topolog
     expect($dockerfile)
         ->toContain('LABEL org.orbit.e2e.source="prepared-checkout"')
         ->not->toContain('/opt/orbit-source')
-        ->not->toContain('cp -a /opt/orbit-source/. /home/control/orbit/')
+        ->not->toContain('cp -a /opt/orbit-source/. /home/operator/orbit/')
         ->not->toContain('cp -a /opt/orbit-source/. /home/orbit/orbit/');
 
     expect(E2ECurrentCheckout::archiveExcludePatterns())
@@ -438,7 +438,7 @@ it('does not install host Supervisor because runtime processes live inside Docke
         ->toContain('orbit-runtime:current');
 });
 
-it('installs the SSH client as a control-node provisioning prerequisite', function (): void {
+it('installs the SSH client as a operator-node provisioning prerequisite', function (): void {
     $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)->toContain('openssh-client');
@@ -477,12 +477,12 @@ it('does not expose stale per-topology feature e2e aliases', function (): void {
     $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts'])
-        ->not->toHaveKey('test:e2e:features:control')
-        ->not->toHaveKey('test:e2e:features:control-gateway')
-        ->not->toHaveKey('test:e2e:features:control-gateway-dev')
-        ->not->toHaveKey('test:e2e:features:control-gateway-dev-prod')
+        ->not->toHaveKey('test:e2e:features:operator')
+        ->not->toHaveKey('test:e2e:features:operator-gateway')
+        ->not->toHaveKey('test:e2e:features:operator-gateway-dev')
+        ->not->toHaveKey('test:e2e:features:operator-gateway-dev-prod')
         ->not->toHaveKey('test:e2e:features:parallel')
-        ->not->toHaveKey('test:e2e:features:docker:control-gateway-dev-prod');
+        ->not->toHaveKey('test:e2e:features:docker:operator-gateway-dev-prod');
 });
 
 it('runs the topology contract against the Docker full topology by default', function (): void {
@@ -492,8 +492,8 @@ it('runs the topology contract against the Docker full topology by default', fun
         'Composer\\Config::disableProcessTimeout',
         'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod --fail-on-empty-test-suite @additional_args',
     ])->and($composer['scripts'])
-        ->not->toHaveKey('test:e2e:topology-contract:control')
-        ->not->toHaveKey('test:e2e:topology-contract:control-gateway')
-        ->not->toHaveKey('test:e2e:topology-contract:control-gateway-dev')
-        ->not->toHaveKey('test:e2e:topology-contract:control-gateway-dev-prod');
+        ->not->toHaveKey('test:e2e:topology-contract:operator')
+        ->not->toHaveKey('test:e2e:topology-contract:operator-gateway')
+        ->not->toHaveKey('test:e2e:topology-contract:operator-gateway-dev')
+        ->not->toHaveKey('test:e2e:topology-contract:operator-gateway-dev-prod');
 });

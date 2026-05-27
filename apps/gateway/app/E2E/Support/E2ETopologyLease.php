@@ -22,7 +22,7 @@ final class E2ETopologyLease
      */
     public function __construct(
         private readonly E2ETopologyKind $kind,
-        private E2EInstance $control,
+        private E2EInstance $operator,
         private ?E2EInstance $gateway,
         private ?E2EInstance $dev,
         private ?E2EInstance $prod,
@@ -43,14 +43,9 @@ final class E2ETopologyLease
         return $this->kind;
     }
 
-    public function control(): E2EInstance
-    {
-        return $this->control;
-    }
-
     public function operator(): E2EInstance
     {
-        return $this->control();
+        return $this->operator;
     }
 
     public function gateway(): ?E2EInstance
@@ -81,8 +76,7 @@ final class E2ETopologyLease
     public function instance(string $role): ?E2EInstance
     {
         return match ($role) {
-            'operator' => $this->control,
-            'control' => $this->control,
+            'operator' => $this->operator,
             'gateway' => $this->gateway,
             'dev' => $this->dev,
             'prod' => $this->prod,
@@ -160,7 +154,7 @@ final class E2ETopologyLease
             $payload = ($this->rebuild)($timer);
             $instances = $payload['instances'];
 
-            $this->control = $instances['operator'] ?? $instances['control'];
+            $this->operator = $instances['operator'] ?? throw new \RuntimeException('Rebuilt topology did not return an operator instance.');
             $this->gateway = $instances['gateway'] ?? null;
             $this->dev = $instances['dev'] ?? null;
             $this->prod = $instances['prod'] ?? null;
@@ -181,7 +175,7 @@ final class E2ETopologyLease
     public function instanceNames(): array
     {
         return array_values(array_unique(array_filter([
-            $this->control->name(),
+            $this->operator->name(),
             $this->gateway?->name(),
             $this->dev?->name(),
             $this->prod?->name(),
@@ -200,7 +194,7 @@ final class E2ETopologyLease
     private function allInstances(): array
     {
         return [
-            'operator' => $this->control,
+            'operator' => $this->operator,
             'gateway' => $this->gateway,
             'dev' => $this->dev,
             'prod' => $this->prod,
@@ -216,6 +210,6 @@ final class E2ETopologyLease
      */
     private function additionalInstancesFrom(array $instances): array
     {
-        return array_diff_key($instances, array_flip(['operator', 'control', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
+        return array_diff_key($instances, array_flip(['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
     }
 }

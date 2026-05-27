@@ -68,10 +68,10 @@ use function Laravel\Prompts\text;
 
 #[Signature('node:new
     {name? : Registry name for the node}
-    {--role=* : Initial hosted role. Repeatable: app-dev, app-prod, app-development, app-production, ingress, database, agent. Gateway bootstrap uses gateway internally.}
+    {--role=* : Node role. Use operator, gateway, app-dev, app-prod, app-development, app-production, ingress, database, or agent. Repeatable for hosted workload roles.}
     {--ingress= : Existing ingress node for private app-production placement}
     {--host= : SSH/bootstrap endpoint for gateway or app nodes}
-        {--control-name= : Initiating operator-node name for first-gateway bootstrap}
+    {--operator-name= : Initiating operator node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
     {--tld= : Development app-node TLD}
     {--user=root : Bootstrap SSH user for provisioning}
@@ -247,7 +247,7 @@ class NodeNewCommand extends Command
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required before creating app or operator nodes.',
-                meta: ['requested_role' => $role],
+                meta: ['requested_role' => 'operator'],
             );
         }
 
@@ -285,7 +285,7 @@ class NodeNewCommand extends Command
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway forwarding is required before gateway convergence can run.',
-                meta: ['requested_role' => $role],
+                meta: ['requested_role' => $role === 'control' ? 'operator' : $role],
             );
         }
 
@@ -304,14 +304,14 @@ class NodeNewCommand extends Command
             return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
-        $controlName = $this->resolveControlName($name);
+        $controlName = $this->resolveOperatorName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
-            return $this->validationFailed('control_name', 'Operator node name must be a valid node name.');
+            return $this->validationFailed('operator_name', 'Operator node name must be a valid node name.');
         }
 
         if ($controlName === $name) {
-            return $this->validationFailed('control_name', 'Operator node name must be different from gateway node name.');
+            return $this->validationFailed('operator_name', 'Operator node name must be different from gateway node name.');
         }
 
         $gateway = $this->gatewayQuery()
@@ -338,7 +338,7 @@ class NodeNewCommand extends Command
                 message: "Local operator node '{$controlName}' is not fully onboarded.",
                 meta: [
                     'host' => $host,
-                    'step' => 'local_control_identity',
+                    'step' => 'local_operator_identity',
                     'error' => 'Local operator node record is missing or inactive.',
                 ],
             );
@@ -1366,7 +1366,7 @@ SH;
                 code: 'gateway_unavailable',
                 message: 'Gateway API request failed.',
                 meta: [
-                    'requested_role' => 'control',
+                    'requested_role' => 'operator',
                     'error' => $exception->getMessage(),
                 ],
             );
@@ -1392,7 +1392,7 @@ SH;
                 meta: [
                     'name' => $name,
                     'existing_role' => $existing->role,
-                    'requested_role' => 'control',
+                    'requested_role' => 'operator',
                 ],
             );
         }
@@ -1480,7 +1480,7 @@ SH;
             ],
             'node' => [
                 'name' => $name,
-                'role' => 'control',
+                'role' => null,
                 'environment' => null,
                 'tld' => null,
                 'platform' => 'unknown',
@@ -2246,14 +2246,14 @@ SCRIPT,
             return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
-        $controlName = $this->resolveControlName($name);
+        $controlName = $this->resolveOperatorName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
-            return $this->validationFailed('control_name', 'Operator node name must be a valid node name.');
+            return $this->validationFailed('operator_name', 'Operator node name must be a valid node name.');
         }
 
         if ($controlName === $name) {
-            return $this->validationFailed('control_name', 'Operator node name must be different from gateway node name.');
+            return $this->validationFailed('operator_name', 'Operator node name must be different from gateway node name.');
         }
 
         $sshUser = $this->resolveSshUser();
@@ -2395,7 +2395,7 @@ SCRIPT,
         } catch (RuntimeException $exception) {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
-                message: 'Failed to detect the local control platform.',
+                message: 'Failed to detect the local operator platform.',
                 meta: [
                     'host' => $host,
                     'step' => 'platform_detection',
@@ -2742,7 +2742,7 @@ SCRIPT,
      *     node: array<string, mixed>,
      *     roles: list<array{role: string, status: string, settings: array<string, mixed>, last_error: null}>,
      *     provisioning: array{transport: string, host: string, status: string},
-     *     local_control_node: array<string, mixed>,
+     *     local_operator_node: array<string, mixed>,
      *     local_onboarding: array<string, string>,
      *     gateway_trust: array<string, mixed>,
      *     next_steps: array<int, mixed>
@@ -2803,9 +2803,9 @@ SCRIPT,
                 'host' => $host,
                 'status' => $provisioningStatus,
             ],
-            'local_control_node' => [
+            'local_operator_node' => [
                 'name' => $controlName,
-                'role' => 'control',
+                'role' => null,
                 'environment' => null,
                 'tld' => null,
                 'platform' => $controlPlatform,
@@ -3103,8 +3103,9 @@ SCRIPT,
     private function resolveRole(): ?string
     {
         $roles = $this->roleOptions();
+        $role = $roles[0] ?? null;
 
-        return $roles[0] ?? null;
+        return $role === 'operator' ? 'control' : $role;
     }
 
     /**
@@ -3156,11 +3157,7 @@ SCRIPT,
         }
 
         if ($roles === ['control']) {
-            if (! $this->wantsJson()) {
-                $this->warn('The legacy control role now maps to a client identity with no hosted roles.');
-            }
-
-            return ['gateway' => false, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'control'];
+            return ['gateway' => false, 'hosted' => [], 'legacy_app' => false, 'requested_role_meta' => 'operator'];
         }
 
         if ($roles === ['operator']) {
@@ -3205,7 +3202,7 @@ SCRIPT,
 
         foreach ($roles as $role) {
             if (! in_array($role, $canonicalRoles, true)) {
-                return $this->validationFailed('role', 'Node role must be one of gateway, operator, control, app-dev, app-prod, app-development, app-production, ingress, database, agent, or legacy app.');
+                return $this->validationFailed('role', 'Node role must be one of gateway, operator, app-dev, app-prod, app-development, app-production, ingress, database, agent, or legacy app.');
             }
         }
 
@@ -3284,15 +3281,15 @@ SCRIPT,
         ));
     }
 
-    private function resolveControlName(string $gatewayName): ?string
+    private function resolveOperatorName(string $gatewayName): ?string
     {
-        $controlName = $this->stringOption('control-name');
+        $controlName = $this->stringOption('operator-name');
 
         if ($controlName !== null) {
             return $controlName;
         }
 
-        $default = $this->defaultControlName();
+        $default = $this->defaultOperatorName();
 
         if (! $this->isInteractiveInput()) {
             return $default;
@@ -3302,7 +3299,7 @@ SCRIPT,
             label: 'Operator node name',
             default: $default ?? '',
             required: true,
-            validate: fn (string $value): ?string => $this->validatePromptControlName($value, $gatewayName),
+            validate: fn (string $value): ?string => $this->validatePromptOperatorName($value, $gatewayName),
         ));
     }
 
@@ -3363,7 +3360,7 @@ SCRIPT,
         return $this->isValidNodeName($name) ? null : 'Node name must be a valid node name.';
     }
 
-    private function validatePromptControlName(string $value, string $gatewayName): ?string
+    private function validatePromptOperatorName(string $value, string $gatewayName): ?string
     {
         $controlName = trim($value);
 
@@ -4149,7 +4146,7 @@ SCRIPT,
         return null;
     }
 
-    private function defaultControlName(): ?string
+    private function defaultOperatorName(): ?string
     {
         $hostname = gethostname();
 

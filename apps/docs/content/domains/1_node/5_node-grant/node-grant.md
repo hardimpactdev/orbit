@@ -24,7 +24,7 @@ orbit node:grant [consuming_node] [serving_node] [--preset=<preset>] [--permissi
 
 ```bash
 orbit node:grant agent-1 agent-1 --preset=agent-self
-orbit node:grant control-1 gateway-1 --preset=gateway-admin --force --json
+orbit node:grant operator-1 gateway-1 --preset=gateway-admin --force --json
 orbit node:grant agent-1 app-1 --preset=operator --json
 orbit node:grant agent-1 app-1 --permissions=tool:read,tool:logs --json
 ```

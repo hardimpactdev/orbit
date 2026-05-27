@@ -173,7 +173,7 @@ it('records fleet failed activity log when a node update fails', function (): vo
         ->and($entry->properties->get('summary')['failed'])->toBe(1);
 });
 
-it('control caller fails when no gateway is configured', function (): void {
+it('operator caller fails when no gateway is configured', function (): void {
     config(['orbit.is_gateway' => false]);
 
     $exitCode = Artisan::call('update:all', ['--json' => true]);
@@ -203,9 +203,9 @@ it('exercises full boot path using injected OrbitUpdater and RemoteShell fakes',
         ->and($shell->callCount)->toBeGreaterThan(0);
 });
 
-// Control-role path: JSON path uses GatewayConnector (Saloon), not UpdateAllGatewayStream.
+// Operator-role path: JSON path uses GatewayConnector (Saloon), not UpdateAllGatewayStream.
 
-it('control caller succeeds when gateway responds with all nodes completed', function (): void {
+it('operator caller succeeds when gateway responds with all nodes completed', function (): void {
     config(['orbit.is_gateway' => false]);
 
     Process::fake([
@@ -246,7 +246,7 @@ it('control caller succeeds when gateway responds with all nodes completed', fun
         ->and($payload['success']['meta']['summary']['failed'])->toBe(0);
 });
 
-it('control caller reports partial failure when gateway returns failed nodes', function (): void {
+it('operator caller reports partial failure when gateway returns failed nodes', function (): void {
     config(['orbit.is_gateway' => false]);
 
     Process::fake([
@@ -346,7 +346,7 @@ final class UpdateAllE2EFakeUpdater extends OrbitUpdater
     }
 }
 
-final class UpdateAllE2EControlGatewayStream implements UpdateAllGatewayStream
+final class UpdateAllE2EOperatorGatewayStream implements UpdateAllGatewayStream
 {
     /**
      * @param  list<array<string, mixed>>  $updates

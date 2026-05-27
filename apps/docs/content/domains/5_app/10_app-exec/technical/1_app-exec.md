@@ -83,7 +83,7 @@ The gateway HTTP API mirrors the command and exposes two entry points:
 | `POST` | `/api/apps/{app}/exec` | `app:exec` | Run a command inside the app's runtime container. Body: `command` array of one or more non-empty string tokens. |
 | `POST` | `/api/apps/exec/by-path` | `app:exec` | Resolve the target app from a launcher-supplied host cwd and run the command. Body: `host_cwd` string plus `command` array. |
 
-CLI control-mode invocations use the by-path endpoint when no explicit
+CLI operator-mode invocations use the by-path endpoint when no explicit
 selector is supplied, forwarding the raw `ORBIT_HOST_CWD` so the
 authoritative app/workspace identity is resolved on the gateway.
 
@@ -111,7 +111,7 @@ HTTP status mapping:
 1. **Gateway is the authority.** CLI invocations on non-gateway nodes
    forward through the gateway typed API at `POST /api/apps/{app}/exec`.
    The CLI never resolves gateway-owned state directly when running in
-   control mode; the gateway authorizes the request and orchestrates the
+   operator mode; the gateway authorizes the request and orchestrates the
    `RemoteShell` call into the owning node. Only the gateway-local CLI
    path runs `RemoteShell` itself.
 2. **Container is the runtime container.** `app:exec` runs the command
@@ -136,7 +136,7 @@ HTTP status mapping:
 ### Host Cwd Resolution
 
 `ORBIT_HOST_CWD` is the launcher-supplied host working directory.
-Resolution is the gateway's responsibility, not the CLI's: control-mode
+Resolution is the gateway's responsibility, not the CLI's: operator-mode
 callers forward the raw cwd string in the request body and the gateway
 queries its app registry for the canonical app entity whose `path` is an
 exact match for, or a parent of, the host cwd. If multiple app paths
@@ -145,7 +145,7 @@ the most specific app is selected.
 
 The CLI does not mount every app path into `orbit-runtime`, and it does
 not query local SQLite for gateway-owned app or workspace state when
-running in control mode. Only the gateway-local CLI invocation reads
+running in operator mode. Only the gateway-local CLI invocation reads
 gateway state directly because it IS the gateway.
 
 A workspace path that lives under an app source path resolves to the
@@ -171,7 +171,7 @@ failures below.
 | Command not found | Docker exec returns exit code `127` — the target is not present in the container's `$PATH`. | `app.exec_command_not_found`. |
 | Docker unavailable | Preflight or exec reports the docker daemon is unreachable. | `app.exec_docker_unavailable`. |
 | Node unreachable | Preflight returns an unknown failure before docker can answer (typical SSH-level failures). | `app.exec_node_unreachable`. |
-| Gateway unavailable (control mode) | CLI on a non-gateway node cannot reach the gateway exec endpoint, or the endpoint returns an unclassified failure. | `gateway_unavailable`. |
+| Gateway unavailable (operator mode) | CLI on a non-gateway node cannot reach the gateway exec endpoint, or the endpoint returns an unclassified failure. | `gateway_unavailable`. |
 
 ### Infra failure disambiguation
 
@@ -218,7 +218,7 @@ container. The wrapper itself does not:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppExecCommandTest.php` | Gateway-mode and control-mode paths end to end (see notes). |
+| `apps/gateway/tests/Feature/Commands/Apps/AppExecCommandTest.php` | Gateway-mode and operator-mode paths end to end (see notes). |
 | `apps/gateway/tests/Feature/Http/Api/AppExecControllerTest.php` | API surface and HTTP status mapping (see notes). |
 | `apps/gateway/tests/Unit/Services/Runtime/OrbitHostCwdResolverTest.php` | Host cwd resolution including `..` normalization (see notes). |
 
@@ -235,8 +235,8 @@ container. The wrapper itself does not:
   `exit 127` command-not-found).
 - The `validation_failed`, `app.not_found`, and
   `app.exec_unsupported_runtime` paths.
-- Control-mode `gateway_unavailable` and success-forwarding paths.
-- Cwd forwarding in control mode. One test must prove the CLI does NOT
+- Operator-mode `gateway_unavailable` and success-forwarding paths.
+- Cwd forwarding in operator mode. One test must prove the CLI does NOT
   query local App rows and instead forwards the raw `ORBIT_HOST_CWD`
   through the typed gateway request.
 

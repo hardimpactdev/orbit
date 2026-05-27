@@ -23,7 +23,7 @@ it('satisfies the prepared operator topology contract', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator', 'e2e-topology-contract-control');
+})->group('e2e-topology-contract-operator', 'e2e-topology-contract-operator');
 
 it('satisfies the prepared operator-gateway topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -34,7 +34,7 @@ it('satisfies the prepared operator-gateway topology contract', function (): voi
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator_gateway', 'e2e-topology-contract-control-gateway');
+})->group('e2e-topology-contract-operator_gateway', 'e2e-topology-contract-operator-gateway');
 
 it('satisfies the prepared operator-gateway-dev topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -45,7 +45,7 @@ it('satisfies the prepared operator-gateway-dev topology contract', function ():
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator_gateway_app-dev', 'e2e-topology-contract-control-gateway-dev');
+})->group('e2e-topology-contract-operator_gateway_app-dev', 'e2e-topology-contract-operator-gateway-dev');
 
 it('satisfies the prepared operator-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -56,7 +56,7 @@ it('satisfies the prepared operator-gateway-dev-prod topology contract', functio
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-topology-contract-operator_gateway_app-dev_app-prod', 'e2e-topology-contract-control-gateway-dev-prod');
+})->group('e2e-topology-contract-operator_gateway_app-dev_app-prod', 'e2e-topology-contract-operator-gateway-dev-prod');
 
 it('satisfies the prepared operator-gateway-agent topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -91,17 +91,17 @@ function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
 
 function expectPreparedOperatorTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
-    $control = $topology->control();
+    $operator = $topology->operator();
     $key = $topology->sshKeyPair();
 
-    expectPreparedOrbitCli($control, $config->controlUser, $key);
+    expectPreparedOrbitCli($operator, $config->operatorUser, $key);
 }
 
 function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
     expectPreparedOperatorTopology($topology, $config);
 
-    $control = $topology->control();
+    $operator = $topology->operator();
     $gateway = $topology->gateway();
     $key = $topology->sshKeyPair();
 
@@ -111,21 +111,21 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
 
     expectPreparedOrbitCli($gateway, 'orbit', $key);
 
-    $gatewayUrl = readPreparedClientGatewayUrl($control, $config->controlUser, $key);
+    $gatewayUrl = readPreparedClientGatewayUrl($operator, $config->operatorUser, $key);
 
     expect($gatewayUrl)->toBe(expectedPreparedGatewayUrl($topology));
 
-    E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key, expectedPreparedGatewayApiHost($topology));
+    E2EGatewayApi::waitForGatewayApi($operator, $config->operatorUser, $key, expectedPreparedGatewayApiHost($topology));
     expectPreparedGatewayCertificateKeysReadable($gateway, $key);
 
     $gatewayNode = readPreparedLocalGatewayNode($gateway);
-    $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');
+    $operatorOnGateway = E2EGatewayApi::getNode($gateway, 'operator-1');
 
     expect($gatewayNode['role'])->toBe('gateway')
         ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2');
 
-    expect($controlOnGateway['role'])->toBe('control')
-        ->and($controlOnGateway['wireguard_address'])->toBe('10.6.0.3');
+    expect($operatorOnGateway['role'])->toBe('operator')
+        ->and($operatorOnGateway['wireguard_address'])->toBe('10.6.0.3');
 }
 
 function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -192,7 +192,7 @@ function expectPreparedAgentTopology(E2ETopologyLease $topology, E2EConfig $conf
         ->and($agentNode['user'])->toBe('orbit')
         ->and($agentNode['wireguard_address'])->toBe('10.6.0.6')
         ->and($state['roles'])->toContain('agent')
-        ->and($state['node_names'])->toBe(['agent-1', 'control-1', 'gateway']);
+        ->and($state['node_names'])->toBe(['agent-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -223,7 +223,7 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
         ->and($state['roles'])->toContain('app-production')
         ->and($state['roles'])->toContain('ingress')
         ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
-        ->and($state['node_names'])->toBe(['app-prod-1', 'control-1', 'gateway']);
+        ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
@@ -411,13 +411,13 @@ function preparedOrbitTinkerCommand(string $orbitPath, string $php): string
     return 'cd '.escapeshellarg($orbitPath).' && orbit tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));");
 }
 
-function readPreparedClientGatewayUrl(E2EInstance $control, string $controlUser, SshKeyPair $key): string
+function readPreparedClientGatewayUrl(E2EInstance $operator, string $operatorUser, SshKeyPair $key): string
 {
     $result = E2ECommand::ssh(
-        $control,
-        $controlUser,
+        $operator,
+        $operatorUser,
         $key,
-        'cd '.escapeshellarg("/home/{$controlUser}/orbit/apps/cli")." && grep -E '^ORBIT_GATEWAY_URL=' .env | tail -n 1 | cut -d= -f2-",
+        'cd '.escapeshellarg("/home/{$operatorUser}/orbit/apps/cli")." && grep -E '^ORBIT_GATEWAY_URL=' .env | tail -n 1 | cut -d= -f2-",
     );
 
     return trim($result->output());

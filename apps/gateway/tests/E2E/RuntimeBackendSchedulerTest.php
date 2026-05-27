@@ -36,4 +36,4 @@ it('verifies Docker runtime backend and scheduler liveness', function (): void {
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-control-gateway');
+})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');

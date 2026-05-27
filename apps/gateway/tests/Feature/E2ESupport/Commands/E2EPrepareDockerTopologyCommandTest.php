@@ -170,7 +170,7 @@ it('documents dns-alias image names in dry run output', function (): void {
 
 it('--force uses the docker topology builder and outputs json manifest', function (): void {
     $manifest = [
-        ['role' => 'control', 'container' => 'orbit-e2e-build-control-control', 'image' => 'orbit-e2e:operator_base'],
+        ['role' => 'operator', 'container' => 'orbit-e2e-build-operator-operator', 'image' => 'orbit-e2e:operator_base'],
     ];
 
     $builder = m::mock();
@@ -195,7 +195,7 @@ it('--force uses the docker topology builder and outputs json manifest', functio
     ], JSON_THROW_ON_ERROR);
 
     $this->artisan('e2e:prepare-docker-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
         '--json' => true,
     ])

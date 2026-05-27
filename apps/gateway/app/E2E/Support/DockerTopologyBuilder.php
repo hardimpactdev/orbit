@@ -194,15 +194,11 @@ final readonly class DockerTopologyBuilder
 
     public static function imageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'dns-alias'): string
     {
-        $role = self::canonicalRole($role);
-
         return self::imageNameForArtifactSet($role, E2ETopologyArtifactNamespace::dockerRoleArtifactSet());
     }
 
     public static function baseImageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'dns-alias'): string
     {
-        $role = self::canonicalRole($role);
-
         return self::imageNameForArtifactSet($role, E2ETopologyArtifactNamespace::DockerBaseArtifactSet);
     }
 
@@ -242,14 +238,7 @@ final readonly class DockerTopologyBuilder
 
     public static function ownsImage(E2ETopologyKind $kind, string $role): bool
     {
-        $role = self::canonicalRole($role);
-
         return self::imageKindFor($kind, $role) === $kind;
-    }
-
-    private static function canonicalRole(string $role): string
-    {
-        return $role === 'control' ? 'operator' : $role;
     }
 
     private function runCommand(string $container, string $network, string $role, string $ip, string $mode): string
@@ -685,7 +674,7 @@ SH;
      */
     private function seedTopology(E2ETopologyKind $kind, array $containers, string $mode, DockerTopologyNetworkPlan $networkPlan): void
     {
-        $operator = $containers['operator'] ?? $containers['control'] ?? null;
+        $operator = $containers['operator'] ?? $containers['operator'] ?? null;
         $gateway = $containers['gateway'] ?? null;
 
         if ($operator === null || $gateway === null) {
@@ -1164,7 +1153,7 @@ SH;
     {
         return match ($role) {
             'gateway' => '10.6.0.2',
-            'operator', 'control' => '10.6.0.3',
+            'operator' => '10.6.0.3',
             'dev' => '10.6.0.4',
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',

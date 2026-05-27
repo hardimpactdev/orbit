@@ -12,17 +12,17 @@ function appRemoveGrantAccess(E2ETopologyHarness $topology): void
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
 }
 
 \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
     'created_at' => now(),
@@ -39,26 +39,26 @@ PHP;
     );
 }
 
-it('removes an app from a control caller through the gateway api', function (): void {
+it('removes an app from a operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $name = 'e2e-rm-'.strtolower(bin2hex(random_bytes(3)));
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-remove');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         appRemoveGrantAccess($topology);
 
         $create = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:new %s --node=app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,
@@ -69,10 +69,10 @@ it('removes an app from a control caller through the gateway api', function (): 
         expect($createPayload['success']['data']['result']['action'])->toBe('created');
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:remove %s --force --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,
@@ -115,4 +115,4 @@ it('removes an app from a control caller through the gateway api', function (): 
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

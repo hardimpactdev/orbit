@@ -12,10 +12,10 @@ function workspaceStepRemoveSeed(E2ETopologyHarness $topology): void
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
@@ -28,7 +28,7 @@ foreach (['control-1', 'app-dev-1'] as $name) {
 \App\Models\App::query()->delete();
 \Illuminate\Support\Facades\DB::table('node_access')->delete();
 \Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
     'permissions' => json_encode(['workspace:write'], JSON_THROW_ON_ERROR),
     'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
@@ -81,17 +81,17 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-step-remove');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceStepRemoveSeed($topology);
 
-        $checkout = escapeshellarg($topology->checkout('control'));
+        $checkout = escapeshellarg($topology->checkout('operator'));
         $setupListResult = $topology->ssh(
-            'control',
+            'operator',
             "cd {$checkout} && orbit workspace-setup-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
@@ -100,14 +100,14 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
         $setupRemoveId = $setupSteps[0]['id'];
 
         $removeSetupResult = $topology->ssh(
-            'control',
+            'operator',
             "cd {$checkout} && orbit workspace-setup-step:remove --app=docs --step={$setupRemoveId} --force --json",
             timeoutSeconds: 120,
         );
         $removeSetupPayload = json_decode(trim($removeSetupResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $teardownListBeforeResult = $topology->ssh(
-            'control',
+            'operator',
             "cd {$checkout} && orbit workspace-teardown-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
@@ -115,14 +115,14 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
         $teardownRemoveId = $teardownListBeforePayload['success']['data']['steps'][0]['id'];
 
         $removeTeardownResult = $topology->ssh(
-            'control',
+            'operator',
             "cd {$checkout} && orbit workspace-teardown-step:remove --app=docs --step={$teardownRemoveId} --force --json",
             timeoutSeconds: 120,
         );
         $removeTeardownPayload = json_decode(trim($removeTeardownResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $teardownListResult = $topology->ssh(
-            'control',
+            'operator',
             "cd {$checkout} && orbit workspace-teardown-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
@@ -137,4 +137,4 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

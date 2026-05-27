@@ -47,7 +47,7 @@ This plan is intentionally added on `main` so it does not contaminate the dirty 
 - Modify: `app/Console/Commands/NodeNewCommand.php`
 - Modify: `app/Http/Controllers/Api/*Controller.php` files that return `control node` or `control or gateway node` messages.
 - Modify: request/response DTOs only if they expose `control` in public JSON keys.
-- Preserve compatibility for existing public inputs such as `--control-name` until a separate breaking-change plan removes or aliases them.
+- Use `--operator-name` for the first-gateway bootstrap operator identity input.
 
 ### Domain Model And Factories
 
@@ -137,5 +137,5 @@ Keep old group names and enum values as deprecated aliases for one migration win
 ## Open Questions
 
 - Should persisted `nodes.role = control` be migrated to `operator`, or remain as a legacy shadow value until the composable role model removes reliance on the column?
-- Should public CLI option `--control-name` gain a new `--operator-name` alias immediately, or wait for a dedicated command-contract change?
+- Should any hidden compatibility path remain for older first-gateway bootstrap invocations?
 - Should E2E Linux users and image names change from `control` to `operator` now, or stay as legacy fixture internals until prepared images are rebuilt?

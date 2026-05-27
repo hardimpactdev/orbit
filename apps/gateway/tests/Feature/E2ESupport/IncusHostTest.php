@@ -22,7 +22,7 @@ function incusHostTestConfig(string $incusStoragePool = '', string $host = 'beas
         sourceImage: 'images:ubuntu/26.04/cloud',
         baseImage: 'orbit-base-ubuntu-26.04',
         bootstrapUser: 'provisioner',
-        controlUser: 'control',
+        operatorUser: 'operator',
         instancePrefix: 'orbit-e2e',
         timeoutSeconds: 60,
         cpus: '2',
@@ -77,49 +77,49 @@ it('adds configured storage pool to launch and copy commands', function (): void
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig('orbit-e2e'), $commands);
 
-    $host->launchInstance('orbit-base-ubuntu-26.04', 'orbit-template-control');
-    $host->copyInstance('orbit-template-control/clean-control', 'orbit-e2e-run-control');
+    $host->launchInstance('orbit-base-ubuntu-26.04', 'orbit-template-operator');
+    $host->copyInstance('orbit-template-operator/clean-operator', 'orbit-e2e-run-operator');
 
-    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-control' --vm --storage 'orbit-e2e' >/dev/null")
-        ->and($commands[1])->toContain("incus copy 'orbit-template-control/clean-control' 'orbit-e2e-run-control' --storage 'orbit-e2e'");
+    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-operator' --vm --storage 'orbit-e2e' >/dev/null")
+        ->and($commands[1])->toContain("incus copy 'orbit-template-operator/clean-operator' 'orbit-e2e-run-operator' --storage 'orbit-e2e'");
 });
 
 it('sets the configured root disk size when launching topology instances', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->launchTopologyInstance('orbit-base-ubuntu-26.04', 'orbit-template-control');
+    $host->launchTopologyInstance('orbit-base-ubuntu-26.04', 'orbit-template-operator');
 
-    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-control' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
+    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-operator' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
 });
 
 it('uses incus snapshot restore and supports stateful restore', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->restoreSnapshot('orbit-e2e-run-control', 'lease-clean');
-    $host->restoreSnapshot('orbit-e2e-run-control', 'lease-warm', stateful: true);
+    $host->restoreSnapshot('orbit-e2e-run-operator', 'lease-clean');
+    $host->restoreSnapshot('orbit-e2e-run-operator', 'lease-warm', stateful: true);
 
-    expect($commands[0])->toContain("incus snapshot restore 'orbit-e2e-run-control' 'lease-clean'")
-        ->and($commands[1])->toContain("incus snapshot restore 'orbit-e2e-run-control' 'lease-warm' --stateful");
+    expect($commands[0])->toContain("incus snapshot restore 'orbit-e2e-run-operator' 'lease-clean'")
+        ->and($commands[1])->toContain("incus snapshot restore 'orbit-e2e-run-operator' 'lease-warm' --stateful");
 });
 
 it('uses reusable stateful snapshots for warm topology reset points', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->snapshotStatefulInstance('orbit-e2e-run-control', 'lease-warm');
+    $host->snapshotStatefulInstance('orbit-e2e-run-operator', 'lease-warm');
 
-    expect($commands[0])->toContain("incus snapshot create 'orbit-e2e-run-control' 'lease-warm' --stateful --reuse");
+    expect($commands[0])->toContain("incus snapshot create 'orbit-e2e-run-operator' 'lease-warm' --stateful --reuse");
 });
 
 it('force stops instances when graceful incus stop times out', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->stopInstance('orbit-template-control');
+    $host->stopInstance('orbit-template-operator');
 
-    expect($commands[0])->toContain("incus stop 'orbit-template-control' --timeout 120 || incus stop 'orbit-template-control' --force");
+    expect($commands[0])->toContain("incus stop 'orbit-template-operator' --timeout 120 || incus stop 'orbit-template-operator' --force");
 });
 
 it('force stops reusable template instances only when they are running', function (): void {
@@ -127,11 +127,11 @@ it('force stops reusable template instances only when they are running', functio
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
     $host->stopInstancesIfRunning([
-        'orbit-template-control',
+        'orbit-template-operator',
         'orbit-template-gateway',
     ]);
 
-    expect($commands[0])->toContain("incus stop 'orbit-template-control' --force >/dev/null 2>&1 || true")
+    expect($commands[0])->toContain("incus stop 'orbit-template-operator' --force >/dev/null 2>&1 || true")
         ->and($commands[0])->toContain("incus stop 'orbit-template-gateway' --force >/dev/null 2>&1 || true");
 });
 
@@ -139,9 +139,9 @@ it('checks snapshots by exact Incus snapshot path', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->snapshotExists('orbit-template-control', 'clean-operator_gateway');
+    $host->snapshotExists('orbit-template-operator', 'clean-operator_gateway');
 
-    expect($commands[0])->toContain("incus query '/1.0/instances/orbit-template-control/snapshots/clean-operator_gateway' >/dev/null 2>&1")
+    expect($commands[0])->toContain("incus query '/1.0/instances/orbit-template-operator/snapshots/clean-operator_gateway' >/dev/null 2>&1")
         ->and($commands[0])->not->toContain('grep -q');
 });
 
@@ -170,12 +170,12 @@ it('queries exact Incus instance state when resolving a provider IPv4', function
         }
     };
 
-    $instance = new IncusInstance($host, 'orbit-template-control');
+    $instance = new IncusInstance($host, 'orbit-template-operator');
 
     expect($instance->waitForIpv4())->toBe('10.231.0.10')
-        ->and($commands[0])->toContain("incus query '/1.0/instances/orbit-template-control/state'")
+        ->and($commands[0])->toContain("incus query '/1.0/instances/orbit-template-operator/state'")
         ->and($commands[0])->toContain('python3 -c')
-        ->and($commands[0])->toContain("awk -F, -v name='orbit-template-control'");
+        ->and($commands[0])->toContain("awk -F, -v name='orbit-template-operator'");
 });
 
 it('restarts journald after refreshing cloned instance network identity', function (): void {
@@ -222,7 +222,7 @@ it('keeps locally staged files readable before pushing them into an incus instan
             return incusHostTestProcessResult();
         }
     };
-    $instance = new IncusInstance($host, 'orbit-template-control');
+    $instance = new IncusInstance($host, 'orbit-template-operator');
     $previousUmask = umask(0077);
 
     try {
@@ -251,7 +251,7 @@ it('allows remote checkout archive copies to use ssh agent identities', function
 
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(host: 'beast'), $commands);
-    $instance = new IncusInstance($host, 'orbit-template-control');
+    $instance = new IncusInstance($host, 'orbit-template-operator');
 
     try {
         $instance->copyLocalFileToInstance($source, '/tmp/orbit-current.tar.gz');
@@ -457,11 +457,11 @@ it('can restore snapshots concurrently', function (): void {
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
     $host->restoreSnapshotsConcurrently([
-        'orbit-e2e-run-control',
+        'orbit-e2e-run-operator',
         'orbit-e2e-run-gateway',
     ], 'lease-warm', stateful: true);
 
-    expect($commands[0])->toContain("incus snapshot restore 'orbit-e2e-run-control' 'lease-warm' --stateful & PID_RESTORE_0=$!")
+    expect($commands[0])->toContain("incus snapshot restore 'orbit-e2e-run-operator' 'lease-warm' --stateful & PID_RESTORE_0=$!")
         ->and($commands[0])->toContain("incus snapshot restore 'orbit-e2e-run-gateway' 'lease-warm' --stateful & PID_RESTORE_1=$!")
         ->and($commands[0])->toContain('wait $PID_RESTORE_0')
         ->and($commands[0])->toContain('wait $PID_RESTORE_1');

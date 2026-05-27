@@ -1,14 +1,14 @@
 ---
 name: orbit
-description: Operate the Orbit CLI for sovereign Laravel environments — provision gateway/app/control nodes, create dev and production apps, manage workspaces/processes/schedules, install services, deploy, and diagnose drift via `orbit doctor`. Use when the user wants to set up a Laravel environment, create or modify an app, enable a service (postgres/redis/mailpit), run a deployment, profile a request, manage VPN/firewall/DNS, change PHP versions, or repair a node. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "install postgres", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
+description: Operate the Orbit CLI for sovereign Laravel environments — provision gateway/operator/app nodes, create dev and production apps, manage workspaces/processes/schedules, install services, deploy, and diagnose drift via `orbit doctor`. Use when the user wants to set up a Laravel environment, create or modify an app, enable a service (postgres/redis/mailpit), run a deployment, profile a request, manage VPN/firewall/DNS, change PHP versions, or repair a node. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "install postgres", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
 allowed-tools: Bash(orbit *)
 ---
 
 # Orbit CLI
 
-Orbit is a sovereign Laravel environment. The **gateway** is the control plane and owns all durable state. **App nodes** (Ubuntu) run apps, PHP-FPM, Caddy, Supervisor, and Docker services. **Control nodes** (macOS or Ubuntu) just run the CLI and call the gateway over WireGuard.
+Orbit is a sovereign Laravel environment. The **gateway** is the control plane and owns all durable state. **App nodes** (Ubuntu) run apps, PHP-FPM, Caddy, Supervisor, and Docker services. **Operator nodes** (macOS or Ubuntu) just run the CLI and call the gateway over WireGuard.
 
-The CLI is the product contract. Every command works the same way regardless of which node it runs on — control nodes and app nodes call the gateway typed API; the gateway uses `RemoteShell` (SSH) to enact changes on app nodes.
+The CLI is the product contract. Every command works the same way regardless of which node it runs on — operator nodes and app nodes call the gateway typed API; the gateway uses `RemoteShell` (SSH) to enact changes on app nodes.
 
 ## Universal output rules
 
@@ -20,7 +20,7 @@ The CLI is the product contract. Every command works the same way regardless of 
 
 ## Core concepts (load on demand)
 
-See [`references/concepts.md`](references/concepts.md) for: node roles (gateway / control / app), state families and `doctor`, identity slug rules, the `RemoteShell` enactment model, JSON envelope shape, and the `--node` / `--app` / `--workspace` resolution order.
+See [`references/concepts.md`](references/concepts.md) for: node roles (gateway / operator / app), state families and `doctor`, identity slug rules, the `RemoteShell` enactment model, JSON envelope shape, and the `--node` / `--app` / `--workspace` resolution order.
 
 ## Command index
 
@@ -39,12 +39,12 @@ Commands are grouped by family. Each reference file lists every command in that 
 
 | Command | What it does |
 |---|---|
-| `orbit node:new [name]` | Create or provision a gateway / app / control node |
+| `orbit node:new [name]` | Create or provision a gateway / operator / app node |
 | `orbit node:list` | List nodes in the gateway registry (`--doctor` for live readiness) |
 | `orbit node:show [name]` | Show one node's registry record |
 | `orbit node:update [name]` | Update node host, environment, or public IPv4/IPv6 metadata |
 | `orbit node:remove [name]` | Remove a node from the registry |
-| `orbit node:default [name]` | Choose, show, or clear the local control node's default development app node |
+| `orbit node:default [name]` | Choose, show, or clear the local operator node's default development app node |
 | `orbit node:grant <consumer> <server>` | Grant one node access to another |
 | `orbit node:revoke [c] [s]` | Revoke a node-to-node grant |
 | `orbit node:agent-ide [name] [adapter]` | Set the default Agent IDE adapter for a node |
@@ -53,7 +53,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 
 | Command | What it does |
 |---|---|
-| `orbit gateway:add [gateway_ip]` | Trust the gateway CA and configure the local control-node connection |
+| `orbit gateway:add [gateway_ip]` | Trust the gateway CA and configure the local operator-node connection |
 | `orbit gateway:trust` | Trust the gateway root CA in the local OS trust store |
 
 ### Apps — [`references/app.md`](references/app.md)
@@ -186,11 +186,11 @@ Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, 
 
 ## Common workflows
 
-**Bootstrap a control node onto an existing gateway**
+**Bootstrap an operator node onto an existing gateway**
 
 ```bash
 # On the gateway:
-orbit node:new my-mac --role=control
+orbit node:new my-mac --role=operator
 # Install the returned WireGuard config on the Mac, then on the Mac:
 orbit gateway:add 10.6.0.1
 ```
@@ -198,7 +198,7 @@ orbit gateway:add 10.6.0.1
 **Bootstrap the first gateway from a fresh Mac**
 
 ```bash
-orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=my-mac
+orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --operator-name=my-mac
 ```
 
 **Create a development app + database**
@@ -264,7 +264,7 @@ orbit app:agent-ide myapp polyscope  # per-app override
 - Production deployments and pipelines → [`deploy.md`](references/deploy.md)
 - Custom domains, redirects, ingress drift → [`proxy.md`](references/proxy.md)
 - UFW intent, opening or closing ports → [`firewall.md`](references/firewall.md)
-- Local TLD resolution on a control node → [`dns.md`](references/dns.md)
+- Local TLD resolution on an operator node → [`dns.md`](references/dns.md)
 - Audit trail / who did what → [`activity.md`](references/activity.md)
 - Sending messages into a workspace's coding agent → [`agent-ide.md`](references/agent-ide.md)
 - WireGuard client provisioning, web UI password → [`vpn.md`](references/vpn.md)

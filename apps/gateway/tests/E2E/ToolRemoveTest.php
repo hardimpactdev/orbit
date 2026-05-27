@@ -45,7 +45,7 @@ it('removes a docker-managed tool from an app node through the gateway', functio
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function toolRemovePrepareComposeFile(E2ETopologyHarness $topology): void
 {

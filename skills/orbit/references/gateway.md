@@ -1,12 +1,12 @@
 # Gateway Commands
 
-Onboard a control node onto an existing gateway. Spec: [`docs/domains/2_gateway/`](../../../docs/domains/2_gateway/).
+Onboard an operator node onto an existing gateway. Spec: [`apps/docs/content/domains/2_gateway/`](../../../apps/docs/content/domains/2_gateway/).
 
-For first-gateway bootstrap (no gateway yet), use `node:new --role=gateway` instead — that path also onboards the initiating control node so you should **not** run `gateway:add` afterward on that machine.
+For first-gateway bootstrap (no gateway yet), use `node:new --role=gateway` instead — that path also onboards the initiating operator node so you should **not** run `gateway:add` afterward on that machine.
 
 ## `orbit gateway:add [gateway_ip]`
 
-Register the local control node's connection to a gateway and trust its CA.
+Register the local operator node's connection to a gateway and trust its CA.
 
 ```bash
 orbit gateway:add [<gateway_ip>] [--json]
@@ -16,7 +16,7 @@ orbit gateway:add [<gateway_ip>] [--json]
 |---|---|
 | `gateway_ip` | The gateway's WireGuard IP (e.g. `10.6.0.1`). Prompted when omitted. |
 
-Prerequisite: the operator has already enrolled this machine on the gateway with `orbit node:new <name> --role=control` and installed the returned WireGuard config locally so the WireGuard tunnel is up.
+Prerequisite: the operator has already enrolled this machine on the gateway with `orbit node:new <name> --role=operator` and installed the returned WireGuard config locally so the WireGuard tunnel is up.
 
 What it does: fetches `GET /api/me` from the gateway to confirm identity, writes the gateway row and the local self-row in the nodes table, stores the local gateway endpoint, and trusts the gateway root CA in the local OS trust store. Idempotent — re-running on an already-onboarded host is a no-op.
 

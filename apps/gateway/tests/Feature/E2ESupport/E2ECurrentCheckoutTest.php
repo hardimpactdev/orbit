@@ -174,13 +174,13 @@ it('does not record archive timing for shared archive cache hits', function (): 
         return Process::result();
     });
 
-    $controlCommands = [];
+    $operatorCommands = [];
     $gatewayCommands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $timer = new E2EPhaseTimer;
 
     try {
-        E2ECurrentCheckout::install(currentCheckoutFakeInstance($controlCommands, 'operator'), 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
+        E2ECurrentCheckout::install(currentCheckoutFakeInstance($operatorCommands, 'operator'), 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
         E2ECurrentCheckout::install(currentCheckoutFakeInstance($gatewayCommands, 'gateway'), 'orbit', $key, seedFrom: '/home/orbit/orbit', timer: $timer);
 
         expect($tarBuilds)->toBe(1)
@@ -540,7 +540,7 @@ it('uses the host launcher for Docker operator and app checkouts while the gatew
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
         kind: E2ETopologyKind::OperatorGatewayAppdev,
-        control: new DockerInstance($host, 'orbit-e2e-run123-operator', 'orbit-e2e-run123'),
+        operator: new DockerInstance($host, 'orbit-e2e-run123-operator', 'orbit-e2e-run123'),
         gateway: new DockerInstance($host, 'orbit-e2e-run123-gateway', 'orbit-e2e-run123'),
         dev: new DockerInstance($host, 'orbit-e2e-run123-dev', 'orbit-e2e-run123'),
         prod: null,
@@ -599,8 +599,8 @@ it('refreshes Docker gateway checkout host keys through the runtime container', 
     $host = new DockerHost(E2EConfig::fromEnvironment());
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGateway,
-        control: new DockerInstance($host, 'orbit-e2e-run123-operator', 'orbit-e2e-run123'),
+        kind: E2ETopologyKind::OperatorGateway,
+        operator: new DockerInstance($host, 'orbit-e2e-run123-operator', 'orbit-e2e-run123'),
         gateway: new DockerInstance($host, 'orbit-e2e-run123-gateway', 'orbit-e2e-run123'),
         dev: null,
         prod: null,
@@ -818,7 +818,7 @@ it('can install the current checkout on selected topology roles', function (): v
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
     ]);
 
-    $controlCommands = [];
+    $operatorCommands = [];
     $gatewayCommands = [];
     $devCommands = [];
     $prodCommands = [];
@@ -826,8 +826,8 @@ it('can install the current checkout on selected topology roles', function (): v
 
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
-        kind: E2ETopologyKind::ControlGatewayDevProd,
-        control: currentCheckoutFakeInstance($controlCommands, 'control'),
+        kind: E2ETopologyKind::OperatorGatewayAppdevAppprod,
+        operator: currentCheckoutFakeInstance($operatorCommands, 'operator'),
         gateway: currentCheckoutFakeInstance($gatewayCommands, 'gateway'),
         dev: currentCheckoutFakeInstance($devCommands, 'dev'),
         prod: currentCheckoutFakeInstance($prodCommands, 'prod'),
@@ -836,17 +836,17 @@ it('can install the current checkout on selected topology roles', function (): v
         rebuild: fn () => throw new RuntimeException('not expected'),
     );
 
-    $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['control', 'gateway', 'dev', 'prod', 'agent']);
+    $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev', 'prod', 'agent']);
 
     expect($paths)->toBe([
-        'control' => '/home/orbit/orbit-current',
+        'operator' => '/home/orbit/orbit-current',
         'gateway' => '/home/orbit/orbit-current',
         'dev' => '/home/orbit/orbit-current',
         'prod' => '/home/orbit/orbit-current',
         'agent' => '/home/orbit/orbit-current',
     ]);
 
-    expect(implode("\n", $controlCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $operatorCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
     expect(implode("\n", $gatewayCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
     expect(implode("\n", $gatewayCommands))->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
     expect(implode("\n", $devCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
@@ -862,11 +862,11 @@ it('passes checkout timing through topology installation', function (): void {
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
     ]);
 
-    $controlCommands = [];
+    $operatorCommands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: currentCheckoutFakeInstance($controlCommands, 'control'),
+        kind: E2ETopologyKind::Operator,
+        operator: currentCheckoutFakeInstance($operatorCommands, 'operator'),
         gateway: null,
         dev: null,
         prod: null,
@@ -875,7 +875,7 @@ it('passes checkout timing through topology installation', function (): void {
     );
     $timer = new E2EPhaseTimer;
 
-    E2ECurrentCheckout::installOnTopology($topology, roles: ['control'], timer: $timer);
+    E2ECurrentCheckout::installOnTopology($topology, roles: ['operator'], timer: $timer);
 
     expect(array_column($timer->events(), 'name'))->toContain('checkout.archive', 'checkout.migrate');
 });
@@ -885,11 +885,11 @@ it('streams checkout timings from the topology harness timer child', function ()
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
     ]);
 
-    $controlCommands = [];
+    $operatorCommands = [];
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
     $topology = new E2ETopologyLease(
-        kind: E2ETopologyKind::Control,
-        control: currentCheckoutFakeInstance($controlCommands, 'control'),
+        kind: E2ETopologyKind::Operator,
+        operator: currentCheckoutFakeInstance($operatorCommands, 'operator'),
         gateway: null,
         dev: null,
         prod: null,
@@ -906,7 +906,7 @@ it('streams checkout timings from the topology harness timer child', function ()
 
     (new E2ETopologyHarness($topology))
         ->setTimer($timer)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     expect($lines[0])->toBe('[orbit-e2e] checkout checkout.archive started')
         ->and(implode("\n", $lines))->toContain('checkout checkout.migrate done ');

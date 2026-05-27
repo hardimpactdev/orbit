@@ -55,7 +55,7 @@ describe('orbit:internal:pin-node-host-keys', function (): void {
     });
 
     it('pins hosted app and agent nodes while skipping topology peer identities', function (): void {
-        $agent = Node::factory()->control()->create([
+        $agent = Node::factory()->operator()->create([
             'name' => 'agent-1',
             'host' => '10.6.0.6',
         ]);
@@ -76,8 +76,8 @@ describe('orbit:internal:pin-node-host-keys', function (): void {
             'role' => 'gateway',
             'host' => '10.6.0.2',
         ]);
-        $operator = Node::factory()->control()->create([
-            'name' => 'control',
+        $operator = Node::factory()->operator()->create([
+            'name' => 'operator',
             'host' => '10.6.0.3',
         ]);
 

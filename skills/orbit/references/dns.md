@@ -1,6 +1,6 @@
 # Local DNS Commands
 
-Caller-local Orbit DNS resolver overrides. Used on a control node so wildcard development hostnames under a TLD resolve to the development app node's WireGuard address. Spec: [`docs/domains/16_dns/`](../../../docs/domains/16_dns/).
+Caller-local Orbit DNS resolver overrides. Used on an operator node so wildcard development hostnames under a TLD resolve to the development app node's WireGuard address. Spec: [`apps/docs/content/domains/16_dns/`](../../../apps/docs/content/domains/16_dns/).
 
 Public DNS for production apps is **not** managed here — Orbit uses Cloudflare integration (when configured) for that.
 
@@ -37,4 +37,4 @@ orbit dns:resolve-tld beast --reset --force   # remove the override
 orbit dns:list --json
 ```
 
-When you provision a development app node with `node:new --role=app --tld=…`, the gateway records the development DNS mapping; `dns:resolve-tld` is the local-resolver flip on a control node so that mapping actually resolves through the OS.
+When you provision a development app node with `node:new --role=app-dev --tld=…`, the gateway records the development DNS mapping; `dns:resolve-tld` is the local-resolver flip on an operator node so that mapping actually resolves through the OS.

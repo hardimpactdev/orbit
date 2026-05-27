@@ -14,10 +14,10 @@ if (! function_exists('workspaceLifecycleSeed')) {
         $appPathValue = var_export($appPath, true);
         $script = <<<PHP
 \$nodes = \\App\\Models\\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as \$name) {
+foreach (['operator-1', 'app-dev-1'] as \$name) {
     if (! \$nodes->has(\$name)) {
         throw new \\RuntimeException("Missing prepared node [{\$name}].");
     }
@@ -31,7 +31,7 @@ foreach (['control-1', 'app-dev-1'] as \$name) {
 \\App\\Models\\App::query()->delete();
 \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
 \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
-    'consumer_node_id' => \$nodes->get('control-1'),
+    'consumer_node_id' => \$nodes->get('operator-1'),
     'serving_node_id' => \$nodes->get('app-dev-1'),
     'permissions' => json_encode(['workspace:setup'], JSON_THROW_ON_ERROR),
     'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
@@ -83,20 +83,20 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
     $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-setup');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceLifecycleSeed($topology);
         $topology->ssh('dev', 'mkdir -p '.escapeshellarg("{$workspacePath}/public"), timeoutSeconds: 60);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit workspace:setup %s --app=docs --path=%s --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($workspaceName),
                 escapeshellarg($workspacePath),
             ),
@@ -130,7 +130,7 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 it('resolves an opencode worktree by adapter ownership when a stale registered path points at another app', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -139,12 +139,12 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
     $workspacePath = "/home/orbit/.local/share/opencode/worktree/docs/{$workspaceName}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         workspaceSetupConfigureLocalExecutor($topology);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-setup-opencode');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceSetupOpencodeSeed($topology, $workspaceName, $workspacePath);
         workspaceSetupInstallFakeOpenCode($topology);
@@ -200,7 +200,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function workspaceSetupOpencodeSeed(E2ETopologyHarness $topology, string $workspaceName, string $workspacePath): void
 {
@@ -209,10 +209,10 @@ function workspaceSetupOpencodeSeed(E2ETopologyHarness $topology, string $worksp
     $workspacePathValue = var_export($workspacePath, true);
     $script = <<<PHP
 \$nodes = \\App\\Models\\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as \$name) {
+foreach (['operator-1', 'app-dev-1'] as \$name) {
     if (! \$nodes->has(\$name)) {
         throw new \\RuntimeException("Missing prepared node [{\$name}].");
     }
@@ -228,7 +228,7 @@ foreach (['control-1', 'app-dev-1'] as \$name) {
 \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
 \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
     [
-        'consumer_node_id' => \$nodes->get('control-1'),
+        'consumer_node_id' => \$nodes->get('operator-1'),
         'serving_node_id' => \$nodes->get('app-dev-1'),
         'permissions' => json_encode(['workspace:setup'], JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),

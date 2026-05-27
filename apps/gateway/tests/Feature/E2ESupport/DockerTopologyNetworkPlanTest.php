@@ -14,7 +14,7 @@ it('keeps non-run docker topology networks outside the orbit WireGuard subnet', 
         expect($plan->subnet())->toBe('10.90.224.0/24')
             ->and($plan->ipForRole('gateway'))->toBe('10.90.224.2')
             ->and($plan->ipForRole('operator'))->toBe('10.90.224.3')
-            ->and($plan->ipForRole('control'))->toBe('10.90.224.3')
+            ->and($plan->ipForRole('operator'))->toBe('10.90.224.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.224.4')
             ->and($plan->ipForRole('prod'))->toBe('10.90.224.5')
             ->and($plan->ipForRole('agent'))->toBe('10.90.224.6')
@@ -34,7 +34,7 @@ it('allocates a run-scoped docker subnet outside parallel workers', function ():
         expect($plan->subnet())->toBe('10.90.166.0/24')
             ->and($plan->ipForRole('gateway'))->toBe('10.90.166.2')
             ->and($plan->ipForRole('operator'))->toBe('10.90.166.3')
-            ->and($plan->ipForRole('control'))->toBe('10.90.166.3')
+            ->and($plan->ipForRole('operator'))->toBe('10.90.166.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.166.4')
             ->and($plan->ipForRole('prod'))->toBe('10.90.166.5');
     } finally {
@@ -52,7 +52,7 @@ it('allocates a distinct docker subnet for each parallel worker token', function
         expect($plan->subnet())->toBe('10.90.226.0/24')
             ->and($plan->ipForRole('gateway'))->toBe('10.90.226.2')
             ->and($plan->ipForRole('operator'))->toBe('10.90.226.3')
-            ->and($plan->ipForRole('control'))->toBe('10.90.226.3')
+            ->and($plan->ipForRole('operator'))->toBe('10.90.226.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.226.4')
             ->and($plan->ipForRole('prod'))->toBe('10.90.226.5');
     } finally {
@@ -70,7 +70,7 @@ it('allocates a run-scoped docker subnet for parallel topology leases', function
         expect($plan->subnet())->toBe('10.90.26.0/24')
             ->and($plan->ipForRole('gateway'))->toBe('10.90.26.2')
             ->and($plan->ipForRole('operator'))->toBe('10.90.26.3')
-            ->and($plan->ipForRole('control'))->toBe('10.90.26.3')
+            ->and($plan->ipForRole('operator'))->toBe('10.90.26.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.26.4')
             ->and($plan->ipForRole('prod'))->toBe('10.90.26.5');
     } finally {

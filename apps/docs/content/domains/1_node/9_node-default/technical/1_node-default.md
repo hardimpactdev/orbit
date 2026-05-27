@@ -62,7 +62,7 @@ input:
    - Gateway hosts fail with `validation_failed` and
      `reason: not_supported_on_gateway`.
    - Must resolve to a visible active app-development node.
-   - Must not be a gateway, control, or production app node.
+   - Must not be a gateway, operator, or production app node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
 ## Input Mode Contracts

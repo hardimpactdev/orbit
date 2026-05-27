@@ -71,7 +71,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $topology->ssh('dev', 'if command -v ufw >/dev/null 2>&1; then sudo ufw --force disable && sudo ufw --force reset; fi', timeoutSeconds: 120);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function firewallDoctorAdoptWireGuardCidr(string $gatewayWireGuardIp): string
 {

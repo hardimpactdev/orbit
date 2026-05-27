@@ -13,11 +13,11 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
     $scheduleKey = "app:e2e-scheduler:{$scheduleName}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway', 'dev']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'schedule-scheduler-tick');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         scheduleSchedulerSeedGatewayIntent($topology, $scheduleName, $scheduleKey);
 
@@ -42,7 +42,7 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, string $scheduleKey): void
 {

@@ -50,7 +50,7 @@ supplied `development` value.
   role (`--environment` on a non-node, or `--host`, `--public-ipv4`, or
   `--public-ipv6` on a client).
 - Fail before side effects when `--tld` is supplied for a gateway target,
-  control target, or app target whose effective environment is `production`.
+  operator target, or app target whose effective environment is `production`.
 - Fail before side effects with `node.tld_in_use` when `--tld` matches another
   active node's stored TLD.
 - Fail before side effects when the same field flag is supplied more than

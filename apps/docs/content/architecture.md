@@ -234,8 +234,7 @@ Any node with a gateway-known identity and the required grants can act through
 that identity-and-grants path. All nodes are clients of the Orbit network when
 they call the gateway. An operator is a node identity with the operator
 permission preset and grants to operate one or more nodes through the gateway.
-`operator` is not a workload role, and legacy `control` naming is only an
-E2E/backward-compatibility alias for that operator shape.
+`operator` is not a workload role.
 
 #### Gateway implicit authority
 

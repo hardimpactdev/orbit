@@ -793,7 +793,7 @@ it('creates exactly one gateway assignment during first gateway bootstrap', func
         'name' => 'gateway-1',
         '--role' => ['gateway'],
         '--host' => '192.0.2.10',
-        '--control-name' => 'control-1',
+        '--operator-name' => 'operator-1',
         '--json' => true,
     ]);
 

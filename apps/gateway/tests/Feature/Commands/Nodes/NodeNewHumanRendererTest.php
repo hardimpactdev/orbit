@@ -47,7 +47,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
     ]);
 
     Node::factory()->create([
-        'name' => 'control-1',
+        'name' => 'operator-1',
         'role' => 'control',
         'host' => '127.0.0.1',
         'wireguard_address' => '10.6.0.3',
@@ -68,7 +68,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
             'success' => [
                 'data' => [
                     'self' => [
-                        'name' => 'control-1',
+                        'name' => 'operator-1',
                         'role' => 'control',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.3'],
@@ -90,7 +90,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
         'name' => 'gateway-1',
         '--role' => 'gateway',
         '--host' => '203.0.113.2',
-        '--control-name' => 'control-1',
+        '--operator-name' => 'operator-1',
     ]);
 
     $output = Artisan::output();

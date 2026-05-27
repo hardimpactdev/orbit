@@ -79,7 +79,7 @@ final readonly class DockerTopologyNetworkPlan
     {
         return match ($role) {
             'gateway' => $this->ip(2),
-            'operator', 'control' => $this->ip(3),
+            'operator' => $this->ip(3),
             'dev' => $this->ip(4),
             'prod' => $this->ip(5),
             'agent' => $this->ip(6),

@@ -64,20 +64,20 @@ it('serves a production app through a prepared ingress topology', function (): v
 
         $colocatedIngress = $topology->lease()->ingress()?->name() === $topology->lease()->prodApp()?->name();
 
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'ingress-production');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         e2eGrantNodeAccess($topology, serving: 'app-prod-1');
         prepareIngressProductionRuntime($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:new %s --node=app-prod-1 --domain=%s --root=public --php-version=8.5 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($domain),
             ),

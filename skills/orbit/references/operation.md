@@ -52,7 +52,7 @@ Update the local checkout and every active registered node sequentially. Streams
 orbit update:all [--json]
 ```
 
-Runs from the gateway or a control node. Failures on one node don't abort the others.
+Runs from the gateway or an operator node. Failures on one node don't abort the others.
 
 ## `orbit profile`
 

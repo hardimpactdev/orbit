@@ -7,11 +7,11 @@ use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator', 'e2e-feature-control');
+pest()->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator', 'e2e-feature-operator');
 
 function nodeDefaultSeedLocal(E2ETopologyHarness $topology): void
 {
-    $checkout = escapeshellarg($topology->checkout('control'));
+    $checkout = escapeshellarg($topology->checkout('operator'));
     $script = <<<'PHP'
 \Illuminate\Support\Facades\DB::table('local_node_defaults')->delete();
 \Illuminate\Support\Facades\DB::table('local_gateway_settings')->delete();
@@ -46,7 +46,7 @@ echo 'seeded';
 PHP;
 
     $topology->ssh(
-        'control',
+        'operator',
         "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
@@ -54,7 +54,7 @@ PHP;
 
 function nodeDefaultSeedWithDefault(E2ETopologyHarness $topology): void
 {
-    $checkout = escapeshellarg($topology->checkout('control'));
+    $checkout = escapeshellarg($topology->checkout('operator'));
     $script = <<<'PHP'
 \Illuminate\Support\Facades\DB::table('local_node_defaults')->delete();
 \Illuminate\Support\Facades\DB::table('local_gateway_settings')->delete();
@@ -95,7 +95,7 @@ echo 'seeded';
 PHP;
 
     $topology->ssh(
-        'control',
+        'operator',
         "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
@@ -103,16 +103,16 @@ PHP;
 
 it('shows the current local default from an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedWithDefault($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
             allowFailure: true,
@@ -131,16 +131,16 @@ it('shows the current local default from an operator node', function (): void {
 
 it('shows human output for the current local default from an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedWithDefault($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
         );
@@ -154,16 +154,16 @@ it('shows human output for the current local default from an operator node', fun
 
 it('shows null default when no default is set on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedLocal($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
         );
@@ -179,16 +179,16 @@ it('shows null default when no default is set on an operator node', function ():
 
 it('sets a local default node by name on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedLocal($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
         );
@@ -206,16 +206,16 @@ it('sets a local default node by name on an operator node', function (): void {
 
 it('clears the local default node from an operator node with was_set true', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedWithDefault($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default --clear --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
         );
@@ -232,16 +232,16 @@ it('clears the local default node from an operator node with was_set true', func
 
 it('clears with was_set false when no default was set on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedLocal($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default --clear --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
         );
@@ -258,16 +258,16 @@ it('clears with was_set false when no default was set on an operator node', func
 
 it('rejects name not found on an operator node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::Operator)
-        ->withCurrentCheckout(roles: ['control']);
+        ->withCurrentCheckout(roles: ['operator']);
 
     try {
         nodeDefaultSeedLocal($topology);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default nonexistent --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 60,
             allowFailure: true,
@@ -287,17 +287,17 @@ it('sets a default node through the gateway api from an operator node', function
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-default-set');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         $result = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit node:default app-dev-1 --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
@@ -310,4 +310,4 @@ it('sets a default node through the gateway api from an operator node', function
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

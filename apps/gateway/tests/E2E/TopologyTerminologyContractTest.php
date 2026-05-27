@@ -14,50 +14,42 @@ use Illuminate\Contracts\Process\ProcessResult;
 
 pest()->group('e2e-topology-contract', 'e2e-topology-contract-operator_gateway_app-dev');
 
-it('uses operator topology names while preserving control aliases', function (): void {
+it('uses operator topology names and accepted input aliases', function (): void {
     expect(E2ETopologyKind::Operator->value)->toBe('operator')
         ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator_gateway')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
         ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
-        ->and(E2ETopologyKind::Control)->toBe(E2ETopologyKind::Operator)
-        ->and(E2ETopologyKind::ControlGateway)->toBe(E2ETopologyKind::OperatorGateway)
-        ->and(E2ETopologyKind::ControlGatewayDev)->toBe(E2ETopologyKind::OperatorGatewayAppdev)
-        ->and(E2ETopologyKind::ControlGatewayDevProd)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
-        ->and(E2ETopologyKind::tryFromInput('control-gateway-dev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
-        ->and(E2ETopologyKind::tryFromInput('control-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
         ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
         ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev')
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())->toContain('e2e-feature-control-gateway-dev');
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())->toContain('e2e-feature-operator-gateway-dev');
 });
 
-it('supports operator aliases on the topology harness and lease', function (): void {
+it('uses operator on the topology harness and lease', function (): void {
     $operator = fakeTopologyInstance('operator-vm');
     $gateway = fakeTopologyInstance('gateway-vm');
     $lease = fakeTopologyLease($operator, $gateway);
 
     $harness = new E2ETopologyHarness($lease, [
         'operator' => '/home/orbit/orbit-current',
-        'control' => '/home/orbit/orbit-current',
         'gateway' => '/home/orbit/orbit-current',
     ]);
 
     expect($lease->operator())->toBe($operator)
-        ->and($lease->control())->toBe($operator)
         ->and($harness->instance('operator'))->toBe($operator)
-        ->and($harness->instance('control'))->toBe($operator)
-        ->and($harness->checkout('operator'))->toBe('/home/orbit/orbit-current')
-        ->and($harness->checkout('control'))->toBe('/home/orbit/orbit-current');
+        ->and($harness->checkout('operator'))->toBe('/home/orbit/orbit-current');
 
     $harness->setCheckouts(['operator' => '/home/orbit/orbit-next']);
 
-    expect($harness->checkout('control'))->toBe('/home/orbit/orbit-next');
+    expect($harness->checkout('operator'))->toBe('/home/orbit/orbit-next');
 });
 
-it('uses operator topology names for docker images while preserving control role fixtures', function (): void {
+it('uses operator topology names for docker images', function (): void {
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdev, 'control'))
+    expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdev, 'operator'))
         ->toBe('orbit-e2e:operator_base')
         ->and($provider->imageNameFor(E2ETopologyKind::OperatorGatewayAppdevAppprod, 'gateway'))
         ->toBe('orbit-e2e:gateway_base')
@@ -69,7 +61,7 @@ function fakeTopologyLease(E2EInstance $operator, ?E2EInstance $gateway = null):
 {
     return new E2ETopologyLease(
         kind: E2ETopologyKind::OperatorGateway,
-        control: $operator,
+        operator: $operator,
         gateway: $gateway,
         dev: null,
         prod: null,

@@ -1,41 +1,43 @@
 # Node Commands
 
-Manage the fleet: gateway, app, and control nodes. Spec: [`docs/domains/1_node/`](../../../docs/domains/1_node/).
+Manage the fleet: gateway nodes, operator identities, and workload nodes. Spec: [`apps/docs/content/domains/1_node/`](../../../apps/docs/content/domains/1_node/).
 
 ## `orbit node:new [name]`
 
 Register or provision a node.
 
 ```bash
-orbit node:new [<name>] --role=gateway|app|control [--host=<host>]
-               [--control-name=<name>] [--environment=development|production]
-               [--tld=<tld>] [--ssh-user=<user>] [--json]
+orbit node:new [<name>] [--role=<role>]... [--host=<host>]
+               [--operator-name=<name>] [--environment=development|production]
+               [--tld=<tld>] [--user=<user>] [--json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
 | `name` | — | Registry slug (unique). |
-| `--role` | required | `gateway`, `app`, or `control`. |
-| `--host` | — | SSH/bootstrap endpoint. **Required** for `gateway` and `app`. Forbidden for `control`. |
-| `--control-name` | local short hostname | First-gateway bootstrap only — the initiating control node's name. |
+| `--role` | `operator` identity shape when omitted | Product roles: `gateway`, `operator`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, and `s3`. `app-dev`/`app-prod` are CLI aliases for the app roles. `websocket` and `s3` are documented next roles and may lag command implementation during active development. |
+| `--host` | — | SSH/bootstrap endpoint. Required for `gateway` and host-capable workload roles. Forbidden for `operator`. |
+| `--operator-name` | local short hostname | First-gateway bootstrap only — the initiating operator node's name. |
 | `--environment` | — | App nodes: `development` or `production`. |
 | `--tld` | — | Development app-node TLD (no leading dot, e.g. `beast`). Required for development app nodes. |
-| `--ssh-user` | `root` | Bootstrap-only SSH user; the managed steady-state user is created during provisioning. |
+| `--user` | `root` | Bootstrap-only SSH user; the managed steady-state user is created during provisioning. |
 | `--json` | off | JSON output. |
 
 By role:
 
-- **`--role=control`**: mints WireGuard identity on the gateway and prints the config. Operator installs that config on the control machine, then runs `gateway:add` there. No SSH to the control machine.
-- **`--role=app`**: provisions the host over SSH if needed, joins WireGuard, installs Orbit runtime. Development app nodes record the TLD and create the gateway DNS mapping for `*.tld`.
-- **`--role=gateway`**: bootstraps or adopts the gateway. When invoked from a control node with no configured gateway, the command also onboards the initiating control node (mints WireGuard, trusts CA, stores endpoint) — that control node should **not** run `gateway:add` afterward.
+- **`--role=operator`**: mints a WireGuard identity on the gateway and prints the config. The operator installs that config on the operator machine, then runs `gateway:add` there. No SSH to the operator machine.
+- **`--role=app-development` / `--role=app-dev`**: provisions the host over SSH if needed, joins WireGuard, installs Orbit runtime, records the TLD, and creates the gateway DNS mapping for `*.tld`.
+- **`--role=app-production` / `--role=app-prod`**: provisions a production app host and places it behind an ingress node.
+- **`--role=database`, `--role=agent`, `--role=ingress`**: provisions the corresponding workload role.
+- **`--role=gateway`**: bootstraps or adopts the gateway. When invoked from an operator node with no configured gateway, the command also onboards the initiating operator node (mints WireGuard, trusts CA, stores endpoint) — that operator node should **not** run `gateway:add` afterward.
 
 Examples:
 
 ```bash
-orbit node:new my-mac --role=control
-orbit node:new beast --role=app --host=beast.lan --environment=development --tld=beast
-orbit node:new prod-1 --role=app --host=203.0.113.20 --environment=production
-orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=my-mac
+orbit node:new my-mac --role=operator
+orbit node:new beast --role=app-dev --host=beast.lan --tld=beast
+orbit node:new prod-1 --role=app-prod --host=203.0.113.20 --ingress=edge-1
+orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --operator-name=my-mac
 ```
 
 ## `orbit node:list`
@@ -43,7 +45,7 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=my-mac
 List nodes from the gateway registry.
 
 ```bash
-orbit node:list [--role=gateway|app|control] [--environment=development|production] [--doctor] [--json]
+orbit node:list [--role=gateway|operator|app-development|app-production|database|agent|ingress] [--environment=development|production] [--doctor] [--json]
 ```
 
 `--doctor` includes live readiness / drift summaries (federated across nodes).
@@ -67,7 +69,7 @@ orbit node:update [<name>] [--host=<host>] [--environment=<env>] [--tld=<tld>]
 
 `--public-ipv4` / `--public-ipv6` are explicit operator metadata used when verifying production app domain DNS. Orbit does **not** infer them from `--host`.
 
-`--tld` only applies to development app nodes. Setting it on a production node, gateway, or control fails with `node.field_role_incompatible`. Setting it to a TLD already in use by another active node fails with `node.tld_in_use`. Combine `--tld=test --environment=development` to switch a production app node to development with a TLD in one call.
+`--tld` only applies to development app nodes. Setting it on a production node, gateway, or operator fails with `node.field_role_incompatible`. Setting it to a TLD already in use by another active node fails with `node.tld_in_use`. Combine `--tld=test --environment=development` to switch a production app node to development with a TLD in one call.
 
 ## `orbit node:remove [name]`
 
@@ -79,7 +81,7 @@ orbit node:remove [<name>] [--force] [--json]
 
 ## `orbit node:default [name]`
 
-Choose, show, set, or clear the local control node's default development app node. Saves typing `--node` everywhere.
+Choose, show, set, or clear the local operator node's default development app node. Saves typing `--node` everywhere.
 
 ```bash
 orbit node:default                # show current

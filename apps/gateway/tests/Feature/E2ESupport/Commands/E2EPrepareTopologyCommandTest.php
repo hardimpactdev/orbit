@@ -112,9 +112,9 @@ it('rejects warm topology slots that exceed the host VM capacity', function (): 
 
 it('supports operator kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator'])
-        ->expectsOutputToContain('requested roles: control')
+        ->expectsOutputToContain('requested roles: operator')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
-        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
         ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
@@ -125,9 +125,9 @@ it('supports operator kind', function (): void {
 
 it('supports operator_gateway kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway'])
-        ->expectsOutputToContain('requested roles: control, gateway')
+        ->expectsOutputToContain('requested roles: operator, gateway')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
-        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
         ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
@@ -148,9 +148,9 @@ it('supports operator_gateway_app-dev kind', function (): void {
 
 it('supports operator_gateway_agent kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
-        ->expectsOutputToContain('requested roles: control, gateway, agent')
+        ->expectsOutputToContain('requested roles: operator, gateway, agent')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
-        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
         ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
@@ -161,9 +161,9 @@ it('supports operator_gateway_agent kind', function (): void {
 
 it('supports operator_gateway_app-prod_ingress kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
-        ->expectsOutputToContain('requested roles: control, gateway, prod')
+        ->expectsOutputToContain('requested roles: operator, gateway, prod')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
-        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
         ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
@@ -181,7 +181,7 @@ it('documents Incus topology templates in a separate namespace', function (): vo
             ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
             ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
             ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
-            ->doesntExpectOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev_app-prod_agent)')
+            ->doesntExpectOutputToContain('planned: orbit-template-operator (snapshot: clean-operator_gateway_app-dev_app-prod_agent)')
             ->assertSuccessful();
     });
 });
@@ -325,10 +325,10 @@ it('outputs json for each supported kind', function (string $kindValue): void {
     ['operator_gateway_agent'],
     ['operator_gateway_app-dev_app-prod_agent'],
     ['operator_gateway_app-prod_ingress'],
-    ['control'],
-    ['control-gateway'],
-    ['control-gateway-dev'],
-    ['control-gateway-dev-prod'],
+    ['operator'],
+    ['operator-gateway'],
+    ['operator-gateway-dev'],
+    ['operator-gateway-dev-prod'],
 ]);
 
 it('outputs json error for invalid kind', function (): void {
@@ -360,7 +360,7 @@ it('--force uses the default Incus host when host environment is unset', functio
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-operator-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
+        ['role' => 'operator', 'name' => 'orbit-template-operator-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
         ['role' => 'gateway', 'name' => 'orbit-template-gateway-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
         ['role' => 'dev', 'name' => 'orbit-template-app-dev-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
         ['role' => 'prod', 'name' => 'orbit-template-app-prod-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
@@ -388,7 +388,7 @@ it('--force uses the default Incus host when host environment is unset', functio
 
     try {
         $this->artisan('e2e:prepare-topology', [
-            'kind' => 'control',
+            'kind' => 'operator',
             '--force' => true,
         ])
             ->assertSuccessful();
@@ -405,7 +405,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
+        ['role' => 'operator', 'name' => 'orbit-template-operator', 'snapshot' => 'clean-operator'],
     ];
     $forwardedBundle = null;
 
@@ -424,7 +424,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
     ])->assertSuccessful();
 
@@ -460,7 +460,7 @@ it('--force excludes persisted orbit runtime state from the source archive', fun
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
     ])->assertSuccessful();
 
@@ -473,7 +473,7 @@ it('--force records prepare topology phase timings', function (): void {
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
+        ['role' => 'operator', 'name' => 'orbit-template-operator', 'snapshot' => 'clean-operator'],
     ];
     $capturedTimer = null;
 
@@ -492,7 +492,7 @@ it('--force records prepare topology phase timings', function (): void {
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
     ])->assertSuccessful();
 
@@ -511,7 +511,7 @@ it('--branch uses git archive instead of tar', function (): void {
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
+        ['role' => 'operator', 'name' => 'orbit-template-operator', 'snapshot' => 'clean-operator'],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
@@ -523,7 +523,7 @@ it('--branch uses git archive instead of tar', function (): void {
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
         '--branch' => 'main',
     ])->assertSuccessful();
@@ -539,7 +539,7 @@ it('--source-archive forwards the provided archive', function (): void {
 
     try {
         $manifest = [
-            ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
+            ['role' => 'operator', 'name' => 'orbit-template-operator', 'snapshot' => 'clean-operator'],
         ];
 
         $builder = m::mock(IncusTopologyBuilder::class);
@@ -551,7 +551,7 @@ it('--source-archive forwards the provided archive', function (): void {
         $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
         $this->artisan('e2e:prepare-topology', [
-            'kind' => 'control',
+            'kind' => 'operator',
             '--force' => true,
             '--source-archive' => $tempArchive,
         ])->assertSuccessful();
@@ -571,7 +571,7 @@ it('--source-archive fails clearly when archive is missing', function (): void {
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
         '--source-archive' => '/tmp/orbit-source-does-not-exist.tar.gz',
     ])
@@ -587,7 +587,7 @@ it('--composer-cache fails clearly when an explicit cache directory is missing',
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
         '--composer-cache' => '/tmp/orbit-composer-cache-does-not-exist',
     ])
@@ -599,7 +599,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
+        ['role' => 'operator', 'name' => 'orbit-template-operator', 'snapshot' => 'clean-operator'],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
@@ -619,15 +619,15 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
                 'dry_run' => false,
                 'kind' => 'operator',
                 'source_kind' => 'operator_gateway_app-dev_app-prod_agent',
-                'requested_roles' => ['control'],
-                'source_roles' => ['control', 'gateway', 'dev', 'prod', 'agent'],
+                'requested_roles' => ['operator'],
+                'source_roles' => ['operator', 'gateway', 'dev', 'prod', 'agent'],
                 'templates' => $manifest,
             ],
         ],
     ], JSON_THROW_ON_ERROR);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
         '--json' => true,
     ])
@@ -648,7 +648,7 @@ it('--force surfaces builder failure as command failure', function (): void {
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     $this->artisan('e2e:prepare-topology', [
-        'kind' => 'control',
+        'kind' => 'operator',
         '--force' => true,
     ])
         ->expectsOutputToContain('Required base image [orbit-base-ubuntu-26.04] not found.')

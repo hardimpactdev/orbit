@@ -349,7 +349,7 @@ The installer does not create a client identity for the gateway to trust. That i
 
 Nodes are created through `orbit node:new [name]`.
 
-When no gateway is configured yet, use `node:new --role=gateway --host=<host> --control-name=<control-name>` to bootstrap one. This command bootstraps the gateway runtime, creates the client identity that initiated it, installs that identity locally, stores local gateway trust and endpoint configuration, and verifies gateway API access.
+When no gateway is configured yet, use `node:new --role=gateway --host=<host> --operator-name=<operator-name>` to bootstrap one. This command bootstraps the gateway runtime, creates the client identity that initiated it, installs that identity locally, stores local gateway trust and endpoint configuration, and verifies gateway API access.
 
 When the client already has a WireGuard identity issued by an existing gateway, use `gateway:add [gateway_ip]` to join it. This command stores the local gateway API endpoint, the gateway WireGuard IP, and the trust material, installs local gateway CA trust when missing, and makes that gateway the default endpoint for subsequent Orbit commands.
 

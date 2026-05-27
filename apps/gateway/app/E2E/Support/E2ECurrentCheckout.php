@@ -674,11 +674,11 @@ PHP;
     private static function topologyRoleTarget(E2ETopologyLease $topology, string $role, array $users): array
     {
         $operatorUser = $users['operator']
-            ?? $users['control']
+            ?? $users['operator']
             ?? E2EConfig::fromEnvironment()->operatorUser;
 
         return match ($role) {
-            'operator', 'control' => [$topology->operator(), $operatorUser, "/home/{$operatorUser}/orbit"],
+            'operator' => [$topology->operator(), $operatorUser, "/home/{$operatorUser}/orbit"],
             'gateway' => self::requiredRole($topology->gateway(), $role, $users['gateway'] ?? 'orbit'),
             'dev' => self::requiredRole($topology->devApp(), $role, $users['dev'] ?? 'orbit'),
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),
@@ -691,7 +691,7 @@ PHP;
     private static function topologyRoleNodeIdentity(string $role): ?string
     {
         return match ($role) {
-            'operator', 'control' => 'control-1',
+            'operator' => 'operator-1',
             'gateway' => 'gateway',
             'dev' => 'app-dev-1',
             'prod' => 'app-prod-1',
@@ -703,7 +703,7 @@ PHP;
 
     private static function topologyRoleUsesHostLauncher(string $role): bool
     {
-        return in_array($role, ['operator', 'control', 'dev', 'prod', 'agent', 'ingress'], true);
+        return in_array($role, ['operator', 'dev', 'prod', 'agent', 'ingress'], true);
     }
 
     /**

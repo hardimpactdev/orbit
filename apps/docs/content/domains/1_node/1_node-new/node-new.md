@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -36,7 +36,7 @@ orbit node:new web-1 --role=app-prod --role=ingress --host=203.0.113.21
 orbit node:new web-2 --role=app-prod --ingress=edge-1 --host=203.0.113.22
 orbit node:new realtime-1 --role=websocket --host=203.0.113.30 --redis-node=db-1
 orbit node:new storage-1 --role=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data
-orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=control-1
+orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --operator-name=operator-1
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --tld=agent --self-grant=default
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
 orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-preset=operator
@@ -56,7 +56,7 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 - `--host`: required for gateway bootstrap and for any initial role that
   provisions a host. This is the SSH/bootstrap endpoint and never the canonical
   node address.
-- `--control-name`: initiating client name for first-gateway bootstrap
+- `--operator-name`: initiating client name for first-gateway bootstrap
   (a client with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
@@ -201,7 +201,7 @@ identity, gateway APIs, and node access policy.
 When a client with no configured gateway bootstraps the first gateway,
 `node:new --role=gateway` also handles initiating-client onboarding:
 
-- mints and installs the initiating client's WireGuard identity named by `--control-name`;
+- mints and installs the initiating client's WireGuard identity named by `--operator-name`;
 - trusts the gateway CA and stores the local gateway endpoint;
 - creates the initiating client-to-gateway gateway-admin grant;
 - verifies gateway API access.

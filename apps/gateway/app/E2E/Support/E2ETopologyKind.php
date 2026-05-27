@@ -14,26 +14,12 @@ enum E2ETopologyKind: string
     case OperatorGatewayAppdevAppprodAgent = 'operator_gateway_app-dev_app-prod_agent';
     case OperatorGatewayAppprodIngress = 'operator_gateway_app-prod_ingress';
 
-    #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
-    public const self Control = self::Operator;
-
-    #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
-    public const self ControlGateway = self::OperatorGateway;
-
-    #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
-    public const self ControlGatewayDev = self::OperatorGatewayAppdev;
-
-    #[\Deprecated(message: 'Migration alias for one E2E terminology window.')]
-    public const self ControlGatewayDevProd = self::OperatorGatewayAppdevAppprod;
-
     public static function tryFromInput(string $value): ?self
     {
         return match ($value) {
-            'control' => self::Operator,
-            'control-gateway' => self::OperatorGateway,
-            'control-gateway-dev' => self::OperatorGatewayAppdev,
-            'control-gateway-dev-prod' => self::OperatorGatewayAppdevAppprod,
             'operator-gateway' => self::OperatorGateway,
+            'operator-gateway-dev' => self::OperatorGatewayAppdev,
+            'operator-gateway-dev-prod' => self::OperatorGatewayAppdevAppprod,
             'operator-gateway-app-dev' => self::OperatorGatewayAppdev,
             'operator-gateway-app-dev-app-prod' => self::OperatorGatewayAppdevAppprod,
             'operator-gateway-agent' => self::OperatorGatewayAgent,
@@ -53,10 +39,10 @@ enum E2ETopologyKind: string
     public function deprecatedValues(): array
     {
         return match ($this) {
-            self::Operator => ['control'],
-            self::OperatorGateway => ['operator-gateway', 'control-gateway'],
-            self::OperatorGatewayAppdev => ['operator-gateway-app-dev', 'operator-gateway-appdev', 'control-gateway-dev'],
-            self::OperatorGatewayAppdevAppprod => ['operator-gateway-app-dev-app-prod', 'operator-gateway-appdev-appprod', 'control-gateway-dev-prod'],
+            self::Operator => [],
+            self::OperatorGateway => ['operator-gateway'],
+            self::OperatorGatewayAppdev => ['operator-gateway-app-dev', 'operator-gateway-appdev', 'operator-gateway-dev'],
+            self::OperatorGatewayAppdevAppprod => ['operator-gateway-app-dev-app-prod', 'operator-gateway-appdev-appprod', 'operator-gateway-dev-prod'],
             self::OperatorGatewayAgent => ['operator-gateway-agent'],
             self::OperatorGatewayAppdevAppprodAgent => ['operator-gateway-app-dev-app-prod-agent', 'operator-gateway-appdev-appprod-agent'],
             self::OperatorGatewayAppprodIngress => ['operator-gateway-app-prod-ingress', 'operator-gateway-appprod-ingress'],

@@ -12,17 +12,17 @@ function appAgentIdeGrantAccess(E2ETopologyHarness $topology): void
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['control-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
 }
 
 \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('control-1'),
+    'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
     'created_at' => now(),
@@ -39,18 +39,18 @@ PHP;
     );
 }
 
-it('sets app agent IDE intent from a control caller through the gateway api', function (): void {
+it('sets app agent IDE intent from a operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $name = 'e2e-agent-'.strtolower(bin2hex(random_bytes(3)));
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-agent-ide');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         appAgentIdeGrantAccess($topology);
 
@@ -61,10 +61,10 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         );
 
         $register = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($path),
             ),
@@ -76,10 +76,10 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         expect($registrationPayload['success']['data']['result']['action'])->toBe('adopted');
 
         $set = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:agent-ide %s opencode --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,
@@ -96,10 +96,10 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
             ->and($setPayload['success']['data']['cleanup']['workspaces_removed'])->toBe([]);
 
         $clear = $topology->ssh(
-            'control',
+            'operator',
             sprintf(
                 'cd %s && orbit app:agent-ide %s inherit --json',
-                escapeshellarg($topology->checkout('control')),
+                escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
             timeoutSeconds: 180,
@@ -129,4 +129,4 @@ it('sets app agent IDE intent from a control caller through the gateway api', fu
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

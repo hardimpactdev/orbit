@@ -129,7 +129,7 @@ it('writes lists and removes firewall intent on a prepared app node', function (
         );
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
 function firewallCommandPrepareAppNode(E2ETopologyHarness $topology, string $checkout): void
 {

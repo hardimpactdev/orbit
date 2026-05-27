@@ -11,7 +11,7 @@ the gateway does not exist yet.
   - no gateway is configured locally;
   - the requested role is `gateway`;
   - `node_new.name`, `node_new.role`, `node_new.host`, and
-    `node_new.control_name` can be resolved;
+    `node_new.operator_name` can be resolved;
   - `node_new.user` can be resolved when SSH bootstrap is used;
   - the target host is reachable over SSH as `node_new.user`;
   - the target host platform is supported for the requested role;
@@ -57,13 +57,13 @@ roles also forward `node_new.tld`; websocket roles forward
 When no gateway is configured and `--role=gateway` is requested:
 
 1. Resolve `node_new.name`, `node_new.role`, `node_new.host`, and
-   `node_new.control_name`.
+   `node_new.operator_name`.
 2. Resolve `node_new.user` with the documented default or supplied value.
 3. Connect to the target host over SSH.
 4. Install the gateway runtime.
 5. Initialize gateway state.
 6. Register the gateway node as `node_new.name`.
-7. Mint an active client identity named `node_new.control_name` for the
+7. Mint an active client identity named `node_new.operator_name` for the
    initiating operator machine.
 8. Install the initiating client's WireGuard configuration locally.
 9. Fetch and trust the gateway CA.
@@ -122,7 +122,7 @@ Primary test owners:
 
 `NodeNewOnControlNodeContractTest.php` covers post-input path eligibility,
 first-gateway bootstrap eligibility, complete local onboarding for the
-initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded
+initiating CLI named by `node_new.operator_name`, initial gateway endpoint seeded
 from `node_new.host`, gateway-connected forwarding for
 convergence/adoption/app-role creation/client enrollment, forwarded host
 and TLD input, missing-gateway failure for non-bootstrap requests, and no

@@ -25,12 +25,12 @@ function e2eCommandProcessResult(bool $successful, string $output = '', string $
 it('throws a runtime exception when an ssh command fails outside the pest assertion context', function (): void {
     $instance = m::mock(E2EInstance::class);
     $instance->shouldReceive('ssh')
-        ->with('control', m::type(SshKeyPair::class), 'orbit node:list', 30)
+        ->with('operator', m::type(SshKeyPair::class), 'orbit node:list', 30)
         ->andReturn(e2eCommandProcessResult(false, 'stdout', 'stderr'));
 
     expect(fn () => E2ECommand::ssh(
         $instance,
-        'control',
+        'operator',
         new SshKeyPair('/tmp/id', '/tmp/id.pub'),
         'orbit node:list',
         timeoutSeconds: 30,
@@ -45,7 +45,7 @@ it('returns the process result when an ssh command succeeds', function (): void 
 
     expect(E2ECommand::ssh(
         $instance,
-        'control',
+        'operator',
         new SshKeyPair('/tmp/id', '/tmp/id.pub'),
         'orbit node:list',
     ))->toBe($result);

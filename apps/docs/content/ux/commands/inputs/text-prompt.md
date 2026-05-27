@@ -63,7 +63,7 @@ $name = text(
 These commands use `text` and are good models to follow.
 
 - `orbit node:new` — `node_new.name`, `node_new.host`,
-  `node_new.control_name`, `node_new.tld`, `node_new.ssh_user` all use
+  `node_new.operator_name`, `node_new.tld`, `node_new.ssh_user` all use
   `text`.
 
 ## Cross References

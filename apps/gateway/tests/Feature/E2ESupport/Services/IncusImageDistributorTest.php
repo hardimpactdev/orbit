@@ -30,7 +30,7 @@ function incusImageDistributorConfig(string $host): E2EConfig
         sourceImage: 'images:ubuntu/26.04/cloud',
         baseImage: 'orbit-base-ubuntu-26.04',
         bootstrapUser: 'provisioner',
-        controlUser: 'control',
+        operatorUser: 'operator',
         instancePrefix: 'orbit-e2e',
         timeoutSeconds: 600,
         cpus: '2',

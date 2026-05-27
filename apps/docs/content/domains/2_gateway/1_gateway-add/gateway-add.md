@@ -73,7 +73,7 @@ provision hosts, does not mint access grants, and does not repair unrelated node
 drift.
 
 First-gateway bootstrap via `node:new --role=gateway --host=<host>
---control-name=<control-name>` already completes the onboarding for the initiating client;
+--operator-name=<operator-name>` already completes the onboarding for the initiating client;
 that initiating client must not run `gateway:add` afterward.
 
 ## Output
