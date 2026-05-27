@@ -26,9 +26,10 @@ default). It builds one reusable base image plus prepared source snapshots:
    PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
    It is used by the provisioning lane's base-VM lifecycle test and as the
    source for prepared topology roles.
-2. Prepared source templates `orbit-template-control`, `orbit-template-gateway`,
-   `orbit-template-dev`, `orbit-template-prod`, and `orbit-template-agent`.
-   Build them with
+2. Prepared source templates `orbit-template-prepared-control`,
+   `orbit-template-prepared-gateway`, `orbit-template-prepared-dev`,
+   `orbit-template-prepared-prod`, and `orbit-template-prepared-agent`. Build
+   them with
    `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent`.
 
 During topology preparation, Orbit tars the current checkout, ships it plus

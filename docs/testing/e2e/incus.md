@@ -81,7 +81,7 @@ When this value is set, prepared templates must be built on the same pool.
 Verify with:
 
 ```bash
-ssh beast 'for name in orbit-template-control orbit-template-gateway orbit-template-dev orbit-template-prod orbit-template-agent; do echo "--- $name"; incus config show "$name" --expanded | sed -n "/root:/,/^[^ ]/p" | head -n 4; done'
+ssh beast 'for name in orbit-template-prepared-control orbit-template-prepared-gateway orbit-template-prepared-dev orbit-template-prepared-prod orbit-template-prepared-agent; do echo "--- $name"; incus config show "$name" --expanded | sed -n "/root:/,/^[^ ]/p" | head -n 4; done'
 ```
 
 Every listed template should show `pool: orbit-e2e`. If templates show
